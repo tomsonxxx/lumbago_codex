@@ -74,3 +74,8 @@
 72. **PyInstaller**: dodano spec i skrypt budowania portable ZIP.
 73. **Instrukcja**: dodano `docs/user_guide.md`.
 74. **Tagi (Top 20)**: rozszerzono listę tagów w oknie porównania do 20 najczęściej używanych pól.
+75. **Fallback danych**: dodano bezpieczny fallback do `.lumbago_data` przy braku uprawnieĹ„ w `%APPDATA%` (ustawienia, cache, DB).
+76. **Logi startu**: dodano `startup.log` oraz `app.log` do diagnozowania zamkniÄ™cia okna.
+77. **ObsĹ‚uga bĹ‚Ä™dĂłw**: dodano crash log oraz handler komunikatĂłw Qt do `qt.log`.
+78. **Tryb bezpieczny**: dodano `LUMBAGO_SAFE_MODE=1` do uruchamiania minimalnego okna bez peĹ‚nej logiki.
+79. **Multimedia toggle**: dodano `LUMBAGO_DISABLE_MULTIMEDIA=1` do wyĹ‚Ä…czania inicjalizacji odtwarzacza.

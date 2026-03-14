@@ -10,18 +10,49 @@ from pathlib import Path
 def app_data_dir() -> Path:
     base = os.getenv("APPDATA") or str(Path.home() / "AppData" / "Roaming")
     path = Path(base) / "LumbagoMusicAI"
-    path.mkdir(parents=True, exist_ok=True)
-    return path
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+        # Validate write access to avoid later DB/cache failures
+        test_file = path / ".write_test"
+        test_file.write_text("ok", encoding="utf-8")
+        try:
+            test_file.unlink()
+        except Exception:
+            pass
+        return path
+    except (PermissionError, OSError):
+        fallback = Path.cwd() / ".lumbago_data"
+        fallback.mkdir(parents=True, exist_ok=True)
+        return fallback
 
 
 def cache_dir() -> Path:
-    path = app_data_dir() / "cache"
-    path.mkdir(parents=True, exist_ok=True)
-    return path
+    base = app_data_dir()
+    path = base / "cache"
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+    except PermissionError:
+        fallback = Path.cwd() / ".lumbago_data" / "cache"
+        fallback.mkdir(parents=True, exist_ok=True)
+        return fallback
 
 
 def settings_path() -> Path:
-    return app_data_dir() / "settings.json"
+    base = app_data_dir()
+    path = base / "settings.json"
+    try:
+        # Touch to validate write access without overwriting
+        if not path.exists():
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.touch(exist_ok=True)
+        return path
+    except PermissionError:
+        fallback = Path.cwd() / ".lumbago_data" / "settings.json"
+        fallback.parent.mkdir(parents=True, exist_ok=True)
+        if not fallback.exists():
+            fallback.touch(exist_ok=True)
+        return fallback
 
 
 @dataclass(frozen=True)
@@ -50,11 +81,11 @@ def load_settings() -> Settings:
     data_dir = app_data_dir()
     file_path = settings_path()
     payload: dict[str, str] = {}
-    if file_path.exists():
-        try:
+    try:
+        if file_path.exists():
             payload = json.loads(file_path.read_text(encoding="utf-8"))
-        except Exception:
-            payload = {}
+    except Exception:
+        payload = {}
     auto = _discover_windows_keys()
     return Settings(
         db_path=data_dir / "lumbago.db",

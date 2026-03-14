@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 import json
+from datetime import datetime
+import os
 
 from PyQt6 import QtCore, QtGui, QtWidgets
-from PyQt6.QtMultimedia import QAudioOutput, QMediaPlayer
 
 from lumbago_app.core.audio import apply_local_metadata, clear_tags, extract_metadata, iter_audio_files, write_tags
 import shutil
@@ -43,6 +44,17 @@ from lumbago_app.ui.tag_compare_dialog import TagCompareDialog
 from lumbago_app.ui.widgets import AnimatedButton
 from lumbago_app.ui.xml_converter_dialog import XmlConverterDialog
 from lumbago_app.ui.xml_import_dialog import XmlImportDialog
+
+
+def _debug_log(message: str) -> None:
+    try:
+        target = Path.cwd() / ".lumbago_data" / "startup.log"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with target.open("a", encoding="utf-8", errors="ignore") as handle:
+            handle.write(f"{timestamp} {message}\n")
+    except Exception:
+        pass
 
 
 class TrackFilterProxy(QtCore.QSortFilterProxyModel):
@@ -121,15 +133,20 @@ class ScanWorker(QtCore.QRunnable):
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
+        _debug_log("MainWindow: start init")
         init_db()
+        _debug_log("MainWindow: init_db ok")
         self.setWindowTitle("Lumbago Music AI")
         self.setMinimumSize(1200, 720)
         self.thread_pool = QtCore.QThreadPool.globalInstance()
         self._apply_app_icon()
 
         self._build_ui()
+        _debug_log("MainWindow: build_ui ok")
         self._load_tracks()
+        _debug_log("MainWindow: load_tracks ok")
         self._load_settings()
+        _debug_log("MainWindow: load_settings ok")
 
     def _build_ui(self):
         central = QtWidgets.QWidget()
@@ -401,9 +418,19 @@ class MainWindow(QtWidgets.QMainWindow):
         layout = QtWidgets.QVBoxLayout(frame)
         layout.setContentsMargins(12, 8, 12, 8)
         row = QtWidgets.QHBoxLayout()
-        self.player = QMediaPlayer()
-        self.audio_output = QAudioOutput()
-        self.player.setAudioOutput(self.audio_output)
+        self.player = None
+        self.audio_output = None
+        if os.getenv("LUMBAGO_DISABLE_MULTIMEDIA", "1") == "1":
+            _debug_log("Player init skipped (LUMBAGO_DISABLE_MULTIMEDIA=1)")
+        else:
+            try:
+                from PyQt6.QtMultimedia import QAudioOutput, QMediaPlayer
+
+                self.player = QMediaPlayer()
+                self.audio_output = QAudioOutput()
+                self.player.setAudioOutput(self.audio_output)
+            except Exception as exc:
+                _debug_log(f"Player init failed: {exc}")
 
         self.play_btn = AnimatedButton("Odtwarzaj / Pauza")
         self.play_btn.setToolTip("Odtwarzaj lub wstrzymaj wybrany utwór")
@@ -412,7 +439,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.stop_btn = AnimatedButton("Stop")
         self.stop_btn.setToolTip("Zatrzymaj odtwarzanie")
-        self.stop_btn.clicked.connect(self.player.stop)
+        if self.player:
+            self.stop_btn.clicked.connect(self.player.stop)
         row.addWidget(self.stop_btn)
         row.addStretch(1)
         layout.addLayout(row)
@@ -450,8 +478,9 @@ class MainWindow(QtWidgets.QMainWindow):
         cues.addStretch(1)
         layout.addLayout(cues)
 
-        self.player.positionChanged.connect(self._on_position_changed)
-        self.player.durationChanged.connect(self._on_duration_changed)
+        if self.player:
+            self.player.positionChanged.connect(self._on_position_changed)
+            self.player.durationChanged.connect(self._on_duration_changed)
         self._duration_ms = 0
         self._cue_a = None
         self._cue_b = None
@@ -583,6 +612,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self._fill_detail_fields(track)
 
     def _play_selected(self):
+        if not self.player:
+            self._show_message("Odtwarzacz jest niedostępny w tej wersji.")
+            return
         indexes = self.table_view.selectionModel().selectedRows()
         if not indexes:
             return
@@ -595,21 +627,31 @@ class MainWindow(QtWidgets.QMainWindow):
         self.player.play()
 
     def _toggle_playback(self):
+        if not self.player:
+            self._show_message("Odtwarzacz jest niedostępny w tej wersji.")
+            return
+        from PyQt6.QtMultimedia import QMediaPlayer
         if self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
             self.player.pause()
         else:
             self._play_selected()
 
     def _seek_position(self, value: int):
+        if not self.player:
+            return
         if self._duration_ms <= 0:
             return
         self.player.setPosition(int(self._duration_ms * (value / 1000)))
 
     def _on_duration_changed(self, duration: int):
+        if not self.player:
+            return
         self._duration_ms = duration
         self._update_time_label(self.player.position(), duration)
 
     def _on_position_changed(self, position: int):
+        if not self.player:
+            return
         if self._duration_ms > 0:
             self.position_slider.blockSignals(True)
             self.position_slider.setValue(int((position / self._duration_ms) * 1000))
@@ -628,19 +670,23 @@ class MainWindow(QtWidgets.QMainWindow):
         self.time_label.setText(f"{fmt(position)} / {fmt(duration)}")
 
     def _set_cue_a(self):
+        if not self.player:
+            return
         self._cue_a = self.player.position()
         self._show_message("Ustawiono Cue A.")
 
     def _set_cue_b(self):
+        if not self.player:
+            return
         self._cue_b = self.player.position()
         self._show_message("Ustawiono Cue B.")
 
     def _jump_to_cue_a(self):
-        if self._cue_a is not None:
+        if self.player and self._cue_a is not None:
             self.player.setPosition(self._cue_a)
 
     def _jump_to_cue_b(self):
-        if self._cue_b is not None:
+        if self.player and self._cue_b is not None:
             self.player.setPosition(self._cue_b)
 
     def _toggle_loop(self):
@@ -659,6 +705,9 @@ class MainWindow(QtWidgets.QMainWindow):
         local_meta_action = menu.addAction("Wczytaj metadane lokalne")
         action = menu.exec(self.grid_view.mapToGlobal(pos))
         if action == play_action:
+            if not self.player:
+                self._show_message("Odtwarzacz jest niedostępny w tej wersji.")
+                return
             source_index = self.filter_proxy.mapToSource(index)
             track = self.table_model.track_at(source_index.row())
             if track:
@@ -931,6 +980,14 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.status.showMessage(f"Dodano do playlisty: {data.name}")
             return True
         return super().eventFilter(source, event)
+
+    def closeEvent(self, event):
+        _debug_log("MainWindow: closeEvent")
+        super().closeEvent(event)
+
+    def showEvent(self, event):
+        _debug_log("MainWindow: showEvent")
+        super().showEvent(event)
 
     def _run_ai_tagger(self):
         tracks = self._selected_tracks()
