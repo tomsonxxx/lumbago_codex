@@ -75,6 +75,8 @@ class Settings:
     deepseek_base_url: str | None
     deepseek_model: str | None
     filename_patterns: list[str]
+    validation_policy: str | None
+    metadata_cache_ttl_days: int
 
 
 def load_settings() -> Settings:
@@ -162,6 +164,18 @@ def load_settings() -> Settings:
         )
         or "deepseek-chat",
         filename_patterns=_parse_patterns(payload.get("FILENAME_PATTERNS")),
+        validation_policy=_first_value(
+            payload.get("VALIDATION_POLICY"),
+            os.getenv("VALIDATION_POLICY"),
+        )
+        or "balanced",
+        metadata_cache_ttl_days=_to_int(
+            _first_value(
+                payload.get("METADATA_CACHE_TTL_DAYS"),
+                os.getenv("METADATA_CACHE_TTL_DAYS"),
+            ),
+            default=30,
+        ),
     )
 
 
@@ -182,6 +196,15 @@ def _first_value(*values: str | None) -> str | None:
         if value:
             return value
     return None
+
+
+def _to_int(value: str | None, default: int = 0) -> int:
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        return default
 
 
 def _discover_windows_keys() -> dict[str, str]:

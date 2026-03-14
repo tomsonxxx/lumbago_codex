@@ -60,10 +60,23 @@ class CloudAiTagger:
 
 
 def _build_prompt(track: Track) -> str:
+    missing = []
+    if not track.bpm:
+        missing.append("bpm")
+    if not track.key:
+        missing.append("key")
+    if not track.mood:
+        missing.append("mood")
+    if not track.energy:
+        missing.append("energy")
+    if not track.genre:
+        missing.append("genre")
+    if not missing:
+        missing.append("description")
     return (
-        "Jestes ekspertem od tagowania muzyki. Zwroc JSON z polami: "
-        "bpm, key, mood, energy, genre, description, confidence. "
-        "Wartosci puste ustaw na null. "
+        "Zwroc JSON tylko dla pol: "
+        + ", ".join(missing)
+        + ". Wartosci puste ustaw na null. "
         "Dane wejsciowe:\n"
         f"Tytul: {track.title or ''}\n"
         f"Artysta: {track.artist or ''}\n"

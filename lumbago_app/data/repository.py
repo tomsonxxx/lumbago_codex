@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from typing import Iterable
+from datetime import datetime, timedelta
+import json
 
 from sqlalchemy import delete, select, update, text
 
@@ -9,6 +11,7 @@ from lumbago_app.data.db import get_session_factory, get_engine
 from lumbago_app.data.schema import (
     Base,
     ChangeLogOrm,
+    MetadataCacheOrm,
     PlaylistOrm,
     PlaylistTrackOrm,
     SettingsOrm,
@@ -304,6 +307,45 @@ def list_change_log(track_path: str) -> list[dict[str, str]]:
             }
             for row in rows
         ]
+
+
+def get_metadata_cache(key: str, max_age_seconds: int | None = None) -> dict | None:
+    Session = get_session_factory()
+    with Session() as session:
+        row = session.get(MetadataCacheOrm, key)
+        if not row:
+            return None
+        if max_age_seconds is not None and row.created_at:
+            cutoff = datetime.utcnow() - timedelta(seconds=max_age_seconds)
+            if row.created_at < cutoff:
+                session.delete(row)
+                session.commit()
+                return None
+        try:
+            return json.loads(row.payload)
+        except Exception:
+            return None
+
+
+def set_metadata_cache(key: str, payload: dict, source: str | None = None) -> None:
+    Session = get_session_factory()
+    with Session() as session:
+        row = session.get(MetadataCacheOrm, key)
+        encoded = json.dumps(payload, ensure_ascii=False)
+        if row:
+            row.payload = encoded
+            row.source = source
+            row.created_at = datetime.utcnow()
+        else:
+            session.add(
+                MetadataCacheOrm(
+                    key=key,
+                    payload=encoded,
+                    source=source,
+                    created_at=datetime.utcnow(),
+                )
+            )
+        session.commit()
 
 
 def list_playlists() -> list[str]:

@@ -106,3 +106,13 @@ class ChangeLogOrm(Base):
     new_value = Column(Text)
     source = Column(Text, default="user")
     changed_at = Column(DateTime, default=func.now())
+
+
+class MetadataCacheOrm(Base):
+    __tablename__ = "metadata_cache"
+    __table_args__ = (Index("ix_metadata_cache_created", "created_at"),)
+
+    key = Column(Text, primary_key=True)
+    payload = Column(Text, nullable=False)
+    source = Column(Text)
+    created_at = Column(DateTime, default=func.now())

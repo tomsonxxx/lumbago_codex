@@ -210,3 +210,32 @@
 - [ ] Historia zmian tagów (audit log)
 - [ ] Eksport setów (playlist → Rekordbox/VirtualDJ)
 - [ ] Auto-backup bazy i ustawień
+# Metody analizy, wyszukiwania i walidacji tagów (do wdrożenia)
+## Import / analiza lokalna
+- [x] Odczyt tagów z plików audio (Mutagen) — MP3/FLAC/WAV/M4A/OGG/AAC/AIFF
+- [~] Odczyt tagów z plików audio (jsmediatags) — fallback dla web
+- [~] Zapis tagów MP3 (ID3Writer) — kompatybilność web
+- [~] Zapis tagów M4A/MP4 (mp4-tag-writer) — kompatybilność web
+- [x] Analiza nazw plików (Artist - Title, regexy z UI)
+- [x] Analiza struktury katalogów (Artist/Album/Track)
+- [x] Odczyt z plików folder.json / metadata.json
+- [x] Odczyt z plików sidecar .json
+- [x] Odczyt z plików .cue (track title/artist/album)
+- [x] Import metadanych z XML (Rekordbox/VirtualDJ)
+- [x] Ekstrakcja podstawowych parametrów audio (czas, bitrate, sample rate)
+- [x] Generowanie waveform (ffmpeg/librosa) + cache
+
+## Rozpoznawanie / wyszukiwanie online
+- [x] Fingerprint audio (Chromaprint/fpcalc) -> AcoustID
+- [x] MusicBrainz — wyszukiwanie po tekście (artist/title)
+- [x] Discogs — wyszukiwanie po tekście (artist/title)
+- [x] Cover Art Archive — pobieranie okładek
+- [x] AI (Gemini/OpenAI/Grok/DeepSeek) — generowanie brakujących tagów
+
+## Walidacja i jakość danych
+- [x] Walidacja tekstowa (normalizacja tytułu i artysty)
+- [ ] Walidacja zgodności albumu (odrzucanie "Greatest Hits" przy istnieniu albumu studyjnego)
+- [ ] Walidacja BPM/Key (zakresy + Camelot mapping)
+- [ ] Walidacja year (4 cyfry + rozsądny zakres)
+- [ ] Confidence score (AI i zewnętrzne źródła)
+- [x] Cache wyników (SQLite + TTL)

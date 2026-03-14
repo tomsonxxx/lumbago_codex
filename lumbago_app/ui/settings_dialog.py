@@ -36,6 +36,11 @@ class SettingsDialog(QtWidgets.QDialog):
         self.filename_patterns.setPlaceholderText(
             "Przykład: (?P<artist>.+) - (?P<title>.+)"
         )
+        self.validation_policy = QtWidgets.QComboBox()
+        self.validation_policy.addItems(["strict", "balanced", "lenient"])
+        self.metadata_cache_ttl = QtWidgets.QSpinBox()
+        self.metadata_cache_ttl.setRange(0, 365)
+        self.metadata_cache_ttl.setSuffix(" dni")
 
         for field in [
             self.acoustid_key,
@@ -62,6 +67,8 @@ class SettingsDialog(QtWidgets.QDialog):
         form.addRow("Adres bazowy OpenAI (URL)", self.openai_base_url)
         form.addRow("Model OpenAI", self.openai_model)
         form.addRow("Wzorce nazw plików (regex, 1 na linię)", self.filename_patterns)
+        form.addRow("Walidacja metadanych", self.validation_policy)
+        form.addRow("Cache metadanych (TTL)", self.metadata_cache_ttl)
 
         layout.addLayout(form)
 
@@ -92,6 +99,8 @@ class SettingsDialog(QtWidgets.QDialog):
         self.openai_base_url.setText(settings.openai_base_url or "")
         self.openai_model.setText(settings.openai_model or "")
         self.filename_patterns.setPlainText("\n".join(settings.filename_patterns or []))
+        self.validation_policy.setCurrentText(settings.validation_policy or "balanced")
+        self.metadata_cache_ttl.setValue(settings.metadata_cache_ttl_days)
 
     def _save(self):
         save_settings(
@@ -111,6 +120,8 @@ class SettingsDialog(QtWidgets.QDialog):
                 "OPENAI_BASE_URL": self.openai_base_url.text().strip(),
                 "OPENAI_MODEL": self.openai_model.text().strip(),
                 "FILENAME_PATTERNS": self.filename_patterns.toPlainText().strip(),
+                "VALIDATION_POLICY": self.validation_policy.currentText().strip(),
+                "METADATA_CACHE_TTL_DAYS": str(self.metadata_cache_ttl.value()),
             }
         )
         self.accept()

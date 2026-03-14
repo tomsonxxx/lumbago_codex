@@ -5,6 +5,7 @@ import hashlib
 from typing import Any
 
 from lumbago_app.services.metadata_providers import DiscogsProvider, MusicBrainzProvider
+from lumbago_app.data.repository import get_metadata_cache, set_metadata_cache
 
 import requests
 
@@ -14,9 +15,17 @@ from lumbago_app.services.recognizer import AcoustIdRecognizer
 
 
 class MetadataEnricher:
-    def __init__(self, acoustid_key: str | None, musicbrainz_app: str | None):
+    def __init__(
+        self,
+        acoustid_key: str | None,
+        musicbrainz_app: str | None,
+        validation_policy: str | None = None,
+        cache_ttl_days: int = 30,
+    ):
         self.recognizer = AcoustIdRecognizer(acoustid_key)
         self.musicbrainz_app = musicbrainz_app or "LumbagoMusicAI"
+        self.validation_policy = validation_policy or "balanced"
+        self.cache_ttl_seconds = max(0, cache_ttl_days) * 24 * 3600
 
     def enrich_track(self, track: Track) -> Track | None:
         result = self.recognizer.recognize(Path(track.path))
@@ -27,6 +36,10 @@ class MetadataEnricher:
             return None
         metadata = self._fetch_musicbrainz_recording(recording_id)
         if not metadata:
+            return None
+        candidate_title = metadata.get("title")
+        candidate_artist = _first_artist(metadata)
+        if not _validate_candidate(track, candidate_title, candidate_artist, policy=self.validation_policy):
             return None
         release_id = _apply_musicbrainz_metadata(track, metadata)
         if release_id:
@@ -40,11 +53,16 @@ class MetadataEnricher:
         if not query:
             return None
         provider = MusicBrainzProvider(self.musicbrainz_app)
-        data = provider.search_recording(query)
+        cache_key = f"musicbrainz:search:{query}"
+        data = get_metadata_cache(cache_key, self.cache_ttl_seconds) or provider.search_recording(query)
+        if data:
+            set_metadata_cache(cache_key, data, source="musicbrainz")
         candidate = _select_musicbrainz_recording(data)
         if not candidate:
             return None
-        if not _validate_candidate(track, candidate.get("title"), _first_artist(candidate)):
+        if not _validate_candidate(
+            track, candidate.get("title"), _first_artist(candidate), policy=self.validation_policy
+        ):
             return None
         track.title = track.title or candidate.get("title")
         track.artist = track.artist or _first_artist(candidate)
@@ -57,11 +75,16 @@ class MetadataEnricher:
         if not query:
             return None
         provider = DiscogsProvider(token)
-        data = provider.search_release(query)
+        cache_key = f"discogs:search:{query}"
+        data = get_metadata_cache(cache_key, self.cache_ttl_seconds) or provider.search_release(query)
+        if data:
+            set_metadata_cache(cache_key, data, source="discogs")
         candidate = _select_discogs_release(data)
         if not candidate:
             return None
-        if not _validate_candidate(track, candidate.get("title"), candidate.get("artist")):
+        if not _validate_candidate(
+            track, candidate.get("title"), candidate.get("artist"), policy=self.validation_policy
+        ):
             return None
         track.title = track.title or candidate.get("title")
         track.artist = track.artist or candidate.get("artist")
@@ -70,13 +93,19 @@ class MetadataEnricher:
         return track
 
     def _fetch_musicbrainz_recording(self, recording_id: str) -> dict[str, Any] | None:
+        cache_key = f"musicbrainz:recording:{recording_id}"
+        cached = get_metadata_cache(cache_key, self.cache_ttl_seconds)
+        if cached:
+            return cached
         url = f"https://musicbrainz.org/ws/2/recording/{recording_id}"
         params = {"fmt": "json", "inc": "artists+releases+tags"}
         headers = {"User-Agent": f"{self.musicbrainz_app}/0.1 (local)"}
         try:
             resp = requests.get(url, params=params, headers=headers, timeout=15)
             resp.raise_for_status()
-            return resp.json()
+            data = resp.json()
+            set_metadata_cache(cache_key, data, source="musicbrainz")
+            return data
         except Exception:
             return None
 
@@ -186,30 +215,97 @@ def _normalize(value: str | None) -> str:
     return "".join(ch.lower() for ch in value if ch.isalnum() or ch.isspace()).strip()
 
 
-def _validate_candidate(track: Track, title: str | None, artist: str | None) -> bool:
+STRICT_SCORE_MIN = 0.9
+BALANCED_SCORE_MIN = 0.65
+LENIENT_SCORE_MIN = 0.5
+
+
+def _token_similarity(left: str, right: str) -> float:
+    if not left or not right:
+        return 0.0
+    left_tokens = set(left.split())
+    right_tokens = set(right.split())
+    if not left_tokens or not right_tokens:
+        return 0.0
+    return len(left_tokens & right_tokens) / len(left_tokens | right_tokens)
+
+
+def _match_score(track: Track, title: str | None, artist: str | None) -> float:
     title_a = _normalize(track.title)
     title_b = _normalize(title)
     artist_a = _normalize(track.artist)
     artist_b = _normalize(artist)
-    if title_a and title_b and title_a not in title_b and title_b not in title_a:
-        return False
-    if artist_a and artist_b and artist_a not in artist_b and artist_b not in artist_a:
-        return False
-    return True
+
+    if not title_a and not artist_a:
+        return 0.0
+
+    title_score = _token_similarity(title_a, title_b) if title_a else (1.0 if title_b else 0.0)
+    artist_score = _token_similarity(artist_a, artist_b) if artist_a else (1.0 if artist_b else 0.0)
+    return (title_score + artist_score) / 2.0
+
+
+def _validate_candidate(
+    track: Track, title: str | None, artist: str | None, policy: str = "strict"
+) -> bool:
+    title_a = _normalize(track.title)
+    title_b = _normalize(title)
+    artist_a = _normalize(track.artist)
+    artist_b = _normalize(artist)
+
+    score = _match_score(track, title, artist)
+    if policy == "strict":
+        if title_a and title_b and title_a == title_b:
+            if artist_a and artist_b and artist_a == artist_b:
+                return True
+        return score >= STRICT_SCORE_MIN
+    if policy == "lenient":
+        return score >= LENIENT_SCORE_MIN
+    return score >= BALANCED_SCORE_MIN
 
 
 class AutoMetadataFiller:
-    def __init__(self, acoustid_key: str | None, musicbrainz_app: str | None, discogs_token: str | None):
+    def __init__(
+        self,
+        acoustid_key: str | None,
+        musicbrainz_app: str | None,
+        discogs_token: str | None,
+        validation_policy: str | None = None,
+        cache_ttl_days: int = 30,
+    ):
         self.acoustid_key = acoustid_key
         self.musicbrainz_app = musicbrainz_app
         self.discogs_token = discogs_token
+        self.validation_policy = validation_policy or "balanced"
+        self.cache_ttl_days = cache_ttl_days
 
     def fill_missing(self, track: Track, method: str) -> Track | None:
-        enricher = MetadataEnricher(self.acoustid_key, self.musicbrainz_app)
+        enricher = MetadataEnricher(
+            self.acoustid_key,
+            self.musicbrainz_app,
+            validation_policy=self.validation_policy,
+            cache_ttl_days=self.cache_ttl_days,
+        )
+        if method == "auto":
+            return self._auto_pipeline(enricher, track)
         if method == "acoustid":
             return enricher.enrich_track(track)
         if method == "musicbrainz":
             return enricher.enrich_from_musicbrainz_search(track)
         if method == "discogs":
             return enricher.enrich_from_discogs_search(track, self.discogs_token)
+        return None
+
+    def _auto_pipeline(self, enricher: MetadataEnricher, track: Track) -> Track | None:
+        # Priorytety: AcoustID -> MusicBrainz -> Discogs
+        if self.acoustid_key:
+            enriched = enricher.enrich_track(track)
+            if enriched:
+                return enriched
+        enriched = enricher.enrich_from_musicbrainz_search(track)
+        if enriched:
+            return enriched
+        if self.discogs_token:
+            enriched = enricher.enrich_from_discogs_search(track, self.discogs_token)
+            if enriched:
+                return enriched
         return None

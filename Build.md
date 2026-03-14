@@ -79,3 +79,15 @@
 77. **ObsĹ‚uga bĹ‚Ä™dĂłw**: dodano crash log oraz handler komunikatĂłw Qt do `qt.log`.
 78. **Tryb bezpieczny**: dodano `LUMBAGO_SAFE_MODE=1` do uruchamiania minimalnego okna bez peĹ‚nej logiki.
 79. **Multimedia toggle**: dodano `LUMBAGO_DISABLE_MULTIMEDIA=1` do wyĹ‚Ä…czania inicjalizacji odtwarzacza.
+80. **ToDo: metody tagów**: dodano listę metod analizy, wyszukiwania i walidacji tagów do ToDo.md.
+80. **Pipeline metadanych**: dodano tryb auto z priorytetami (AcoustID -> MusicBrainz -> Discogs) oraz walidację kandydatów.
+81. **AI minimalny prompt**: skrócono prompt AI do brakujących pól.
+82. **Walidacja (balanced)**: obniżono rygor walidacji kandydatów do trybu zbalansowanego i ustawiono progi dopasowania.
+83. **Testy**: próba uruchomienia pytest zakończona brakiem modułu w środowisku.
+84. **Pytest**: dodano pytest do zależności oraz pierwsze testy walidacji metadanych.
+85. **Pytest config**: dodano pytest.ini, aby izolować testy tylko do katalogu tests.
+86. **Testy OK**: uruchomiono pytest, 3 testy przeszły.
+87. **Cache metadanych**: dodano tabelę cache w SQLite oraz TTL dla zapytań MusicBrainz/Discogs.
+88. **Walidacja lenient**: dodano tryb lenient i testy dla wszystkich trybów walidacji.
+89. **Ustawienia cache**: dodano TTL cache metadanych w ustawieniach UI.
+87. **Walidacja w UI**: dodano wybór trybu walidacji (strict/balanced/lenient) w ustawieniach.

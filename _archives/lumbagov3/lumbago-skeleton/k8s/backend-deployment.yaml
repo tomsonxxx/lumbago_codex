@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lumbago-backend
+  labels:
+    app: lumbago-backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: lumbago-backend
+  template:
+    metadata:
+      labels:
+        app: lumbago-backend
+    spec:
+      containers:
+        - name: backend
+          image: ghcr.io/REPLACE_OWNER/lumbago-backend:latest
+          ports:
+            - containerPort: 8000
+          env:
+            - name: DATABASE_URL
+              value: postgresql://lumbago:changeme@postgres:5432/lumbago
+            - name: CELERY_BROKER
+              value: redis://redis:6379/0
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: lumbago-backend
+spec:
+  selector:
+    app: lumbago-backend
+  ports:
+    - protocol: TCP
+      port: 8000
+      targetPort: 8000

@@ -39,6 +39,7 @@ class AiTaggerDialog(QtWidgets.QDialog):
         self.auto_method = QtWidgets.QComboBox()
         self.auto_method.addItems(
             [
+                "Auto (priorytety)",
                 "AcoustID + MusicBrainz",
                 "MusicBrainz (wyszukiwanie)",
                 "Discogs (wyszukiwanie)",
@@ -90,6 +91,8 @@ class AiTaggerDialog(QtWidgets.QDialog):
             settings.acoustid_api_key,
             settings.musicbrainz_app_name,
             settings.discogs_token,
+            settings.validation_policy,
+            settings.metadata_cache_ttl_days,
         )
 
         self._worker = AiTaggerWorker(self._tracks, tagger, auto_filler, auto_enabled, method)
@@ -187,6 +190,8 @@ def _provider_settings(provider: str, settings) -> tuple[str | None, str | None]
 
 
 def _auto_method_id(label: str, settings) -> str:
+    if "Auto" in label:
+        return "auto"
     if "AcoustID" in label:
         return "acoustid" if settings.acoustid_api_key else "musicbrainz"
     if "Discogs" in label:
@@ -195,6 +200,8 @@ def _auto_method_id(label: str, settings) -> str:
 
 
 def _auto_method_label(method: str) -> str:
+    if method == "auto":
+        return "Auto (priorytety)"
     if method == "acoustid":
         return "AcoustID + MusicBrainz"
     if method == "discogs":
