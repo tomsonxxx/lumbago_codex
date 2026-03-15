@@ -41,6 +41,7 @@ class Track:
     genre: str | None = None
     bpm: float | None = None
     key: str | None = None
+    loudness_lufs: float | None = None
     duration: int | None = None
     file_size: int | None = None
     file_mtime: float | None = None
@@ -52,6 +53,8 @@ class Track:
     rating: int = 0
     energy: float | None = None
     mood: str | None = None
+    cue_in_ms: int | None = None
+    cue_out_ms: int | None = None
     fingerprint: str | None = None
     waveform_path: str | None = None
     artwork_path: str | None = None

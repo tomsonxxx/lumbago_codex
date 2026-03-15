@@ -1,10 +1,15 @@
 import os
+import subprocess
+import sys
 
-from lumbago_app import main as app_main
 
-
-def test_ui_smoke(monkeypatch):
-    monkeypatch.setenv("LUMBAGO_SAFE_MODE", "1")
-    monkeypatch.setenv("LUMBAGO_SMOKE_SECONDS", "1")
-    exit_code = app_main.main()
-    assert exit_code == 0
+def test_ui_smoke():
+    env = os.environ.copy()
+    env["LUMBAGO_SAFE_MODE"] = "1"
+    env["LUMBAGO_SMOKE_SECONDS"] = "1"
+    result = subprocess.run(
+        [sys.executable, "-c", "from lumbago_app import main; raise SystemExit(main.main())"],
+        env=env,
+        check=False,
+    )
+    assert result.returncode == 0

@@ -7,12 +7,25 @@ import os
 
 from PyQt6 import QtCore, QtGui, QtWidgets
 
-from lumbago_app.core.audio import apply_local_metadata, clear_tags, extract_metadata, iter_audio_files, write_tags
+from lumbago_app.core.audio import (
+    apply_local_metadata,
+    clear_tags,
+    extract_metadata,
+    iter_audio_files,
+    read_tags,
+    write_tags,
+)
 import shutil
+from lumbago_app.core.analysis_cache import save_analysis_cache
+from lumbago_app.core.backup import perform_backup
 from lumbago_app.core.config import cache_dir, load_settings
 from lumbago_app.core.models import Track
 from lumbago_app.core.services import heuristic_analysis
 from lumbago_app.core.waveform import generate_waveform
+from lumbago_app.services.beatgrid import auto_cue_points, compute_beatgrid
+from lumbago_app.services.key_detection import detect_key
+from lumbago_app.services.loudness import analyze_loudness, normalize_loudness
+from lumbago_app.services.xml_converter import XmlTrack, export_virtualdj_xml
 from lumbago_app.data.repository import (
     add_track_to_playlist,
     add_change_log,
@@ -55,6 +68,19 @@ def _debug_log(message: str) -> None:
             handle.write(f"{timestamp} {message}\n")
     except Exception:
         pass
+
+
+def _normalized_path(output_dir: Path, source: Path) -> Path:
+    stem = f"{source.stem}_lufs"
+    candidate = output_dir / f"{stem}{source.suffix}"
+    if not candidate.exists():
+        return candidate
+    idx = 2
+    while True:
+        candidate = output_dir / f"{stem}_{idx}{source.suffix}"
+        if not candidate.exists():
+            return candidate
+        idx += 1
 
 
 class TrackFilterProxy(QtCore.QSortFilterProxyModel):
@@ -130,12 +156,116 @@ class ScanWorker(QtCore.QRunnable):
         self.signals.finished.emit(tracks)
 
 
+class LoudnessWorkerSignals(QtCore.QObject):
+    progress = QtCore.pyqtSignal(int, int)
+    finished = QtCore.pyqtSignal(list)
+
+
+class LoudnessWorker(QtCore.QRunnable):
+    def __init__(self, tracks: list[Track]):
+        super().__init__()
+        self.tracks = tracks
+        self.signals = LoudnessWorkerSignals()
+
+    def run(self):
+        updated: list[Track] = []
+        total = len(self.tracks)
+        for idx, track in enumerate(self.tracks, 1):
+            try:
+                lufs = analyze_loudness(Path(track.path))
+                track.loudness_lufs = lufs
+            except Exception:
+                lufs = None
+            cue_in, cue_out = auto_cue_points(track.duration)
+            track.cue_in_ms = cue_in
+            track.cue_out_ms = cue_out
+            beatgrid = compute_beatgrid(track.duration, track.bpm)
+            save_analysis_cache(
+                Path(track.path),
+                {
+                    "loudness_lufs": lufs,
+                    "cue_in_ms": cue_in,
+                    "cue_out_ms": cue_out,
+                    "beatgrid": beatgrid,
+                },
+            )
+            updated.append(track)
+            self.signals.progress.emit(idx, total)
+        self.signals.finished.emit(updated)
+
+
+class KeyDetectionWorkerSignals(QtCore.QObject):
+    progress = QtCore.pyqtSignal(int, int)
+    finished = QtCore.pyqtSignal(list)
+
+
+class KeyDetectionWorker(QtCore.QRunnable):
+    def __init__(self, tracks: list[Track], force: bool = False):
+        super().__init__()
+        self.tracks = tracks
+        self.force = force
+        self.signals = KeyDetectionWorkerSignals()
+
+    def run(self):
+        updated: list[Track] = []
+        total = len(self.tracks)
+        for idx, track in enumerate(self.tracks, 1):
+            if track.key and not self.force:
+                updated.append(track)
+                self.signals.progress.emit(idx, total)
+                continue
+            detected = detect_key(Path(track.path))
+            if detected:
+                track.key = detected
+            updated.append(track)
+            self.signals.progress.emit(idx, total)
+        self.signals.finished.emit(updated)
+
+
+class NormalizeWorkerSignals(QtCore.QObject):
+    progress = QtCore.pyqtSignal(int, int)
+    finished = QtCore.pyqtSignal(int, int)
+
+
+class NormalizeWorker(QtCore.QRunnable):
+    def __init__(self, tracks: list[Track], output_dir: Path, target_lufs: float):
+        super().__init__()
+        self.tracks = tracks
+        self.output_dir = output_dir
+        self.target_lufs = target_lufs
+        self.signals = NormalizeWorkerSignals()
+
+    def run(self):
+        created = 0
+        errors = 0
+        total = len(self.tracks)
+        for idx, track in enumerate(self.tracks, 1):
+            try:
+                source = Path(track.path)
+                dest = _normalized_path(self.output_dir, source)
+                ok = normalize_loudness(source, dest, target_lufs=self.target_lufs)
+                if ok:
+                    tags = read_tags(source)
+                    if tags:
+                        write_tags(dest, tags)
+                    new_track = extract_metadata(dest)
+                    upsert_tracks([new_track])
+                    created += 1
+                else:
+                    errors += 1
+            except Exception:
+                errors += 1
+            self.signals.progress.emit(idx, total)
+        self.signals.finished.emit(created, errors)
+
+
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
         _debug_log("MainWindow: start init")
         init_db()
         _debug_log("MainWindow: init_db ok")
+        perform_backup()
         self.setWindowTitle("Lumbago Music AI")
         self.setMinimumSize(1200, 720)
         self.thread_pool = QtCore.QThreadPool.globalInstance()
@@ -375,6 +505,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.detail_genre = QtWidgets.QLineEdit()
         self.detail_bpm = QtWidgets.QLineEdit()
         self.detail_key = QtWidgets.QLineEdit()
+        self.detail_loudness = QtWidgets.QLineEdit()
+        self.detail_loudness.setReadOnly(True)
+        self.detail_loudness.setToolTip("Zintegrowana głośność (LUFS)")
         form.addRow("Tytuł", self.detail_title)
         form.addRow("Artysta", self.detail_artist)
         form.addRow("Album", self.detail_album)
@@ -382,6 +515,7 @@ class MainWindow(QtWidgets.QMainWindow):
         form.addRow("Gatunek", self.detail_genre)
         form.addRow("BPM", self.detail_bpm)
         form.addRow("Tonacja", self.detail_key)
+        form.addRow("LUFS", self.detail_loudness)
         layout.addLayout(form)
 
         self.save_btn = AnimatedButton("Zapisz zmiany")
@@ -472,11 +606,15 @@ class MainWindow(QtWidgets.QMainWindow):
         self.loop_btn = AnimatedButton("Loop A-B")
         self.loop_btn.setToolTip("Włącz/wyłącz pętlę między Cue A i B")
         self.loop_btn.clicked.connect(self._toggle_loop)
+        self.auto_cue_btn = AnimatedButton("Auto-cue")
+        self.auto_cue_btn.setToolTip("Ustaw automatyczne Cue (intro/outro)")
+        self.auto_cue_btn.clicked.connect(self._auto_cue_selected)
         cues.addWidget(self.cue_a_btn)
         cues.addWidget(self.cue_b_btn)
         cues.addWidget(self.jump_a_btn)
         cues.addWidget(self.jump_b_btn)
         cues.addWidget(self.loop_btn)
+        cues.addWidget(self.auto_cue_btn)
         cues.addStretch(1)
         layout.addLayout(cues)
 
@@ -586,6 +724,9 @@ class MainWindow(QtWidgets.QMainWindow):
             f"Genre: {track.genre or ''}",
             f"BPM: {track.bpm or ''}",
             f"Key: {track.key or ''}",
+            f"LUFS: {track.loudness_lufs or ''}",
+            f"Cue A: {track.cue_in_ms or ''}",
+            f"Cue B: {track.cue_out_ms or ''}",
             f"Duration: {track.duration or ''}",
             f"Path: {track.path}",
         ]
@@ -608,6 +749,9 @@ class MainWindow(QtWidgets.QMainWindow):
             f"Genre: {track.genre or ''}",
             f"BPM: {track.bpm or ''}",
             f"Key: {track.key or ''}",
+            f"LUFS: {track.loudness_lufs or ''}",
+            f"Cue A: {track.cue_in_ms or ''}",
+            f"Cue B: {track.cue_out_ms or ''}",
             f"Duration: {track.duration or ''}",
             f"Path: {track.path}",
         ]
@@ -625,6 +769,8 @@ class MainWindow(QtWidgets.QMainWindow):
         track = self.table_model.track_at(source_index.row())
         if not track:
             return
+        self._cue_a = track.cue_in_ms
+        self._cue_b = track.cue_out_ms
         url = QtCore.QUrl.fromLocalFile(track.path)
         self.player.setSource(url)
         self.player.play()
@@ -837,6 +983,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.detail_genre.setText(track.genre or "")
         self.detail_bpm.setText(str(track.bpm or ""))
         self.detail_key.setText(track.key or "")
+        self.detail_loudness.setText(str(track.loudness_lufs or ""))
+        self._cue_a = track.cue_in_ms
+        self._cue_b = track.cue_out_ms
         self._selected_track = track
         self._selected_snapshot = {
             "title": track.title,
@@ -1028,6 +1177,158 @@ class MainWindow(QtWidgets.QMainWindow):
         self._load_tracks()
         self._show_message("Metadane lokalne zostały uzupełnione.")
 
+    def _run_loudness_analysis(self):
+        tracks = self._selected_tracks()
+        if not tracks:
+            self._show_message("Zaznacz co najmniej jeden utwór.")
+            return
+        worker = LoudnessWorker(tracks)
+        progress = QtWidgets.QProgressDialog(
+            "Analiza loudness (LUFS)...", "Zamknij", 0, len(tracks), self
+        )
+        progress.setWindowTitle("Analiza loudness")
+        progress.setMinimumDuration(0)
+        progress.setValue(0)
+
+        def on_progress(current: int, total: int):
+            progress.setMaximum(total)
+            progress.setValue(current)
+            self.status.showMessage(f"Analiza {current}/{total} utworów")
+
+        def on_finished(updated: list[Track]):
+            progress.close()
+            update_tracks(updated)
+            self._load_tracks()
+            self.status.showMessage("Analiza loudness zakończona.")
+
+        worker.signals.progress.connect(on_progress)
+        worker.signals.finished.connect(on_finished)
+        self.thread_pool.start(worker)
+
+    def _run_loudness_normalize(self):
+        tracks = self._selected_tracks()
+        if not tracks:
+            self._show_message("Zaznacz co najmniej jeden utwór.")
+            return
+        output_dir = QtWidgets.QFileDialog.getExistingDirectory(self, "Wybierz katalog wyjściowy")
+        if not output_dir:
+            return
+        target, ok = QtWidgets.QInputDialog.getDouble(
+            self,
+            "Normalizacja loudness",
+            "Docelowy poziom LUFS:",
+            -14.0,
+            -30.0,
+            -5.0,
+            1,
+        )
+        if not ok:
+            return
+        worker = NormalizeWorker(tracks, Path(output_dir), target)
+        progress = QtWidgets.QProgressDialog(
+            "Normalizacja do LUFS...", "Zamknij", 0, len(tracks), self
+        )
+        progress.setWindowTitle("Normalizacja loudness")
+        progress.setMinimumDuration(0)
+        progress.setValue(0)
+
+        def on_progress(current: int, total: int):
+            progress.setMaximum(total)
+            progress.setValue(current)
+            self.status.showMessage(f"Normalizacja {current}/{total}")
+
+        def on_finished(created: int, errors: int):
+            progress.close()
+            self._load_tracks()
+            self.status.showMessage(f"Normalizacja zakończona. Nowe pliki: {created}, błędy: {errors}")
+
+        worker.signals.progress.connect(on_progress)
+        worker.signals.finished.connect(on_finished)
+        self.thread_pool.start(worker)
+
+    def _run_key_detection(self):
+        tracks = self._selected_tracks()
+        if not tracks:
+            self._show_message("Zaznacz co najmniej jeden utwór.")
+            return
+        worker = KeyDetectionWorker(tracks, force=False)
+        progress = QtWidgets.QProgressDialog(
+            "Wykrywanie tonacji...", "Zamknij", 0, len(tracks), self
+        )
+        progress.setWindowTitle("Auto‑key")
+        progress.setMinimumDuration(0)
+        progress.setValue(0)
+
+        def on_progress(current: int, total: int):
+            progress.setMaximum(total)
+            progress.setValue(current)
+            self.status.showMessage(f"Tonacja {current}/{total}")
+
+        def on_finished(updated: list[Track]):
+            progress.close()
+            update_tracks(updated)
+            self._load_tracks()
+            self.status.showMessage("Wykrywanie tonacji zakończone.")
+
+        worker.signals.progress.connect(on_progress)
+        worker.signals.finished.connect(on_finished)
+        self.thread_pool.start(worker)
+
+    def _auto_cue_selected(self):
+        tracks = self._selected_tracks()
+        if not tracks:
+            self._show_message("Zaznacz co najmniej jeden utwór.")
+            return
+        for track in tracks:
+            cue_in, cue_out = auto_cue_points(track.duration)
+            track.cue_in_ms = cue_in
+            track.cue_out_ms = cue_out
+            save_analysis_cache(
+                Path(track.path),
+                {
+                    "cue_in_ms": cue_in,
+                    "cue_out_ms": cue_out,
+                },
+            )
+        update_tracks(tracks)
+        if getattr(self, "_selected_track", None):
+            self._cue_a = self._selected_track.cue_in_ms
+            self._cue_b = self._selected_track.cue_out_ms
+        self._show_message("Auto‑cue ustawione.")
+
+    def _export_playlist_virtualdj(self):
+        playlist = getattr(self, "_current_playlist", None)
+        if playlist and playlist.playlist_id:
+            tracks = list_playlist_tracks(playlist.playlist_id)
+        else:
+            tracks = list(self.table_model._tracks)
+        if not tracks:
+            self._show_message("Brak utworów do eksportu.")
+            return
+        output_path, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self,
+            "Zapisz VirtualDJ XML",
+            "",
+            "VirtualDJ XML (*.xml)",
+        )
+        if not output_path:
+            return
+        xml_tracks: list[XmlTrack] = []
+        for track in tracks:
+            xml_tracks.append(
+                XmlTrack(
+                    path=track.path,
+                    title=track.title,
+                    artist=track.artist,
+                    album=track.album,
+                    genre=track.genre,
+                    bpm=f"{track.bpm:.1f}" if track.bpm else None,
+                    key=track.key,
+                )
+            )
+        export_virtualdj_xml(xml_tracks, Path(output_path))
+        self._show_message("Eksport VirtualDJ zakończony.")
+
     def _run_recognition_queue(self):
         tracks = self._selected_tracks()
         if not tracks:
@@ -1092,6 +1393,12 @@ class MainWindow(QtWidgets.QMainWindow):
         provider = self.settings.cloud_ai_provider or "local"
         self.status.showMessage(f"Settings loaded. Cloud AI: {provider}")
 
+    def closeEvent(self, event: QtGui.QCloseEvent) -> None:
+        try:
+            perform_backup()
+        finally:
+            super().closeEvent(event)
+
     def _show_placeholder(self):
         self._show_message("Ta funkcja będzie dostępna wkrótce.")
 
@@ -1129,10 +1436,15 @@ class MainWindow(QtWidgets.QMainWindow):
         tools.addAction("Importuj / Skanuj", self._open_import_wizard)
         tools.addAction("Import XML", self._open_xml_import)
         tools.addAction("AutoTagowanie", self._run_auto_tagger)
+        tools.addAction("Analiza loudness (LUFS)", self._run_loudness_analysis)
+        tools.addAction("Normalizuj do -14 LUFS (nowy plik)", self._run_loudness_normalize)
+        tools.addAction("Auto‑cue (intro/outro)", self._auto_cue_selected)
+        tools.addAction("Wykryj tonację (auto‑key)", self._run_key_detection)
         tools.addAction("Metadane lokalne", self._apply_local_metadata_selected)
         tools.addAction("Duplikaty", self._open_duplicates)
         tools.addAction("Renamer", self._open_renamer)
         tools.addAction("Konwerter XML", self._open_xml_converter)
+        tools.addAction("Eksport playlisty → VirtualDJ XML", self._export_playlist_virtualdj)
         tools.addAction("Ustawienia", self._open_settings)
 
         help_menu = menu.addMenu("Pomoc")

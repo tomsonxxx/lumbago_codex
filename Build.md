@@ -114,3 +114,12 @@
 110. **Smoke test EXE**: uruchomiono `dist/LumbagoMusicAI/LumbagoMusicAI.exe` w trybie safe z auto‑zamknięciem.
 111. **Checklist clean Windows**: dodano `docs/clean_windows_test.md`.
 112. **Test clean Windows**: odłożony na później (na prośbę użytkownika).
+113. **Loudness (LUFS)**: dodano analizę głośności i normalizację do nowego pliku.
+114. **Beatgrid + auto‑cue**: dodano wyliczanie siatki beatów i automatyczne cue (intro/outro) z cache.
+115. **Auto‑key**: dodano wykrywanie tonacji z mapowaniem Camelot.
+116. **Backup**: dodano automatyczny backup bazy i ustawień (start/wyjście).
+117. **Eksport setów**: dodano eksport playlisty do VirtualDJ XML.
+118. **Track fields**: dodano `loudness_lufs` i `cue_in_ms/cue_out_ms` do modeli i DB.
+119. **Testy audio/UX**: dodano testy beatgrid/auto‑cue i zmieniono smoke test na subprocess.
+120. **Testy OK**: uruchomiono pytest, 15 testów przeszło.
+121. **Zależności**: dodano `numpy` i `librosa` do analizy tonacji.

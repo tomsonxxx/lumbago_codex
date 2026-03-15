@@ -32,6 +32,9 @@ def _ensure_track_columns(engine) -> None:
         "file_mtime": "REAL",
         "fingerprint": "TEXT",
         "year": "TEXT",
+        "loudness_lufs": "REAL",
+        "cue_in_ms": "INTEGER",
+        "cue_out_ms": "INTEGER",
     }
     with engine.connect() as conn:
         rows = conn.execute(text("PRAGMA table_info(tracks)")).fetchall()
@@ -56,6 +59,7 @@ def upsert_tracks(tracks: Iterable[Track]) -> None:
                 existing.genre = track.genre
                 existing.bpm = track.bpm
                 existing.key = track.key
+                existing.loudness_lufs = track.loudness_lufs
                 existing.duration = track.duration
                 existing.file_size = track.file_size
                 existing.file_mtime = track.file_mtime
@@ -65,6 +69,8 @@ def upsert_tracks(tracks: Iterable[Track]) -> None:
                 existing.sample_rate = track.sample_rate
                 existing.energy = track.energy
                 existing.mood = track.mood
+                existing.cue_in_ms = track.cue_in_ms
+                existing.cue_out_ms = track.cue_out_ms
                 existing.artwork_path = track.artwork_path
                 existing.fingerprint = track.fingerprint
             else:
@@ -78,6 +84,7 @@ def upsert_tracks(tracks: Iterable[Track]) -> None:
                         genre=track.genre,
                         bpm=track.bpm,
                         key=track.key,
+                        loudness_lufs=track.loudness_lufs,
                         duration=track.duration,
                         file_size=track.file_size,
                         file_mtime=track.file_mtime,
@@ -87,6 +94,8 @@ def upsert_tracks(tracks: Iterable[Track]) -> None:
                         sample_rate=track.sample_rate,
                         energy=track.energy,
                         mood=track.mood,
+                        cue_in_ms=track.cue_in_ms,
+                        cue_out_ms=track.cue_out_ms,
                         artwork_path=track.artwork_path,
                         fingerprint=track.fingerprint,
                     )
@@ -108,6 +117,7 @@ def list_tracks() -> list[Track]:
                 genre=row.genre,
                 bpm=row.bpm,
                 key=row.key,
+                loudness_lufs=row.loudness_lufs,
                 duration=row.duration,
                 file_size=row.file_size,
                 file_mtime=row.file_mtime,
@@ -119,6 +129,8 @@ def list_tracks() -> list[Track]:
                 rating=row.rating,
                 energy=row.energy,
                 mood=row.mood,
+                cue_in_ms=row.cue_in_ms,
+                cue_out_ms=row.cue_out_ms,
                 fingerprint=row.fingerprint,
                 waveform_path=row.waveform_path,
                 artwork_path=row.artwork_path,
@@ -142,9 +154,12 @@ def update_track(track: Track) -> None:
         existing.genre = track.genre
         existing.bpm = track.bpm
         existing.key = track.key
+        existing.loudness_lufs = track.loudness_lufs
         existing.rating = track.rating
         existing.energy = track.energy
         existing.mood = track.mood
+        existing.cue_in_ms = track.cue_in_ms
+        existing.cue_out_ms = track.cue_out_ms
         existing.artwork_path = track.artwork_path
         existing.file_hash = track.file_hash
         existing.file_mtime = track.file_mtime
@@ -166,9 +181,12 @@ def update_tracks(tracks: Iterable[Track]) -> None:
             existing.genre = track.genre
             existing.bpm = track.bpm
             existing.key = track.key
+            existing.loudness_lufs = track.loudness_lufs
             existing.rating = track.rating
             existing.energy = track.energy
             existing.mood = track.mood
+            existing.cue_in_ms = track.cue_in_ms
+            existing.cue_out_ms = track.cue_out_ms
             existing.artwork_path = track.artwork_path
             existing.file_hash = track.file_hash
             existing.file_mtime = track.file_mtime
@@ -435,9 +453,11 @@ def list_playlist_tracks(playlist_id: int) -> list[Track]:
                 title=row[0].title,
                 artist=row[0].artist,
                 album=row[0].album,
+                year=row[0].year,
                 genre=row[0].genre,
                 bpm=row[0].bpm,
                 key=row[0].key,
+                loudness_lufs=row[0].loudness_lufs,
                 duration=row[0].duration,
                 file_size=row[0].file_size,
                 file_mtime=row[0].file_mtime,
@@ -449,6 +469,8 @@ def list_playlist_tracks(playlist_id: int) -> list[Track]:
                 rating=row[0].rating,
                 energy=row[0].energy,
                 mood=row[0].mood,
+                cue_in_ms=row[0].cue_in_ms,
+                cue_out_ms=row[0].cue_out_ms,
                 fingerprint=row[0].fingerprint,
                 waveform_path=row[0].waveform_path,
                 artwork_path=row[0].artwork_path,

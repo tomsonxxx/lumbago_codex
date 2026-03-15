@@ -205,13 +205,13 @@
 ---
 
 # Propozycje funkcji (dodatkowe)
-- [ ] Analiza loudness (LUFS) i normalizacja
-- [ ] Beatgrid + auto-cue (np. intro/outro)
-- [ ] Auto-key detection (np. Camelot), z mapowaniem i filtrem w UI
-- [ ] Smart crates (reguły i auto-aktualizacja)
-- [ ] Historia zmian tagów (audit log)
-- [ ] Eksport setów (playlist → Rekordbox/VirtualDJ)
-- [ ] Auto-backup bazy i ustawień
+- [x] Analiza loudness (LUFS) i normalizacja
+- [x] Beatgrid + auto-cue (np. intro/outro)
+- [x] Auto-key detection (np. Camelot), z mapowaniem i filtrem w UI
+- [x] Smart crates (reguły i auto-aktualizacja)
+- [x] Historia zmian tagów (audit log)
+- [x] Eksport setów (playlist → Rekordbox/VirtualDJ)
+- [x] Auto-backup bazy i ustawień
 # Metody analizy, wyszukiwania i walidacji tagów (do wdrożenia)
 ## Import / analiza lokalna
 - [x] Odczyt tagów z plików audio (Mutagen) — MP3/FLAC/WAV/M4A/OGG/AAC/AIFF
