@@ -61,6 +61,12 @@ def extract_metadata(path: Path) -> Track:
     track.title = tag_value("TIT2") or tag_value("title")
     track.artist = tag_value("TPE1") or tag_value("artist")
     track.album = tag_value("TALB") or tag_value("album")
+    track.year = (
+        tag_value("TDRC")
+        or tag_value("date")
+        or tag_value("year")
+        or tag_value("TYER")
+    )
     track.genre = tag_value("TCON") or tag_value("genre")
     apply_local_metadata(track, path)
     return track
@@ -72,6 +78,8 @@ def read_tags(path: Path) -> dict[str, str]:
         return {}
     tags = {}
     for key, value in audio.tags.items():
+        if key in {"date", "year"}:
+            key = "year"
         if key == "initialkey":
             key = "key"
         if isinstance(value, list):
@@ -91,7 +99,7 @@ def write_tags(path: Path, tags: dict[str, str]) -> None:
         except ID3NoHeaderError:
             ID3().save(path)
         audio = MutagenFile(path, easy=True)
-    key_map = {"key": "initialkey"}
+    key_map = {"key": "initialkey", "year": "date"}
     for key, value in tags.items():
         target_key = key_map.get(key, key)
         if value is None or value == "":

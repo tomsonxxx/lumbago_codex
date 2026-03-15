@@ -13,11 +13,20 @@ class RecognitionSignals(QtCore.QObject):
 
 
 class RecognitionBatchWorker(QtCore.QRunnable):
-    def __init__(self, tracks: list[Track], acoustid_key: str | None, musicbrainz_app: str | None):
+    def __init__(
+        self,
+        tracks: list[Track],
+        acoustid_key: str | None,
+        musicbrainz_app: str | None,
+        validation_policy: str | None = None,
+        cache_ttl_days: int = 30,
+    ):
         super().__init__()
         self.tracks = tracks
         self.acoustid_key = acoustid_key
         self.musicbrainz_app = musicbrainz_app
+        self.validation_policy = validation_policy
+        self.cache_ttl_days = cache_ttl_days
         self.signals = RecognitionSignals()
         self._stop_requested = False
 
@@ -25,7 +34,12 @@ class RecognitionBatchWorker(QtCore.QRunnable):
         self._stop_requested = True
 
     def run(self) -> None:
-        enricher = MetadataEnricher(self.acoustid_key, self.musicbrainz_app)
+        enricher = MetadataEnricher(
+            self.acoustid_key,
+            self.musicbrainz_app,
+            validation_policy=self.validation_policy,
+            cache_ttl_days=self.cache_ttl_days,
+        )
         processed = 0
         errors = 0
         total = len(self.tracks)

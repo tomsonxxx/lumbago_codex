@@ -37,6 +37,7 @@ class Track:
     title: str | None = None
     artist: str | None = None
     album: str | None = None
+    year: str | None = None
     genre: str | None = None
     bpm: float | None = None
     key: str | None = None

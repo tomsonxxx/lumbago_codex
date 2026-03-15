@@ -31,6 +31,7 @@ def _ensure_track_columns(engine) -> None:
         "file_hash": "TEXT",
         "file_mtime": "REAL",
         "fingerprint": "TEXT",
+        "year": "TEXT",
     }
     with engine.connect() as conn:
         rows = conn.execute(text("PRAGMA table_info(tracks)")).fetchall()
@@ -51,6 +52,7 @@ def upsert_tracks(tracks: Iterable[Track]) -> None:
                 existing.title = track.title
                 existing.artist = track.artist
                 existing.album = track.album
+                existing.year = track.year
                 existing.genre = track.genre
                 existing.bpm = track.bpm
                 existing.key = track.key
@@ -72,6 +74,7 @@ def upsert_tracks(tracks: Iterable[Track]) -> None:
                         title=track.title,
                         artist=track.artist,
                         album=track.album,
+                        year=track.year,
                         genre=track.genre,
                         bpm=track.bpm,
                         key=track.key,
@@ -101,6 +104,7 @@ def list_tracks() -> list[Track]:
                 title=row.title,
                 artist=row.artist,
                 album=row.album,
+                year=row.year,
                 genre=row.genre,
                 bpm=row.bpm,
                 key=row.key,
@@ -134,6 +138,7 @@ def update_track(track: Track) -> None:
         existing.title = track.title
         existing.artist = track.artist
         existing.album = track.album
+        existing.year = track.year
         existing.genre = track.genre
         existing.bpm = track.bpm
         existing.key = track.key
@@ -157,6 +162,7 @@ def update_tracks(tracks: Iterable[Track]) -> None:
             existing.title = track.title
             existing.artist = track.artist
             existing.album = track.album
+            existing.year = track.year
             existing.genre = track.genre
             existing.bpm = track.bpm
             existing.key = track.key

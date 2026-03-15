@@ -13,10 +13,16 @@ if (-not (Test-Path $dist)) {
 
 Write-Host "Bundle: fpcalc"
 $fpcalc = Join-Path $root "tools\fpcalc.exe"
+if (-not (Test-Path $fpcalc)) {
+  $cmd = Get-Command fpcalc -ErrorAction SilentlyContinue
+  if ($cmd -and $cmd.Source) {
+    $fpcalc = $cmd.Source
+  }
+}
 if (Test-Path $fpcalc) {
   Copy-Item $fpcalc $dist -Force
 } else {
-  Write-Host "Uwaga: fpcalc.exe nie znaleziony w tools/"
+  Write-Host "Uwaga: fpcalc.exe nie znaleziony w tools/ ani w PATH."
 }
 
 Write-Host "Portable ZIP"

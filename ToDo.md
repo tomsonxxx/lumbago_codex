@@ -81,17 +81,19 @@
 - [x] (P3, L) Smart playlists (rules)
 
 # Sprint 7 — Packaging & Testy (P0/P1)
-- [ ] (P0, L) PyInstaller spec
-- [ ] (P0, M) Bundle `fpcalc`
-- [ ] (P1, M) Portable ZIP
+- [x] (P0, L) PyInstaller spec
+- [x] (P0, M) Bundle `fpcalc`
+- [x] (P1, S) Autodetekcja `fpcalc` z `PATH` w build.ps1
+- [x] (P1, M) Portable ZIP
 - [ ] (P1, S) Test na czystym Windows
-- [ ] (P1, L) Testy unit/integration
-- [ ] (P2, S) UX smoke test
+- [x] (P2, S) Checklist testu clean Windows (docs/clean_windows_test.md)
+- [x] (P1, L) Testy unit/integration
+- [x] (P2, S) UX smoke test
 
 # Sprint 8 — Dokumentacja (P1/P2)
 - [x] (P1, S) Build.md — historia zmian
 - [x] (P1, S) ToDo.md — checklist + plan
-- [ ] (P2, M) Instrukcja użytkownika (PDF/MD)
+- [x] (P2, M) Instrukcja użytkownika (PDF/MD)
 
 ---
 
@@ -191,9 +193,9 @@
 - [ ] Test na czystym Windows
 
 # 13. Testy
-- [ ] Unit tests (parsery, duplikaty, renamer)
-- [ ] Integration tests (import → DB → UI)
-- [ ] UX smoke test
+- [x] Unit tests (parsery, duplikaty, renamer)
+- [x] Integration tests (import → DB → UI)
+- [x] UX smoke test
 
 # 14. Dokumentacja
 - [x] Build.md — historia zmian
@@ -234,8 +236,8 @@
 
 ## Walidacja i jakość danych
 - [x] Walidacja tekstowa (normalizacja tytułu i artysty)
-- [ ] Walidacja zgodności albumu (odrzucanie "Greatest Hits" przy istnieniu albumu studyjnego)
-- [ ] Walidacja BPM/Key (zakresy + Camelot mapping)
-- [ ] Walidacja year (4 cyfry + rozsądny zakres)
-- [ ] Confidence score (AI i zewnętrzne źródła)
+- [x] Walidacja zgodności albumu (odrzucanie "Greatest Hits" przy istnieniu albumu studyjnego)
+- [x] Walidacja BPM/Key (zakresy + Camelot mapping)
+- [x] Walidacja year (4 cyfry + rozsądny zakres)
+- [x] Confidence score (AI i zewnętrzne źródła)
 - [x] Cache wyników (SQLite + TTL)

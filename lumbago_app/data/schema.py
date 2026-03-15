@@ -14,6 +14,7 @@ class TrackOrm(Base):
         Index("ix_tracks_artist", "artist"),
         Index("ix_tracks_title", "title"),
         Index("ix_tracks_album", "album"),
+        Index("ix_tracks_year", "year"),
         Index("ix_tracks_genre", "genre"),
         Index("ix_tracks_key", "key"),
         Index("ix_tracks_bpm", "bpm"),
@@ -27,6 +28,7 @@ class TrackOrm(Base):
     title = Column(Text)
     artist = Column(Text)
     album = Column(Text)
+    year = Column(Text)
     genre = Column(Text)
     bpm = Column(Float)
     key = Column(Text)

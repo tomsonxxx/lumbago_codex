@@ -6,7 +6,7 @@ analysis = Analysis(
     ["lumbago_app/main.py"],
     pathex=["."],
     binaries=[],
-    datas=[("assets/icon.svg", "assets"), ("docs/user_guide.md", "docs")],
+    datas=[("assets/icon.svg", "assets"), ("assets/icon.ico", "assets"), ("docs/user_guide.md", "docs")],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -33,5 +33,15 @@ exe = EXE(
     strip=False,
     upx=True,
     console=False,
-    icon="assets/icon.svg",
+    icon="assets/icon.ico",
+)
+
+coll = COLLECT(
+    exe,
+    analysis.binaries,
+    analysis.zipfiles,
+    analysis.datas,
+    strip=False,
+    upx=True,
+    name="LumbagoMusicAI",
 )

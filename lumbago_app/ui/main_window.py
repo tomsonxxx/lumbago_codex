@@ -371,12 +371,14 @@ class MainWindow(QtWidgets.QMainWindow):
         self.detail_title = QtWidgets.QLineEdit()
         self.detail_artist = QtWidgets.QLineEdit()
         self.detail_album = QtWidgets.QLineEdit()
+        self.detail_year = QtWidgets.QLineEdit()
         self.detail_genre = QtWidgets.QLineEdit()
         self.detail_bpm = QtWidgets.QLineEdit()
         self.detail_key = QtWidgets.QLineEdit()
         form.addRow("Tytuł", self.detail_title)
         form.addRow("Artysta", self.detail_artist)
         form.addRow("Album", self.detail_album)
+        form.addRow("Rok", self.detail_year)
         form.addRow("Gatunek", self.detail_genre)
         form.addRow("BPM", self.detail_bpm)
         form.addRow("Tonacja", self.detail_key)
@@ -580,6 +582,7 @@ class MainWindow(QtWidgets.QMainWindow):
             f"Title: {track.title or ''}",
             f"Artist: {track.artist or ''}",
             f"Album: {track.album or ''}",
+            f"Year: {track.year or ''}",
             f"Genre: {track.genre or ''}",
             f"BPM: {track.bpm or ''}",
             f"Key: {track.key or ''}",
@@ -830,6 +833,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.detail_title.setText(track.title or "")
         self.detail_artist.setText(track.artist or "")
         self.detail_album.setText(track.album or "")
+        self.detail_year.setText(track.year or "")
         self.detail_genre.setText(track.genre or "")
         self.detail_bpm.setText(str(track.bpm or ""))
         self.detail_key.setText(track.key or "")
@@ -838,6 +842,7 @@ class MainWindow(QtWidgets.QMainWindow):
             "title": track.title,
             "artist": track.artist,
             "album": track.album,
+            "year": track.year,
             "genre": track.genre,
             "bpm": track.bpm,
             "key": track.key,
@@ -856,6 +861,7 @@ class MainWindow(QtWidgets.QMainWindow):
         track.title = self.detail_title.text().strip()
         track.artist = self.detail_artist.text().strip()
         track.album = self.detail_album.text().strip()
+        track.year = self.detail_year.text().strip()
         track.genre = self.detail_genre.text().strip()
         track.key = self.detail_key.text().strip()
         try:
@@ -868,7 +874,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._show_message("Utwór zaktualizowany.")
 
     def _log_changes(self, track: Track, snapshot: dict):
-        for field in ["title", "artist", "album", "genre", "bpm", "key"]:
+        for field in ["title", "artist", "album", "year", "genre", "bpm", "key"]:
             old_val = snapshot.get(field)
             new_val = getattr(track, field)
             if old_val != new_val:
@@ -888,6 +894,7 @@ class MainWindow(QtWidgets.QMainWindow):
             "title": self.detail_title.text().strip(),
             "artist": self.detail_artist.text().strip(),
             "album": self.detail_album.text().strip(),
+            "year": self.detail_year.text().strip(),
             "genre": self.detail_genre.text().strip(),
             "bpm": self.detail_bpm.text().strip(),
             "key": self.detail_key.text().strip(),
@@ -898,6 +905,7 @@ class MainWindow(QtWidgets.QMainWindow):
             track.title = refreshed.title
             track.artist = refreshed.artist
             track.album = refreshed.album
+            track.year = refreshed.year
             track.genre = refreshed.genre
             update_track(track)
             self._load_tracks()
@@ -914,6 +922,7 @@ class MainWindow(QtWidgets.QMainWindow):
             track.title = refreshed.title
             track.artist = refreshed.artist
             track.album = refreshed.album
+            track.year = refreshed.year
             track.genre = refreshed.genre
             update_track(track)
             self._load_tracks()
@@ -930,6 +939,7 @@ class MainWindow(QtWidgets.QMainWindow):
             track.title = None
             track.artist = None
             track.album = None
+            track.year = None
             track.genre = None
             track.bpm = None
             track.key = None
@@ -1031,6 +1041,8 @@ class MainWindow(QtWidgets.QMainWindow):
             tracks,
             settings.acoustid_api_key,
             settings.musicbrainz_app_name,
+            settings.validation_policy,
+            settings.metadata_cache_ttl_days,
         )
         progress = QtWidgets.QProgressDialog(
             "Rozpoznawanie metadanych...", "Anuluj", 0, len(tracks), self

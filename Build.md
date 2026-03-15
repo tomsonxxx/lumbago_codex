@@ -90,4 +90,26 @@
 87. **Cache metadanych**: dodano tabelę cache w SQLite oraz TTL dla zapytań MusicBrainz/Discogs.
 88. **Walidacja lenient**: dodano tryb lenient i testy dla wszystkich trybów walidacji.
 89. **Ustawienia cache**: dodano TTL cache metadanych w ustawieniach UI.
+90. **AI minimalne wywołania**: pomijanie chmury, gdy brakujących pól nie ma.
+91. **Cache online**: cache zapytań MusicBrainz/Discogs z TTL w SQLite.
+92. **Walidacja lenient**: dostrojono próg (0.4) i testy przeszły.
+93. **Filtr kompilacji**: odrzucanie albumów typu "Greatest Hits" przy uzupełnianiu.
+94. **Testy OK**: uruchomiono pytest, 5 testów przeszło.
+95. **Walidacja AI**: dodano filtr BPM/Key/energy oraz progi confidence w AI Taggerze.
+96. **Rok wydania**: dodano pole year w modelu, DB i UI oraz walidację zakresu.
+97. **Testy OK**: uruchomiono pytest, 6 testów przeszło.
+98. **Test renamera**: dodano unit test dla konfliktów w planie rename.
+99. **Testy OK**: uruchomiono pytest, 7 testów przeszło.
+100. **Testy parserów**: dodano unit testy dla XML (Rekordbox/VDJ) i duplikatów.
+101. **Testy OK**: uruchomiono pytest, 10 testów przeszło.
 87. **Walidacja w UI**: dodano wybór trybu walidacji (strict/balanced/lenient) w ustawieniach.
+102. **Test integracyjny DB**: dodano reset silnika po teście i uruchomiono pytest (11 testów OK).
+103. **Smoke mode**: dodano `LUMBAGO_SMOKE_SECONDS` do automatycznego zamykania aplikacji podczas testów.
+104. **UI smoke test**: dodano test uruchomieniowy UI w trybie safe i uruchomiono pytest (12 testów OK).
+105. **Bundlowanie fpcalc**: build.ps1 wykrywa `fpcalc` z `tools/` lub `PATH`, dodano instrukcję w `tools/README.md`.
+106. **Pobieranie fpcalc**: dodano `tools/fetch_fpcalc.ps1` i pobrano `fpcalc.exe` do `tools/`.
+107. **PyInstaller**: dodano zależność i zainstalowano PyInstaller 6.19.0 w venv.
+108. **Ikona ICO**: wygenerowano `assets/icon.ico` i ustawiono w spec, dodano `COLLECT` dla trybu onedir.
+109. **Build portable**: zbudowano `dist/LumbagoMusicAI` oraz `dist/LumbagoMusicAI-portable.zip`.
+110. **Smoke test EXE**: uruchomiono `dist/LumbagoMusicAI/LumbagoMusicAI.exe` w trybie safe z auto‑zamknięciem.
+111. **Checklist clean Windows**: dodano `docs/clean_windows_test.md`.

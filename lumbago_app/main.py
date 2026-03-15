@@ -31,6 +31,9 @@ def main() -> int:
         else:
             window = MainWindow()
             window.show()
+        smoke_seconds = _read_int_env("LUMBAGO_SMOKE_SECONDS", 0)
+        if smoke_seconds > 0:
+            QtCore.QTimer.singleShot(smoke_seconds * 1000, app.quit)
         QtCore.QTimer.singleShot(2000, lambda: _write_log("app.log", "alive 2s"))
         result = app.exec()
         _write_log("app.log", f"app.exec ended: {result}")
@@ -86,6 +89,15 @@ def _write_log(filename: str, content: str) -> None:
         target.write_text(content, encoding="utf-8")
     except Exception:
         pass
+
+
+def _read_int_env(name: str, default: int) -> int:
+    value = os.getenv(name, "")
+    try:
+        parsed = int(value)
+        return parsed if parsed >= 0 else default
+    except ValueError:
+        return default
 
 
 if __name__ == "__main__":

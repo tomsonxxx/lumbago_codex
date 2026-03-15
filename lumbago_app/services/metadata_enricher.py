@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from datetime import datetime
 import hashlib
 from typing import Any
 
@@ -132,8 +133,14 @@ def _apply_musicbrainz_metadata(track: Track, payload: dict[str, Any]) -> str | 
     releases = payload.get("releases", [])
     release_id = None
     if releases:
-        track.album = track.album or releases[0].get("title")
-        release_id = releases[0].get("id")
+        album_candidate = releases[0].get("title")
+        if album_candidate and not _is_compilation_album(album_candidate):
+            track.album = track.album or album_candidate
+            release_id = releases[0].get("id")
+            release_date = releases[0].get("date")
+            release_year = _parse_year(release_date)
+            if release_year and _is_valid_year(release_year):
+                track.year = track.year or str(release_year)
     tags = payload.get("tags", [])
     if tags:
         top = max(tags, key=lambda item: item.get("count", 0))
@@ -201,12 +208,42 @@ def _select_discogs_release(payload: dict[str, Any] | None) -> dict[str, Any] | 
     album = None
     if " - " in title:
         artist, album = [p.strip() for p in title.split(" - ", 1)]
+        if album and _is_compilation_album(album):
+            album = None
     return {
         "title": album or title,
         "artist": artist,
         "genre": (result.get("genre") or [None])[0],
         "album": album,
     }
+
+
+def _is_compilation_album(name: str) -> bool:
+    lowered = name.lower()
+    keywords = [
+        "greatest hits",
+        "best of",
+        "collection",
+        "anthology",
+        "essentials",
+        "ultimate",
+        "the hits",
+    ]
+    return any(keyword in lowered for keyword in keywords)
+
+
+def _parse_year(value: str | None) -> int | None:
+    if not value:
+        return None
+    try:
+        return int(value.split("-", 1)[0])
+    except ValueError:
+        return None
+
+
+def _is_valid_year(value: int) -> bool:
+    current_year = datetime.now().year
+    return 1900 <= value <= current_year + 1
 
 
 def _normalize(value: str | None) -> str:
@@ -217,7 +254,7 @@ def _normalize(value: str | None) -> str:
 
 STRICT_SCORE_MIN = 0.9
 BALANCED_SCORE_MIN = 0.65
-LENIENT_SCORE_MIN = 0.5
+LENIENT_SCORE_MIN = 0.4
 
 
 def _token_similarity(left: str, right: str) -> float:

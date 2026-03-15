@@ -4,6 +4,7 @@ from PyQt6 import QtCore, QtWidgets
 
 from lumbago_app.core.config import load_settings
 from lumbago_app.core.models import AnalysisResult, Track
+import re
 from lumbago_app.data.repository import replace_track_tags, update_tracks
 from lumbago_app.services.ai_tagger import CloudAiTagger, LocalAiTagger
 from lumbago_app.services.metadata_enricher import AutoMetadataFiller
@@ -139,6 +140,9 @@ class AiTaggerDialog(QtWidgets.QDialog):
             result = self._results.get(track.path)
             if not result:
                 continue
+            if _below_confidence(result, settings.validation_policy):
+                continue
+            result = _sanitize_ai_result(result, settings.validation_policy)
             track.bpm = result.bpm or track.bpm
             track.key = result.key or track.key
             track.mood = result.mood or track.mood
@@ -207,6 +211,57 @@ def _auto_method_label(method: str) -> str:
     if method == "discogs":
         return "Discogs (wyszukiwanie)"
     return "MusicBrainz (wyszukiwanie)"
+
+
+def _below_confidence(result: AnalysisResult, policy: str | None) -> bool:
+    if result.confidence is None:
+        return False
+    threshold = 0.6
+    if policy == "strict":
+        threshold = 0.8
+    elif policy == "lenient":
+        threshold = 0.4
+    return result.confidence < threshold
+
+
+def _sanitize_ai_result(result: AnalysisResult, policy: str | None) -> AnalysisResult:
+    bpm_min, bpm_max = (60.0, 200.0)
+    if policy == "lenient":
+        bpm_min, bpm_max = (40.0, 220.0)
+    elif policy == "balanced":
+        bpm_min, bpm_max = (50.0, 210.0)
+
+    bpm = result.bpm
+    if bpm is not None and (bpm < bpm_min or bpm > bpm_max):
+        bpm = None
+
+    key = result.key
+    if key:
+        key = key.strip()
+        if not _is_valid_key(key):
+            key = None
+
+    energy = result.energy
+    if energy is not None and (energy < 0.0 or energy > 1.0):
+        energy = None
+
+    return AnalysisResult(
+        bpm=bpm,
+        key=key,
+        mood=result.mood,
+        energy=energy,
+        genre=result.genre,
+        description=result.description,
+        confidence=result.confidence,
+    )
+
+
+def _is_valid_key(value: str) -> bool:
+    camelot = re.match(r"^(1[0-2]|[1-9])[AB]$", value, re.IGNORECASE)
+    if camelot:
+        return True
+    musical = re.match(r"^[A-G](#|b)?m?$", value, re.IGNORECASE)
+    return bool(musical)
 
 
 class AiTaggerSignals(QtCore.QObject):

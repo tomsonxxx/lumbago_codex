@@ -35,7 +35,10 @@ class CloudAiTagger:
         if not self.base_url or not self.model:
             return AnalysisResult(description="Cloud AI missing base URL or model", confidence=0.0)
 
-        prompt = _build_prompt(track)
+        missing = _missing_fields(track)
+        if not missing:
+            return AnalysisResult(description="No missing fields", confidence=1.0)
+        prompt = _build_prompt(track, missing)
         try:
             if self.provider == "openai":
                 text = _call_openai_responses(self.base_url, self.api_key, self.model, prompt, self.timeout)
@@ -59,7 +62,7 @@ class CloudAiTagger:
             return AnalysisResult(description=f"Cloud AI error: {exc}", confidence=0.0)
 
 
-def _build_prompt(track: Track) -> str:
+def _missing_fields(track: Track) -> list[str]:
     missing = []
     if not track.bpm:
         missing.append("bpm")
@@ -71,8 +74,10 @@ def _build_prompt(track: Track) -> str:
         missing.append("energy")
     if not track.genre:
         missing.append("genre")
-    if not missing:
-        missing.append("description")
+    return missing
+
+
+def _build_prompt(track: Track, missing: list[str]) -> str:
     return (
         "Zwroc JSON tylko dla pol: "
         + ", ".join(missing)

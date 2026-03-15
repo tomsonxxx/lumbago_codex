@@ -24,3 +24,10 @@ def get_session_factory():
         _Session = sessionmaker(bind=get_engine(), autoflush=False, future=True)
     return _Session
 
+
+def reset_engine() -> None:
+    global _engine, _Session
+    if _engine is not None:
+        _engine.dispose()
+    _engine = None
+    _Session = None

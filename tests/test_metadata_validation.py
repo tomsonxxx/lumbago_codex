@@ -1,5 +1,9 @@
 from lumbago_app.core.models import Track
-from lumbago_app.services.metadata_enricher import _validate_candidate
+from lumbago_app.services.metadata_enricher import (
+    _validate_candidate,
+    _is_compilation_album,
+    _is_valid_year,
+)
 
 
 def test_validate_candidate_strict_exact_match():
@@ -20,3 +24,12 @@ def test_validate_candidate_balanced_allows_close_match():
 def test_validate_candidate_lenient_allows_looser_match():
     track = Track(path="x", title="Around The World", artist="Daft Punk")
     assert _validate_candidate(track, "Around", "Daft", policy="lenient") is True
+
+
+def test_compilation_album_detection():
+    assert _is_compilation_album("Greatest Hits") is True
+
+
+def test_valid_year_range():
+    assert _is_valid_year(1999) is True
+    assert _is_valid_year(1800) is False
