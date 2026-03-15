@@ -1,8 +1,9 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from PyQt6 import QtWidgets
 
 from lumbago_app.core.config import load_settings, save_settings
+from lumbago_app.ui.widgets import apply_dialog_fade
 
 
 class SettingsDialog(QtWidgets.QDialog):
@@ -10,11 +11,26 @@ class SettingsDialog(QtWidgets.QDialog):
         super().__init__(parent)
         self.setWindowTitle("Ustawienia / Klucze API")
         self.setMinimumWidth(520)
+        apply_dialog_fade(self)
         self._build_ui()
         self._load()
 
     def _build_ui(self):
         layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
+
+        card = QtWidgets.QFrame()
+        card.setObjectName("DialogCard")
+        card_layout = QtWidgets.QVBoxLayout(card)
+        card_layout.setContentsMargins(16, 14, 16, 16)
+        card_layout.setSpacing(10)
+        layout.addWidget(card)
+        layout = card_layout
+
+        title = QtWidgets.QLabel(self.windowTitle())
+        title.setObjectName("DialogTitle")
+        layout.addWidget(title)
         form = QtWidgets.QFormLayout()
 
         self.acoustid_key = QtWidgets.QLineEdit()
@@ -34,7 +50,7 @@ class SettingsDialog(QtWidgets.QDialog):
         self.deepseek_model = QtWidgets.QLineEdit()
         self.filename_patterns = QtWidgets.QTextEdit()
         self.filename_patterns.setPlaceholderText(
-            "Przykład: (?P<artist>.+) - (?P<title>.+)"
+            "PrzykĹ‚ad: (?P<artist>.+) - (?P<title>.+)"
         )
         self.validation_policy = QtWidgets.QComboBox()
         self.validation_policy.addItems(["strict", "balanced", "lenient"])
@@ -66,7 +82,7 @@ class SettingsDialog(QtWidgets.QDialog):
         form.addRow("Klucz OpenAI API", self.openai_api_key)
         form.addRow("Adres bazowy OpenAI (URL)", self.openai_base_url)
         form.addRow("Model OpenAI", self.openai_model)
-        form.addRow("Wzorce nazw plików (regex, 1 na linię)", self.filename_patterns)
+        form.addRow("Wzorce nazw plikĂłw (regex, 1 na liniÄ™)", self.filename_patterns)
         form.addRow("Walidacja metadanych", self.validation_policy)
         form.addRow("Cache metadanych (TTL)", self.metadata_cache_ttl)
 
@@ -125,3 +141,4 @@ class SettingsDialog(QtWidgets.QDialog):
             }
         )
         self.accept()
+

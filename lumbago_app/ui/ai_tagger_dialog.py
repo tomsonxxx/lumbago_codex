@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from PyQt6 import QtCore, QtWidgets
 
@@ -8,6 +8,7 @@ import re
 from lumbago_app.data.repository import replace_track_tags, update_tracks
 from lumbago_app.services.ai_tagger import CloudAiTagger, LocalAiTagger
 from lumbago_app.services.metadata_enricher import AutoMetadataFiller
+from lumbago_app.ui.widgets import apply_dialog_fade
 
 
 class AiTaggerDialog(QtWidgets.QDialog):
@@ -15,6 +16,7 @@ class AiTaggerDialog(QtWidgets.QDialog):
         super().__init__(parent)
         self.setWindowTitle("Tagger AI")
         self.setMinimumSize(760, 460)
+        apply_dialog_fade(self)
         self._tracks = tracks
         self._auto_fetch_default = auto_fetch
         self._auto_method_default = auto_method
@@ -24,18 +26,32 @@ class AiTaggerDialog(QtWidgets.QDialog):
 
     def _build_ui(self):
         layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
+
+        card = QtWidgets.QFrame()
+        card.setObjectName("DialogCard")
+        card_layout = QtWidgets.QVBoxLayout(card)
+        card_layout.setContentsMargins(16, 14, 16, 16)
+        card_layout.setSpacing(10)
+        layout.addWidget(card)
+        layout = card_layout
+
+        title = QtWidgets.QLabel(self.windowTitle())
+        title.setObjectName("DialogTitle")
+        layout.addWidget(title)
         self.provider_label = QtWidgets.QLabel("")
         layout.addWidget(self.provider_label)
 
         self.table = QtWidgets.QTableWidget(0, 7)
         self.table.setHorizontalHeaderLabels(
-            ["Tytuł", "Artysta", "BPM", "Tonacja", "Nastrój", "Energia", "Akcja"]
+            ["TytuĹ‚", "Artysta", "BPM", "Tonacja", "NastrĂłj", "Energia", "Akcja"]
         )
         self.table.horizontalHeader().setStretchLastSection(True)
         layout.addWidget(self.table, 1)
 
         options = QtWidgets.QHBoxLayout()
-        self.auto_fetch = QtWidgets.QCheckBox("Auto‑uzupełniaj brakujące tagi z internetu")
+        self.auto_fetch = QtWidgets.QCheckBox("Autoâ€‘uzupeĹ‚niaj brakujÄ…ce tagi z internetu")
         self.auto_fetch.setChecked(self._auto_fetch_default)
         self.auto_method = QtWidgets.QComboBox()
         self.auto_method.addItems(
@@ -55,13 +71,13 @@ class AiTaggerDialog(QtWidgets.QDialog):
 
         row = QtWidgets.QHBoxLayout()
         self.accept_all_btn = QtWidgets.QPushButton("Akceptuj wszystko")
-        self.accept_all_btn.setToolTip("Ustaw akcję Akceptuj dla wszystkich")
+        self.accept_all_btn.setToolTip("Ustaw akcjÄ™ Akceptuj dla wszystkich")
         self.accept_all_btn.clicked.connect(lambda: self._set_all_actions("Akceptuj"))
-        self.reject_all_btn = QtWidgets.QPushButton("Odrzuć wszystko")
-        self.reject_all_btn.setToolTip("Ustaw akcję Odrzuć dla wszystkich")
-        self.reject_all_btn.clicked.connect(lambda: self._set_all_actions("Odrzuć"))
+        self.reject_all_btn = QtWidgets.QPushButton("OdrzuÄ‡ wszystko")
+        self.reject_all_btn.setToolTip("Ustaw akcjÄ™ OdrzuÄ‡ dla wszystkich")
+        self.reject_all_btn.clicked.connect(lambda: self._set_all_actions("OdrzuÄ‡"))
         self.apply_all = QtWidgets.QPushButton("Zastosuj wszystko")
-        self.apply_all.setToolTip("Zapisz wynik tagowania dla utworów z akcją Akceptuj")
+        self.apply_all.setToolTip("Zapisz wynik tagowania dla utworĂłw z akcjÄ… Akceptuj")
         self.apply_all.clicked.connect(self._apply_all)
         self.cancel_btn = QtWidgets.QPushButton("Anuluj")
         self.cancel_btn.setToolTip("Zamknij bez zapisywania")
@@ -120,8 +136,8 @@ class AiTaggerDialog(QtWidgets.QDialog):
                 self.table.setItem(row, 4, QtWidgets.QTableWidgetItem(result.mood or ""))
                 self.table.setItem(row, 5, QtWidgets.QTableWidgetItem(str(result.energy or "")))
                 action = QtWidgets.QComboBox()
-                action.addItems(["Akceptuj", "Odrzuć"])
-                action.setToolTip("Akceptuj lub odrzuć propozycję")
+                action.addItems(["Akceptuj", "OdrzuÄ‡"])
+                action.setToolTip("Akceptuj lub odrzuÄ‡ propozycjÄ™")
                 self.table.setCellWidget(row, 6, action)
 
         self._worker.signals.progress.connect(on_progress)
@@ -305,3 +321,4 @@ class AiTaggerWorker(QtCore.QRunnable):
             results.append((track, result))
             self.signals.progress.emit(idx, total)
         self.signals.finished.emit(results)
+

@@ -1,6 +1,7 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from PyQt6 import QtWidgets
+from lumbago_app.ui.widgets import apply_dialog_fade
 
 from lumbago_app.data.repository import list_change_log
 
@@ -8,16 +9,31 @@ from lumbago_app.data.repository import list_change_log
 class ChangeHistoryDialog(QtWidgets.QDialog):
     def __init__(self, track_path: str, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Historia zmian tagów")
+        self.setWindowTitle("Historia zmian tagĂłw")
         self.setMinimumSize(720, 420)
+        apply_dialog_fade(self)
         self._track_path = track_path
         self._build_ui()
         self._load()
 
     def _build_ui(self):
         layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
+
+        card = QtWidgets.QFrame()
+        card.setObjectName("DialogCard")
+        card_layout = QtWidgets.QVBoxLayout(card)
+        card_layout.setContentsMargins(16, 14, 16, 16)
+        card_layout.setSpacing(10)
+        layout.addWidget(card)
+        layout = card_layout
+
+        title = QtWidgets.QLabel(self.windowTitle())
+        title.setObjectName("DialogTitle")
+        layout.addWidget(title)
         self.table = QtWidgets.QTableWidget(0, 5)
-        self.table.setHorizontalHeaderLabels(["Pole", "Stare", "Nowe", "Źródło", "Data"])
+        self.table.setHorizontalHeaderLabels(["Pole", "Stare", "Nowe", "ĹąrĂłdĹ‚o", "Data"])
         self.table.horizontalHeader().setStretchLastSection(True)
         layout.addWidget(self.table, 1)
         close_btn = QtWidgets.QPushButton("Zamknij")
@@ -35,3 +51,5 @@ class ChangeHistoryDialog(QtWidgets.QDialog):
             self.table.setItem(row, 2, QtWidgets.QTableWidgetItem(entry["new"]))
             self.table.setItem(row, 3, QtWidgets.QTableWidgetItem(entry["source"]))
             self.table.setItem(row, 4, QtWidgets.QTableWidgetItem(entry["changed_at"]))
+
+

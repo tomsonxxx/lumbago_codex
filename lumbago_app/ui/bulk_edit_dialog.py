@@ -1,24 +1,40 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from PyQt6 import QtWidgets
 
 from lumbago_app.core.models import Track
 from lumbago_app.data.repository import update_tracks
+from lumbago_app.ui.widgets import apply_dialog_fade
 
 
 class BulkEditDialog(QtWidgets.QDialog):
     def __init__(self, tracks: list[Track], parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Edycja zbiorcza tagów")
+        self.setWindowTitle("Edycja zbiorcza tagĂłw")
         self.setMinimumWidth(520)
+        apply_dialog_fade(self)
         self._tracks = tracks
         self._build_ui()
 
     def _build_ui(self):
         layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
+
+        card = QtWidgets.QFrame()
+        card.setObjectName("DialogCard")
+        card_layout = QtWidgets.QVBoxLayout(card)
+        card_layout.setContentsMargins(16, 14, 16, 16)
+        card_layout.setSpacing(10)
+        layout.addWidget(card)
+        layout = card_layout
+
+        title = QtWidgets.QLabel(self.windowTitle())
+        title.setObjectName("DialogTitle")
+        layout.addWidget(title)
         form = QtWidgets.QFormLayout()
 
-        self.title_check = QtWidgets.QCheckBox("Tytuł")
+        self.title_check = QtWidgets.QCheckBox("TytuĹ‚")
         self.artist_check = QtWidgets.QCheckBox("Artysta")
         self.album_check = QtWidgets.QCheckBox("Album")
         self.genre_check = QtWidgets.QCheckBox("Gatunek")
@@ -70,3 +86,5 @@ class BulkEditDialog(QtWidgets.QDialog):
                     track.bpm = None
         update_tracks(self._tracks)
         self.accept()
+
+

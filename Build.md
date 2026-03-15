@@ -123,3 +123,4 @@
 119. **Testy audio/UX**: dodano testy beatgrid/auto‑cue i zmieniono smoke test na subprocess.
 120. **Testy OK**: uruchomiono pytest, 15 testów przeszło.
 121. **Zależności**: dodano `numpy` i `librosa` do analizy tonacji.
+122. **WinUI 3 shell**: dodano szkice XAML (shell + strony + dialog) i theme w `docs/winui3`.

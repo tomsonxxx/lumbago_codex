@@ -1,6 +1,7 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from PyQt6 import QtCore, QtWidgets
+from lumbago_app.ui.widgets import apply_dialog_fade
 
 from lumbago_app.core.models import Track
 
@@ -8,13 +9,28 @@ from lumbago_app.core.models import Track
 class PlaylistOrderDialog(QtWidgets.QDialog):
     def __init__(self, tracks: list[Track], parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Kolejność w playliście")
+        self.setWindowTitle("KolejnoĹ›Ä‡ w playliĹ›cie")
         self.setMinimumSize(520, 420)
+        apply_dialog_fade(self)
         self._tracks = tracks
         self._build_ui()
 
     def _build_ui(self):
         layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
+
+        card = QtWidgets.QFrame()
+        card.setObjectName("DialogCard")
+        card_layout = QtWidgets.QVBoxLayout(card)
+        card_layout.setContentsMargins(16, 14, 16, 16)
+        card_layout.setSpacing(10)
+        layout.addWidget(card)
+        layout = card_layout
+
+        title = QtWidgets.QLabel(self.windowTitle())
+        title.setObjectName("DialogTitle")
+        layout.addWidget(title)
         self.list_widget = QtWidgets.QListWidget()
         self.list_widget.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.SingleSelection)
         for track in self._tracks:
@@ -24,9 +40,9 @@ class PlaylistOrderDialog(QtWidgets.QDialog):
         layout.addWidget(self.list_widget, 1)
 
         controls = QtWidgets.QHBoxLayout()
-        up_btn = QtWidgets.QPushButton("Góra")
+        up_btn = QtWidgets.QPushButton("GĂłra")
         up_btn.clicked.connect(self._move_up)
-        down_btn = QtWidgets.QPushButton("Dół")
+        down_btn = QtWidgets.QPushButton("DĂłĹ‚")
         down_btn.clicked.connect(self._move_down)
         controls.addWidget(up_btn)
         controls.addWidget(down_btn)
@@ -67,3 +83,5 @@ class PlaylistOrderDialog(QtWidgets.QDialog):
             if path:
                 paths.append(path)
         return paths
+
+

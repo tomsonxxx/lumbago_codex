@@ -1,10 +1,11 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from PyQt6 import QtCore, QtWidgets
+from lumbago_app.ui.widgets import apply_dialog_fade
 
 from lumbago_app.core.config import cache_dir
 from lumbago_app.core.audio import extract_metadata, iter_audio_files
@@ -106,6 +107,7 @@ class ImportWizard(QtWidgets.QDialog):
         super().__init__(parent)
         self.setWindowTitle("Kreator importu")
         self.setMinimumSize(720, 480)
+        apply_dialog_fade(self)
         self.on_complete = on_complete
         self.thread_pool = QtCore.QThreadPool.globalInstance()
         self._tracks: list[Track] = []
@@ -116,6 +118,20 @@ class ImportWizard(QtWidgets.QDialog):
 
     def _build_ui(self):
         layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
+
+        card = QtWidgets.QFrame()
+        card.setObjectName("DialogCard")
+        card_layout = QtWidgets.QVBoxLayout(card)
+        card_layout.setContentsMargins(16, 14, 16, 16)
+        card_layout.setSpacing(10)
+        layout.addWidget(card)
+        layout = card_layout
+
+        title = QtWidgets.QLabel(self.windowTitle())
+        title.setObjectName("DialogTitle")
+        layout.addWidget(title)
         self.stack = QtWidgets.QStackedWidget()
         layout.addWidget(self.stack, 1)
 
@@ -150,8 +166,8 @@ class ImportWizard(QtWidgets.QDialog):
         layout.addWidget(QtWidgets.QLabel("Krok 1: Wybierz folder"))
         row = QtWidgets.QHBoxLayout()
         self.folder_input = QtWidgets.QLineEdit()
-        self.folder_input.setPlaceholderText("Wybierz folder z muzyką")
-        browse = QtWidgets.QPushButton("Przeglądaj")
+        self.folder_input.setPlaceholderText("Wybierz folder z muzykÄ…")
+        browse = QtWidgets.QPushButton("PrzeglÄ…daj")
         browse.clicked.connect(self._browse_folder)
         row.addWidget(self.folder_input, 1)
         row.addWidget(browse)
@@ -176,7 +192,7 @@ class ImportWizard(QtWidgets.QDialog):
         self.batch_size = QtWidgets.QSpinBox()
         self.batch_size.setRange(10, 5000)
         self.batch_size.setValue(200)
-        layout.addWidget(QtWidgets.QLabel("Batch commit (ile plików na zapis)"))
+        layout.addWidget(QtWidgets.QLabel("Batch commit (ile plikĂłw na zapis)"))
         layout.addWidget(self.batch_size)
         layout.addStretch(1)
         return page
@@ -184,7 +200,7 @@ class ImportWizard(QtWidgets.QDialog):
     def _build_preview_page(self) -> QtWidgets.QWidget:
         page = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(page)
-        layout.addWidget(QtWidgets.QLabel("Krok 3: Podgląd"))
+        layout.addWidget(QtWidgets.QLabel("Krok 3: PodglÄ…d"))
         self.preview_table = QtWidgets.QTableWidget(0, 4)
         self.preview_table.setHorizontalHeaderLabels(["Title", "Artist", "Album", "Path"])
         self.preview_table.horizontalHeader().setStretchLastSection(True)
@@ -202,14 +218,14 @@ class ImportWizard(QtWidgets.QDialog):
         layout.addWidget(self.import_progress)
         self.import_status = QtWidgets.QLabel("Gotowe do importu.")
         layout.addWidget(self.import_status)
-        self.error_btn = QtWidgets.QPushButton("Zapisz raport błędów")
+        self.error_btn = QtWidgets.QPushButton("Zapisz raport bĹ‚Ä™dĂłw")
         self.error_btn.setEnabled(False)
         self.error_btn.clicked.connect(self._save_error_report)
         layout.addWidget(self.error_btn)
         return page
 
     def _browse_folder(self):
-        folder = QtWidgets.QFileDialog.getExistingDirectory(self, "Wybierz folder z muzyką")
+        folder = QtWidgets.QFileDialog.getExistingDirectory(self, "Wybierz folder z muzykÄ…")
         if folder:
             self.folder_input.setText(folder)
 
@@ -290,7 +306,7 @@ class ImportWizard(QtWidgets.QDialog):
 
     def _start_import(self):
         if not self._tracks:
-            self.import_status.setText("Brak utworów do importu.")
+            self.import_status.setText("Brak utworĂłw do importu.")
             return
         self.import_progress.setRange(0, len(self._tracks))
         self.import_progress.setValue(0)
@@ -311,7 +327,7 @@ class ImportWizard(QtWidgets.QDialog):
             self.import_status.setText("Import anulowany.")
             return
         self.import_progress.setValue(self.import_progress.maximum())
-        self.import_status.setText(f"Zaimportowano {len(self._tracks)} utworów.")
+        self.import_status.setText(f"Zaimportowano {len(self._tracks)} utworĂłw.")
         if self.on_complete:
             self.on_complete()
         self.accept()
@@ -322,7 +338,7 @@ class ImportWizard(QtWidgets.QDialog):
         default_path = str(cache_dir() / "import_errors.txt")
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
             self,
-            "Zapisz raport błędów",
+            "Zapisz raport bĹ‚Ä™dĂłw",
             default_path,
             "TXT (*.txt)",
         )
@@ -339,3 +355,5 @@ class ImportWizard(QtWidgets.QDialog):
         if self._import_worker:
             self._import_worker.stop()
         super().reject()
+
+

@@ -1,8 +1,9 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from pathlib import Path
 
 from PyQt6 import QtWidgets
+from lumbago_app.ui.widgets import apply_dialog_fade
 
 from lumbago_app.services.xml_converter import export_virtualdj_xml, parse_rekordbox_xml
 
@@ -12,11 +13,26 @@ class XmlConverterDialog(QtWidgets.QDialog):
         super().__init__(parent)
         self.setWindowTitle("Konwerter XML")
         self.setMinimumSize(720, 420)
+        apply_dialog_fade(self)
         self._tracks = []
         self._build_ui()
 
     def _build_ui(self):
         layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
+
+        card = QtWidgets.QFrame()
+        card.setObjectName("DialogCard")
+        card_layout = QtWidgets.QVBoxLayout(card)
+        card_layout.setContentsMargins(16, 14, 16, 16)
+        card_layout.setSpacing(10)
+        layout.addWidget(card)
+        layout = card_layout
+
+        title = QtWidgets.QLabel(self.windowTitle())
+        title.setObjectName("DialogTitle")
+        layout.addWidget(title)
         row = QtWidgets.QHBoxLayout()
         self.input_path = QtWidgets.QLineEdit()
         self.input_path.setPlaceholderText("Wybierz plik Rekordbox XML")
@@ -58,7 +74,7 @@ class XmlConverterDialog(QtWidgets.QDialog):
             self.status.setText("Nie znaleziono pliku.")
             return
         self._tracks = parse_rekordbox_xml(path)
-        self.status.setText(f"Wczytano utworów: {len(self._tracks)}")
+        self.status.setText(f"Wczytano utworĂłw: {len(self._tracks)}")
 
     def _export(self):
         if not self._tracks:
@@ -74,4 +90,6 @@ class XmlConverterDialog(QtWidgets.QDialog):
         if not out_path:
             return
         export_virtualdj_xml(self._tracks, Path(out_path))
-        QtWidgets.QMessageBox.information(self, "Konwerter XML", "Eksport zakończony.")
+        QtWidgets.QMessageBox.information(self, "Konwerter XML", "Eksport zakoĹ„czony.")
+
+

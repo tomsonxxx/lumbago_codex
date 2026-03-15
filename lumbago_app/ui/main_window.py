@@ -432,9 +432,12 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _build_header(self) -> QtWidgets.QFrame:
         frame = QtWidgets.QFrame()
+        frame.setObjectName("Card")
         row = QtWidgets.QHBoxLayout(frame)
         row.setContentsMargins(12, 12, 12, 12)
-        row.addWidget(QtWidgets.QLabel("Przeglądarka biblioteki"))
+        header_label = QtWidgets.QLabel("Przeglądarka biblioteki")
+        header_label.setObjectName("SectionTitle")
+        row.addWidget(header_label)
 
         self.search_input = QtWidgets.QLineEdit()
         self.search_input.setPlaceholderText("Szukaj: tytuł / artysta / album")
@@ -1415,20 +1418,23 @@ class MainWindow(QtWidgets.QMainWindow):
         QtGui.QShortcut(QtGui.QKeySequence("Ctrl+T"), self, activated=self._run_auto_tagger)
 
     def _apply_icons(self):
-        style = self.style()
-        self.btn_scan.setIcon(style.standardIcon(QtWidgets.QStyle.StandardPixmap.SP_DialogOpenButton))
-        self.btn_recognition.setIcon(style.standardIcon(QtWidgets.QStyle.StandardPixmap.SP_BrowserReload))
-        self.btn_ai.setIcon(style.standardIcon(QtWidgets.QStyle.StandardPixmap.SP_ComputerIcon))
-        self.btn_local_meta.setIcon(style.standardIcon(QtWidgets.QStyle.StandardPixmap.SP_DialogResetButton))
-        self.btn_duplicates.setIcon(style.standardIcon(QtWidgets.QStyle.StandardPixmap.SP_DirIcon))
-        self.btn_renamer.setIcon(style.standardIcon(QtWidgets.QStyle.StandardPixmap.SP_FileIcon))
-        self.btn_xml.setIcon(style.standardIcon(QtWidgets.QStyle.StandardPixmap.SP_FileDialogDetailedView))
-        self.btn_xml_import.setIcon(style.standardIcon(QtWidgets.QStyle.StandardPixmap.SP_FileDialogNewFolder))
-        self.btn_settings.setIcon(style.standardIcon(QtWidgets.QStyle.StandardPixmap.SP_FileDialogInfoView))
-        self.settings_btn.setIcon(style.standardIcon(QtWidgets.QStyle.StandardPixmap.SP_FileDialogContentsView))
-        self.auto_tag_btn.setIcon(style.standardIcon(QtWidgets.QStyle.StandardPixmap.SP_MediaPlay))
-        self.play_btn.setIcon(style.standardIcon(QtWidgets.QStyle.StandardPixmap.SP_MediaPlay))
-        self.stop_btn.setIcon(style.standardIcon(QtWidgets.QStyle.StandardPixmap.SP_MediaStop))
+        icons_dir = Path(__file__).resolve().parent / "assets" / "icons"
+        def icon(name: str) -> QtGui.QIcon:
+            return QtGui.QIcon(str(icons_dir / name))
+
+        self.btn_scan.setIcon(icon("scan.svg"))
+        self.btn_recognition.setIcon(icon("refresh.svg"))
+        self.btn_ai.setIcon(icon("ai.svg"))
+        self.btn_local_meta.setIcon(icon("tag.svg"))
+        self.btn_duplicates.setIcon(icon("duplicates.svg"))
+        self.btn_renamer.setIcon(icon("rename.svg"))
+        self.btn_xml.setIcon(icon("xml.svg"))
+        self.btn_xml_import.setIcon(icon("import.svg"))
+        self.btn_settings.setIcon(icon("settings.svg"))
+        self.settings_btn.setIcon(icon("settings.svg"))
+        self.auto_tag_btn.setIcon(icon("magic.svg"))
+        self.play_btn.setIcon(icon("play.svg"))
+        self.stop_btn.setIcon(icon("stop.svg"))
 
     def _build_menu(self):
         menu = self.menuBar()
@@ -1539,6 +1545,7 @@ class MainWindow(QtWidgets.QMainWindow):
         return filtered
     def _build_toolbar(self) -> QtWidgets.QFrame:
         frame = QtWidgets.QFrame()
+        frame.setObjectName("Card")
         row = QtWidgets.QHBoxLayout(frame)
         row.setContentsMargins(12, 8, 12, 8)
         self.title_label = QtWidgets.QLabel("Lumbago Music AI")
@@ -1546,6 +1553,7 @@ class MainWindow(QtWidgets.QMainWindow):
         font.setPointSize(14)
         font.setBold(True)
         self.title_label.setFont(font)
+        self.title_label.setObjectName("SectionTitle")
         row.addWidget(self.title_label)
         row.addStretch(1)
 

@@ -1,10 +1,11 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import csv
 import shutil
 from pathlib import Path
 
 from PyQt6 import QtCore, QtWidgets
+from lumbago_app.ui.widgets import apply_dialog_fade
 
 from lumbago_app.core.models import DuplicateGroup, Track
 from lumbago_app.core.audio import file_hash
@@ -23,6 +24,7 @@ class DuplicatesDialog(QtWidgets.QDialog):
         super().__init__(parent)
         self.setWindowTitle("Duplikaty")
         self.setMinimumSize(900, 520)
+        apply_dialog_fade(self)
         self._tracks = tracks
         self._track_map = {track.path: track for track in tracks}
         self._scanner = None
@@ -31,14 +33,28 @@ class DuplicatesDialog(QtWidgets.QDialog):
 
     def _build_ui(self):
         layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
+
+        card = QtWidgets.QFrame()
+        card.setObjectName("DialogCard")
+        card_layout = QtWidgets.QVBoxLayout(card)
+        card_layout.setContentsMargins(16, 14, 16, 16)
+        card_layout.setSpacing(10)
+        layout.addWidget(card)
+        layout = card_layout
+
+        title = QtWidgets.QLabel(self.windowTitle())
+        title.setObjectName("DialogTitle")
+        layout.addWidget(title)
         top = QtWidgets.QHBoxLayout()
         top.addWidget(QtWidgets.QLabel("Metoda wykrywania:"))
         self.method = QtWidgets.QComboBox()
         self.method.addItems(["Hash", "Tagi", "Fingerprint", "Etapowo"])
-        self.method.setToolTip("Wybierz metodę wykrywania duplikatów")
+        self.method.setToolTip("Wybierz metodÄ™ wykrywania duplikatĂłw")
         top.addWidget(self.method)
         self.run_btn = QtWidgets.QPushButton("Szukaj")
-        self.run_btn.setToolTip("Uruchom skan duplikatów")
+        self.run_btn.setToolTip("Uruchom skan duplikatĂłw")
         self.run_btn.clicked.connect(self._run_scan)
         top.addWidget(self.run_btn)
         top.addStretch(1)
@@ -47,7 +63,7 @@ class DuplicatesDialog(QtWidgets.QDialog):
         self.tree = QtWidgets.QTreeWidget()
         self.tree.setColumnCount(7)
         self.tree.setHeaderLabels(
-            ["Grupa", "Tytuł", "Artysta", "Ścieżka", "Rozmiar", "BPM", "Tonacja"]
+            ["Grupa", "TytuĹ‚", "Artysta", "ĹšcieĹĽka", "Rozmiar", "BPM", "Tonacja"]
         )
         self.tree.setRootIsDecorated(True)
         self.tree.setAlternatingRowColors(True)
@@ -59,17 +75,17 @@ class DuplicatesDialog(QtWidgets.QDialog):
         self.mark_btn = QtWidgets.QPushButton("Zaznacz duplikaty")
         self.mark_btn.setToolTip("Zaznacz wszystkie duplikaty (zostaw pierwsze)")
         self.mark_btn.clicked.connect(self._mark_duplicates)
-        self.clear_btn = QtWidgets.QPushButton("Wyczyść zaznaczenie")
+        self.clear_btn = QtWidgets.QPushButton("WyczyĹ›Ä‡ zaznaczenie")
         self.clear_btn.setToolTip("Odznacz wszystkie pozycje")
         self.clear_btn.clicked.connect(self._clear_marks)
-        self.move_btn = QtWidgets.QPushButton("Przenieś zaznaczone")
-        self.move_btn.setToolTip("Przenieś zaznaczone pliki do folderu")
+        self.move_btn = QtWidgets.QPushButton("PrzenieĹ› zaznaczone")
+        self.move_btn.setToolTip("PrzenieĹ› zaznaczone pliki do folderu")
         self.move_btn.clicked.connect(self._move_selected)
         self.merge_btn = QtWidgets.QPushButton("Scal metadane")
-        self.merge_btn.setToolTip("Scal brakujące tagi do pierwszego utworu w grupie")
+        self.merge_btn.setToolTip("Scal brakujÄ…ce tagi do pierwszego utworu w grupie")
         self.merge_btn.clicked.connect(self._merge_selected)
-        self.delete_btn = QtWidgets.QPushButton("Usuń zaznaczone")
-        self.delete_btn.setToolTip("Usuń zaznaczone pliki z dysku i bazy")
+        self.delete_btn = QtWidgets.QPushButton("UsuĹ„ zaznaczone")
+        self.delete_btn.setToolTip("UsuĹ„ zaznaczone pliki z dysku i bazy")
         self.delete_btn.clicked.connect(self._delete_selected)
         self.export_btn = QtWidgets.QPushButton("Eksportuj raport")
         self.export_btn.setToolTip("Zapisz raport CSV z wynikami")
@@ -89,7 +105,7 @@ class DuplicatesDialog(QtWidgets.QDialog):
     def _run_scan(self):
         self.tree.clear()
         method = self.method.currentText()
-        progress = QtWidgets.QProgressDialog("Skanowanie duplikatów...", "Anuluj", 0, len(self._tracks), self)
+        progress = QtWidgets.QProgressDialog("Skanowanie duplikatĂłw...", "Anuluj", 0, len(self._tracks), self)
         progress.setWindowTitle("Duplikaty")
         progress.setMinimumDuration(0)
 
@@ -192,7 +208,7 @@ class DuplicatesDialog(QtWidgets.QDialog):
         confirm = QtWidgets.QMessageBox.question(
             self,
             "Potwierdzenie",
-            "Czy na pewno usunąć zaznaczone pliki z dysku i bazy?",
+            "Czy na pewno usunÄ…Ä‡ zaznaczone pliki z dysku i bazy?",
         )
         if confirm != QtWidgets.QMessageBox.StandardButton.Yes:
             return
@@ -431,3 +447,5 @@ def _stat_track(path: str) -> tuple[int | None, float | None]:
         return stat.st_size, stat.st_mtime
     except Exception:
         return None, None
+
+

@@ -12,6 +12,7 @@ from PyQt6 import QtCore, QtWidgets
 
 from lumbago_app.ui.main_window import MainWindow
 from lumbago_app.ui.theme import CYBER_QSS
+from lumbago_app.ui.widgets import apply_window_fade
 from lumbago_app.core.config import app_data_dir
 
 
@@ -27,9 +28,11 @@ def main() -> int:
             window = QtWidgets.QMainWindow()
             window.setWindowTitle("Lumbago Music AI (Safe Mode)")
             window.resize(1000, 700)
+            apply_window_fade(window)
             window.show()
         else:
             window = MainWindow()
+            apply_window_fade(window)
             window.show()
         smoke_seconds = _read_int_env("LUMBAGO_SMOKE_SECONDS", 0)
         if smoke_seconds > 0:

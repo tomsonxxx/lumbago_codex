@@ -1,8 +1,9 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 
 from PyQt6 import QtWidgets
+from lumbago_app.ui.widgets import apply_dialog_fade
 
 from lumbago_app.core.models import Playlist
 
@@ -12,6 +13,7 @@ class PlaylistEditorDialog(QtWidgets.QDialog):
         super().__init__(parent)
         self.setWindowTitle("Playlista")
         self.setMinimumSize(520, 360)
+        apply_dialog_fade(self)
         self._playlist = playlist
         self._build_ui()
         if playlist:
@@ -19,10 +21,24 @@ class PlaylistEditorDialog(QtWidgets.QDialog):
 
     def _build_ui(self):
         layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
+
+        card = QtWidgets.QFrame()
+        card.setObjectName("DialogCard")
+        card_layout = QtWidgets.QVBoxLayout(card)
+        card_layout.setContentsMargins(16, 14, 16, 16)
+        card_layout.setSpacing(10)
+        layout.addWidget(card)
+        layout = card_layout
+
+        title = QtWidgets.QLabel(self.windowTitle())
+        title.setObjectName("DialogTitle")
+        layout.addWidget(title)
         form = QtWidgets.QFormLayout()
         self.name_input = QtWidgets.QLineEdit()
         self.desc_input = QtWidgets.QLineEdit()
-        self.smart_check = QtWidgets.QCheckBox("Playlista smart (reguły)")
+        self.smart_check = QtWidgets.QCheckBox("Playlista smart (reguĹ‚y)")
         self.search_input = QtWidgets.QLineEdit()
         self.genre_input = QtWidgets.QLineEdit()
         self.key_input = QtWidgets.QLineEdit()
@@ -82,3 +98,5 @@ class PlaylistEditorDialog(QtWidgets.QDialog):
             "is_smart": self.smart_check.isChecked(),
             "rules": json.dumps(rules, ensure_ascii=False) if rules else None,
         }
+
+

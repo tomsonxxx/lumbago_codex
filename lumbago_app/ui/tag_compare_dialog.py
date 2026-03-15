@@ -1,8 +1,9 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from typing import Dict, Tuple
 
 from PyQt6 import QtCore, QtGui, QtWidgets
+from lumbago_app.ui.widgets import apply_dialog_fade
 
 from pathlib import Path
 
@@ -15,8 +16,9 @@ from lumbago_app.core.models import Track
 class TagCompareDialog(QtWidgets.QDialog):
     def __init__(self, tracks: list[Track], parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Porównanie tagów")
+        self.setWindowTitle("PorĂłwnanie tagĂłw")
         self.setMinimumSize(780, 460)
+        apply_dialog_fade(self)
         self._tracks = tracks
         self._index = 0
         self._build_ui()
@@ -24,6 +26,20 @@ class TagCompareDialog(QtWidgets.QDialog):
 
     def _build_ui(self):
         layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
+
+        card = QtWidgets.QFrame()
+        card.setObjectName("DialogCard")
+        card_layout = QtWidgets.QVBoxLayout(card)
+        card_layout.setContentsMargins(16, 14, 16, 16)
+        card_layout.setSpacing(10)
+        layout.addWidget(card)
+        layout = card_layout
+
+        title = QtWidgets.QLabel(self.windowTitle())
+        title.setObjectName("DialogTitle")
+        layout.addWidget(title)
         self.title_label = QtWidgets.QLabel("")
         layout.addWidget(self.title_label)
 
@@ -44,24 +60,24 @@ class TagCompareDialog(QtWidgets.QDialog):
         layout.addLayout(header)
 
         self.table = QtWidgets.QTableWidget(0, 4)
-        self.table.setHorizontalHeaderLabels(["Tag", "Stare", "Nowe", "Użyj starego"])
+        self.table.setHorizontalHeaderLabels(["Tag", "Stare", "Nowe", "UĹĽyj starego"])
         self.table.horizontalHeader().setStretchLastSection(True)
         layout.addWidget(self.table, 1)
 
         nav = QtWidgets.QHBoxLayout()
         self.prev_btn = QtWidgets.QPushButton("Poprzedni")
         self.prev_btn.clicked.connect(self._prev)
-        self.prev_btn.setToolTip("Wróć do poprzedniego utworu")
-        self.next_btn = QtWidgets.QPushButton("Następny")
+        self.prev_btn.setToolTip("WrĂłÄ‡ do poprzedniego utworu")
+        self.next_btn = QtWidgets.QPushButton("NastÄ™pny")
         self.next_btn.clicked.connect(self._next)
-        self.next_btn.setToolTip("Przejdź do następnego utworu")
+        self.next_btn.setToolTip("PrzejdĹş do nastÄ™pnego utworu")
         self.apply_current_btn = QtWidgets.QPushButton("Zapisz dla tego utworu")
         self.apply_current_btn.clicked.connect(self._apply_current)
-        self.apply_current_btn.setToolTip("Zapisz tagi tylko dla bieżącego utworu")
+        self.apply_current_btn.setToolTip("Zapisz tagi tylko dla bieĹĽÄ…cego utworu")
         self.apply_all_btn = QtWidgets.QPushButton("Zapisz wszystkie")
         self.apply_all_btn.clicked.connect(self._apply_all)
-        self.apply_all_btn.setToolTip("Zapisz tagi dla wszystkich utworów z listy")
-        self.apply_diff_btn = QtWidgets.QPushButton("Zastosuj tylko różnice")
+        self.apply_all_btn.setToolTip("Zapisz tagi dla wszystkich utworĂłw z listy")
+        self.apply_diff_btn = QtWidgets.QPushButton("Zastosuj tylko rĂłĹĽnice")
         self.apply_diff_btn.clicked.connect(self._apply_diff_current)
         self.apply_diff_btn.setToolTip("Zapisz tylko zmienione tagi")
         self.cancel_btn = QtWidgets.QPushButton("Anuluj")
@@ -79,7 +95,7 @@ class TagCompareDialog(QtWidgets.QDialog):
         if not self._tracks:
             return
         track = self._tracks[self._index]
-        self.title_label.setText(f"{track.title or 'Nieznany'} — {track.artist or ''}")
+        self.title_label.setText(f"{track.title or 'Nieznany'} â€” {track.artist or ''}")
         old_tags = read_tags_from_track(track)
         new_tags = getattr(track, "_pending_new_tags", None) or build_new_tags_from_track(track)
         for key in POPULAR_TAGS:
@@ -100,7 +116,7 @@ class TagCompareDialog(QtWidgets.QDialog):
             new_item = QtWidgets.QTableWidgetItem(new_tags.get(tag, ""))
             new_item.setFlags(new_item.flags() | QtCore.Qt.ItemFlag.ItemIsEditable)
             self.table.setItem(row, 2, new_item)
-            btn = QtWidgets.QPushButton("Użyj")
+            btn = QtWidgets.QPushButton("UĹĽyj")
             btn.clicked.connect(lambda _, r=row: self._copy_new(r))
             self.table.setCellWidget(row, 3, btn)
         self.prev_btn.setEnabled(self._index > 0)
@@ -278,3 +294,5 @@ def order_tags(old: Dict[str, str], new: Dict[str, str]) -> list[str]:
         if key not in keys:
             keys.append(key)
     return keys
+
+

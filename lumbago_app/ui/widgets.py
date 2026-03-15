@@ -3,21 +3,66 @@ from __future__ import annotations
 from PyQt6 import QtCore, QtGui, QtWidgets
 
 
+class _DialogFadeFilter(QtCore.QObject):
+    def __init__(self, dialog: QtWidgets.QDialog, anim: QtCore.QPropertyAnimation):
+        super().__init__(dialog)
+        self._dialog = dialog
+        self._anim = anim
+
+    def eventFilter(self, obj, event):
+        if obj is self._dialog and event.type() == QtCore.QEvent.Type.Show:
+            self._dialog.setWindowOpacity(0.0)
+            self._anim.stop()
+            self._anim.start()
+        return super().eventFilter(obj, event)
+
+
+def apply_dialog_fade(dialog: QtWidgets.QDialog, duration_ms: int = 180) -> None:
+    anim = QtCore.QPropertyAnimation(dialog, b"windowOpacity", dialog)
+    anim.setDuration(duration_ms)
+    anim.setStartValue(0.0)
+    anim.setEndValue(1.0)
+    anim.setEasingCurve(QtCore.QEasingCurve.Type.OutCubic)
+
+    filt = _DialogFadeFilter(dialog, anim)
+    dialog.installEventFilter(filt)
+
+    # Zachowaj referencje, by nie zostały zebrane przez GC.
+    dialog._fade_anim = anim  # type: ignore[attr-defined]
+    dialog._fade_filter = filt  # type: ignore[attr-defined]
+
+
+def apply_window_fade(widget: QtWidgets.QWidget, duration_ms: int = 220) -> None:
+    anim = QtCore.QPropertyAnimation(widget, b"windowOpacity", widget)
+    anim.setDuration(duration_ms)
+    anim.setStartValue(0.0)
+    anim.setEndValue(1.0)
+    anim.setEasingCurve(QtCore.QEasingCurve.Type.OutCubic)
+
+    filt = _DialogFadeFilter(widget, anim)
+    widget.installEventFilter(filt)
+
+    widget._fade_anim = anim  # type: ignore[attr-defined]
+    widget._fade_filter = filt  # type: ignore[attr-defined]
+
+
 class AnimatedButton(QtWidgets.QPushButton):
     def __init__(self, text: str = "", parent=None):
         super().__init__(text, parent)
-        self._base_color = QtGui.QColor("#101522")
-        self._hover_color = QtGui.QColor("#1b2a3d")
+        self._base_color = QtGui.QColor("#141a2a")
+        self._hover_color = QtGui.QColor("#1f2a3d")
         self._anim = QtCore.QVariantAnimation(self)
         self._anim.setDuration(180)
         self._anim.valueChanged.connect(self._on_anim_value)
 
     def enterEvent(self, event):
-        self._start_anim(self._base_color, self._hover_color)
+        if self.objectName() != "PrimaryAction":
+            self._start_anim(self._base_color, self._hover_color)
         super().enterEvent(event)
 
     def leaveEvent(self, event):
-        self._start_anim(self._hover_color, self._base_color)
+        if self.objectName() != "PrimaryAction":
+            self._start_anim(self._hover_color, self._base_color)
         super().leaveEvent(event)
 
     def _start_anim(self, start: QtGui.QColor, end: QtGui.QColor):
@@ -29,5 +74,9 @@ class AnimatedButton(QtWidgets.QPushButton):
     def _on_anim_value(self, value):
         color: QtGui.QColor = value
         self.setStyleSheet(
-            f"background-color: {color.name()}; border-radius: 14px; padding: 8px 12px;"
+            "color: #e8f3ff; "
+            f"background-color: {color.name()}; "
+            "border: 1px solid #2b3a55; "
+            "border-radius: 12px; "
+            "padding: 8px 12px;"
         )

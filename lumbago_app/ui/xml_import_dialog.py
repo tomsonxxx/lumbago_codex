@@ -1,8 +1,9 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from pathlib import Path
 
 from PyQt6 import QtWidgets
+from lumbago_app.ui.widgets import apply_dialog_fade
 
 from lumbago_app.core.models import Track
 from lumbago_app.data.repository import upsert_tracks
@@ -14,11 +15,26 @@ class XmlImportDialog(QtWidgets.QDialog):
         super().__init__(parent)
         self.setWindowTitle("Import XML")
         self.setMinimumSize(720, 420)
+        apply_dialog_fade(self)
         self._tracks: list[Track] = []
         self._build_ui()
 
     def _build_ui(self):
         layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
+
+        card = QtWidgets.QFrame()
+        card.setObjectName("DialogCard")
+        card_layout = QtWidgets.QVBoxLayout(card)
+        card_layout.setContentsMargins(16, 14, 16, 16)
+        card_layout.setSpacing(10)
+        layout.addWidget(card)
+        layout = card_layout
+
+        title = QtWidgets.QLabel(self.windowTitle())
+        title.setObjectName("DialogTitle")
+        layout.addWidget(title)
         row = QtWidgets.QHBoxLayout()
         self.input_path = QtWidgets.QLineEdit()
         self.input_path.setPlaceholderText("Wybierz plik Rekordbox lub VirtualDJ XML")
@@ -82,7 +98,7 @@ class XmlImportDialog(QtWidgets.QDialog):
             for t in tracks
             if t.path
         ]
-        self.status.setText(f"Wczytano utworów: {len(self._tracks)}")
+        self.status.setText(f"Wczytano utworĂłw: {len(self._tracks)}")
 
     def _import(self):
         if not self._tracks:
@@ -90,5 +106,7 @@ class XmlImportDialog(QtWidgets.QDialog):
         if not self._tracks:
             return
         upsert_tracks(self._tracks)
-        QtWidgets.QMessageBox.information(self, "Import XML", f"Zaimportowano {len(self._tracks)} utworów.")
+        QtWidgets.QMessageBox.information(self, "Import XML", f"Zaimportowano {len(self._tracks)} utworĂłw.")
         self.accept()
+
+
