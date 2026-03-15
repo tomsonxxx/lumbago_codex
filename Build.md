@@ -113,3 +113,4 @@
 109. **Build portable**: zbudowano `dist/LumbagoMusicAI` oraz `dist/LumbagoMusicAI-portable.zip`.
 110. **Smoke test EXE**: uruchomiono `dist/LumbagoMusicAI/LumbagoMusicAI.exe` w trybie safe z auto‑zamknięciem.
 111. **Checklist clean Windows**: dodano `docs/clean_windows_test.md`.
+112. **Test clean Windows**: odłożony na później (na prośbę użytkownika).

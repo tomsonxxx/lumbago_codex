@@ -85,7 +85,7 @@
 - [x] (P0, M) Bundle `fpcalc`
 - [x] (P1, S) Autodetekcja `fpcalc` z `PATH` w build.ps1
 - [x] (P1, M) Portable ZIP
-- [ ] (P1, S) Test na czystym Windows
+- [~] (P1, S) Test na czystym Windows (odłożone na prośbę)
 - [x] (P2, S) Checklist testu clean Windows (docs/clean_windows_test.md)
 - [x] (P1, L) Testy unit/integration
 - [x] (P2, S) UX smoke test
@@ -190,7 +190,7 @@
 - [x] PyInstaller spec
 - [x] Bundle `fpcalc`
 - [x] Portable ZIP
-- [ ] Test na czystym Windows
+- [~] Test na czystym Windows (odłożone na prośbę)
 
 # 13. Testy
 - [x] Unit tests (parsery, duplikaty, renamer)
