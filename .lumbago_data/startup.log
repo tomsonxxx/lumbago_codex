@@ -77,3 +77,10 @@
 2026-03-15 02:58:09 MainWindow: load_tracks ok
 2026-03-15 02:58:09 MainWindow: load_settings ok
 2026-03-15 02:58:09 MainWindow: showEvent
+2026-03-15 03:10:33 MainWindow: start init
+2026-03-15 03:10:33 MainWindow: init_db ok
+2026-03-15 03:10:33 Player init skipped (LUMBAGO_DISABLE_MULTIMEDIA=1)
+2026-03-15 03:10:33 MainWindow: build_ui ok
+2026-03-15 03:10:33 MainWindow: load_tracks ok
+2026-03-15 03:10:33 MainWindow: load_settings ok
+2026-03-15 03:10:33 MainWindow: showEvent
