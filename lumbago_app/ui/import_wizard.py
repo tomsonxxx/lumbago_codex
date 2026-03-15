@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from PyQt6 import QtCore, QtWidgets
-from lumbago_app.ui.widgets import apply_dialog_fade
+from lumbago_app.ui.widgets import apply_dialog_fade, dialog_icon_pixmap
 
 from lumbago_app.core.config import cache_dir
 from lumbago_app.core.audio import extract_metadata, iter_audio_files
@@ -129,9 +129,17 @@ class ImportWizard(QtWidgets.QDialog):
         layout.addWidget(card)
         layout = card_layout
 
+        title_row = QtWidgets.QHBoxLayout()
+        title_icon = QtWidgets.QLabel()
+        title_icon.setPixmap(dialog_icon_pixmap(18))
+        title_icon.setFixedSize(20, 20)
         title = QtWidgets.QLabel(self.windowTitle())
         title.setObjectName("DialogTitle")
-        layout.addWidget(title)
+        title_row.addWidget(title_icon)
+        title_row.addWidget(title)
+        title_row.addStretch(1)
+        layout.addLayout(title_row)
+
         self.stack = QtWidgets.QStackedWidget()
         layout.addWidget(self.stack, 1)
 
@@ -355,5 +363,7 @@ class ImportWizard(QtWidgets.QDialog):
         if self._import_worker:
             self._import_worker.stop()
         super().reject()
+
+
 
 

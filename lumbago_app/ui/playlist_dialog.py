@@ -2,8 +2,8 @@
 
 import json
 
-from PyQt6 import QtWidgets
-from lumbago_app.ui.widgets import apply_dialog_fade
+from PyQt6 import QtWidgets, QtGui
+from lumbago_app.ui.widgets import apply_dialog_fade, dialog_icon_pixmap
 
 from lumbago_app.core.models import Playlist
 
@@ -32,9 +32,17 @@ class PlaylistEditorDialog(QtWidgets.QDialog):
         layout.addWidget(card)
         layout = card_layout
 
+        title_row = QtWidgets.QHBoxLayout()
+        title_icon = QtWidgets.QLabel()
+        title_icon.setPixmap(dialog_icon_pixmap(18))
+        title_icon.setFixedSize(20, 20)
         title = QtWidgets.QLabel(self.windowTitle())
         title.setObjectName("DialogTitle")
-        layout.addWidget(title)
+        title_row.addWidget(title_icon)
+        title_row.addWidget(title)
+        title_row.addStretch(1)
+        layout.addLayout(title_row)
+
         form = QtWidgets.QFormLayout()
         self.name_input = QtWidgets.QLineEdit()
         self.desc_input = QtWidgets.QLineEdit()
@@ -98,5 +106,7 @@ class PlaylistEditorDialog(QtWidgets.QDialog):
             "is_smart": self.smart_check.isChecked(),
             "rules": json.dumps(rules, ensure_ascii=False) if rules else None,
         }
+
+
 
 

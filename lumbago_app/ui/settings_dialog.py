@@ -1,9 +1,9 @@
 ﻿from __future__ import annotations
 
-from PyQt6 import QtWidgets
+from PyQt6 import QtWidgets, QtGui
 
 from lumbago_app.core.config import load_settings, save_settings
-from lumbago_app.ui.widgets import apply_dialog_fade
+from lumbago_app.ui.widgets import apply_dialog_fade, dialog_icon_pixmap
 
 
 class SettingsDialog(QtWidgets.QDialog):
@@ -28,9 +28,17 @@ class SettingsDialog(QtWidgets.QDialog):
         layout.addWidget(card)
         layout = card_layout
 
+        title_row = QtWidgets.QHBoxLayout()
+        title_icon = QtWidgets.QLabel()
+        title_icon.setPixmap(dialog_icon_pixmap(18))
+        title_icon.setFixedSize(20, 20)
         title = QtWidgets.QLabel(self.windowTitle())
         title.setObjectName("DialogTitle")
-        layout.addWidget(title)
+        title_row.addWidget(title_icon)
+        title_row.addWidget(title)
+        title_row.addStretch(1)
+        layout.addLayout(title_row)
+
         form = QtWidgets.QFormLayout()
 
         self.acoustid_key = QtWidgets.QLineEdit()
@@ -141,4 +149,6 @@ class SettingsDialog(QtWidgets.QDialog):
             }
         )
         self.accept()
+
+
 

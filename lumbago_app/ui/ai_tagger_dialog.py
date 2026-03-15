@@ -8,7 +8,7 @@ import re
 from lumbago_app.data.repository import replace_track_tags, update_tracks
 from lumbago_app.services.ai_tagger import CloudAiTagger, LocalAiTagger
 from lumbago_app.services.metadata_enricher import AutoMetadataFiller
-from lumbago_app.ui.widgets import apply_dialog_fade
+from lumbago_app.ui.widgets import apply_dialog_fade, dialog_icon_pixmap
 
 
 class AiTaggerDialog(QtWidgets.QDialog):
@@ -37,9 +37,17 @@ class AiTaggerDialog(QtWidgets.QDialog):
         layout.addWidget(card)
         layout = card_layout
 
+        title_row = QtWidgets.QHBoxLayout()
+        title_icon = QtWidgets.QLabel()
+        title_icon.setPixmap(dialog_icon_pixmap(18))
+        title_icon.setFixedSize(20, 20)
         title = QtWidgets.QLabel(self.windowTitle())
         title.setObjectName("DialogTitle")
-        layout.addWidget(title)
+        title_row.addWidget(title_icon)
+        title_row.addWidget(title)
+        title_row.addStretch(1)
+        layout.addLayout(title_row)
+
         self.provider_label = QtWidgets.QLabel("")
         layout.addWidget(self.provider_label)
 
@@ -321,4 +329,6 @@ class AiTaggerWorker(QtCore.QRunnable):
             results.append((track, result))
             self.signals.progress.emit(idx, total)
         self.signals.finished.emit(results)
+
+
 

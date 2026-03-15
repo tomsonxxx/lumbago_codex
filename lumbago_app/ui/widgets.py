@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from PyQt6 import QtCore, QtGui, QtWidgets
 
 
@@ -54,6 +55,7 @@ class AnimatedButton(QtWidgets.QPushButton):
         self._anim = QtCore.QVariantAnimation(self)
         self._anim.setDuration(180)
         self._anim.valueChanged.connect(self._on_anim_value)
+        self._pulse_anim: QtCore.QPropertyAnimation | None = None
 
     def enterEvent(self, event):
         if self.objectName() != "PrimaryAction":
@@ -80,3 +82,35 @@ class AnimatedButton(QtWidgets.QPushButton):
             "border-radius: 12px; "
             "padding: 8px 12px;"
         )
+
+    def enable_pulse(self, intensity: int = 18) -> None:
+        if self._pulse_anim is not None:
+            return
+        effect = QtWidgets.QGraphicsDropShadowEffect(self)
+        effect.setBlurRadius(6)
+        effect.setOffset(0, 0)
+        effect.setColor(QtGui.QColor("#63f2ff"))
+        self.setGraphicsEffect(effect)
+
+        anim = QtCore.QPropertyAnimation(effect, b"blurRadius", self)
+        anim.setStartValue(6)
+        anim.setEndValue(max(10, intensity))
+        anim.setDuration(1400)
+        anim.setEasingCurve(QtCore.QEasingCurve.Type.InOutSine)
+        anim.setLoopCount(-1)
+        anim.setDirection(QtCore.QAbstractAnimation.Direction.Forward)
+        anim.start()
+        self._pulse_anim = anim
+
+
+def dialog_icon_pixmap(size: int = 18) -> QtGui.QPixmap:
+    icon_path = Path(__file__).resolve().parent / "assets" / "icons" / "dialog.svg"
+    pix = QtGui.QPixmap(str(icon_path))
+    if pix.isNull():
+        return QtGui.QPixmap()
+    return pix.scaled(
+        size,
+        size,
+        QtCore.Qt.AspectRatioMode.KeepAspectRatio,
+        QtCore.Qt.TransformationMode.SmoothTransformation,
+    )

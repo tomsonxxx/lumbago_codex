@@ -2,8 +2,8 @@
 
 from pathlib import Path
 
-from PyQt6 import QtWidgets
-from lumbago_app.ui.widgets import apply_dialog_fade
+from PyQt6 import QtWidgets, QtGui
+from lumbago_app.ui.widgets import apply_dialog_fade, dialog_icon_pixmap
 
 from lumbago_app.services.xml_converter import export_virtualdj_xml, parse_rekordbox_xml
 
@@ -30,9 +30,17 @@ class XmlConverterDialog(QtWidgets.QDialog):
         layout.addWidget(card)
         layout = card_layout
 
+        title_row = QtWidgets.QHBoxLayout()
+        title_icon = QtWidgets.QLabel()
+        title_icon.setPixmap(dialog_icon_pixmap(18))
+        title_icon.setFixedSize(20, 20)
         title = QtWidgets.QLabel(self.windowTitle())
         title.setObjectName("DialogTitle")
-        layout.addWidget(title)
+        title_row.addWidget(title_icon)
+        title_row.addWidget(title)
+        title_row.addStretch(1)
+        layout.addLayout(title_row)
+
         row = QtWidgets.QHBoxLayout()
         self.input_path = QtWidgets.QLineEdit()
         self.input_path.setPlaceholderText("Wybierz plik Rekordbox XML")
@@ -91,5 +99,7 @@ class XmlConverterDialog(QtWidgets.QDialog):
             return
         export_virtualdj_xml(self._tracks, Path(out_path))
         QtWidgets.QMessageBox.information(self, "Konwerter XML", "Eksport zakoĹ„czony.")
+
+
 
 

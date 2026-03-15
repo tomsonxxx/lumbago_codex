@@ -84,13 +84,13 @@ QFrame {
     border-radius: 16px;
 }
 QFrame#Card {
-    background-color: #101522;
-    border: 1px solid #1f2a3d;
+    background-color: rgba(16, 21, 34, 210);
+    border: 1px solid #22324a;
     border-radius: 14px;
 }
 QFrame#DialogCard {
-    background-color: #0f1322;
-    border: 1px solid #1f2a3d;
+    background-color: rgba(15, 19, 34, 220);
+    border: 1px solid #22324a;
     border-radius: 16px;
 }
 
@@ -255,16 +255,16 @@ QGroupBox::title {
 }
 
 QFrame#Sidebar {
-    background-color: #0f1322;
-    border-right: 1px solid #1f2a3d;
+    background-color: rgba(15, 19, 34, 230);
+    border-right: 1px solid #22324a;
 }
 QFrame#DetailPanel {
-    background-color: #0f1322;
-    border-left: 1px solid #1f2a3d;
+    background-color: rgba(15, 19, 34, 230);
+    border-left: 1px solid #22324a;
 }
 QFrame#PlayerDock {
-    background-color: #0f1322;
-    border-top: 1px solid #1f2a3d;
+    background-color: rgba(15, 19, 34, 230);
+    border-top: 1px solid #22324a;
 }
 
 QMenu {

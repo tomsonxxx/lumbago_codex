@@ -1,7 +1,7 @@
 ﻿from __future__ import annotations
 
 from PyQt6 import QtCore, QtWidgets
-from lumbago_app.ui.widgets import apply_dialog_fade
+from lumbago_app.ui.widgets import apply_dialog_fade, dialog_icon_pixmap
 
 from lumbago_app.core.models import Track
 from lumbago_app.core.renamer import apply_rename_plan, build_rename_plan, undo_last_rename
@@ -31,9 +31,17 @@ class RenamerDialog(QtWidgets.QDialog):
         layout.addWidget(card)
         layout = card_layout
 
+        title_row = QtWidgets.QHBoxLayout()
+        title_icon = QtWidgets.QLabel()
+        title_icon.setPixmap(dialog_icon_pixmap(18))
+        title_icon.setFixedSize(20, 20)
         title = QtWidgets.QLabel(self.windowTitle())
         title.setObjectName("DialogTitle")
-        layout.addWidget(title)
+        title_row.addWidget(title_icon)
+        title_row.addWidget(title)
+        title_row.addStretch(1)
+        layout.addLayout(title_row)
+
         row = QtWidgets.QHBoxLayout()
         row.addWidget(QtWidgets.QLabel("Wzorzec:"))
         self.pattern = QtWidgets.QLineEdit("{artist} - {title}")
@@ -90,5 +98,7 @@ class RenamerDialog(QtWidgets.QDialog):
         flipped = [{"old": item["new"], "new": item["old"]} for item in history]
         update_track_paths_bulk(flipped)
         self.accept()
+
+
 
 

@@ -1,7 +1,7 @@
 ﻿from __future__ import annotations
 
-from PyQt6 import QtWidgets
-from lumbago_app.ui.widgets import apply_dialog_fade
+from PyQt6 import QtWidgets, QtGui
+from lumbago_app.ui.widgets import apply_dialog_fade, dialog_icon_pixmap
 
 from lumbago_app.data.repository import list_change_log
 
@@ -29,9 +29,17 @@ class ChangeHistoryDialog(QtWidgets.QDialog):
         layout.addWidget(card)
         layout = card_layout
 
+        title_row = QtWidgets.QHBoxLayout()
+        title_icon = QtWidgets.QLabel()
+        title_icon.setPixmap(dialog_icon_pixmap(18))
+        title_icon.setFixedSize(20, 20)
         title = QtWidgets.QLabel(self.windowTitle())
         title.setObjectName("DialogTitle")
-        layout.addWidget(title)
+        title_row.addWidget(title_icon)
+        title_row.addWidget(title)
+        title_row.addStretch(1)
+        layout.addLayout(title_row)
+
         self.table = QtWidgets.QTableWidget(0, 5)
         self.table.setHorizontalHeaderLabels(["Pole", "Stare", "Nowe", "ĹąrĂłdĹ‚o", "Data"])
         self.table.horizontalHeader().setStretchLastSection(True)
@@ -51,5 +59,7 @@ class ChangeHistoryDialog(QtWidgets.QDialog):
             self.table.setItem(row, 2, QtWidgets.QTableWidgetItem(entry["new"]))
             self.table.setItem(row, 3, QtWidgets.QTableWidgetItem(entry["source"]))
             self.table.setItem(row, 4, QtWidgets.QTableWidgetItem(entry["changed_at"]))
+
+
 
 

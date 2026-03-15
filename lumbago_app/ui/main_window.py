@@ -371,6 +371,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.btn_scan.setObjectName("PrimaryAction")
         self.btn_scan.setToolTip("Importuj pliki audio z wybranego folderu")
         self.btn_scan.clicked.connect(self._open_import_wizard)
+        self.btn_scan.enable_pulse()
         layout.addWidget(self.btn_scan)
 
         self.btn_recognition = AnimatedButton("Rozpoznaj metadane (wsadowo)")
@@ -1585,5 +1586,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.auto_tag_btn = AnimatedButton("AutoTagowanie")
         self.auto_tag_btn.setToolTip("Uruchom AI + auto‑pobieranie braków")
         self.auto_tag_btn.clicked.connect(self._run_auto_tagger)
+        self.auto_tag_btn.enable_pulse()
         row.addWidget(self.auto_tag_btn)
         return frame

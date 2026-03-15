@@ -3,7 +3,7 @@
 from typing import Dict, Tuple
 
 from PyQt6 import QtCore, QtGui, QtWidgets
-from lumbago_app.ui.widgets import apply_dialog_fade
+from lumbago_app.ui.widgets import apply_dialog_fade, dialog_icon_pixmap
 
 from pathlib import Path
 
@@ -37,9 +37,17 @@ class TagCompareDialog(QtWidgets.QDialog):
         layout.addWidget(card)
         layout = card_layout
 
+        title_row = QtWidgets.QHBoxLayout()
+        title_icon = QtWidgets.QLabel()
+        title_icon.setPixmap(dialog_icon_pixmap(18))
+        title_icon.setFixedSize(20, 20)
         title = QtWidgets.QLabel(self.windowTitle())
         title.setObjectName("DialogTitle")
-        layout.addWidget(title)
+        title_row.addWidget(title_icon)
+        title_row.addWidget(title)
+        title_row.addStretch(1)
+        layout.addLayout(title_row)
+
         self.title_label = QtWidgets.QLabel("")
         layout.addWidget(self.title_label)
 
@@ -294,5 +302,7 @@ def order_tags(old: Dict[str, str], new: Dict[str, str]) -> list[str]:
         if key not in keys:
             keys.append(key)
     return keys
+
+
 
 

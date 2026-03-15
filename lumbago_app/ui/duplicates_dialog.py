@@ -5,7 +5,7 @@ import shutil
 from pathlib import Path
 
 from PyQt6 import QtCore, QtWidgets
-from lumbago_app.ui.widgets import apply_dialog_fade
+from lumbago_app.ui.widgets import apply_dialog_fade, dialog_icon_pixmap
 
 from lumbago_app.core.models import DuplicateGroup, Track
 from lumbago_app.core.audio import file_hash
@@ -44,9 +44,17 @@ class DuplicatesDialog(QtWidgets.QDialog):
         layout.addWidget(card)
         layout = card_layout
 
+        title_row = QtWidgets.QHBoxLayout()
+        title_icon = QtWidgets.QLabel()
+        title_icon.setPixmap(dialog_icon_pixmap(18))
+        title_icon.setFixedSize(20, 20)
         title = QtWidgets.QLabel(self.windowTitle())
         title.setObjectName("DialogTitle")
-        layout.addWidget(title)
+        title_row.addWidget(title_icon)
+        title_row.addWidget(title)
+        title_row.addStretch(1)
+        layout.addLayout(title_row)
+
         top = QtWidgets.QHBoxLayout()
         top.addWidget(QtWidgets.QLabel("Metoda wykrywania:"))
         self.method = QtWidgets.QComboBox()
@@ -447,5 +455,7 @@ def _stat_track(path: str) -> tuple[int | None, float | None]:
         return stat.st_size, stat.st_mtime
     except Exception:
         return None, None
+
+
 
 
