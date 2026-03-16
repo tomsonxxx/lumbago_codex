@@ -36,6 +36,7 @@ from lumbago_app.data.repository import (
     list_playlists,
     list_playlists_full,
     list_tracks,
+    reset_library,
     set_playlist_track_order,
     update_playlist,
     update_tracks,
@@ -315,6 +316,8 @@ class MainWindow(QtWidgets.QMainWindow):
         header.setStretchLastSection(True)
         header.setSectionResizeMode(QtWidgets.QHeaderView.ResizeMode.Interactive)
         header.setSectionsMovable(True)
+        header.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
+        header.customContextMenuRequested.connect(self._show_table_column_menu)
 
         self.grid_view = QtWidgets.QListView()
         self.grid_view.setViewMode(QtWidgets.QListView.ViewMode.IconMode)
@@ -375,32 +378,32 @@ class MainWindow(QtWidgets.QMainWindow):
         layout.addWidget(self.btn_scan)
 
         self.btn_recognition = AnimatedButton("Rozpoznaj metadane (wsadowo)")
-        self.btn_recognition.setToolTip("Rozpoznaj i uzupeĹ‚nij metadane dla zaznaczonych utworĂłw")
+        self.btn_recognition.setToolTip("Rozpoznaj i uzupełnij metadane dla zaznaczonych utworów")
         self.btn_recognition.clicked.connect(self._run_recognition_queue)
         layout.addWidget(self.btn_recognition)
 
         self.btn_ai = AnimatedButton("Tagger AI (lokalny)")
-        self.btn_ai.setToolTip("Analizuj i uzupeĹ‚nij tagi dla zaznaczonych utworĂłw")
+        self.btn_ai.setToolTip("Analizuj i uzupełnij tagi dla zaznaczonych utworów")
         self.btn_ai.clicked.connect(self._run_ai_tagger)
         layout.addWidget(self.btn_ai)
 
         self.btn_local_meta = AnimatedButton("Metadane lokalne")
-        self.btn_local_meta.setToolTip("UzupeÄąâ€šnij metadane z nazwy pliku i folderu")
+        self.btn_local_meta.setToolTip("Uzupełnij metadane z nazwy pliku i folderu")
         self.btn_local_meta.clicked.connect(self._apply_local_metadata_selected)
         layout.addWidget(self.btn_local_meta)
 
         self.btn_duplicates = AnimatedButton("Wyszukaj duplikaty")
-        self.btn_duplicates.setToolTip("ZnajdĹş duplikaty w bibliotece")
+        self.btn_duplicates.setToolTip("Znajdź duplikaty w bibliotece")
         self.btn_duplicates.clicked.connect(self._open_duplicates)
         layout.addWidget(self.btn_duplicates)
 
         self.btn_renamer = AnimatedButton("Zmiana nazw")
-        self.btn_renamer.setToolTip("ZmieĹ„ nazwy plikĂłw wedĹ‚ug wzorca")
+        self.btn_renamer.setToolTip("Zmień nazwy plików według wzorca")
         self.btn_renamer.clicked.connect(self._open_renamer)
         layout.addWidget(self.btn_renamer)
 
         self.btn_xml = AnimatedButton("Konwerter XML")
-        self.btn_xml.setToolTip("Konwersja Rekordbox â†” VirtualDJ")
+        self.btn_xml.setToolTip("Konwersja Rekordbox ↔ VirtualDJ")
         self.btn_xml.clicked.connect(self._open_xml_converter)
         layout.addWidget(self.btn_xml)
 
@@ -410,7 +413,7 @@ class MainWindow(QtWidgets.QMainWindow):
         layout.addWidget(self.btn_xml_import)
 
         self.btn_settings = AnimatedButton("Ustawienia / API")
-        self.btn_settings.setToolTip("Ustaw klucze API i konfiguracjÄ™")
+        self.btn_settings.setToolTip("Ustaw klucze API i konfigurację")
         self.btn_settings.clicked.connect(self._open_settings)
         layout.addWidget(self.btn_settings)
 
@@ -436,14 +439,14 @@ class MainWindow(QtWidgets.QMainWindow):
         frame.setObjectName("HeaderBar")
         row = QtWidgets.QHBoxLayout(frame)
         row.setContentsMargins(12, 12, 12, 12)
-        header_label = QtWidgets.QLabel("PrzeglÄ…darka biblioteki")
+        header_label = QtWidgets.QLabel("Przeglądarka biblioteki")
         header_label.setObjectName("SectionTitle")
         row.addWidget(header_label)
 
         self.search_input = QtWidgets.QLineEdit()
         self.search_input.setObjectName("SearchInput")
-        self.search_input.setPlaceholderText("Szukaj: tytuĹ‚ / artysta / album")
-        self.search_input.setToolTip("Wpisz frazÄ™, aby filtrowaÄ‡ listÄ™")
+        self.search_input.setPlaceholderText("Szukaj: tytuł / artysta / album")
+        self.search_input.setToolTip("Wpisz frazę, aby filtrować listę")
         self.search_input.textChanged.connect(self._apply_filters)
         row.addWidget(self.search_input, 1)
 
@@ -480,7 +483,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.view_toggle = QtWidgets.QComboBox()
         self.view_toggle.setObjectName("ViewToggle")
         self.view_toggle.addItems(["Lista", "Siatka"])
-        self.view_toggle.setToolTip("PrzeĹ‚Ä…cz widok listy/siatki")
+        self.view_toggle.setToolTip("Przełącz widok listy/siatki")
         self.view_toggle.currentIndexChanged.connect(self._on_view_toggle)
         row.addWidget(self.view_toggle)
         return frame
@@ -490,7 +493,7 @@ class MainWindow(QtWidgets.QMainWindow):
         frame.setObjectName("DetailPanel")
         layout = QtWidgets.QVBoxLayout(frame)
         layout.setContentsMargins(12, 12, 12, 12)
-        title = QtWidgets.QLabel("SzczegĂłĹ‚y")
+        title = QtWidgets.QLabel("Szczegóły")
         title.setObjectName("SectionTitle")
         layout.addWidget(title)
         self.detail_text = QtWidgets.QTextEdit()
@@ -502,8 +505,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.cover_label.setScaledContents(True)
         layout.addWidget(self.cover_label)
 
-        self.cover_btn = AnimatedButton("ZmieĹ„ okĹ‚adkÄ™")
-        self.cover_btn.setToolTip("Wybierz nowÄ… okĹ‚adkÄ™ utworu")
+        self.cover_btn = AnimatedButton("Zmień okładkę")
+        self.cover_btn.setToolTip("Wybierz nową okładkę utworu")
         self.cover_btn.clicked.connect(self._change_cover)
         layout.addWidget(self.cover_btn)
 
@@ -517,8 +520,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.detail_key = QtWidgets.QLineEdit()
         self.detail_loudness = QtWidgets.QLineEdit()
         self.detail_loudness.setReadOnly(True)
-        self.detail_loudness.setToolTip("Zintegrowana gĹ‚oĹ›noĹ›Ä‡ (LUFS)")
-        form.addRow("TytuĹ‚", self.detail_title)
+        self.detail_loudness.setToolTip("Zintegrowana głośność (LUFS)")
+        form.addRow("Tytuł", self.detail_title)
         form.addRow("Artysta", self.detail_artist)
         form.addRow("Album", self.detail_album)
         form.addRow("Rok", self.detail_year)
@@ -534,7 +537,7 @@ class MainWindow(QtWidgets.QMainWindow):
         layout.addWidget(self.save_btn)
 
         self.save_file_btn = AnimatedButton("Zapisz do pliku")
-        self.save_file_btn.setToolTip("Zapisz tagi bezpoĹ›rednio do pliku audio")
+        self.save_file_btn.setToolTip("Zapisz tagi bezpośrednio do pliku audio")
         self.save_file_btn.clicked.connect(self._save_tags_to_file)
         layout.addWidget(self.save_file_btn)
 
@@ -543,13 +546,13 @@ class MainWindow(QtWidgets.QMainWindow):
         self.reload_tags_btn.clicked.connect(self._reload_tags_from_file)
         layout.addWidget(self.reload_tags_btn)
 
-        self.clear_tags_btn = AnimatedButton("WyczyĹ›Ä‡ tagi")
-        self.clear_tags_btn.setToolTip("UsuĹ„ tagi z pliku i bazy")
+        self.clear_tags_btn = AnimatedButton("Wyczyść tagi")
+        self.clear_tags_btn.setToolTip("Usuń tagi z pliku i bazy")
         self.clear_tags_btn.clicked.connect(self._clear_tags)
         layout.addWidget(self.clear_tags_btn)
 
         self.history_btn = AnimatedButton("Historia zmian")
-        self.history_btn.setToolTip("PokaĹĽ historiÄ™ zmian tagĂłw")
+        self.history_btn.setToolTip("Pokaż historię zmian tagów")
         self.history_btn.clicked.connect(self._open_change_history)
         layout.addWidget(self.history_btn)
 
@@ -579,7 +582,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 _debug_log(f"Player init failed: {exc}")
 
         self.play_btn = AnimatedButton("Odtwarzaj / Pauza")
-        self.play_btn.setToolTip("Odtwarzaj lub wstrzymaj wybrany utwĂłr")
+        self.play_btn.setToolTip("Odtwarzaj lub wstrzymaj wybrany utwór")
         self.play_btn.clicked.connect(self._toggle_playback)
         row.addWidget(self.play_btn)
 
@@ -602,10 +605,10 @@ class MainWindow(QtWidgets.QMainWindow):
 
         cues = QtWidgets.QHBoxLayout()
         self.cue_a_btn = AnimatedButton("Ustaw Cue A")
-        self.cue_a_btn.setToolTip("Zapisz pozycjÄ™ jako Cue A")
+        self.cue_a_btn.setToolTip("Zapisz pozycję jako Cue A")
         self.cue_a_btn.clicked.connect(self._set_cue_a)
         self.cue_b_btn = AnimatedButton("Ustaw Cue B")
-        self.cue_b_btn.setToolTip("Zapisz pozycjÄ™ jako Cue B")
+        self.cue_b_btn.setToolTip("Zapisz pozycję jako Cue B")
         self.cue_b_btn.clicked.connect(self._set_cue_b)
         self.jump_a_btn = AnimatedButton("Skok A")
         self.jump_a_btn.setToolTip("Skocz do Cue A")
@@ -614,7 +617,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.jump_b_btn.setToolTip("Skocz do Cue B")
         self.jump_b_btn.clicked.connect(self._jump_to_cue_b)
         self.loop_btn = AnimatedButton("Loop A-B")
-        self.loop_btn.setToolTip("WĹ‚Ä…cz/wyĹ‚Ä…cz pÄ™tlÄ™ miÄ™dzy Cue A i B")
+        self.loop_btn.setToolTip("Włącz/wyłącz pętlę między Cue A i B")
         self.loop_btn.clicked.connect(self._toggle_loop)
         self.auto_cue_btn = AnimatedButton("Auto-cue")
         self.auto_cue_btn.setToolTip("Ustaw automatyczne Cue (intro/outro)")
@@ -770,7 +773,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _play_selected(self):
         if not self.player:
-            self._show_message("Odtwarzacz jest niedostÄ™pny w tej wersji.")
+            self._show_message("Odtwarzacz jest niedostępny w tej wersji.")
             return
         indexes = self.table_view.selectionModel().selectedRows()
         if not indexes:
@@ -787,7 +790,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _toggle_playback(self):
         if not self.player:
-            self._show_message("Odtwarzacz jest niedostÄ™pny w tej wersji.")
+            self._show_message("Odtwarzacz jest niedostępny w tej wersji.")
             return
         from PyQt6.QtMultimedia import QMediaPlayer
         if self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
@@ -850,22 +853,22 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _toggle_loop(self):
         self._loop_enabled = not self._loop_enabled
-        state = "wĹ‚Ä…czona" if self._loop_enabled else "wyĹ‚Ä…czona"
-        self.status.showMessage(f"PÄ™tla {state}.")
+        state = "włączona" if self._loop_enabled else "wyłączona"
+        self.status.showMessage(f"Pętla {state}.")
 
     def _grid_context_menu(self, pos):
         index = self.grid_view.indexAt(pos)
         if not index.isValid():
             return
         menu = QtWidgets.QMenu(self)
-        play_action = menu.addAction("OdtwĂłrz")
-        details_action = menu.addAction("PokaĹĽ szczegĂłĹ‚y")
+        play_action = menu.addAction("Odtwórz")
+        details_action = menu.addAction("Pokaż szczegóły")
         ai_action = menu.addAction("Analiza AI")
         local_meta_action = menu.addAction("Wczytaj metadane lokalne")
         action = menu.exec(self.grid_view.mapToGlobal(pos))
         if action == play_action:
             if not self.player:
-                self._show_message("Odtwarzacz jest niedostÄ™pny w tej wersji.")
+                self._show_message("Odtwarzacz jest niedostępny w tej wersji.")
                 return
             source_index = self.filter_proxy.mapToSource(index)
             track = self.table_model.track_at(source_index.row())
@@ -892,6 +895,21 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             self.grid_view.clearSelection()
 
+    def _reset_library(self):
+        confirm = QtWidgets.QMessageBox.question(
+            self,
+            "Zerowanie biblioteki",
+            "Czy na pewno chcesz usunąć całą bibliotekę?\n"
+            "To skasuje utwory, playlisty i historię zmian.",
+        )
+        if confirm != QtWidgets.QMessageBox.StandardButton.Yes:
+            return
+        reset_library()
+        self._load_tracks()
+        self._load_playlists()
+        self.detail_text.clear()
+        self._show_message("Biblioteka została wyzerowana.")
+
     def _bulk_edit(self):
         tracks = self._selected_tracks()
         if not tracks:
@@ -915,7 +933,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if not tracks:
             tracks = list_tracks()
         if not tracks:
-            self._show_message("Brak utworĂłw do analizy.")
+            self._show_message("Brak utworów do analizy.")
             return
         dialog = DuplicatesDialog(tracks, self)
         if dialog.exec():
@@ -944,11 +962,11 @@ class MainWindow(QtWidgets.QMainWindow):
         if not index.isValid():
             return
         menu = QtWidgets.QMenu(self)
-        play_action = menu.addAction("OdtwĂłrz")
-        details_action = menu.addAction("PokaĹĽ szczegĂłĹ‚y")
+        play_action = menu.addAction("Odtwórz")
+        details_action = menu.addAction("Pokaż szczegóły")
         reload_action = menu.addAction("Odczytaj tagi z pliku")
         save_action = menu.addAction("Zapisz tagi do pliku")
-        clear_action = menu.addAction("WyczyĹ›Ä‡ tagi (plik + baza)")
+        clear_action = menu.addAction("Wyczyść tagi (plik + baza)")
         add_menu = menu.addMenu("Dodaj do playlisty")
         for name in list_playlists():
             add_menu.addAction(name)
@@ -979,12 +997,37 @@ class MainWindow(QtWidgets.QMainWindow):
             track = self.table_model.track_at(source_index.row())
             if track:
                 add_track_to_playlist(action.text(), track.path)
-                self.status.showMessage(f"Added to playlist: {action.text()}")
+                self.status.showMessage(f"Dodano do playlisty: {action.text()}")
         elif action == ai_action:
             self._run_ai_tagger()
         elif action == local_meta_action:
             self._apply_local_metadata_selected()
 
+    def _show_table_column_menu(self, pos):
+        menu = QtWidgets.QMenu(self)
+        show_all = menu.addAction("Pokaż wszystkie")
+        hide_all = menu.addAction("Ukryj wszystkie")
+        menu.addSeparator()
+        actions = []
+        for col, name in enumerate(self.table_model.headers):
+            action = QtWidgets.QAction(name, menu)
+            action.setCheckable(True)
+            action.setChecked(not self.table_view.isColumnHidden(col))
+            actions.append((action, col))
+            menu.addAction(action)
+        chosen = menu.exec(self.table_view.horizontalHeader().mapToGlobal(pos))
+        if chosen == show_all:
+            for _, col in actions:
+                self.table_view.setColumnHidden(col, False)
+            return
+        if chosen == hide_all:
+            for _, col in actions:
+                self.table_view.setColumnHidden(col, True)
+            return
+        for action, col in actions:
+            if chosen == action:
+                self.table_view.setColumnHidden(col, not action.isChecked())
+                break
     def _fill_detail_fields(self, track: Track):
         self.detail_title.setText(track.title or "")
         self.detail_artist.setText(track.artist or "")
@@ -1030,7 +1073,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._log_changes(track, snapshot)
         update_track(track)
         self._load_tracks()
-        self._show_message("UtwĂłr zaktualizowany.")
+        self._show_message("Utwór zaktualizowany.")
 
     def _log_changes(self, track: Track, snapshot: dict):
         for field in ["title", "artist", "album", "year", "genre", "bpm", "key"]:
@@ -1124,7 +1167,7 @@ class MainWindow(QtWidgets.QMainWindow):
             update_track(track)
             self._update_cover_preview(track.artwork_path)
         except Exception as exc:
-            self._show_message(f"Nie udaĹ‚o siÄ™ zmieniÄ‡ okĹ‚adki: {exc}")
+            self._show_message(f"Nie udało się zmienić okładki: {exc}")
 
     def _open_change_history(self):
         track = getattr(self, "_selected_track", None)
@@ -1161,7 +1204,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def _run_ai_tagger(self):
         tracks = self._selected_tracks()
         if not tracks:
-            self._show_message("Zaznacz co najmniej jeden utwĂłr.")
+            self._show_message("Zaznacz co najmniej jeden utwór.")
             return
         dialog = AiTaggerDialog(tracks, self)
         if dialog.exec():
@@ -1170,7 +1213,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def _run_auto_tagger(self):
         tracks = self._selected_tracks()
         if not tracks:
-            self._show_message("Zaznacz co najmniej jeden utwĂłr.")
+            self._show_message("Zaznacz co najmniej jeden utwór.")
             return
         dialog = AiTaggerDialog(
             tracks,
@@ -1185,7 +1228,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def _run_auto_tagger_cloud(self):
         tracks = self._selected_tracks()
         if not tracks:
-            self._show_message("Zaznacz co najmniej jeden utwĂłr.")
+            self._show_message("Zaznacz co najmniej jeden utwór.")
             return
         dialog = AiTaggerDialog(
             tracks,
@@ -1200,18 +1243,18 @@ class MainWindow(QtWidgets.QMainWindow):
     def _apply_local_metadata_selected(self):
         tracks = self._selected_tracks()
         if not tracks:
-            self._show_message("Zaznacz co najmniej jeden utwĂłr.")
+            self._show_message("Zaznacz co najmniej jeden utwór.")
             return
         for track in tracks:
             apply_local_metadata(track, Path(track.path))
         update_tracks(tracks)
         self._load_tracks()
-        self._show_message("Metadane lokalne zostaĹ‚y uzupeĹ‚nione.")
+        self._show_message("Metadane lokalne zostały uzupełnione.")
 
     def _run_loudness_analysis(self):
         tracks = self._selected_tracks()
         if not tracks:
-            self._show_message("Zaznacz co najmniej jeden utwĂłr.")
+            self._show_message("Zaznacz co najmniej jeden utwór.")
             return
         worker = LoudnessWorker(tracks)
         progress = QtWidgets.QProgressDialog(
@@ -1224,13 +1267,13 @@ class MainWindow(QtWidgets.QMainWindow):
         def on_progress(current: int, total: int):
             progress.setMaximum(total)
             progress.setValue(current)
-            self.status.showMessage(f"Analiza {current}/{total} utworĂłw")
+            self.status.showMessage(f"Analiza {current}/{total} utworów")
 
         def on_finished(updated: list[Track]):
             progress.close()
             update_tracks(updated)
             self._load_tracks()
-            self.status.showMessage("Analiza loudness zakoĹ„czona.")
+            self.status.showMessage("Analiza loudness zakończona.")
 
         worker.signals.progress.connect(on_progress)
         worker.signals.finished.connect(on_finished)
@@ -1239,9 +1282,9 @@ class MainWindow(QtWidgets.QMainWindow):
     def _run_loudness_normalize(self):
         tracks = self._selected_tracks()
         if not tracks:
-            self._show_message("Zaznacz co najmniej jeden utwĂłr.")
+            self._show_message("Zaznacz co najmniej jeden utwór.")
             return
-        output_dir = QtWidgets.QFileDialog.getExistingDirectory(self, "Wybierz katalog wyjĹ›ciowy")
+        output_dir = QtWidgets.QFileDialog.getExistingDirectory(self, "Wybierz katalog wyjściowy")
         if not output_dir:
             return
         target, ok = QtWidgets.QInputDialog.getDouble(
@@ -1271,7 +1314,7 @@ class MainWindow(QtWidgets.QMainWindow):
         def on_finished(created: int, errors: int):
             progress.close()
             self._load_tracks()
-            self.status.showMessage(f"Normalizacja zakoĹ„czona. Nowe pliki: {created}, bĹ‚Ä™dy: {errors}")
+            self.status.showMessage(f"Normalizacja zakończona. Nowe pliki: {created}, błędy: {errors}")
 
         worker.signals.progress.connect(on_progress)
         worker.signals.finished.connect(on_finished)
@@ -1280,13 +1323,13 @@ class MainWindow(QtWidgets.QMainWindow):
     def _run_key_detection(self):
         tracks = self._selected_tracks()
         if not tracks:
-            self._show_message("Zaznacz co najmniej jeden utwĂłr.")
+            self._show_message("Zaznacz co najmniej jeden utwór.")
             return
         worker = KeyDetectionWorker(tracks, force=False)
         progress = QtWidgets.QProgressDialog(
             "Wykrywanie tonacji...", "Zamknij", 0, len(tracks), self
         )
-        progress.setWindowTitle("Autoâ€‘key")
+        progress.setWindowTitle("Auto‑key")
         progress.setMinimumDuration(0)
         progress.setValue(0)
 
@@ -1299,7 +1342,7 @@ class MainWindow(QtWidgets.QMainWindow):
             progress.close()
             update_tracks(updated)
             self._load_tracks()
-            self.status.showMessage("Wykrywanie tonacji zakoĹ„czone.")
+            self.status.showMessage("Wykrywanie tonacji zakończone.")
 
         worker.signals.progress.connect(on_progress)
         worker.signals.finished.connect(on_finished)
@@ -1308,7 +1351,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def _auto_cue_selected(self):
         tracks = self._selected_tracks()
         if not tracks:
-            self._show_message("Zaznacz co najmniej jeden utwĂłr.")
+            self._show_message("Zaznacz co najmniej jeden utwór.")
             return
         for track in tracks:
             cue_in, cue_out = auto_cue_points(track.duration)
@@ -1325,7 +1368,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if getattr(self, "_selected_track", None):
             self._cue_a = self._selected_track.cue_in_ms
             self._cue_b = self._selected_track.cue_out_ms
-        self._show_message("Autoâ€‘cue ustawione.")
+        self._show_message("Auto‑cue ustawione.")
 
     def _export_playlist_virtualdj(self):
         playlist = getattr(self, "_current_playlist", None)
@@ -1334,7 +1377,7 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             tracks = list(self.table_model._tracks)
         if not tracks:
-            self._show_message("Brak utworĂłw do eksportu.")
+            self._show_message("Brak utworów do eksportu.")
             return
         output_path, _ = QtWidgets.QFileDialog.getSaveFileName(
             self,
@@ -1358,16 +1401,16 @@ class MainWindow(QtWidgets.QMainWindow):
                 )
             )
         export_virtualdj_xml(xml_tracks, Path(output_path))
-        self._show_message("Eksport VirtualDJ zakoĹ„czony.")
+        self._show_message("Eksport VirtualDJ zakończony.")
 
     def _run_recognition_queue(self):
         tracks = self._selected_tracks()
         if not tracks:
-            self._show_message("Zaznacz co najmniej jeden utwĂłr.")
+            self._show_message("Zaznacz co najmniej jeden utwór.")
             return
         settings = load_settings()
         if not settings.acoustid_api_key:
-            self._show_message("Brak klucza AcoustID. UzupeĹ‚nij go w Ustawieniach.")
+            self._show_message("Brak klucza AcoustID. Uzupełnij go w Ustawieniach.")
             return
         self._recognition_worker = RecognitionBatchWorker(
             tracks,
@@ -1386,14 +1429,14 @@ class MainWindow(QtWidgets.QMainWindow):
         def on_progress(current: int, total: int):
             progress.setMaximum(total)
             progress.setValue(current)
-            self.status.showMessage(f"Rozpoznano {current}/{total} utworĂłw")
+            self.status.showMessage(f"Rozpoznano {current}/{total} utworów")
             if progress.wasCanceled():
                 self._recognition_worker.stop()
 
         def on_finished(processed: int, errors: int):
             progress.close()
             self._load_tracks()
-            self.status.showMessage(f"Rozpoznawanie zakoĹ„czone. BĹ‚Ä™dy: {errors}")
+            self.status.showMessage(f"Rozpoznawanie zakończone. Błędy: {errors}")
 
         self._recognition_worker.signals.progress.connect(on_progress)
         self._recognition_worker.signals.finished.connect(on_finished)
@@ -1433,7 +1476,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.mode_pill.setText("Tryb mieszany (lokalny)")
             self.mode_pill.setProperty("mode", "mixed")
         else:
-            self.mode_pill.setText(f"Tryb API â€¢ {provider}")
+            self.mode_pill.setText(f"Tryb API • {provider}")
             self.mode_pill.setProperty("mode", "api")
         self.mode_pill.style().unpolish(self.mode_pill)
         self.mode_pill.style().polish(self.mode_pill)
@@ -1445,7 +1488,7 @@ class MainWindow(QtWidgets.QMainWindow):
             super().closeEvent(event)
 
     def _show_placeholder(self):
-        self._show_message("Ta funkcja bÄ™dzie dostÄ™pna wkrĂłtce.")
+        self._show_message("Ta funkcja będzie dostępna wkrótce.")
 
     def _show_message(self, text: str):
         QtWidgets.QMessageBox.information(self, "Lumbago Music AI", text)
@@ -1481,39 +1524,40 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _build_menu(self):
         menu = self.menuBar()
-        tools = menu.addMenu("NarzÄ™dzia")
+        tools = menu.addMenu("Narzędzia")
         tools.addAction("Importuj / Skanuj", self._open_import_wizard)
         tools.addAction("Import XML", self._open_xml_import)
+        tools.addAction("Zeruj bibliotekę", self._reset_library)
         tools.addAction("AutoTagowanie (wyszukiwanie)", self._run_auto_tagger)
         tools.addAction("AutoTagowanie (API)", self._run_auto_tagger_cloud)
         tools.addAction("Analiza loudness (LUFS)", self._run_loudness_analysis)
         tools.addAction("Normalizuj do -14 LUFS (nowy plik)", self._run_loudness_normalize)
-        tools.addAction("Autoâ€‘cue (intro/outro)", self._auto_cue_selected)
-        tools.addAction("Wykryj tonacjÄ™ (autoâ€‘key)", self._run_key_detection)
+        tools.addAction("Auto‑cue (intro/outro)", self._auto_cue_selected)
+        tools.addAction("Wykryj tonację (auto‑key)", self._run_key_detection)
         tools.addAction("Metadane lokalne", self._apply_local_metadata_selected)
         tools.addAction("Duplikaty", self._open_duplicates)
         tools.addAction("Renamer", self._open_renamer)
         tools.addAction("Konwerter XML", self._open_xml_converter)
-        tools.addAction("Eksport playlisty â†’ VirtualDJ XML", self._export_playlist_virtualdj)
+        tools.addAction("Eksport playlisty → VirtualDJ XML", self._export_playlist_virtualdj)
         tools.addAction("Ustawienia", self._open_settings)
 
         help_menu = menu.addMenu("Pomoc")
-        help_menu.addAction("Instrukcja uĹĽytkownika", self._open_user_guide)
+        help_menu.addAction("Instrukcja użytkownika", self._open_user_guide)
 
     def _open_user_guide(self):
         guide_path = Path(__file__).resolve().parents[2] / "docs" / "user_guide.md"
         if guide_path.exists():
             QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(str(guide_path)))
         else:
-            self._show_message("Brak pliku instrukcji uĹĽytkownika.")
+            self._show_message("Brak pliku instrukcji użytkownika.")
 
     def _playlist_context_menu(self, pos):
         item = self.playlist_list.itemAt(pos)
         menu = QtWidgets.QMenu(self)
         add_action = menu.addAction("Nowa playlista")
-        edit_action = menu.addAction("Edytuj playlistÄ™")
-        delete_action = menu.addAction("UsuĹ„ playlistÄ™")
-        order_action = menu.addAction("KolejnoĹ›Ä‡ utworĂłw")
+        edit_action = menu.addAction("Edytuj playlistę")
+        delete_action = menu.addAction("Usuń playlistę")
+        order_action = menu.addAction("Kolejność utworów")
         action = menu.exec(self.playlist_list.mapToGlobal(pos))
         if action == add_action:
             self._open_playlist_editor()
@@ -1611,37 +1655,44 @@ class MainWindow(QtWidgets.QMainWindow):
         self.settings_btn.clicked.connect(self._open_settings)
         row.addWidget(self.settings_btn)
 
+        self.reset_library_btn = AnimatedButton("Zeruj bibliotekę")
+        self.reset_library_btn.setObjectName("DangerAction")
+        self.reset_library_btn.setToolTip("Usuń wszystkie utwory, playlisty i cache z bazy")
+        self.reset_library_btn.clicked.connect(self._reset_library)
+        row.addWidget(self.reset_library_btn)
+
         self.select_all_btn = AnimatedButton("Zaznacz wszystko")
-        self.select_all_btn.setToolTip("Zaznacz wszystkie utwory na liĹ›cie/siatce")
+        self.select_all_btn.setToolTip("Zaznacz wszystkie utwory na liście/siatce")
         self.select_all_btn.clicked.connect(self._select_all)
         row.addWidget(self.select_all_btn)
 
-        self.clear_sel_btn = AnimatedButton("WyczyĹ›Ä‡ zaznaczenie")
+        self.clear_sel_btn = AnimatedButton("Wyczyść zaznaczenie")
         self.clear_sel_btn.setToolTip("Odznacz wszystkie utwory")
         self.clear_sel_btn.clicked.connect(self._clear_selection)
         row.addWidget(self.clear_sel_btn)
 
         self.bulk_edit_btn = AnimatedButton("Edycja zbiorcza")
-        self.bulk_edit_btn.setToolTip("Masowa edycja tagĂłw dla wielu utworĂłw")
+        self.bulk_edit_btn.setToolTip("Masowa edycja tagów dla wielu utworów")
         self.bulk_edit_btn.clicked.connect(self._bulk_edit)
         row.addWidget(self.bulk_edit_btn)
 
-        self.compare_btn = AnimatedButton("PorĂłwnaj tagi")
-        self.compare_btn.setToolTip("PorĂłwnaj stare i nowe tagi dla utworĂłw")
+        self.compare_btn = AnimatedButton("Porównaj tagi")
+        self.compare_btn.setToolTip("Porównaj stare i nowe tagi dla utworów")
         self.compare_btn.clicked.connect(self._compare_tags)
         row.addWidget(self.compare_btn)
 
         self.auto_tag_btn = AnimatedButton("AutoTag (wyszukiwanie)")
         self.auto_tag_btn.setObjectName("AutoTagSearch")
-        self.auto_tag_btn.setToolTip("Uruchom AI + uzupeĹ‚nianie brakĂłw przez wyszukiwanie")
+        self.auto_tag_btn.setToolTip("Uruchom AI + uzupełnianie braków przez wyszukiwanie")
         self.auto_tag_btn.clicked.connect(self._run_auto_tagger)
         self.auto_tag_btn.enable_pulse()
         row.addWidget(self.auto_tag_btn)
 
         self.auto_tag_cloud_btn = AnimatedButton("AutoTag (API)")
         self.auto_tag_cloud_btn.setObjectName("AutoTagApi")
-        self.auto_tag_cloud_btn.setToolTip("Tagowanie wyĹ‚Ä…cznie przez API (OpenAI/Grok/DeepSeek/Gemini)")
+        self.auto_tag_cloud_btn.setToolTip("Tagowanie wyłącznie przez API (OpenAI/Grok/DeepSeek/Gemini)")
         self.auto_tag_cloud_btn.clicked.connect(self._run_auto_tagger_cloud)
         row.addWidget(self.auto_tag_cloud_btn)
         return frame
+
 

@@ -46,7 +46,7 @@ class PlaylistEditorDialog(QtWidgets.QDialog):
         form = QtWidgets.QFormLayout()
         self.name_input = QtWidgets.QLineEdit()
         self.desc_input = QtWidgets.QLineEdit()
-        self.smart_check = QtWidgets.QCheckBox("Playlista smart (reguĹ‚y)")
+        self.smart_check = QtWidgets.QCheckBox("Playlista smart (reguły)")
         self.search_input = QtWidgets.QLineEdit()
         self.genre_input = QtWidgets.QLineEdit()
         self.key_input = QtWidgets.QLineEdit()

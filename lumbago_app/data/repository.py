@@ -220,6 +220,18 @@ def replace_track_tags(track_path: str, tags: list[str], source: str, confidence
         session.commit()
 
 
+def reset_library() -> None:
+    Session = get_session_factory()
+    with Session() as session:
+        session.execute(delete(PlaylistTrackOrm))
+        session.execute(delete(PlaylistOrm))
+        session.execute(delete(TagOrm))
+        session.execute(delete(ChangeLogOrm))
+        session.execute(delete(MetadataCacheOrm))
+        session.execute(delete(TrackOrm))
+        session.commit()
+
+
 def delete_tracks_by_paths(paths: Iterable[str]) -> None:
     Session = get_session_factory()
     path_list = [path for path in paths]

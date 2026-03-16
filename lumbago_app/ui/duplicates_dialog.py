@@ -59,10 +59,10 @@ class DuplicatesDialog(QtWidgets.QDialog):
         top.addWidget(QtWidgets.QLabel("Metoda wykrywania:"))
         self.method = QtWidgets.QComboBox()
         self.method.addItems(["Hash", "Tagi", "Fingerprint", "Etapowo"])
-        self.method.setToolTip("Wybierz metodÄ™ wykrywania duplikatĂłw")
+        self.method.setToolTip("Wybierz metodę wykrywania duplikatów")
         top.addWidget(self.method)
         self.run_btn = QtWidgets.QPushButton("Szukaj")
-        self.run_btn.setToolTip("Uruchom skan duplikatĂłw")
+        self.run_btn.setToolTip("Uruchom skan duplikatów")
         self.run_btn.clicked.connect(self._run_scan)
         top.addWidget(self.run_btn)
         top.addStretch(1)
@@ -71,29 +71,34 @@ class DuplicatesDialog(QtWidgets.QDialog):
         self.tree = QtWidgets.QTreeWidget()
         self.tree.setColumnCount(7)
         self.tree.setHeaderLabels(
-            ["Grupa", "TytuĹ‚", "Artysta", "ĹšcieĹĽka", "Rozmiar", "BPM", "Tonacja"]
+            ["Grupa", "Tytuł", "Artysta", "Ścieżka", "Rozmiar", "BPM", "Tonacja"]
         )
         self.tree.setRootIsDecorated(True)
         self.tree.setAlternatingRowColors(True)
         self.tree.setUniformRowHeights(True)
-        self.tree.header().setStretchLastSection(True)
+        header = self.tree.header()
+        header.setStretchLastSection(True)
+        header.setSectionResizeMode(QtWidgets.QHeaderView.ResizeMode.Interactive)
+        header.setSectionsMovable(True)
+        header.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
+        header.customContextMenuRequested.connect(self._show_column_menu)
         layout.addWidget(self.tree, 1)
 
         actions = QtWidgets.QHBoxLayout()
         self.mark_btn = QtWidgets.QPushButton("Zaznacz duplikaty")
         self.mark_btn.setToolTip("Zaznacz wszystkie duplikaty (zostaw pierwsze)")
         self.mark_btn.clicked.connect(self._mark_duplicates)
-        self.clear_btn = QtWidgets.QPushButton("WyczyĹ›Ä‡ zaznaczenie")
+        self.clear_btn = QtWidgets.QPushButton("Wyczyść zaznaczenie")
         self.clear_btn.setToolTip("Odznacz wszystkie pozycje")
         self.clear_btn.clicked.connect(self._clear_marks)
-        self.move_btn = QtWidgets.QPushButton("PrzenieĹ› zaznaczone")
-        self.move_btn.setToolTip("PrzenieĹ› zaznaczone pliki do folderu")
+        self.move_btn = QtWidgets.QPushButton("Przenieś zaznaczone")
+        self.move_btn.setToolTip("Przenieś zaznaczone pliki do folderu")
         self.move_btn.clicked.connect(self._move_selected)
         self.merge_btn = QtWidgets.QPushButton("Scal metadane")
-        self.merge_btn.setToolTip("Scal brakujÄ…ce tagi do pierwszego utworu w grupie")
+        self.merge_btn.setToolTip("Scal brakujące tagi do pierwszego utworu w grupie")
         self.merge_btn.clicked.connect(self._merge_selected)
-        self.delete_btn = QtWidgets.QPushButton("UsuĹ„ zaznaczone")
-        self.delete_btn.setToolTip("UsuĹ„ zaznaczone pliki z dysku i bazy")
+        self.delete_btn = QtWidgets.QPushButton("Usuń zaznaczone")
+        self.delete_btn.setToolTip("Usuń zaznaczone pliki z dysku i bazy")
         self.delete_btn.clicked.connect(self._delete_selected)
         self.export_btn = QtWidgets.QPushButton("Eksportuj raport")
         self.export_btn.setToolTip("Zapisz raport CSV z wynikami")
@@ -113,7 +118,7 @@ class DuplicatesDialog(QtWidgets.QDialog):
     def _run_scan(self):
         self.tree.clear()
         method = self.method.currentText()
-        progress = QtWidgets.QProgressDialog("Skanowanie duplikatĂłw...", "Anuluj", 0, len(self._tracks), self)
+        progress = QtWidgets.QProgressDialog("Skanowanie duplikatów...", "Anuluj", 0, len(self._tracks), self)
         progress.setWindowTitle("Duplikaty")
         progress.setMinimumDuration(0)
 
@@ -132,6 +137,33 @@ class DuplicatesDialog(QtWidgets.QDialog):
         self._scanner.signals.progress.connect(on_progress)
         self._scanner.signals.finished.connect(on_finished)
         QtCore.QThreadPool.globalInstance().start(self._scanner)
+
+    def _show_column_menu(self, pos):
+        menu = QtWidgets.QMenu(self)
+        show_all = menu.addAction("Pokaż wszystkie")
+        hide_all = menu.addAction("Ukryj wszystkie")
+        menu.addSeparator()
+        actions = []
+        for col in range(self.tree.columnCount()):
+            name = self.tree.headerItem().text(col)
+            action = QtWidgets.QAction(name, menu)
+            action.setCheckable(True)
+            action.setChecked(not self.tree.isColumnHidden(col))
+            actions.append((action, col))
+            menu.addAction(action)
+        chosen = menu.exec(self.tree.header().mapToGlobal(pos))
+        if chosen == show_all:
+            for _, col in actions:
+                self.tree.setColumnHidden(col, False)
+            return
+        if chosen == hide_all:
+            for _, col in actions:
+                self.tree.setColumnHidden(col, True)
+            return
+        for action, col in actions:
+            if chosen == action:
+                self.tree.setColumnHidden(col, not action.isChecked())
+                break
 
     def _populate_tree(self, result):
         self._groups = []
@@ -216,7 +248,7 @@ class DuplicatesDialog(QtWidgets.QDialog):
         confirm = QtWidgets.QMessageBox.question(
             self,
             "Potwierdzenie",
-            "Czy na pewno usunÄ…Ä‡ zaznaczone pliki z dysku i bazy?",
+            "Czy na pewno usunąć zaznaczone pliki z dysku i bazy?",
         )
         if confirm != QtWidgets.QMessageBox.StandardButton.Yes:
             return

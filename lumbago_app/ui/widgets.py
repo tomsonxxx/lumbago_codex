@@ -19,6 +19,8 @@ class _DialogFadeFilter(QtCore.QObject):
 
 
 def apply_dialog_fade(dialog: QtWidgets.QDialog, duration_ms: int = 180) -> None:
+    dialog.setSizeGripEnabled(True)
+    dialog.setWindowFlag(QtCore.Qt.WindowType.WindowMaximizeButtonHint, True)
     anim = QtCore.QPropertyAnimation(dialog, b"windowOpacity", dialog)
     anim.setDuration(duration_ms)
     anim.setStartValue(0.0)
@@ -58,12 +60,12 @@ class AnimatedButton(QtWidgets.QPushButton):
         self._pulse_anim: QtCore.QPropertyAnimation | None = None
 
     def enterEvent(self, event):
-        if self.objectName() not in {"PrimaryAction", "AutoTagApi", "AutoTagSearch"}:
+        if self.objectName() not in {"PrimaryAction", "AutoTagApi", "AutoTagSearch", "DangerAction"}:
             self._start_anim(self._base_color, self._hover_color)
         super().enterEvent(event)
 
     def leaveEvent(self, event):
-        if self.objectName() not in {"PrimaryAction", "AutoTagApi", "AutoTagSearch"}:
+        if self.objectName() not in {"PrimaryAction", "AutoTagApi", "AutoTagSearch", "DangerAction"}:
             self._start_anim(self._hover_color, self._base_color)
         super().leaveEvent(event)
 

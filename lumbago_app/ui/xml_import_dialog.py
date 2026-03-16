@@ -106,7 +106,7 @@ class XmlImportDialog(QtWidgets.QDialog):
             for t in tracks
             if t.path
         ]
-        self.status.setText(f"Wczytano utworĂłw: {len(self._tracks)}")
+        self.status.setText(f"Wczytano utworów: {len(self._tracks)}")
 
     def _import(self):
         if not self._tracks:
@@ -114,7 +114,7 @@ class XmlImportDialog(QtWidgets.QDialog):
         if not self._tracks:
             return
         upsert_tracks(self._tracks)
-        QtWidgets.QMessageBox.information(self, "Import XML", f"Zaimportowano {len(self._tracks)} utworĂłw.")
+        QtWidgets.QMessageBox.information(self, "Import XML", f"Zaimportowano {len(self._tracks)} utworów.")
         self.accept()
 
 

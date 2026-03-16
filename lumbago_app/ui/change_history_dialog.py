@@ -9,7 +9,7 @@ from lumbago_app.data.repository import list_change_log
 class ChangeHistoryDialog(QtWidgets.QDialog):
     def __init__(self, track_path: str, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Historia zmian tagĂłw")
+        self.setWindowTitle("Historia zmian tagów")
         self.setMinimumSize(720, 420)
         apply_dialog_fade(self)
         self._track_path = track_path
@@ -41,8 +41,13 @@ class ChangeHistoryDialog(QtWidgets.QDialog):
         layout.addLayout(title_row)
 
         self.table = QtWidgets.QTableWidget(0, 5)
-        self.table.setHorizontalHeaderLabels(["Pole", "Stare", "Nowe", "ĹąrĂłdĹ‚o", "Data"])
-        self.table.horizontalHeader().setStretchLastSection(True)
+        self.table.setHorizontalHeaderLabels(["Pole", "Stare", "Nowe", "Źródło", "Data"])
+        header = self.table.horizontalHeader()
+        header.setStretchLastSection(True)
+        header.setSectionResizeMode(QtWidgets.QHeaderView.ResizeMode.Interactive)
+        header.setSectionsMovable(True)
+        header.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
+        header.customContextMenuRequested.connect(self._show_column_menu)
         layout.addWidget(self.table, 1)
         close_btn = QtWidgets.QPushButton("Zamknij")
         close_btn.clicked.connect(self.reject)
@@ -59,6 +64,33 @@ class ChangeHistoryDialog(QtWidgets.QDialog):
             self.table.setItem(row, 2, QtWidgets.QTableWidgetItem(entry["new"]))
             self.table.setItem(row, 3, QtWidgets.QTableWidgetItem(entry["source"]))
             self.table.setItem(row, 4, QtWidgets.QTableWidgetItem(entry["changed_at"]))
+
+    def _show_column_menu(self, pos):
+        menu = QtWidgets.QMenu(self)
+        show_all = menu.addAction("Pokaż wszystkie")
+        hide_all = menu.addAction("Ukryj wszystkie")
+        menu.addSeparator()
+        actions = []
+        for col in range(self.table.columnCount()):
+            name = self.table.horizontalHeaderItem(col).text()
+            action = QtWidgets.QAction(name, menu)
+            action.setCheckable(True)
+            action.setChecked(not self.table.isColumnHidden(col))
+            actions.append((action, col))
+            menu.addAction(action)
+        chosen = menu.exec(self.table.horizontalHeader().mapToGlobal(pos))
+        if chosen == show_all:
+            for _, col in actions:
+                self.table.setColumnHidden(col, False)
+            return
+        if chosen == hide_all:
+            for _, col in actions:
+                self.table.setColumnHidden(col, True)
+            return
+        for action, col in actions:
+            if chosen == action:
+                self.table.setColumnHidden(col, not action.isChecked())
+                break
 
 
 

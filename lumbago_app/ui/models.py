@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from datetime import datetime
 
 from PyQt6 import QtCore, QtGui, QtWidgets
 
@@ -8,7 +9,35 @@ from lumbago_app.core.models import Track
 
 
 class TrackTableModel(QtCore.QAbstractTableModel):
-    headers = ["Title", "Artist", "Album", "Genre", "BPM", "Key", "Duration", "Path"]
+    headers = [
+        "Tytuł",
+        "Artysta",
+        "Album",
+        "Rok",
+        "Gatunek",
+        "BPM",
+        "Tonacja",
+        "Nastrój",
+        "Energia",
+        "Głośność (LUFS)",
+        "Czas",
+        "Format",
+        "Bitrate",
+        "Sample rate",
+        "Rozmiar",
+        "Odtworzenia",
+        "Ocena",
+        "Cue In",
+        "Cue Out",
+        "Fingerprint",
+        "Hash pliku",
+        "Data dodania",
+        "Data modyfikacji",
+        "Okładka",
+        "Waveform",
+        "Ścieżka",
+        "Tagi",
+    ]
 
     def __init__(self, tracks: list[Track] | None = None):
         super().__init__()
@@ -29,11 +58,30 @@ class TrackTableModel(QtCore.QAbstractTableModel):
                 track.title or "",
                 track.artist or "",
                 track.album or "",
+                track.year or "",
                 track.genre or "",
-                f"{track.bpm:.1f}" if track.bpm else "",
+                _format_float(track.bpm, 1),
                 track.key or "",
+                track.mood or "",
+                _format_float(track.energy, 2),
+                _format_float(track.loudness_lufs, 1),
                 _format_duration(track.duration),
+                track.format or "",
+                _format_int(track.bitrate),
+                _format_int(track.sample_rate),
+                _format_size(track.file_size),
+                _format_int(track.play_count),
+                _format_int(track.rating),
+                _format_ms(track.cue_in_ms),
+                _format_ms(track.cue_out_ms),
+                track.fingerprint or "",
+                track.file_hash or "",
+                _format_date(track.date_added),
+                _format_date(track.date_modified),
+                track.artwork_path or "",
+                track.waveform_path or "",
                 track.path,
+                _format_tags(track.tags),
             ][index.column()]
         if role == QtCore.Qt.ItemDataRole.DecorationRole and index.column() == 0:
             if track.artwork_path:
@@ -69,6 +117,48 @@ def _format_duration(seconds: int | None) -> str:
         return ""
     minutes, secs = divmod(int(seconds), 60)
     return f"{minutes}:{secs:02d}"
+
+
+def _format_float(value: float | None, digits: int) -> str:
+    if value is None:
+        return ""
+    return f"{value:.{digits}f}"
+
+
+def _format_int(value: int | None) -> str:
+    if value is None:
+        return ""
+    return str(int(value))
+
+
+def _format_ms(value: int | None) -> str:
+    if value is None:
+        return ""
+    seconds = int(value) // 1000
+    return _format_duration(seconds)
+
+
+def _format_size(value: int | None) -> str:
+    if value is None:
+        return ""
+    size = float(value)
+    for unit in ["B", "KB", "MB", "GB"]:
+        if size < 1024.0:
+            return f"{size:.1f} {unit}"
+        size /= 1024.0
+    return f"{size:.1f} TB"
+
+
+def _format_date(value: datetime | None) -> str:
+    if not value:
+        return ""
+    return value.strftime("%Y-%m-%d %H:%M")
+
+
+def _format_tags(tags: list) -> str:
+    if not tags:
+        return ""
+    return ", ".join(tag.value for tag in tags if tag.value)
 
 
 class TrackGridDelegate(QtWidgets.QStyledItemDelegate):

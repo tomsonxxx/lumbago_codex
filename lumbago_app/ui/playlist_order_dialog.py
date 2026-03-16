@@ -9,7 +9,7 @@ from lumbago_app.core.models import Track
 class PlaylistOrderDialog(QtWidgets.QDialog):
     def __init__(self, tracks: list[Track], parent=None):
         super().__init__(parent)
-        self.setWindowTitle("KolejnoĹ›Ä‡ w playliĹ›cie")
+        self.setWindowTitle("Kolejność w playliście")
         self.setMinimumSize(520, 420)
         apply_dialog_fade(self)
         self._tracks = tracks
@@ -48,9 +48,9 @@ class PlaylistOrderDialog(QtWidgets.QDialog):
         layout.addWidget(self.list_widget, 1)
 
         controls = QtWidgets.QHBoxLayout()
-        up_btn = QtWidgets.QPushButton("GĂłra")
+        up_btn = QtWidgets.QPushButton("Góra")
         up_btn.clicked.connect(self._move_up)
-        down_btn = QtWidgets.QPushButton("DĂłĹ‚")
+        down_btn = QtWidgets.QPushButton("Dół")
         down_btn.clicked.connect(self._move_down)
         controls.addWidget(up_btn)
         controls.addWidget(down_btn)

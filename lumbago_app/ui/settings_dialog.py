@@ -58,7 +58,7 @@ class SettingsDialog(QtWidgets.QDialog):
         self.deepseek_model = QtWidgets.QLineEdit()
         self.filename_patterns = QtWidgets.QTextEdit()
         self.filename_patterns.setPlaceholderText(
-            "PrzykĹ‚ad: (?P<artist>.+) - (?P<title>.+)"
+            "Przykład: (?P<artist>.+) - (?P<title>.+)"
         )
         self.validation_policy = QtWidgets.QComboBox()
         self.validation_policy.addItems(["strict", "balanced", "lenient"])
@@ -90,7 +90,7 @@ class SettingsDialog(QtWidgets.QDialog):
         form.addRow("Klucz OpenAI API", self.openai_api_key)
         form.addRow("Adres bazowy OpenAI (URL)", self.openai_base_url)
         form.addRow("Model OpenAI", self.openai_model)
-        form.addRow("Wzorce nazw plikĂłw (regex, 1 na liniÄ™)", self.filename_patterns)
+        form.addRow("Wzorce nazw plików (regex, 1 na linię)", self.filename_patterns)
         form.addRow("Walidacja metadanych", self.validation_policy)
         form.addRow("Cache metadanych (TTL)", self.metadata_cache_ttl)
 

@@ -10,7 +10,7 @@ from lumbago_app.ui.widgets import apply_dialog_fade, dialog_icon_pixmap
 class BulkEditDialog(QtWidgets.QDialog):
     def __init__(self, tracks: list[Track], parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Edycja zbiorcza tagĂłw")
+        self.setWindowTitle("Edycja zbiorcza tagów")
         self.setMinimumWidth(520)
         apply_dialog_fade(self)
         self._tracks = tracks
@@ -42,7 +42,7 @@ class BulkEditDialog(QtWidgets.QDialog):
 
         form = QtWidgets.QFormLayout()
 
-        self.title_check = QtWidgets.QCheckBox("TytuĹ‚")
+        self.title_check = QtWidgets.QCheckBox("Tytuł")
         self.artist_check = QtWidgets.QCheckBox("Artysta")
         self.album_check = QtWidgets.QCheckBox("Album")
         self.genre_check = QtWidgets.QCheckBox("Gatunek")

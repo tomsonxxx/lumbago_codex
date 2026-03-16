@@ -5,7 +5,7 @@ CYBER_QSS = """
 QWidget {
     background-color: #0b0f16;
     color: #e8f3ff;
-    font-family: Segoe UI;
+    font-family: "Segoe UI", "Noto Sans", "Arial";
     font-size: 12px;
 }
 
@@ -148,6 +148,10 @@ QFrame#DialogCard {
     background-color: rgba(15, 19, 34, 220);
     border: 1px solid #22324a;
     border-radius: 16px;
+}
+QLabel#DialogHint {
+    color: #8fb8d8;
+    padding: 4px 2px 0 2px;
 }
 
 QHeaderView::section {

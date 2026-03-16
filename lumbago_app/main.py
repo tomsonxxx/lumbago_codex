@@ -8,7 +8,7 @@ import os
 sys.coinit_flags = 2
 
 from dotenv import load_dotenv
-from PyQt6 import QtCore, QtWidgets
+from PyQt6 import QtCore, QtGui, QtWidgets
 
 from lumbago_app.ui.main_window import MainWindow
 from lumbago_app.ui.theme import CYBER_QSS
@@ -21,6 +21,7 @@ def main() -> int:
     _install_exception_hooks()
     QtCore.QCoreApplication.setAttribute(QtCore.Qt.ApplicationAttribute.AA_UseSoftwareOpenGL)
     app = QtWidgets.QApplication(sys.argv)
+    app.setFont(QtGui.QFont("Segoe UI", 10))
     app.setStyleSheet(CYBER_QSS)
     app.aboutToQuit.connect(lambda: _write_log("app.log", "aboutToQuit"))
     try:

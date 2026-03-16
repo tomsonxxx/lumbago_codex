@@ -82,7 +82,7 @@ class XmlConverterDialog(QtWidgets.QDialog):
             self.status.setText("Nie znaleziono pliku.")
             return
         self._tracks = parse_rekordbox_xml(path)
-        self.status.setText(f"Wczytano utworĂłw: {len(self._tracks)}")
+        self.status.setText(f"Wczytano utworów: {len(self._tracks)}")
 
     def _export(self):
         if not self._tracks:
@@ -98,7 +98,7 @@ class XmlConverterDialog(QtWidgets.QDialog):
         if not out_path:
             return
         export_virtualdj_xml(self._tracks, Path(out_path))
-        QtWidgets.QMessageBox.information(self, "Konwerter XML", "Eksport zakoĹ„czony.")
+        QtWidgets.QMessageBox.information(self, "Konwerter XML", "Eksport zakończony.")
 
 
 

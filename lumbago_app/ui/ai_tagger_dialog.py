@@ -22,7 +22,7 @@ class AiTaggerDialog(QtWidgets.QDialog):
         force_cloud: bool = False,
     ):
         super().__init__(parent)
-        self.setWindowTitle("Tagger AI")
+        self.setWindowTitle("AutoTagowanie AI")
         self.setMinimumSize(760, 460)
         apply_dialog_fade(self)
         self._tracks = tracks
@@ -61,15 +61,25 @@ class AiTaggerDialog(QtWidgets.QDialog):
         self.provider_label = QtWidgets.QLabel("")
         layout.addWidget(self.provider_label)
 
-        self.table = QtWidgets.QTableWidget(0, 7)
+        self.table = QtWidgets.QTableWidget(0, 10)
         self.table.setHorizontalHeaderLabels(
-            ["TytuĹ‚", "Artysta", "BPM", "Tonacja", "NastrĂłj", "Energia", "Akcja"]
+            ["Tytuł", "Artysta", "BPM", "Tonacja", "Gatunek", "Nastrój", "Energia", "Pewność", "Status", "Akcja"]
         )
-        self.table.horizontalHeader().setStretchLastSection(True)
+        self.table.setAlternatingRowColors(True)
+        header = self.table.horizontalHeader()
+        header.setSectionResizeMode(QtWidgets.QHeaderView.ResizeMode.Interactive)
+        header.setSectionsMovable(True)
+        header.setStretchLastSection(True)
+        header.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
+        header.customContextMenuRequested.connect(self._show_column_menu)
         layout.addWidget(self.table, 1)
 
+        self.status_label = QtWidgets.QLabel("")
+        self.status_label.setObjectName("DialogHint")
+        layout.addWidget(self.status_label)
+
         options = QtWidgets.QHBoxLayout()
-        self.auto_fetch = QtWidgets.QCheckBox("Autoâ€‘uzupeĹ‚niaj brakujÄ…ce tagi z internetu")
+        self.auto_fetch = QtWidgets.QCheckBox("Auto‑uzupełniaj brakujące tagi z internetu")
         self.auto_fetch.setChecked(self._auto_fetch_default)
         self.auto_method = QtWidgets.QComboBox()
         self.auto_method.addItems(
@@ -94,13 +104,13 @@ class AiTaggerDialog(QtWidgets.QDialog):
 
         row = QtWidgets.QHBoxLayout()
         self.accept_all_btn = QtWidgets.QPushButton("Akceptuj wszystko")
-        self.accept_all_btn.setToolTip("Ustaw akcjÄ™ Akceptuj dla wszystkich")
+        self.accept_all_btn.setToolTip("Ustaw akcję Akceptuj dla wszystkich")
         self.accept_all_btn.clicked.connect(lambda: self._set_all_actions("Akceptuj"))
-        self.reject_all_btn = QtWidgets.QPushButton("OdrzuÄ‡ wszystko")
-        self.reject_all_btn.setToolTip("Ustaw akcjÄ™ OdrzuÄ‡ dla wszystkich")
-        self.reject_all_btn.clicked.connect(lambda: self._set_all_actions("OdrzuÄ‡"))
+        self.reject_all_btn = QtWidgets.QPushButton("Odrzuć wszystko")
+        self.reject_all_btn.setToolTip("Ustaw akcję Odrzuć dla wszystkich")
+        self.reject_all_btn.clicked.connect(lambda: self._set_all_actions("Odrzuć"))
         self.apply_all = QtWidgets.QPushButton("Zastosuj wszystko")
-        self.apply_all.setToolTip("Zapisz wynik tagowania dla utworĂłw z akcjÄ… Akceptuj")
+        self.apply_all.setToolTip("Zapisz wynik tagowania dla utworów z akcją Akceptuj")
         self.apply_all.clicked.connect(self._apply_all)
         self.cancel_btn = QtWidgets.QPushButton("Anuluj")
         self.cancel_btn.setToolTip("Zamknij bez zapisywania")
@@ -117,13 +127,13 @@ class AiTaggerDialog(QtWidgets.QDialog):
         settings = load_settings()
         provider = settings.cloud_ai_provider or "local"
         mode_label = "tryb API" if self._force_cloud else "tryb mieszany"
-        self.provider_label.setText(f"Provider: {provider} â€¢ {mode_label}")
+        self.provider_label.setText(f"Dostawca: {provider} • {mode_label}")
 
         if self._force_cloud and provider == "local":
             QtWidgets.QMessageBox.warning(
                 self,
                 "Brak providera chmurowego",
-                "Ustaw dostawcÄ™ Cloud AI (OpenAI/Grok/DeepSeek/Gemini) w Ustawieniach.",
+                "Ustaw dostawcę Cloud AI (OpenAI/Grok/DeepSeek/Gemini) w Ustawieniach.",
             )
             return
 
@@ -173,25 +183,58 @@ class AiTaggerDialog(QtWidgets.QDialog):
                 self.table.setItem(row, 1, QtWidgets.QTableWidgetItem(track.artist or ""))
                 self.table.setItem(row, 2, QtWidgets.QTableWidgetItem(str(result.bpm or "")))
                 self.table.setItem(row, 3, QtWidgets.QTableWidgetItem(result.key or ""))
-                self.table.setItem(row, 4, QtWidgets.QTableWidgetItem(result.mood or ""))
-                self.table.setItem(row, 5, QtWidgets.QTableWidgetItem(str(result.energy or "")))
+                self.table.setItem(row, 4, QtWidgets.QTableWidgetItem(result.genre or ""))
+                self.table.setItem(row, 5, QtWidgets.QTableWidgetItem(result.mood or ""))
+                self.table.setItem(row, 6, QtWidgets.QTableWidgetItem(str(result.energy or "")))
+                self.table.setItem(row, 7, QtWidgets.QTableWidgetItem(str(result.confidence or "")))
+                self.table.setItem(row, 8, QtWidgets.QTableWidgetItem(result.description or ""))
                 action = QtWidgets.QComboBox()
-                action.addItems(["Akceptuj", "OdrzuÄ‡"])
-                action.setToolTip("Akceptuj lub odrzuÄ‡ propozycjÄ™")
-                self.table.setCellWidget(row, 6, action)
+                action.addItems(["Akceptuj", "Odrzuć"])
+                action.setToolTip("Akceptuj lub odrzuć propozycję")
+                self.table.setCellWidget(row, 9, action)
                 if result.description and "Cloud AI" in result.description:
                     error_messages.append(result.description)
             if error_messages:
                 message = error_messages[0]
+                self.status_label.setText(f"Problem z API: {message}")
                 QtWidgets.QMessageBox.warning(
                     self,
                     "Problem z API",
-                    f"{message}\nSprawdĹş ustawienia providera, modelu i limitĂłw rozliczeĹ„.",
+                    f"{message}\nSprawdź ustawienia providera, modelu i limitów rozliczeń.",
                 )
+            else:
+                self.status_label.setText("Analiza zakończona. Sprawdź wyniki i wybierz akcje.")
 
         self._worker.signals.progress.connect(on_progress)
         self._worker.signals.finished.connect(on_finished)
         QtCore.QThreadPool.globalInstance().start(self._worker)
+
+    def _show_column_menu(self, pos):
+        menu = QtWidgets.QMenu(self)
+        show_all = menu.addAction("Pokaż wszystkie")
+        hide_all = menu.addAction("Ukryj wszystkie")
+        menu.addSeparator()
+        actions = []
+        for col in range(self.table.columnCount()):
+            name = self.table.horizontalHeaderItem(col).text()
+            action = QtWidgets.QAction(name, menu)
+            action.setCheckable(True)
+            action.setChecked(not self.table.isColumnHidden(col))
+            actions.append((action, col))
+            menu.addAction(action)
+        chosen = menu.exec(self.table.horizontalHeader().mapToGlobal(pos))
+        if chosen == show_all:
+            for _, col in actions:
+                self.table.setColumnHidden(col, False)
+            return
+        if chosen == hide_all:
+            for _, col in actions:
+                self.table.setColumnHidden(col, True)
+            return
+        for action, col in actions:
+            if chosen == action:
+                self.table.setColumnHidden(col, not action.isChecked())
+                break
 
     def _apply_all(self):
         accepted_tracks: list[Track] = []

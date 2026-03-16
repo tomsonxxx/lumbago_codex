@@ -16,7 +16,7 @@ from lumbago_app.core.models import Track
 class TagCompareDialog(QtWidgets.QDialog):
     def __init__(self, tracks: list[Track], parent=None):
         super().__init__(parent)
-        self.setWindowTitle("PorĂłwnanie tagĂłw")
+        self.setWindowTitle("Porównanie tagów")
         self.setMinimumSize(780, 460)
         apply_dialog_fade(self)
         self._tracks = tracks
@@ -68,24 +68,29 @@ class TagCompareDialog(QtWidgets.QDialog):
         layout.addLayout(header)
 
         self.table = QtWidgets.QTableWidget(0, 4)
-        self.table.setHorizontalHeaderLabels(["Tag", "Stare", "Nowe", "UĹĽyj starego"])
-        self.table.horizontalHeader().setStretchLastSection(True)
+        self.table.setHorizontalHeaderLabels(["Tag", "Stare", "Nowe", "Użyj starego"])
+        header_table = self.table.horizontalHeader()
+        header_table.setStretchLastSection(True)
+        header_table.setSectionResizeMode(QtWidgets.QHeaderView.ResizeMode.Interactive)
+        header_table.setSectionsMovable(True)
+        header_table.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
+        header_table.customContextMenuRequested.connect(self._show_column_menu)
         layout.addWidget(self.table, 1)
 
         nav = QtWidgets.QHBoxLayout()
         self.prev_btn = QtWidgets.QPushButton("Poprzedni")
         self.prev_btn.clicked.connect(self._prev)
-        self.prev_btn.setToolTip("WrĂłÄ‡ do poprzedniego utworu")
-        self.next_btn = QtWidgets.QPushButton("NastÄ™pny")
+        self.prev_btn.setToolTip("Wróć do poprzedniego utworu")
+        self.next_btn = QtWidgets.QPushButton("Następny")
         self.next_btn.clicked.connect(self._next)
-        self.next_btn.setToolTip("PrzejdĹş do nastÄ™pnego utworu")
+        self.next_btn.setToolTip("Przejdź do następnego utworu")
         self.apply_current_btn = QtWidgets.QPushButton("Zapisz dla tego utworu")
         self.apply_current_btn.clicked.connect(self._apply_current)
-        self.apply_current_btn.setToolTip("Zapisz tagi tylko dla bieĹĽÄ…cego utworu")
+        self.apply_current_btn.setToolTip("Zapisz tagi tylko dla bieżącego utworu")
         self.apply_all_btn = QtWidgets.QPushButton("Zapisz wszystkie")
         self.apply_all_btn.clicked.connect(self._apply_all)
-        self.apply_all_btn.setToolTip("Zapisz tagi dla wszystkich utworĂłw z listy")
-        self.apply_diff_btn = QtWidgets.QPushButton("Zastosuj tylko rĂłĹĽnice")
+        self.apply_all_btn.setToolTip("Zapisz tagi dla wszystkich utworów z listy")
+        self.apply_diff_btn = QtWidgets.QPushButton("Zastosuj tylko różnice")
         self.apply_diff_btn.clicked.connect(self._apply_diff_current)
         self.apply_diff_btn.setToolTip("Zapisz tylko zmienione tagi")
         self.cancel_btn = QtWidgets.QPushButton("Anuluj")
@@ -103,7 +108,7 @@ class TagCompareDialog(QtWidgets.QDialog):
         if not self._tracks:
             return
         track = self._tracks[self._index]
-        self.title_label.setText(f"{track.title or 'Nieznany'} â€” {track.artist or ''}")
+        self.title_label.setText(f"{track.title or 'Nieznany'} — {track.artist or ''}")
         old_tags = read_tags_from_track(track)
         new_tags = getattr(track, "_pending_new_tags", None) or build_new_tags_from_track(track)
         for key in POPULAR_TAGS:
@@ -124,13 +129,40 @@ class TagCompareDialog(QtWidgets.QDialog):
             new_item = QtWidgets.QTableWidgetItem(new_tags.get(tag, ""))
             new_item.setFlags(new_item.flags() | QtCore.Qt.ItemFlag.ItemIsEditable)
             self.table.setItem(row, 2, new_item)
-            btn = QtWidgets.QPushButton("UĹĽyj")
+            btn = QtWidgets.QPushButton("Użyj")
             btn.clicked.connect(lambda _, r=row: self._copy_new(r))
             self.table.setCellWidget(row, 3, btn)
         self.prev_btn.setEnabled(self._index > 0)
         self.next_btn.setEnabled(self._index < len(self._tracks) - 1)
         self._update_preview(old_tags, new_tags)
         self._update_cover(track)
+
+    def _show_column_menu(self, pos):
+        menu = QtWidgets.QMenu(self)
+        show_all = menu.addAction("Pokaż wszystkie")
+        hide_all = menu.addAction("Ukryj wszystkie")
+        menu.addSeparator()
+        actions = []
+        for col in range(self.table.columnCount()):
+            name = self.table.horizontalHeaderItem(col).text()
+            action = QtWidgets.QAction(name, menu)
+            action.setCheckable(True)
+            action.setChecked(not self.table.isColumnHidden(col))
+            actions.append((action, col))
+            menu.addAction(action)
+        chosen = menu.exec(self.table.horizontalHeader().mapToGlobal(pos))
+        if chosen == show_all:
+            for _, col in actions:
+                self.table.setColumnHidden(col, False)
+            return
+        if chosen == hide_all:
+            for _, col in actions:
+                self.table.setColumnHidden(col, True)
+            return
+        for action, col in actions:
+            if chosen == action:
+                self.table.setColumnHidden(col, not action.isChecked())
+                break
 
     def _copy_new(self, row: int):
         old_item = self.table.item(row, 1)
