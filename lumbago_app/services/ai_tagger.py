@@ -32,7 +32,13 @@ class CloudAiTagger:
     def analyze(self, track: Track) -> AnalysisResult:
         if not self.provider or not self.api_key:
             return AnalysisResult(description="Cloud AI not configured", confidence=0.0)
-        if not self.base_url or not self.model:
+        if self.provider == "gemini":
+            base_url = self.base_url or "https://generativelanguage.googleapis.com/v1beta"
+            model = self.model or "gemini-2.5-flash"
+        else:
+            base_url = self.base_url
+            model = self.model
+        if not base_url or not model:
             return AnalysisResult(description="Cloud AI missing base URL or model", confidence=0.0)
 
         missing = _missing_fields(track)
@@ -41,10 +47,12 @@ class CloudAiTagger:
         prompt = _build_prompt(track, missing)
         try:
             if self.provider == "openai":
-                text = _call_openai_responses(self.base_url, self.api_key, self.model, prompt, self.timeout)
+                text = _call_openai_responses(base_url, self.api_key, model, prompt, self.timeout)
+            elif self.provider == "gemini":
+                text = _call_gemini_generate_content(base_url, self.api_key, model, prompt, self.timeout)
             else:
                 text = _call_openai_compatible_chat(
-                    self.base_url, self.api_key, self.model, prompt, self.timeout
+                    base_url, self.api_key, model, prompt, self.timeout
                 )
             payload = _safe_json(text)
             if not isinstance(payload, dict):
@@ -140,6 +148,27 @@ def _call_openai_compatible_chat(
     return _extract_text_from_chat_completions(data)
 
 
+def _call_gemini_generate_content(
+    base_url: str, api_key: str, model: str, prompt: str, timeout: int
+) -> str:
+    url = f"{base_url.rstrip('/')}/models/{model}:generateContent"
+    headers = {
+        "x-goog-api-key": api_key,
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "contents": [
+            {
+                "parts": [{"text": prompt}],
+            }
+        ]
+    }
+    resp = requests.post(url, headers=headers, json=payload, timeout=timeout)
+    resp.raise_for_status()
+    data = resp.json()
+    return _extract_text_from_gemini(data)
+
+
 def _extract_text_from_responses(data: dict[str, Any]) -> str:
     output = data.get("output", [])
     if not isinstance(output, list):
@@ -159,6 +188,18 @@ def _extract_text_from_chat_completions(data: dict[str, Any]) -> str:
         return ""
     message = choices[0].get("message", {})
     return message.get("content", "") or ""
+
+
+def _extract_text_from_gemini(data: dict[str, Any]) -> str:
+    candidates = data.get("candidates", [])
+    if not candidates:
+        return ""
+    content = candidates[0].get("content", {})
+    parts = content.get("parts", [])
+    if not parts:
+        return ""
+    text = parts[0].get("text", "")
+    return text or ""
 
 
 def _safe_json(text: str) -> Any:

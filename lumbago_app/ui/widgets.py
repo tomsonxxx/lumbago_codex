@@ -58,12 +58,12 @@ class AnimatedButton(QtWidgets.QPushButton):
         self._pulse_anim: QtCore.QPropertyAnimation | None = None
 
     def enterEvent(self, event):
-        if self.objectName() != "PrimaryAction":
+        if self.objectName() not in {"PrimaryAction", "AutoTagApi", "AutoTagSearch"}:
             self._start_anim(self._base_color, self._hover_color)
         super().enterEvent(event)
 
     def leaveEvent(self, event):
-        if self.objectName() != "PrimaryAction":
+        if self.objectName() not in {"PrimaryAction", "AutoTagApi", "AutoTagSearch"}:
             self._start_anim(self._hover_color, self._base_color)
         super().leaveEvent(event)
 

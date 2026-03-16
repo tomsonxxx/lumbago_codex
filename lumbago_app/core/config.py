@@ -115,7 +115,9 @@ def load_settings() -> Settings:
         ),
         cloud_ai_api_key=_first_value(
             payload.get("CLOUD_AI_API_KEY"),
+            payload.get("GEMINI_API_KEY"),
             os.getenv("CLOUD_AI_API_KEY"),
+            os.getenv("GEMINI_API_KEY"),
             auto.get("CLOUD_AI_API_KEY"),
         ),
         grok_api_key=_first_value(

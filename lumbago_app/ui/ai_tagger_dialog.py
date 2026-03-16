@@ -12,7 +12,15 @@ from lumbago_app.ui.widgets import apply_dialog_fade, dialog_icon_pixmap
 
 
 class AiTaggerDialog(QtWidgets.QDialog):
-    def __init__(self, tracks: list[Track], parent=None, auto_fetch: bool = False, auto_method: str | None = None):
+    def __init__(
+        self,
+        tracks: list[Track],
+        parent=None,
+        auto_fetch: bool = False,
+        auto_method: str | None = None,
+        allow_auto_fetch: bool = True,
+        force_cloud: bool = False,
+    ):
         super().__init__(parent)
         self.setWindowTitle("Tagger AI")
         self.setMinimumSize(760, 460)
@@ -20,6 +28,8 @@ class AiTaggerDialog(QtWidgets.QDialog):
         self._tracks = tracks
         self._auto_fetch_default = auto_fetch
         self._auto_method_default = auto_method
+        self._allow_auto_fetch = allow_auto_fetch
+        self._force_cloud = force_cloud
         self._results: dict[str, AnalysisResult] = {}
         self._build_ui()
         self._analyze()
@@ -75,6 +85,11 @@ class AiTaggerDialog(QtWidgets.QDialog):
         options.addWidget(self.auto_fetch)
         options.addWidget(self.auto_method)
         options.addStretch(1)
+        if not self._allow_auto_fetch:
+            self.auto_fetch.setChecked(False)
+            self.auto_fetch.setEnabled(False)
+            self.auto_method.setEnabled(False)
+            self.auto_method.setVisible(False)
         layout.addLayout(options)
 
         row = QtWidgets.QHBoxLayout()
@@ -101,13 +116,29 @@ class AiTaggerDialog(QtWidgets.QDialog):
         self.table.setRowCount(0)
         settings = load_settings()
         provider = settings.cloud_ai_provider or "local"
-        self.provider_label.setText(f"Provider: {provider}")
+        mode_label = "tryb API" if self._force_cloud else "tryb mieszany"
+        self.provider_label.setText(f"Provider: {provider} â€¢ {mode_label}")
+
+        if self._force_cloud and provider == "local":
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Brak providera chmurowego",
+                "Ustaw dostawcÄ™ Cloud AI (OpenAI/Grok/DeepSeek/Gemini) w Ustawieniach.",
+            )
+            return
 
         if provider == "local":
             tagger = LocalAiTagger()
         else:
             key = settings.cloud_ai_api_key or settings.openai_api_key or settings.grok_api_key or settings.deepseek_api_key
             base_url, model = _provider_settings(provider, settings)
+            if not key:
+                QtWidgets.QMessageBox.warning(
+                    self,
+                    "Brak klucza API",
+                    "Ustaw klucz API dla wybranego providera w Ustawieniach.",
+                )
+                return
             tagger = CloudAiTagger(provider, key, base_url=base_url, model=model)
 
         method = _auto_method_id(self.auto_method.currentText(), settings)
@@ -133,6 +164,7 @@ class AiTaggerDialog(QtWidgets.QDialog):
 
         def on_finished(results: list[tuple[Track, AnalysisResult]]):
             progress.close()
+            error_messages = []
             for track, result in results:
                 self._results[track.path] = result
                 row = self.table.rowCount()
@@ -147,6 +179,15 @@ class AiTaggerDialog(QtWidgets.QDialog):
                 action.addItems(["Akceptuj", "OdrzuÄ‡"])
                 action.setToolTip("Akceptuj lub odrzuÄ‡ propozycjÄ™")
                 self.table.setCellWidget(row, 6, action)
+                if result.description and "Cloud AI" in result.description:
+                    error_messages.append(result.description)
+            if error_messages:
+                message = error_messages[0]
+                QtWidgets.QMessageBox.warning(
+                    self,
+                    "Problem z API",
+                    f"{message}\nSprawdĹş ustawienia providera, modelu i limitĂłw rozliczeĹ„.",
+                )
 
         self._worker.signals.progress.connect(on_progress)
         self._worker.signals.finished.connect(on_finished)
