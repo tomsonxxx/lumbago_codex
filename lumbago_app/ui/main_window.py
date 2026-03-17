@@ -46,6 +46,7 @@ from lumbago_app.data.repository import (
 )
 from lumbago_app.ui.ai_tagger_dialog import AiTaggerDialog
 from lumbago_app.ui.bulk_edit_dialog import BulkEditDialog
+from lumbago_app.ui.dashboard_view import DashboardView
 from lumbago_app.ui.change_history_dialog import ChangeHistoryDialog
 from lumbago_app.ui.duplicates_dialog import DuplicatesDialog
 from lumbago_app.ui.import_wizard import ImportWizard
@@ -301,6 +302,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.thread_pool = QtCore.QThreadPool.globalInstance()
         self._apply_app_icon()
 
+        self._activity_log: list[dict] = []
         self._build_ui()
         _debug_log("MainWindow: build_ui ok")
         self._load_tracks()
@@ -312,29 +314,226 @@ class MainWindow(QtWidgets.QMainWindow):
     def _build_ui(self):
         central = QtWidgets.QWidget()
         self.setCentralWidget(central)
-        layout = QtWidgets.QHBoxLayout(central)
-        layout.setContentsMargins(0, 0, 0, 0)
+        root_lay = QtWidgets.QHBoxLayout(central)
+        root_lay.setContentsMargins(0, 0, 0, 0)
+        root_lay.setSpacing(0)
+
+        # ── Nav sidebar (ikony widoków) ────────────────────────────────────
+        self._nav_sidebar_widget = self._build_nav_sidebar()
+        root_lay.addWidget(self._nav_sidebar_widget)
+
+        # ── Prawa kolumna: topbar + strony + player ───────────────────────
+        right_col = QtWidgets.QWidget()
+        right_col_lay = QtWidgets.QVBoxLayout(right_col)
+        right_col_lay.setContentsMargins(0, 0, 0, 0)
+        right_col_lay.setSpacing(0)
+        root_lay.addWidget(right_col, 1)
+
+        topbar = self._build_topbar()
+        right_col_lay.addWidget(topbar)
+
+        # ── Stos stron ────────────────────────────────────────────────────
+        self._page_stack = QtWidgets.QStackedWidget()
+        right_col_lay.addWidget(self._page_stack, 1)
+
+        # Strona 0: Dashboard
+        self._dashboard_view = DashboardView()
+        self._dashboard_view.navigate_to.connect(self._on_dashboard_navigate)
+        self._page_stack.addWidget(self._dashboard_view)
+
+        # Strona 1: Biblioteka (tabela + sidebar + detail panel)
+        library_page = self._build_library_page()
+        self._page_stack.addWidget(library_page)
+
+        # Strona 2: Import
+        self._page_stack.addWidget(self._build_placeholder_page(
+            "📥", "Import plików",
+            "Importuj pliki MP3, FLAC, WAV, OGG z dysku lub folderu.",
+            [("Importuj / Skanuj", "PrimaryAction", self._open_import_wizard),
+             ("Watchfolder", None, self._setup_watchfolder_from_page)],
+        ))
+
+        # Strona 3: Duplikaty
+        self._page_stack.addWidget(self._build_placeholder_page(
+            "🔍", "Duplikaty",
+            "Znajdź i usuń duplikaty plików muzycznych w bibliotece.",
+            [("Wyszukaj duplikaty", "PrimaryAction", self._open_duplicates),
+             ("Zmiana nazw plików", None, self._open_renamer)],
+        ))
+
+        # Strona 4: Ustawienia
+        self._page_stack.addWidget(self._build_placeholder_page(
+            "⚙️", "Ustawienia",
+            "Konfiguracja aplikacji, klucze API i preferencje.",
+            [("Otwórz ustawienia", "PrimaryAction", self._open_settings)],
+        ))
+
+        # Strona 5: Odtwarzacz
+        self._page_stack.addWidget(self._build_placeholder_page(
+            "🎵", "Odtwarzacz",
+            "Wybierz utwór w Bibliotece (podwójne kliknięcie) aby odtwarzać.\n"
+            "Kontrolki odtwarzania są dostępne na pasku poniżej.",
+            [],
+        ))
+
+        # Strona 6: AI Tagger
+        self._page_stack.addWidget(self._build_placeholder_page(
+            "🤖", "AI Tagger",
+            "Automatyczne tagowanie AI — BPM, tonacja, gatunek, nastrój.\n"
+            "Najpierw zaznacz pliki w Bibliotece, a następnie uruchom tagger.",
+            [("Tagger AI (lokalny)", "PrimaryAction", self._run_ai_tagger),
+             ("AutoTag (wyszukiwanie)", "AutoTagSearch", self._run_auto_tagger),
+             ("AutoTag (API)", "AutoTagApi", self._run_auto_tagger_cloud)],
+        ))
+
+        # Strona 7: Konwerter XML
+        self._page_stack.addWidget(self._build_placeholder_page(
+            "📋", "Konwerter XML",
+            "Konwersja biblioteki do/z formatów DJ:\nVirtualDJ, Rekordbox, Traktor NML.",
+            [("Eksport XML (VirtualDJ)", "PrimaryAction", self._open_xml_converter),
+             ("Import XML", None, self._open_xml_import)],
+        ))
+
+        # ── Globalny PlayerDock (dół) ─────────────────────────────────────
+        player = self._build_player()
+        right_col_lay.addWidget(player)
+
+        self.status = QtWidgets.QStatusBar()
+        self.setStatusBar(self.status)
+        self._apply_icons()
+        self._setup_shortcuts()
+        self._build_menu()
+
+    # ── Nowe metody układu ─────────────────────────────────────────────────
+
+    def _build_nav_sidebar(self) -> QtWidgets.QFrame:
+        """Lewa nawigacja z ikonami widoków (styl React Sidebar)."""
+        frame = QtWidgets.QFrame()
+        frame.setObjectName("NavSidebar")
+        frame.setFixedWidth(64)
+
+        lay = QtWidgets.QVBoxLayout(frame)
+        lay.setContentsMargins(8, 14, 8, 14)
+        lay.setSpacing(4)
+
+        # Logo
+        logo = QtWidgets.QLabel("LM")
+        logo.setFixedSize(40, 40)
+        logo.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        logo.setStyleSheet(
+            "background: qlineargradient(x1:0,y1:0,x2:1,y2:1,"
+            "stop:0 #ec4899, stop:1 #8b5cf6);"
+            "border-radius: 12px; color: #ffffff;"
+            "font-weight: 800; font-size: 13px;"
+        )
+        logo_row = QtWidgets.QHBoxLayout()
+        logo_row.addStretch(1)
+        logo_row.addWidget(logo)
+        logo_row.addStretch(1)
+        lay.addLayout(logo_row)
+        lay.addSpacing(10)
+
+        # Pozycje nawigacji: (ikona, tooltip, page_idx)
+        self._nav_buttons: list[QtWidgets.QPushButton] = []
+        nav_items = [
+            ("🏠", "Strona główna", 0),
+            ("📚", "Biblioteka", 1),
+            ("📥", "Import", 2),
+            ("🔍", "Duplikaty", 3),
+            ("🎵", "Odtwarzacz", 5),
+            ("🤖", "AI Tagger", 6),
+            ("📋", "XML", 7),
+        ]
+        for icon, tooltip, page_idx in nav_items:
+            btn = QtWidgets.QPushButton(icon)
+            btn.setObjectName("NavItem")
+            btn.setFixedSize(48, 48)
+            btn.setToolTip(tooltip)
+            btn.setCursor(QtGui.QCursor(QtCore.Qt.CursorShape.PointingHandCursor))
+            btn.setFont(QtGui.QFont("Segoe UI Emoji", 16))
+            btn.clicked.connect(lambda _, idx=page_idx: self._switch_page(idx))
+            btn_row = QtWidgets.QHBoxLayout()
+            btn_row.addStretch(1)
+            btn_row.addWidget(btn)
+            btn_row.addStretch(1)
+            lay.addLayout(btn_row)
+            self._nav_buttons.append(btn)
+
+        lay.addStretch(1)
+
+        # Ustawienia na dole
+        settings_btn = QtWidgets.QPushButton("⚙️")
+        settings_btn.setObjectName("NavItem")
+        settings_btn.setFixedSize(48, 48)
+        settings_btn.setToolTip("Ustawienia")
+        settings_btn.setCursor(QtGui.QCursor(QtCore.Qt.CursorShape.PointingHandCursor))
+        settings_btn.setFont(QtGui.QFont("Segoe UI Emoji", 16))
+        settings_btn.clicked.connect(lambda: self._switch_page(4))
+        settings_row = QtWidgets.QHBoxLayout()
+        settings_row.addStretch(1)
+        settings_row.addWidget(settings_btn)
+        settings_row.addStretch(1)
+        lay.addLayout(settings_row)
+        self._nav_buttons.append(settings_btn)
+
+        # Domyślnie aktywny: Dashboard
+        self._switch_page(0)
+        return frame
+
+    def _build_topbar(self) -> QtWidgets.QFrame:
+        """Górny pasek z tytułem aktywnego widoku."""
+        frame = QtWidgets.QFrame()
+        frame.setObjectName("TopBar")
+        frame.setFixedHeight(56)
+        row = QtWidgets.QHBoxLayout(frame)
+        row.setContentsMargins(20, 0, 20, 0)
+        row.setSpacing(12)
+
+        self._topbar_title = QtWidgets.QLabel("Strona główna")
+        self._topbar_title.setStyleSheet(
+            "color: #e6f7ff; font-size: 15px; font-weight: 600;"
+        )
+        row.addWidget(self._topbar_title)
+        row.addStretch(1)
+        return frame
+
+    def _build_library_page(self) -> QtWidgets.QWidget:
+        """Buduje stronę Biblioteki z tabelą, filtrami i panelem szczegółów."""
+        page = QtWidgets.QWidget()
+        page_lay = QtWidgets.QVBoxLayout(page)
+        page_lay.setContentsMargins(0, 0, 0, 0)
+        page_lay.setSpacing(0)
+
+        # Toolbar z akcjami
+        toolbar = self._build_toolbar()
+        page_lay.addWidget(toolbar)
+
+        # Header z filtrami i wyszukiwarką
+        header = self._build_header()
+        page_lay.addWidget(header)
+
+        # Główna zawartość: stary sidebar | tabela/siatka | panel szczegółów
+        content_row = QtWidgets.QHBoxLayout()
+        content_row.setContentsMargins(0, 0, 0, 0)
+        content_row.setSpacing(0)
+        page_lay.addLayout(content_row, 1)
 
         self.sidebar = self._build_sidebar()
-        layout.addWidget(self.sidebar, 0)
+        content_row.addWidget(self.sidebar, 0)
 
-        main_column = QtWidgets.QVBoxLayout()
-        layout.addLayout(main_column, 1)
-
-        toolbar = self._build_toolbar()
-        main_column.addWidget(toolbar)
-
-        content = QtWidgets.QHBoxLayout()
-        main_column.addLayout(content, 1)
-
+        # Modele tabeli i proxy filtrowania
         self.table_model = TrackTableModel([])
         self.filter_proxy = TrackFilterProxy()
         self.filter_proxy.setSourceModel(self.table_model)
 
         self.table_view = QtWidgets.QTableView()
         self.table_view.setModel(self.filter_proxy)
-        self.table_view.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
-        self.table_view.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.table_view.setSelectionBehavior(
+            QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows
+        )
+        self.table_view.setSelectionMode(
+            QtWidgets.QAbstractItemView.SelectionMode.ExtendedSelection
+        )
         self.table_view.doubleClicked.connect(self._play_selected)
         self.table_view.selectionModel().selectionChanged.connect(self._update_detail_panel)
         self.table_view.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
@@ -342,13 +541,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.table_view.setAlternatingRowColors(True)
         self.table_view.setSortingEnabled(True)
         self.filter_proxy.setSortCaseSensitivity(QtCore.Qt.CaseSensitivity.CaseInsensitive)
-        header = self.table_view.horizontalHeader()
-        header.setStretchLastSection(True)
-        header.setSectionResizeMode(QtWidgets.QHeaderView.ResizeMode.Interactive)
-        header.setSectionsMovable(True)
-        header.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
-        header.customContextMenuRequested.connect(self._show_table_column_menu)
-        # Inline gwiazdki dla kolumny Ocena (indeks 16)
+        t_header = self.table_view.horizontalHeader()
+        t_header.setStretchLastSection(True)
+        t_header.setSectionResizeMode(QtWidgets.QHeaderView.ResizeMode.Interactive)
+        t_header.setSectionsMovable(True)
+        t_header.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
+        t_header.customContextMenuRequested.connect(self._show_table_column_menu)
         from lumbago_app.ui.models import StarRatingDelegate
         self._star_delegate = StarRatingDelegate()
         self.table_view.setItemDelegateForColumn(16, self._star_delegate)
@@ -360,35 +558,142 @@ class MainWindow(QtWidgets.QMainWindow):
         self.grid_view.setResizeMode(QtWidgets.QListView.ResizeMode.Adjust)
         self.grid_view.setUniformItemSizes(True)
         self.grid_view.setModel(self.filter_proxy)
-        self.grid_view.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.grid_view.setSelectionMode(
+            QtWidgets.QAbstractItemView.SelectionMode.ExtendedSelection
+        )
         self.grid_view.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
         self.grid_view.customContextMenuRequested.connect(self._grid_context_menu)
         self.grid_view.setDragEnabled(True)
-        self.grid_view.setDragDropMode(QtWidgets.QAbstractItemView.DragDropMode.DragOnly)
+        self.grid_view.setDragDropMode(
+            QtWidgets.QAbstractItemView.DragDropMode.DragOnly
+        )
         placeholder = self._build_placeholder_pixmap(96, 96)
         self.grid_view.setItemDelegate(TrackGridDelegate(placeholder))
-        self.grid_view.selectionModel().selectionChanged.connect(self._update_detail_panel_from_grid)
+        self.grid_view.selectionModel().selectionChanged.connect(
+            self._update_detail_panel_from_grid
+        )
 
         self.view_stack = QtWidgets.QStackedWidget()
         self.view_stack.addWidget(self.table_view)
         self.view_stack.addWidget(self.grid_view)
-
-        header = self._build_header()
-        main_column.addWidget(header)
-
-        content.addWidget(self.view_stack, 3)
+        content_row.addWidget(self.view_stack, 3)
 
         self.detail_panel = self._build_detail_panel()
-        content.addWidget(self.detail_panel, 1)
+        content_row.addWidget(self.detail_panel, 1)
 
-        player = self._build_player()
-        main_column.addWidget(player)
+        return page
 
-        self.status = QtWidgets.QStatusBar()
-        self.setStatusBar(self.status)
-        self._apply_icons()
-        self._setup_shortcuts()
-        self._build_menu()
+    def _build_placeholder_page(
+        self,
+        icon: str,
+        title: str,
+        description: str,
+        actions: list,
+    ) -> QtWidgets.QWidget:
+        """Buduje stronę z ikoną, tytułem, opisem i przyciskami akcji."""
+        page = QtWidgets.QWidget()
+        outer = QtWidgets.QVBoxLayout(page)
+        outer.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+
+        card = QtWidgets.QFrame()
+        card.setObjectName("Card")
+        card.setMaximumWidth(560)
+        card_lay = QtWidgets.QVBoxLayout(card)
+        card_lay.setContentsMargins(32, 28, 32, 28)
+        card_lay.setSpacing(16)
+
+        icon_lbl = QtWidgets.QLabel(icon)
+        icon_lbl.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        icon_lbl.setFont(QtGui.QFont("Segoe UI Emoji", 40))
+        icon_lbl.setStyleSheet("background: transparent;")
+
+        title_lbl = QtWidgets.QLabel(title)
+        title_lbl.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        title_lbl.setStyleSheet(
+            "color: #e6f7ff; font-size: 20px; font-weight: 700;"
+        )
+
+        desc_lbl = QtWidgets.QLabel(description)
+        desc_lbl.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        desc_lbl.setWordWrap(True)
+        desc_lbl.setStyleSheet("color: #64748b; font-size: 13px;")
+
+        card_lay.addWidget(icon_lbl)
+        card_lay.addWidget(title_lbl)
+        card_lay.addWidget(desc_lbl)
+
+        if actions:
+            card_lay.addSpacing(8)
+            for label, obj_name, callback in actions:
+                btn = QtWidgets.QPushButton(label)
+                if obj_name:
+                    btn.setObjectName(obj_name)
+                btn.setMinimumHeight(40)
+                btn.clicked.connect(callback)
+                card_lay.addWidget(btn)
+
+        outer.addStretch(1)
+        outer.addWidget(card, 0, QtCore.Qt.AlignmentFlag.AlignHCenter)
+        outer.addStretch(1)
+        return page
+
+    def _switch_page(self, idx: int):
+        """Przełącza aktywną stronę i aktualizuje przyciski nawigacji."""
+        if hasattr(self, "_page_stack"):
+            self._page_stack.setCurrentIndex(idx)
+
+        # Mapowanie: kolejność przycisków nav → indeks strony
+        nav_page_indices = [0, 1, 2, 3, 5, 6, 7, 4]  # ostatni = ⚙️ → str. 4
+        for i, btn in enumerate(getattr(self, "_nav_buttons", [])):
+            page_idx = nav_page_indices[i] if i < len(nav_page_indices) else -1
+            is_active = (page_idx == idx)
+            btn.setObjectName("NavItemActive" if is_active else "NavItem")
+            btn.style().unpolish(btn)
+            btn.style().polish(btn)
+
+        # Aktualizuj tytuł w topbarze
+        _page_titles = {
+            0: "Strona główna",
+            1: "Biblioteka",
+            2: "Import plików",
+            3: "Duplikaty",
+            4: "Ustawienia",
+            5: "Odtwarzacz",
+            6: "AI Tagger",
+            7: "Konwerter XML",
+        }
+        if hasattr(self, "_topbar_title"):
+            self._topbar_title.setText(_page_titles.get(idx, ""))
+
+        # Odśwież dashboard gdy nawigujemy do niego
+        if idx == 0 and hasattr(self, "_dashboard_view"):
+            track_count = len(getattr(self, "_all_tracks", []))
+            self._dashboard_view.update_stats(track_count, self._activity_log)
+
+    def _on_dashboard_navigate(self, view_name: str):
+        """Obsługuje sygnał nawigacji z DashboardView."""
+        mapping = {
+            "library": 1,
+            "import": 2,
+            "duplicates": 3,
+            "settings": 4,
+            "player": 5,
+            "tagger": 6,
+            "converter": 7,
+        }
+        self._switch_page(mapping.get(view_name, 0))
+
+    def _setup_watchfolder_from_page(self):
+        """Odpowiednik _toggle_watchfolder uruchamiany ze strony Import."""
+        folder = QtWidgets.QFileDialog.getExistingDirectory(
+            self, "Wybierz folder do monitorowania"
+        )
+        if not folder:
+            return
+        self._watchfolder_path = folder
+        self._watchfolder_watcher = QtCore.QFileSystemWatcher([folder], self)
+        self._watchfolder_watcher.directoryChanged.connect(self._on_watchfolder_changed)
+        self.status.showMessage(f"Watchfolder aktywny: {folder}")
 
     def _apply_app_icon(self):
         icon_path = Path(__file__).resolve().parents[2] / "assets" / "icon.svg"
