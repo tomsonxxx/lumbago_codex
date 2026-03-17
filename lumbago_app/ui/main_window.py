@@ -2409,7 +2409,8 @@ class MainWindow(QtWidgets.QMainWindow):
         tools.addAction("Renamer", self._open_renamer)
         tools.addAction("Konwerter XML", self._open_xml_converter)
         tools.addAction("Eksport playlisty → VirtualDJ XML", self._export_playlist_virtualdj)
-        tools.addAction("Ustawienia", self._open_settings)
+        tools.addSeparator()
+        tools.addAction("Ustawienia", lambda: self._switch_page(4))
 
         help_menu = menu.addMenu("Pomoc")
         help_menu.addAction("Instrukcja użytkownika", self._open_user_guide)
