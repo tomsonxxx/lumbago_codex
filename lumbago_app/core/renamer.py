@@ -53,6 +53,21 @@ def apply_rename_plan(plan: Iterable[RenamePlanItem]) -> list[dict[str, str]]:
     return history
 
 
+def apply_copy_plan(plan: Iterable[RenamePlanItem]) -> int:
+    """Kopiuje pliki według planu (shutil.copy2). Nie aktualizuje ścieżek w DB."""
+    import shutil
+    copied = 0
+    for item in plan:
+        if item.conflict:
+            continue
+        if not item.old_path.exists():
+            continue
+        item.new_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(item.old_path, item.new_path)
+        copied += 1
+    return copied
+
+
 def undo_last_rename() -> list[dict[str, str]]:
     history = _load_rename_history()
     reverted: list[dict[str, str]] = []

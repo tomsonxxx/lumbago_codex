@@ -348,6 +348,10 @@ class MainWindow(QtWidgets.QMainWindow):
         header.setSectionsMovable(True)
         header.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
         header.customContextMenuRequested.connect(self._show_table_column_menu)
+        # Inline gwiazdki dla kolumny Ocena (indeks 16)
+        from lumbago_app.ui.models import StarRatingDelegate
+        self._star_delegate = StarRatingDelegate()
+        self.table_view.setItemDelegateForColumn(16, self._star_delegate)
 
         self.grid_view = QtWidgets.QListView()
         self.grid_view.setViewMode(QtWidgets.QListView.ViewMode.IconMode)
@@ -620,6 +624,16 @@ class MainWindow(QtWidgets.QMainWindow):
         self.waveform_label = QtWidgets.QLabel()
         self.waveform_label.setFixedHeight(32)
         layout.addWidget(self.waveform_label)
+
+        related_label = QtWidgets.QLabel("Inne tracki artysty:")
+        related_label.setObjectName("DialogHint")
+        layout.addWidget(related_label)
+        self.related_list = QtWidgets.QListWidget()
+        self.related_list.setFixedHeight(90)
+        self.related_list.setToolTip("Inne tracki tego artysty w bibliotece. Kliknij dwukrotnie aby wybrać.")
+        self.related_list.itemDoubleClicked.connect(self._jump_to_related)
+        layout.addWidget(self.related_list)
+
         return frame
 
     def _build_player(self) -> QtWidgets.QFrame:
@@ -852,6 +866,7 @@ class MainWindow(QtWidgets.QMainWindow):
         ]
         self.detail_text.setPlainText("\n".join(detail))
         self._fill_detail_fields(track)
+        self._update_related_tracks(track)
 
     def _update_detail_panel_from_grid(self):
         indexes = self.grid_view.selectionModel().selectedIndexes()
@@ -877,6 +892,37 @@ class MainWindow(QtWidgets.QMainWindow):
         ]
         self.detail_text.setPlainText("\n".join(detail))
         self._fill_detail_fields(track)
+        self._update_related_tracks(track)
+
+    def _update_related_tracks(self, track) -> None:
+        self.related_list.clear()
+        if not track.artist:
+            return
+        from lumbago_app.data.repository import list_tracks
+        related = [
+            t for t in list_tracks()
+            if t.artist == track.artist and t.path != track.path
+        ][:20]
+        for t in related:
+            item = QtWidgets.QListWidgetItem(t.title or t.path)
+            item.setData(QtCore.Qt.ItemDataRole.UserRole, t.path)
+            self.related_list.addItem(item)
+
+    def _jump_to_related(self, item: QtWidgets.QListWidgetItem) -> None:
+        path = item.data(QtCore.Qt.ItemDataRole.UserRole)
+        if not path:
+            return
+        # Wyszukaj track w tabeli i zaznacz
+        for row in range(self.table_model.rowCount()):
+            t = self.table_model.track_at(row)
+            if t and t.path == path:
+                proxy_idx = self.filter_proxy.mapFromSource(
+                    self.table_model.index(row, 0)
+                )
+                self.table_view.setCurrentIndex(proxy_idx)
+                self.table_view.scrollTo(proxy_idx)
+                self.view_stack.setCurrentWidget(self.table_view)
+                break
 
     def _play_selected(self):
         if not self.player:
@@ -2171,6 +2217,16 @@ class MainWindow(QtWidgets.QMainWindow):
             btn.setToolTip(f"Preset kolumn: {name}")
             btn.clicked.connect(lambda _, c=cols: self._apply_column_preset(c))
             row.addWidget(btn)
+
+        density_label = QtWidgets.QLabel("Gęstość:")
+        density_label.setStyleSheet("color: #9aa6b2; margin-left: 8px;")
+        row.addWidget(density_label)
+        self.density_combo = QtWidgets.QComboBox()
+        self.density_combo.addItems(["Normalny", "Kompakt", "Przestronny"])
+        self.density_combo.setFixedWidth(110)
+        self.density_combo.setToolTip("Wysokość wierszy listy utworów")
+        self.density_combo.currentIndexChanged.connect(self._on_density_changed)
+        row.addWidget(self.density_combo)
         return frame
 
     def _apply_column_preset(self, visible_cols: list[int] | None):
@@ -2181,6 +2237,13 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.table_view.setColumnHidden(col, False)
             else:
                 self.table_view.setColumnHidden(col, col not in visible_cols)
+
+    def _on_density_changed(self, idx: int):
+        heights = {0: 28, 1: 20, 2: 40}  # Normalny / Kompakt / Przestronny
+        height = heights.get(idx, 28)
+        vheader = self.table_view.verticalHeader()
+        vheader.setDefaultSectionSize(height)
+        vheader.setSectionResizeMode(QtWidgets.QHeaderView.ResizeMode.Fixed)
 
     def dragEnterEvent(self, event: QtGui.QDragEnterEvent):
         if event.mimeData().hasUrls():

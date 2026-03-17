@@ -4,7 +4,7 @@ from PyQt6 import QtCore, QtWidgets
 from lumbago_app.ui.widgets import apply_dialog_fade, dialog_icon_pixmap
 
 from lumbago_app.core.models import Track
-from lumbago_app.core.renamer import apply_rename_plan, build_rename_plan, undo_last_rename
+from lumbago_app.core.renamer import apply_copy_plan, apply_rename_plan, build_rename_plan, undo_last_rename
 from lumbago_app.data.repository import update_track_paths_bulk
 
 
@@ -86,6 +86,25 @@ class RenamerDialog(QtWidgets.QDialog):
         vars_row.addStretch(1)
         layout.addLayout(vars_row)
 
+        # Options row: case + copy mode
+        opts_row = QtWidgets.QHBoxLayout()
+        opts_row.addWidget(QtWidgets.QLabel("Wielkość liter:"))
+        self.case_combo = QtWidgets.QComboBox()
+        self.case_combo.addItems(["Bez zmian", "UPPERCASE", "lowercase", "Title Case"])
+        self.case_combo.setFixedWidth(130)
+        self.case_combo.currentIndexChanged.connect(self._preview)
+        opts_row.addWidget(self.case_combo)
+        opts_row.addSpacing(20)
+        self.copy_check = QtWidgets.QCheckBox("Kopiuj zamiast przenoś (tryb bezpieczny)")
+        self.copy_check.setToolTip(
+            "Gdy zaznaczone, pliki zostaną skopiowane do nowej nazwy.\n"
+            "Oryginały pozostają bez zmian. Ścieżki w bibliotece NIE są aktualizowane."
+        )
+        self.copy_check.stateChanged.connect(lambda _: self._update_status_note())
+        opts_row.addWidget(self.copy_check)
+        opts_row.addStretch(1)
+        layout.addLayout(opts_row)
+
         self.table = QtWidgets.QTableWidget(0, 3)
         self.table.setHorizontalHeaderLabels(["Stara nazwa", "Nowa nazwa", "Status"])
         self.table.horizontalHeader().setStretchLastSection(True)
@@ -126,8 +145,24 @@ class RenamerDialog(QtWidgets.QDialog):
         self.pattern.setText(text[:pos] + var + text[pos:])
         self.pattern.setCursorPosition(pos + len(var))
 
+    def _apply_case(self, name: str) -> str:
+        case_idx = self.case_combo.currentIndex()
+        if case_idx == 1:
+            return name.upper()
+        if case_idx == 2:
+            return name.lower()
+        if case_idx == 3:
+            return name.title()
+        return name
+
     def _preview(self):
         self._plan = build_rename_plan(self._tracks, self.pattern.text().strip())
+        # Zastosuj transformację wielkości liter do nowych ścieżek
+        from pathlib import Path as _Path
+        for item in self._plan:
+            if not item.conflict:
+                stem = self._apply_case(item.new_path.stem)
+                item.new_path = item.new_path.with_name(stem + item.new_path.suffix)
         self.table.setRowCount(0)
         ok_count = 0
         conflict_count = 0
@@ -146,17 +181,35 @@ class RenamerDialog(QtWidgets.QDialog):
                 status_item.setForeground(QtCore.Qt.GlobalColor.green)
                 ok_count += 1
             self.table.setItem(row, 2, status_item)
+        copy_note = " [TRYB KOPIOWANIA]" if self.copy_check.isChecked() else ""
         self.status_label.setText(
-            f"Razem: {len(self._plan)} | OK: {ok_count} | Konflikty: {conflict_count}"
+            f"Razem: {len(self._plan)} | OK: {ok_count} | Konflikty: {conflict_count}{copy_note}"
         )
         self.apply_btn.setEnabled(ok_count > 0)
 
     def _apply(self):
         if not self._plan:
             self._preview()
+        if self.copy_check.isChecked():
+            copied = apply_copy_plan(self._plan)
+            QtWidgets.QMessageBox.information(
+                self, "Kopiowanie zakończone",
+                f"Skopiowano {copied} plików.\n"
+                "Oryginalne pliki oraz ścieżki w bibliotece pozostają bez zmian."
+            )
+            self.reject()
+            return
         history = apply_rename_plan(self._plan)
         update_track_paths_bulk(history)
         self.accept()
+
+    def _update_status_note(self):
+        current = self.status_label.text()
+        base = current.replace(" [TRYB KOPIOWANIA]", "")
+        if self.copy_check.isChecked():
+            self.status_label.setText(base + " [TRYB KOPIOWANIA]")
+        else:
+            self.status_label.setText(base)
 
     def _undo(self):
         history = undo_last_rename()

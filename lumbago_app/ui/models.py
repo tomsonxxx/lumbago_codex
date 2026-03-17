@@ -178,6 +178,54 @@ def _format_tags(tags: list) -> str:
     return ", ".join(tag.value for tag in tags if tag.value)
 
 
+class StarRatingDelegate(QtWidgets.QStyledItemDelegate):
+    """Delegate rysujący gwiazdki 0-5 w kolumnie Ocena i pozwalający na edycję kliknięciem."""
+
+    _STAR_FULL = "★"
+    _STAR_EMPTY = "☆"
+    MAX = 5
+
+    def paint(self, painter: QtGui.QPainter, option, index: QtCore.QModelIndex):
+        painter.save()
+        if option.state & QtWidgets.QStyle.StateFlag.State_Selected:
+            painter.fillRect(option.rect, option.palette.highlight())
+        try:
+            rating = int(index.data(QtCore.Qt.ItemDataRole.DisplayRole) or 0)
+        except (ValueError, TypeError):
+            rating = 0
+        stars = self._STAR_FULL * rating + self._STAR_EMPTY * (self.MAX - rating)
+        color = QtGui.QColor("#ffd700") if rating > 0 else QtGui.QColor("#555")
+        painter.setPen(color)
+        painter.drawText(option.rect, QtCore.Qt.AlignmentFlag.AlignCenter, stars)
+        painter.restore()
+
+    def sizeHint(self, option, index: QtCore.QModelIndex) -> QtCore.QSize:
+        return QtCore.QSize(90, option.rect.height() or 24)
+
+    def editorEvent(self, event, model, option, index: QtCore.QModelIndex) -> bool:
+        if event.type() == QtCore.QEvent.Type.MouseButtonRelease:
+            x = event.pos().x() - option.rect.x()
+            star_w = option.rect.width() / self.MAX
+            clicked_star = min(self.MAX, max(1, int(x / star_w) + 1))
+            try:
+                current = int(model.data(index, QtCore.Qt.ItemDataRole.DisplayRole) or 0)
+            except (ValueError, TypeError):
+                current = 0
+            # Kliknięcie tej samej gwiazdki co bieżąca ocena zeruje ją
+            new_rating = 0 if clicked_star == current else clicked_star
+            # Pobierz track i zaktualizuj przez source model
+            track = model.data(index, QtCore.Qt.ItemDataRole.UserRole)
+            if track is not None:
+                from lumbago_app.data.repository import update_track
+                track.rating = new_rating
+                update_track(track)
+                src = model.sourceModel() if hasattr(model, "sourceModel") else model
+                src_idx = model.mapToSource(index) if hasattr(model, "mapToSource") else index
+                src.dataChanged.emit(src_idx, src_idx, [QtCore.Qt.ItemDataRole.DisplayRole])
+            return True
+        return False
+
+
 class TrackGridDelegate(QtWidgets.QStyledItemDelegate):
     def __init__(self, placeholder: QtGui.QPixmap):
         super().__init__()
