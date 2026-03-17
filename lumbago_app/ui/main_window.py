@@ -454,7 +454,8 @@ class MainWindow(QtWidgets.QMainWindow):
         playlists_title = QtWidgets.QLabel("Playlisty")
         playlists_title.setObjectName("SectionTitle")
         layout.addWidget(playlists_title)
-        self.playlist_list = QtWidgets.QListWidget()
+        self.playlist_list = QtWidgets.QTreeWidget()
+        self.playlist_list.setHeaderHidden(True)
         self.playlist_list.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
         self.playlist_list.customContextMenuRequested.connect(self._playlist_context_menu)
         self.playlist_list.itemClicked.connect(self._select_playlist)
@@ -762,19 +763,29 @@ class MainWindow(QtWidgets.QMainWindow):
     def _load_playlists(self):
         self.playlist_list.clear()
         all_count = len(getattr(self, "_all_tracks", list_tracks()))
-        all_item = QtWidgets.QListWidgetItem(f"Wszystkie utwory ({all_count})")
-        all_item.setData(QtCore.Qt.ItemDataRole.UserRole, None)
-        self.playlist_list.addItem(all_item)
+        all_item = QtWidgets.QTreeWidgetItem(self.playlist_list, [f"Wszystkie utwory ({all_count})"])
+        all_item.setData(0, QtCore.Qt.ItemDataRole.UserRole, None)
+        # Grupuj playlisty wg konwencji "Folder/Nazwa"
+        folders: dict[str, QtWidgets.QTreeWidgetItem] = {}
         for playlist in list_playlists_full():
-            label = playlist.name
+            raw_name = playlist.name
+            suffix = ""
             if playlist.is_smart:
-                label = f"{label} (smart)"
+                suffix += " (smart)"
             if playlist.playlist_id:
                 count = len(list_playlist_tracks(playlist.playlist_id))
-                label = f"{label} ({count})"
-            item = QtWidgets.QListWidgetItem(label)
-            item.setData(QtCore.Qt.ItemDataRole.UserRole, playlist)
-            self.playlist_list.addItem(item)
+                suffix += f" ({count})"
+            if "/" in raw_name:
+                folder_name, short_name = raw_name.split("/", 1)
+                if folder_name not in folders:
+                    folder_item = QtWidgets.QTreeWidgetItem(self.playlist_list, [f"📁 {folder_name}"])
+                    folder_item.setExpanded(True)
+                    folders[folder_name] = folder_item
+                parent = folders[folder_name]
+                item = QtWidgets.QTreeWidgetItem(parent, [f"  {short_name}{suffix}"])
+            else:
+                item = QtWidgets.QTreeWidgetItem(self.playlist_list, [f"{raw_name}{suffix}"])
+            item.setData(0, QtCore.Qt.ItemDataRole.UserRole, playlist)
 
     def _apply_playlist_view(self):
         tracks = getattr(self, "_all_tracks", list_tracks())
@@ -1476,7 +1487,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def eventFilter(self, source, event):
         if source is self.playlist_list and event.type() == QtCore.QEvent.Type.Drop:
             item = self.playlist_list.itemAt(event.position().toPoint())
-            data = item.data(QtCore.Qt.ItemDataRole.UserRole) if item else None
+            data = item.data(0, QtCore.Qt.ItemDataRole.UserRole) if item else None
             if item and data and hasattr(self, "_selected_track") and self._selected_track:
                 add_track_to_playlist(data.name, self._selected_track.path)
                 self.status.showMessage(f"Dodano do playlisty: {data.name}")
@@ -1920,17 +1931,17 @@ class MainWindow(QtWidgets.QMainWindow):
         if action == add_action:
             self._open_playlist_editor()
         elif action == edit_action and item:
-            playlist = item.data(QtCore.Qt.ItemDataRole.UserRole)
+            playlist = item.data(0, QtCore.Qt.ItemDataRole.UserRole)
             if playlist:
                 self._open_playlist_editor(playlist)
         elif action == delete_action and item:
-            playlist = item.data(QtCore.Qt.ItemDataRole.UserRole)
+            playlist = item.data(0, QtCore.Qt.ItemDataRole.UserRole)
             if playlist and playlist.playlist_id:
                 delete_playlist(playlist.playlist_id)
                 self._load_playlists()
                 self._load_tracks()
         elif action == order_action and item:
-            playlist = item.data(QtCore.Qt.ItemDataRole.UserRole)
+            playlist = item.data(0, QtCore.Qt.ItemDataRole.UserRole)
             if playlist and playlist.playlist_id and not playlist.is_smart:
                 tracks = list_playlist_tracks(playlist.playlist_id)
                 dialog = PlaylistOrderDialog(tracks, self)
@@ -1946,9 +1957,9 @@ class MainWindow(QtWidgets.QMainWindow):
         elif action == merge_action and item:
             self._merge_playlist(item)
 
-    def _show_playlist_stats(self, item: QtWidgets.QListWidgetItem | None):
+    def _show_playlist_stats(self, item: QtWidgets.QTreeWidgetItem | None):
         if item:
-            playlist = item.data(QtCore.Qt.ItemDataRole.UserRole)
+            playlist = item.data(0, QtCore.Qt.ItemDataRole.UserRole)
             if playlist and playlist.playlist_id:
                 tracks = list_playlist_tracks(playlist.playlist_id)
                 name = playlist.name
@@ -2022,9 +2033,9 @@ class MainWindow(QtWidgets.QMainWindow):
         )
         QtWidgets.QMessageBox.information(self, "Statystyki biblioteki", msg)
 
-    def _export_playlist_m3u(self, item: QtWidgets.QListWidgetItem | None):
+    def _export_playlist_m3u(self, item: QtWidgets.QTreeWidgetItem | None):
         if item:
-            playlist = item.data(QtCore.Qt.ItemDataRole.UserRole)
+            playlist = item.data(0, QtCore.Qt.ItemDataRole.UserRole)
             if playlist and playlist.playlist_id:
                 tracks = list_playlist_tracks(playlist.playlist_id)
                 default_name = f"{playlist.name}.m3u"
@@ -2076,8 +2087,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._load_playlists()
         self._show_message(f"Zaimportowano playlistę '{playlist_name}' ({added} utworów).")
 
-    def _merge_playlist(self, item: QtWidgets.QListWidgetItem):
-        src_playlist = item.data(QtCore.Qt.ItemDataRole.UserRole)
+    def _merge_playlist(self, item: QtWidgets.QTreeWidgetItem):
+        src_playlist = item.data(0, QtCore.Qt.ItemDataRole.UserRole)
         if not src_playlist or not src_playlist.playlist_id:
             return
         all_playlists = list_playlists_full()
@@ -2125,8 +2136,12 @@ class MainWindow(QtWidgets.QMainWindow):
                 )
             self._load_playlists()
 
-    def _select_playlist(self, item: QtWidgets.QListWidgetItem):
-        playlist = item.data(QtCore.Qt.ItemDataRole.UserRole)
+    def _select_playlist(self, item: QtWidgets.QTreeWidgetItem):
+        playlist = item.data(0, QtCore.Qt.ItemDataRole.UserRole)
+        if playlist is None and item.childCount() > 0:
+            # Kliknięto folder — rozwiń/zwiń
+            item.setExpanded(not item.isExpanded())
+            return
         self._current_playlist = playlist
         self._apply_playlist_view()
 
