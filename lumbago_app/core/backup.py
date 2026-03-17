@@ -27,6 +27,16 @@ def perform_pre_operation_backup() -> None:
     perform_backup(max_backups=20)
 
 
+def restore_backup(archive_path: Path) -> None:
+    """Przywraca bazę i ustawienia z archiwum ZIP. Wymaga restartu aplikacji."""
+    data_dir = app_data_dir()
+    with zipfile.ZipFile(archive_path, "r") as zf:
+        for name in zf.namelist():
+            dest = data_dir / name
+            with zf.open(name) as src, dest.open("wb") as dst:
+                dst.write(src.read())
+
+
 def _trim_backups(backups_dir: Path, max_backups: int) -> None:
     if max_backups <= 0:
         return

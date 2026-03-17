@@ -262,6 +262,27 @@ class NormalizeWorker(QtCore.QRunnable):
         self.signals.finished.emit(created, errors)
 
 
+class _SimpleWorker(QtCore.QRunnable):
+    """Generyczny worker uruchamiający funkcję w wątku i wywołujący callback w głównym wątku."""
+    def __init__(self, fn, callback):
+        super().__init__()
+        self._fn = fn
+        self._callback = callback
+        self.signals = _SimpleWorkerSignals()
+        self.signals.result.connect(callback)
+
+    def run(self):
+        try:
+            result = self._fn()
+        except Exception:
+            result = None
+        self.signals.result.emit(result)
+
+
+class _SimpleWorkerSignals(QtCore.QObject):
+    result = QtCore.pyqtSignal(object)
+
+
 # Column presets — indices based on TrackTableModel.headers order
 # Tytuł=0, Artysta=1, Album=2, Rok=3, Gatunek=4, BPM=5, Tonacja=6, Nastrój=7, Energia=8, Czas=10, Format=11, Ocena=16, Ścieżka=25
 _DJ_COLUMNS = [0, 1, 4, 5, 6, 7, 8, 10, 16, 25]          # DJ View
@@ -545,7 +566,15 @@ class MainWindow(QtWidgets.QMainWindow):
         self._tap_times: list[float] = []
         bpm_row.addWidget(self._tap_btn)
         form.addRow("BPM", bpm_row)
-        form.addRow("Tonacja", self.detail_key)
+        # Tonacja z auto-detect
+        key_row = QtWidgets.QHBoxLayout()
+        key_row.addWidget(self.detail_key)
+        self._detect_key_btn = QtWidgets.QPushButton("Wykryj")
+        self._detect_key_btn.setFixedWidth(52)
+        self._detect_key_btn.setToolTip("Wykryj tonację przez librosa (chroma_cqt)")
+        self._detect_key_btn.clicked.connect(self._detect_key_detail)
+        key_row.addWidget(self._detect_key_btn)
+        form.addRow("Tonacja", key_row)
         form.addRow("LUFS", self.detail_loudness)
         layout.addLayout(form)
 
@@ -626,9 +655,15 @@ class MainWindow(QtWidgets.QMainWindow):
         self.position_slider.setRange(0, 1000)
         self.position_slider.sliderMoved.connect(self._seek_position)
         self.time_label = QtWidgets.QLabel("00:00 / 00:00")
+        self.bpm_sync_label = QtWidgets.QLabel("")
+        self.bpm_sync_label.setObjectName("DialogHint")
+        self.bpm_sync_label.setToolTip("BPM bieżącego i poprzedniego tracku")
         timeline.addWidget(self.position_slider, 1)
         timeline.addWidget(self.time_label)
+        timeline.addWidget(self.bpm_sync_label)
         layout.addLayout(timeline)
+        self._last_played_bpm: float | None = None
+        self._current_played_bpm: float | None = None
 
         cues = QtWidgets.QHBoxLayout()
         self.cue_a_btn = AnimatedButton("Ustaw Cue A")
@@ -1145,6 +1180,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._cue_a = track.cue_in_ms
         self._cue_b = track.cue_out_ms
         self._selected_track = track
+        # BPM sync indicator
+        self._update_bpm_sync(track.bpm)
         self._selected_snapshot = {
             "title": track.title,
             "artist": track.artist,
@@ -1159,6 +1196,25 @@ class MainWindow(QtWidgets.QMainWindow):
         pixmap = QtGui.QPixmap(str(wave_path))
         if not pixmap.isNull():
             self.waveform_label.setPixmap(pixmap)
+
+    def _update_bpm_sync(self, new_bpm: float | None):
+        """Aktualizuje wskaźnik różnicy BPM między poprzednim a bieżącym trackiem."""
+        if not hasattr(self, "bpm_sync_label"):
+            return
+        if new_bpm and self._current_played_bpm and new_bpm != self._current_played_bpm:
+            # Nowy utwór — poprzedni staje się "last"
+            self._last_played_bpm = self._current_played_bpm
+        self._current_played_bpm = new_bpm
+        label = self.bpm_sync_label
+        if not new_bpm:
+            label.setText("")
+            return
+        txt = f"{new_bpm:.1f} BPM"
+        if self._last_played_bpm:
+            diff = new_bpm - self._last_played_bpm
+            sign = "+" if diff >= 0 else ""
+            txt += f"  ({sign}{diff:.1f} vs poprzedni)"
+        label.setText(txt)
 
     def _save_detail_changes(self):
         track = getattr(self, "_selected_track", None)
@@ -1199,6 +1255,29 @@ class MainWindow(QtWidgets.QMainWindow):
             avg_interval = sum(intervals) / len(intervals)
             bpm = 60.0 / avg_interval if avg_interval > 0 else 0
             self.detail_bpm.setText(f"{bpm:.1f}")
+
+    def _detect_key_detail(self):
+        track = getattr(self, "_selected_track", None)
+        if not track:
+            self._show_message("Nie wybrano utworu.")
+            return
+        self._detect_key_btn.setEnabled(False)
+        self._detect_key_btn.setText("…")
+
+        def run():
+            return detect_key(Path(track.path))
+
+        def on_done(key):
+            self._detect_key_btn.setEnabled(True)
+            self._detect_key_btn.setText("Wykryj")
+            if key:
+                self.detail_key.setText(key)
+                self._show_message(f"Wykryta tonacja: {key}")
+            else:
+                self._show_message("Nie udało się wykryć tonacji.")
+
+        worker = _SimpleWorker(run, on_done)
+        self.thread_pool.start(worker)
 
     def _log_changes(self, track: Track, snapshot: dict):
         for field in ["title", "artist", "album", "year", "genre", "bpm", "key"]:
@@ -1473,6 +1552,64 @@ class MainWindow(QtWidgets.QMainWindow):
         worker.signals.finished.connect(on_finished)
         self.thread_pool.start(worker)
 
+    def _run_bpm_scan(self):
+        """Skanuje BPM przez librosa dla wszystkich tracków bez BPM."""
+        all_tracks = list(self.table_model._tracks)
+        targets = [t for t in all_tracks if not t.bpm]
+        if not targets:
+            self._show_message("Wszystkie tracki mają już BPM.")
+            return
+        from lumbago_app.services.beatgrid import detect_bpm as _detect_bpm
+
+        progress = QtWidgets.QProgressDialog(
+            "Skanowanie BPM (librosa)...", "Anuluj", 0, len(targets), self
+        )
+        progress.setWindowTitle("BPM Scan")
+        progress.setMinimumDuration(0)
+        progress.setValue(0)
+        updated: list[Track] = []
+        cancelled = [False]
+
+        class BpmScanWorker(QtCore.QRunnable):
+            class Sig(QtCore.QObject):
+                progress = QtCore.pyqtSignal(int, int)
+                finished = QtCore.pyqtSignal(list)
+            def __init__(self, tracks):
+                super().__init__()
+                self.tracks = tracks
+                self.signals = BpmScanWorker.Sig()
+                self._stop = False
+            def stop(self): self._stop = True
+            def run(self):
+                done = []
+                for idx, track in enumerate(self.tracks, 1):
+                    if self._stop:
+                        break
+                    bpm = _detect_bpm(track.path)
+                    if bpm:
+                        track.bpm = bpm
+                        done.append(track)
+                    self.signals.progress.emit(idx, len(self.tracks))
+                self.signals.finished.emit(done)
+
+        worker = BpmScanWorker(targets)
+
+        def on_progress(current, total):
+            progress.setValue(current)
+            if progress.wasCanceled():
+                worker.stop()
+
+        def on_finished(done):
+            progress.close()
+            if done:
+                update_tracks(done)
+                self._load_tracks()
+            self._show_message(f"BPM wykryty dla {len(done)} / {len(targets)} tracków.")
+
+        worker.signals.progress.connect(on_progress)
+        worker.signals.finished.connect(on_finished)
+        self.thread_pool.start(worker)
+
     def _auto_cue_selected(self):
         tracks = self._selected_tracks()
         if not tracks:
@@ -1662,6 +1799,7 @@ class MainWindow(QtWidgets.QMainWindow):
         tools.addAction("Normalizuj do -14 LUFS (nowy plik)", self._run_loudness_normalize)
         tools.addAction("Auto‑cue (intro/outro)", self._auto_cue_selected)
         tools.addAction("Wykryj tonację (auto‑key)", self._run_key_detection)
+        tools.addAction("Skanuj BPM librosa (brakujące)", self._run_bpm_scan)
         tools.addAction("Metadane lokalne", self._apply_local_metadata_selected)
         tools.addAction("Duplikaty", self._open_duplicates)
         tools.addAction("Renamer", self._open_renamer)

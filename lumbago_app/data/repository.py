@@ -81,6 +81,18 @@ def _ensure_track_columns(engine) -> None:
             if name in existing:
                 continue
             conn.execute(text(f"ALTER TABLE tracks ADD COLUMN {name} {dtype}"))
+        # Indeks przyspieszający filtrowanie po dacie dodania
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_tracks_date_added ON tracks(date_added)"
+        ))
+        conn.commit()
+
+
+def vacuum_database() -> None:
+    """Wykonuje VACUUM SQLite — zmniejsza rozmiar bazy po usunięciach."""
+    eng = get_engine()
+    with eng.connect() as conn:
+        conn.execute(text("VACUUM"))
         conn.commit()
 
 

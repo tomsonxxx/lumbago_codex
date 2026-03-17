@@ -45,6 +45,7 @@ class SettingsDialog(QtWidgets.QDialog):
         self._build_metadata_tab()
         self._build_ai_tab()
         self._build_advanced_tab()
+        self._build_diagnostics_tab()
 
         btn_row = QtWidgets.QHBoxLayout()
         btn_row.addStretch(1)
@@ -152,6 +153,110 @@ class SettingsDialog(QtWidgets.QDialog):
         form.addRow("Motyw UI", self.ui_theme)
 
         self.tabs.addTab(tab, "Zaawansowane")
+
+    def _build_diagnostics_tab(self):
+        tab = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(tab)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(8)
+
+        self.diag_text = QtWidgets.QTextEdit()
+        self.diag_text.setReadOnly(True)
+        self.diag_text.setPlaceholderText("Kliknij 'Odśwież' aby sprawdzić status")
+        layout.addWidget(self.diag_text, 1)
+
+        btn_row = QtWidgets.QHBoxLayout()
+        refresh_btn = QtWidgets.QPushButton("Odśwież diagnostykę")
+        refresh_btn.clicked.connect(self._refresh_diagnostics)
+        vacuum_btn = QtWidgets.QPushButton("Vacuum bazy danych")
+        vacuum_btn.setToolTip("Zmniejsz rozmiar bazy po usunięciach")
+        vacuum_btn.clicked.connect(self._run_vacuum)
+        restore_btn = QtWidgets.QPushButton("Przywróć kopię zapasową…")
+        restore_btn.clicked.connect(self._open_restore_dialog)
+        btn_row.addWidget(refresh_btn)
+        btn_row.addWidget(vacuum_btn)
+        btn_row.addStretch(1)
+        btn_row.addWidget(restore_btn)
+        layout.addLayout(btn_row)
+
+        self.tabs.addTab(tab, "Diagnostyki")
+
+    def _refresh_diagnostics(self):
+        import shutil
+        from lumbago_app.core.config import app_data_dir, cache_dir
+        lines = []
+
+        def _check_tool(name):
+            path = shutil.which(name)
+            return f"✓ {path}" if path else "✗ Nie znaleziono w PATH"
+
+        lines.append(f"fpcalc:  {_check_tool('fpcalc')}")
+        lines.append(f"ffmpeg:  {_check_tool('ffmpeg')}")
+        lines.append("")
+        data_dir = app_data_dir()
+        db_path = data_dir / "lumbago.db"
+        if db_path.exists():
+            size_mb = db_path.stat().st_size / 1024 / 1024
+            lines.append(f"Baza danych:  {db_path}\n  Rozmiar: {size_mb:.2f} MB")
+        else:
+            lines.append("Baza danych:  Nie istnieje")
+        lines.append("")
+        cache = cache_dir()
+        cache_size = sum(f.stat().st_size for f in cache.rglob("*") if f.is_file())
+        lines.append(f"Cache:  {cache}\n  Rozmiar: {cache_size / 1024 / 1024:.2f} MB")
+        backups_dir = data_dir / "backups"
+        backups = sorted(backups_dir.glob("*.zip")) if backups_dir.exists() else []
+        lines.append(f"\nKopie zapasowe:  {len(backups)} plików w {backups_dir}")
+
+        try:
+            import librosa
+            lines.append(f"\nlibrosa:  ✓ {librosa.__version__}")
+        except ImportError:
+            lines.append("\nlibrosa:  ✗ Nie zainstalowana (BPM/key detection niedostępne)")
+
+        self.diag_text.setPlainText("\n".join(lines))
+
+    def _run_vacuum(self):
+        try:
+            from lumbago_app.data.repository import vacuum_database
+            vacuum_database()
+            QtWidgets.QMessageBox.information(self, "Vacuum", "VACUUM zakończony pomyślnie.")
+            self._refresh_diagnostics()
+        except Exception as exc:
+            QtWidgets.QMessageBox.critical(self, "Vacuum", f"Błąd: {exc}")
+
+    def _open_restore_dialog(self):
+        from lumbago_app.core.config import app_data_dir
+        from lumbago_app.core.backup import restore_backup
+        backups_dir = app_data_dir() / "backups"
+        files = sorted(backups_dir.glob("*.zip"), key=lambda p: p.stat().st_mtime, reverse=True) \
+            if backups_dir.exists() else []
+        if not files:
+            QtWidgets.QMessageBox.information(self, "Przywróć backup", "Brak kopii zapasowych.")
+            return
+        items = [f.name for f in files]
+        chosen, ok = QtWidgets.QInputDialog.getItem(
+            self, "Przywróć kopię zapasową",
+            "Wybierz kopię do przywrócenia (wymaga restartu):", items, 0, False
+        )
+        if not ok or not chosen:
+            return
+        idx = items.index(chosen)
+        confirm = QtWidgets.QMessageBox.question(
+            self, "Przywróć backup",
+            f"Przywrócić kopię:\n{chosen}\n\nBieżące dane zostaną zastąpione. Kontynuować?",
+            QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
+        )
+        if confirm != QtWidgets.QMessageBox.StandardButton.Yes:
+            return
+        try:
+            restore_backup(files[idx])
+            QtWidgets.QMessageBox.information(
+                self, "Przywróć backup",
+                "Kopia przywrócona. Uruchom ponownie aplikację aby zmiany były widoczne."
+            )
+        except Exception as exc:
+            QtWidgets.QMessageBox.critical(self, "Przywróć backup", f"Błąd: {exc}")
 
     def _key_row(self, field: QtWidgets.QLineEdit, test_fn) -> QtWidgets.QWidget:
         widget = QtWidgets.QWidget()
