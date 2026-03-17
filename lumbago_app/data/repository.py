@@ -395,6 +395,31 @@ def list_change_log(track_path: str) -> list[dict[str, str]]:
         ]
 
 
+def list_all_change_log(limit: int = 500) -> list[dict[str, str]]:
+    """Zwraca globalną historię zmian dla wszystkich tracków."""
+    Session = get_session_factory()
+    with Session() as session:
+        rows = session.scalars(
+            select(ChangeLogOrm)
+            .order_by(ChangeLogOrm.changed_at.desc(), ChangeLogOrm.id.desc())
+            .limit(limit)
+        ).all()
+        result = []
+        for row in rows:
+            # Pobierz ścieżkę tracku
+            track = session.get(TrackOrm, row.track_id)
+            track_path = track.path if track else ""
+            result.append({
+                "track_path": track_path,
+                "field": row.field,
+                "old": row.old_value or "",
+                "new": row.new_value or "",
+                "source": row.source or "",
+                "changed_at": str(row.changed_at) if row.changed_at else "",
+            })
+        return result
+
+
 def get_metadata_cache(key: str, max_age_seconds: int | None = None) -> dict | None:
     Session = get_session_factory()
     with Session() as session:

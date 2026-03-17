@@ -462,6 +462,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.btn_settings.clicked.connect(self._open_settings)
         layout.addWidget(self.btn_settings)
 
+        self.btn_global_history = AnimatedButton("Historia zmian (cała biblioteka)")
+        self.btn_global_history.setToolTip("Pokaż globalną historię zmian tagów dla wszystkich tracków")
+        self.btn_global_history.clicked.connect(self._show_global_history)
+        layout.addWidget(self.btn_global_history)
+
         playlists_title = QtWidgets.QLabel("Playlisty")
         playlists_title.setObjectName("SectionTitle")
         layout.addWidget(playlists_title)
@@ -1543,6 +1548,65 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         dialog = ChangeHistoryDialog(track.path, self)
         dialog.exec()
+
+    def _show_global_history(self):
+        from lumbago_app.data.repository import list_all_change_log
+        from lumbago_app.ui.widgets import apply_dialog_fade, dialog_icon_pixmap
+        rows = list_all_change_log(limit=1000)
+        dlg = QtWidgets.QDialog(self)
+        dlg.setWindowTitle("Globalna historia zmian")
+        dlg.setMinimumSize(1000, 560)
+        apply_dialog_fade(dlg)
+        layout = QtWidgets.QVBoxLayout(dlg)
+        layout.setContentsMargins(16, 16, 16, 16)
+        card = QtWidgets.QFrame()
+        card.setObjectName("DialogCard")
+        cl = QtWidgets.QVBoxLayout(card)
+        cl.setContentsMargins(16, 14, 16, 16)
+        layout.addWidget(card)
+        # Filtr źródła
+        filter_row = QtWidgets.QHBoxLayout()
+        filter_row.addWidget(QtWidgets.QLabel("Źródło:"))
+        source_combo = QtWidgets.QComboBox()
+        source_combo.addItem("Wszystkie", "")
+        sources = sorted({r["source"] for r in rows if r["source"]})
+        for s in sources:
+            source_combo.addItem(s, s)
+        filter_row.addWidget(source_combo)
+        filter_row.addStretch(1)
+        cl.addLayout(filter_row)
+        table = QtWidgets.QTableWidget(0, 6)
+        table.setHorizontalHeaderLabels(["Plik", "Pole", "Stare", "Nowe", "Źródło", "Data"])
+        table.horizontalHeader().setStretchLastSection(True)
+        table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.ResizeMode.Interactive)
+        table.setAlternatingRowColors(True)
+        cl.addWidget(table, 1)
+
+        def _populate(src_filter: str = ""):
+            table.setRowCount(0)
+            for entry in rows:
+                if src_filter and entry["source"] != src_filter:
+                    continue
+                row = table.rowCount()
+                table.insertRow(row)
+                from pathlib import Path as _P
+                fname = _P(entry["track_path"]).name if entry["track_path"] else ""
+                table.setItem(row, 0, QtWidgets.QTableWidgetItem(fname))
+                table.setItem(row, 1, QtWidgets.QTableWidgetItem(entry["field"]))
+                table.setItem(row, 2, QtWidgets.QTableWidgetItem(entry["old"]))
+                table.setItem(row, 3, QtWidgets.QTableWidgetItem(entry["new"]))
+                table.setItem(row, 4, QtWidgets.QTableWidgetItem(entry["source"]))
+                table.setItem(row, 5, QtWidgets.QTableWidgetItem(entry["changed_at"]))
+
+        _populate()
+        source_combo.currentIndexChanged.connect(lambda: _populate(source_combo.currentData() or ""))
+        close_btn = QtWidgets.QPushButton("Zamknij")
+        close_btn.clicked.connect(dlg.reject)
+        btn_row = QtWidgets.QHBoxLayout()
+        btn_row.addStretch(1)
+        btn_row.addWidget(close_btn)
+        cl.addLayout(btn_row)
+        dlg.exec()
 
     def _update_cover_preview(self, path: str | None):
         if path and Path(path).exists():
