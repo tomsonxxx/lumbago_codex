@@ -535,13 +535,31 @@ class MainWindow(QtWidgets.QMainWindow):
         form.addRow("Album", self.detail_album)
         form.addRow("Rok", self.detail_year)
         form.addRow("Gatunek", self.detail_genre)
-        form.addRow("BPM", self.detail_bpm)
+        # BPM z Tap
+        bpm_row = QtWidgets.QHBoxLayout()
+        bpm_row.addWidget(self.detail_bpm)
+        self._tap_btn = QtWidgets.QPushButton("Tap")
+        self._tap_btn.setFixedWidth(40)
+        self._tap_btn.setToolTip("Kliknij w rytm aby zmierzyć BPM")
+        self._tap_btn.clicked.connect(self._tap_bpm)
+        self._tap_times: list[float] = []
+        bpm_row.addWidget(self._tap_btn)
+        form.addRow("BPM", bpm_row)
         form.addRow("Tonacja", self.detail_key)
         form.addRow("LUFS", self.detail_loudness)
         layout.addLayout(form)
 
+        # Auto-save z debounce 1.5s
+        self._autosave_timer = QtCore.QTimer(self)
+        self._autosave_timer.setSingleShot(True)
+        self._autosave_timer.setInterval(1500)
+        self._autosave_timer.timeout.connect(self._save_detail_changes)
+        for field in (self.detail_title, self.detail_artist, self.detail_album,
+                      self.detail_year, self.detail_genre, self.detail_bpm, self.detail_key):
+            field.textChanged.connect(self._autosave_timer.start)
+
         self.save_btn = AnimatedButton("Zapisz zmiany")
-        self.save_btn.setToolTip("Zapisz zmiany w bazie")
+        self.save_btn.setToolTip("Zapisz zmiany w bazie (auto-save działa po 1.5s)")
         self.save_btn.clicked.connect(self._save_detail_changes)
         layout.addWidget(self.save_btn)
 
@@ -640,6 +658,26 @@ class MainWindow(QtWidgets.QMainWindow):
         cues.addStretch(1)
         layout.addLayout(cues)
 
+        # Hot cues 1-8
+        _HC_COLORS = ["#ff8800", "#0088ff", "#00cc44", "#ff2244",
+                      "#aa44ff", "#00dddd", "#ff44aa", "#dddd00"]
+        hot_row = QtWidgets.QHBoxLayout()
+        hot_row.addWidget(QtWidgets.QLabel("Hot cues:"))
+        self._hot_cue_btns: list[QtWidgets.QPushButton] = []
+        self._hot_cues: dict[int, int | None] = {i: None for i in range(8)}
+        for i in range(8):
+            btn = QtWidgets.QPushButton(str(i + 1))
+            btn.setFixedSize(32, 26)
+            btn.setToolTip(f"Hot Cue {i + 1} — kliknij aby ustawić/skoczyć, PPM aby wyczyścić")
+            btn.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
+            btn.customContextMenuRequested.connect(lambda _, idx=i: self._clear_hot_cue(idx))
+            btn.clicked.connect(lambda _, idx=i: self._toggle_hot_cue(idx))
+            self._update_hot_cue_btn_style(btn, i, _HC_COLORS[i], active=False)
+            hot_row.addWidget(btn)
+            self._hot_cue_btns.append(btn)
+        hot_row.addStretch(1)
+        layout.addLayout(hot_row)
+
         if self.player:
             self.player.positionChanged.connect(self._on_position_changed)
             self.player.durationChanged.connect(self._on_duration_changed)
@@ -647,6 +685,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._cue_a = None
         self._cue_b = None
         self._loop_enabled = False
+        self._hot_cue_colors = _HC_COLORS
         return frame
 
     def _build_placeholder_pixmap(self, width: int, height: int) -> QtGui.QPixmap:
@@ -884,6 +923,44 @@ class MainWindow(QtWidgets.QMainWindow):
         state = "włączona" if self._loop_enabled else "wyłączona"
         self.status.showMessage(f"Pętla {state}.")
 
+    def _toggle_hot_cue(self, idx: int):
+        pos = self._hot_cues.get(idx)
+        if pos is None:
+            # Ustaw hot cue w aktualnej pozycji
+            if self.player:
+                self._hot_cues[idx] = self.player.position()
+            else:
+                self._hot_cues[idx] = 0
+            self._update_hot_cue_btn_style(
+                self._hot_cue_btns[idx], idx, self._hot_cue_colors[idx], active=True
+            )
+            self._show_message(f"Hot Cue {idx + 1} ustawiony.")
+        else:
+            # Skocz do hot cue
+            if self.player:
+                self.player.setPosition(pos)
+
+    def _clear_hot_cue(self, idx: int):
+        self._hot_cues[idx] = None
+        self._update_hot_cue_btn_style(
+            self._hot_cue_btns[idx], idx, self._hot_cue_colors[idx], active=False
+        )
+        self._show_message(f"Hot Cue {idx + 1} wyczyszczony.")
+
+    def _update_hot_cue_btn_style(self, btn: QtWidgets.QPushButton, idx: int, color: str, active: bool):
+        if active:
+            btn.setStyleSheet(
+                f"QPushButton {{ background: {color}; color: #000; font-weight: bold; "
+                f"border-radius: 4px; border: 1px solid {color}; }}"
+                f"QPushButton:hover {{ background: #fff; color: #000; }}"
+            )
+        else:
+            btn.setStyleSheet(
+                f"QPushButton {{ background: #1a1f2e; color: {color}; font-weight: bold; "
+                f"border-radius: 4px; border: 1px solid {color}; }}"
+                f"QPushButton:hover {{ background: {color}33; }}"
+            )
+
     def _grid_context_menu(self, pos):
         index = self.grid_view.indexAt(pos)
         if not index.isValid():
@@ -1100,8 +1177,28 @@ class MainWindow(QtWidgets.QMainWindow):
             track.bpm = None
         self._log_changes(track, snapshot)
         update_track(track)
-        self._load_tracks()
+        # Odśwież snapshot żeby nie duplikować change_log przy auto-save
+        self._selected_snapshot = {
+            "title": track.title, "artist": track.artist, "album": track.album,
+            "year": track.year, "genre": track.genre, "bpm": track.bpm, "key": track.key,
+        }
         self._show_message("Utwór zaktualizowany.")
+
+    def _tap_bpm(self):
+        import time
+        now = time.monotonic()
+        # Zresetuj jeśli przerwa > 3s
+        if self._tap_times and (now - self._tap_times[-1]) > 3.0:
+            self._tap_times.clear()
+        self._tap_times.append(now)
+        if len(self._tap_times) > 8:
+            self._tap_times = self._tap_times[-8:]
+        if len(self._tap_times) >= 2:
+            intervals = [self._tap_times[i] - self._tap_times[i - 1]
+                         for i in range(1, len(self._tap_times))]
+            avg_interval = sum(intervals) / len(intervals)
+            bpm = 60.0 / avg_interval if avg_interval > 0 else 0
+            self.detail_bpm.setText(f"{bpm:.1f}")
 
     def _log_changes(self, track: Track, snapshot: dict):
         for field in ["title", "artist", "album", "year", "genre", "bpm", "key"]:
