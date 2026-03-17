@@ -1163,6 +1163,7 @@ class MainWindow(QtWidgets.QMainWindow):
         for name in list_playlists():
             add_menu.addAction(name)
         ai_action = menu.addAction("Analiza AI")
+        manual_search_action = menu.addAction("Szukaj metadanych ręcznie…")
         local_meta_action = menu.addAction("Wczytaj metadane lokalne")
         action = menu.exec(self.table_view.viewport().mapToGlobal(pos))
         if action == play_action:
@@ -1192,8 +1193,25 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.status.showMessage(f"Dodano do playlisty: {action.text()}")
         elif action == ai_action:
             self._run_ai_tagger()
+        elif action == manual_search_action:
+            source_index = self.filter_proxy.mapToSource(index)
+            track = self.table_model.track_at(source_index.row())
+            if track:
+                self._open_manual_search(track)
         elif action == local_meta_action:
             self._apply_local_metadata_selected()
+
+    def _open_manual_search(self, track) -> None:
+        from lumbago_app.ui.manual_search_dialog import ManualSearchDialog
+        from lumbago_app.core.config import load_settings
+        settings = load_settings()
+        dlg = ManualSearchDialog(
+            track,
+            musicbrainz_app=settings.musicbrainz_app,
+            parent=self
+        )
+        if dlg.exec() == QtWidgets.QDialog.DialogCode.Accepted:
+            self._load_tracks()
 
     def _show_table_column_menu(self, pos):
         menu = QtWidgets.QMenu(self)

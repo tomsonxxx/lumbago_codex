@@ -250,6 +250,16 @@ def parse_virtualdj_xml(path: Path) -> list[XmlTrack]:
     tracks: list[XmlTrack] = []
     for song in root.findall(".//Song"):
         file_path = song.get("FilePath") or ""
+        hot_cues: list[tuple[int, float]] = []
+        for poi in song.findall("Poi"):
+            num = poi.get("Num")
+            pos = poi.get("Pos")
+            poi_type = poi.get("Type", "")
+            if poi_type == "cue" and num is not None and pos is not None:
+                try:
+                    hot_cues.append((int(num), float(pos)))
+                except (ValueError, TypeError):
+                    pass
         tracks.append(
             XmlTrack(
                 path=file_path,
@@ -259,6 +269,7 @@ def parse_virtualdj_xml(path: Path) -> list[XmlTrack]:
                 genre=song.get("Genre"),
                 bpm=song.get("BPM"),
                 key=song.get("Key"),
+                hot_cues=hot_cues if hot_cues else None,
             )
         )
     return tracks
