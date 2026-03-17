@@ -1331,6 +1331,20 @@ class MainWindow(QtWidgets.QMainWindow):
         wave_path = generate_waveform(Path(track.path))
         pixmap = QtGui.QPixmap(str(wave_path))
         if not pixmap.isNull():
+            # Narysuj markery cue_in / cue_out na waveformie
+            duration_ms = (track.duration or 0) * 1000
+            if duration_ms > 0:
+                painter = QtGui.QPainter(pixmap)
+                w = pixmap.width()
+                h = pixmap.height()
+                cue_colors = [(track.cue_in_ms, QtGui.QColor("#00ff88")),
+                              (track.cue_out_ms, QtGui.QColor("#ff4444"))]
+                for cue_ms, color in cue_colors:
+                    if cue_ms is not None:
+                        x = int(cue_ms / duration_ms * w)
+                        painter.setPen(QtGui.QPen(color, 2))
+                        painter.drawLine(x, 0, x, h)
+                painter.end()
             self.waveform_label.setPixmap(pixmap)
 
     def _update_tag_quality(self, track: Track):

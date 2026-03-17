@@ -66,10 +66,11 @@ class ScanWizardWorker(QtCore.QRunnable):
 
 
 class ImportWizardWorker(QtCore.QRunnable):
-    def __init__(self, tracks: list[Track], batch_size: int):
+    def __init__(self, tracks: list[Track], batch_size: int, detect_bpm: bool = False):
         super().__init__()
         self.tracks = tracks
         self.batch_size = max(1, batch_size)
+        self.detect_bpm = detect_bpm
         self.signals = ImportWizardSignals()
         self._stop = False
 
@@ -81,6 +82,18 @@ class ImportWizardWorker(QtCore.QRunnable):
         canceled = False
         total = len(self.tracks)
         processed = 0
+        if self.detect_bpm:
+            from lumbago_app.services.beatgrid import detect_bpm as _detect_bpm
+            for track in self.tracks:
+                if self._stop:
+                    break
+                if not track.bpm:
+                    try:
+                        bpm = _detect_bpm(track.path)
+                        if bpm:
+                            track.bpm = bpm
+                    except Exception:
+                        pass
         for start in range(0, total, self.batch_size):
             if self._stop:
                 canceled = True
@@ -196,6 +209,14 @@ class ImportWizard(QtWidgets.QDialog):
         self.ext_input.setText(".mp3,.flac,.wav,.m4a,.ogg,.aac")
         layout.addWidget(QtWidgets.QLabel("Rozszerzenia (oddzielone przecinkami)"))
         layout.addWidget(self.ext_input)
+        self.detect_bpm_check = QtWidgets.QCheckBox(
+            "Wykryj BPM przez librosa dla plików bez BPM (wolniejszy import)"
+        )
+        self.detect_bpm_check.setToolTip(
+            "Używa librosa.beat.beat_track() na pierwszych 60s każdego pliku.\n"
+            "Znacznie wydłuża czas importu, ale uzupełnia BPM tam gdzie tagi go nie mają."
+        )
+        layout.addWidget(self.detect_bpm_check)
         layout.addStretch(1)
         return page
 
@@ -322,7 +343,9 @@ class ImportWizard(QtWidgets.QDialog):
         self.import_progress.setRange(0, len(self._tracks))
         self.import_progress.setValue(0)
         self.import_status.setText("Import w toku...")
-        self._import_worker = ImportWizardWorker(self._tracks, 200)
+        detect_bpm = getattr(self, "detect_bpm_check", None)
+        detect_bpm = detect_bpm.isChecked() if detect_bpm else False
+        self._import_worker = ImportWizardWorker(self._tracks, 200, detect_bpm=detect_bpm)
         self._import_worker.signals.progress.connect(self._import_progress)
         self._import_worker.signals.finished.connect(self._import_finished)
         self.thread_pool.start(self._import_worker)
