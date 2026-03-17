@@ -260,6 +260,12 @@ class NormalizeWorker(QtCore.QRunnable):
         self.signals.finished.emit(created, errors)
 
 
+# Column presets — indices based on TrackTableModel.headers order
+# Tytuł=0, Artysta=1, Album=2, Rok=3, Gatunek=4, BPM=5, Tonacja=6, Nastrój=7, Energia=8, Czas=10, Format=11, Ocena=16, Ścieżka=25
+_DJ_COLUMNS = [0, 1, 4, 5, 6, 7, 8, 10, 16, 25]          # DJ View
+_META_COLUMNS = [0, 1, 2, 3, 4, 5, 6, 10, 11, 12, 25]    # Metadata View
+
+
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
@@ -278,6 +284,7 @@ class MainWindow(QtWidgets.QMainWindow):
         _debug_log("MainWindow: load_tracks ok")
         self._load_settings()
         _debug_log("MainWindow: load_settings ok")
+        self.setAcceptDrops(True)
 
     def _build_ui(self):
         central = QtWidgets.QWidget()
@@ -659,13 +666,17 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _load_playlists(self):
         self.playlist_list.clear()
-        all_item = QtWidgets.QListWidgetItem("Wszystkie utwory")
+        all_count = len(getattr(self, "_all_tracks", list_tracks()))
+        all_item = QtWidgets.QListWidgetItem(f"Wszystkie utwory ({all_count})")
         all_item.setData(QtCore.Qt.ItemDataRole.UserRole, None)
         self.playlist_list.addItem(all_item)
         for playlist in list_playlists_full():
             label = playlist.name
             if playlist.is_smart:
                 label = f"{label} (smart)"
+            if playlist.playlist_id:
+                count = len(list_playlist_tracks(playlist.playlist_id))
+                label = f"{label} ({count})"
             item = QtWidgets.QListWidgetItem(label)
             item.setData(QtCore.Qt.ItemDataRole.UserRole, playlist)
             self.playlist_list.addItem(item)
@@ -1558,6 +1569,8 @@ class MainWindow(QtWidgets.QMainWindow):
         edit_action = menu.addAction("Edytuj playlistę")
         delete_action = menu.addAction("Usuń playlistę")
         order_action = menu.addAction("Kolejność utworów")
+        menu.addSeparator()
+        export_m3u_action = menu.addAction("Eksportuj do M3U")
         action = menu.exec(self.playlist_list.mapToGlobal(pos))
         if action == add_action:
             self._open_playlist_editor()
@@ -1579,6 +1592,39 @@ class MainWindow(QtWidgets.QMainWindow):
                 if dialog.exec():
                     set_playlist_track_order(playlist.playlist_id, dialog.ordered_paths())
                     self._apply_playlist_view()
+        elif action == export_m3u_action:
+            self._export_playlist_m3u(item)
+
+    def _export_playlist_m3u(self, item: QtWidgets.QListWidgetItem | None):
+        if item:
+            playlist = item.data(QtCore.Qt.ItemDataRole.UserRole)
+            if playlist and playlist.playlist_id:
+                tracks = list_playlist_tracks(playlist.playlist_id)
+                default_name = f"{playlist.name}.m3u"
+            else:
+                tracks = list(self.table_model._tracks)
+                default_name = "playlist.m3u"
+        else:
+            tracks = list(self.table_model._tracks)
+            default_name = "playlist.m3u"
+        if not tracks:
+            self._show_message("Brak utworów do eksportu.")
+            return
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self, "Eksportuj do M3U", default_name, "M3U (*.m3u)"
+        )
+        if not path:
+            return
+        lines = ["#EXTM3U"]
+        for track in tracks:
+            duration = int(track.duration) if track.duration else -1
+            artist = track.artist or ""
+            title = track.title or Path(track.path).stem
+            display = f"{artist} - {title}" if artist else title
+            lines.append(f"#EXTINF:{duration},{display}")
+            lines.append(track.path)
+        Path(path).write_text("\n".join(lines), encoding="utf-8")
+        self._show_message(f"Wyeksportowano {len(tracks)} utworów do M3U.")
 
     def _open_playlist_editor(self, playlist=None):
         dialog = PlaylistEditorDialog(playlist, self)
@@ -1693,6 +1739,59 @@ class MainWindow(QtWidgets.QMainWindow):
         self.auto_tag_cloud_btn.setToolTip("Tagowanie wyłącznie przez API (OpenAI/Grok/DeepSeek/Gemini)")
         self.auto_tag_cloud_btn.clicked.connect(self._run_auto_tagger_cloud)
         row.addWidget(self.auto_tag_cloud_btn)
+
+        preset_label = QtWidgets.QLabel("Kolumny:")
+        preset_label.setStyleSheet("color: #9aa6b2; margin-left: 8px;")
+        row.addWidget(preset_label)
+        for name, cols in [("DJ", _DJ_COLUMNS), ("Metadane", _META_COLUMNS), ("Pełny", None)]:
+            btn = QtWidgets.QPushButton(name)
+            btn.setFixedHeight(24)
+            btn.setMaximumWidth(72)
+            btn.setToolTip(f"Preset kolumn: {name}")
+            btn.clicked.connect(lambda _, c=cols: self._apply_column_preset(c))
+            row.addWidget(btn)
         return frame
+
+    def _apply_column_preset(self, visible_cols: list[int] | None):
+        from lumbago_app.ui.models import TrackTableModel
+        total = len(TrackTableModel.headers)
+        for col in range(total):
+            if visible_cols is None:
+                self.table_view.setColumnHidden(col, False)
+            else:
+                self.table_view.setColumnHidden(col, col not in visible_cols)
+
+    def dragEnterEvent(self, event: QtGui.QDragEnterEvent):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+        else:
+            super().dragEnterEvent(event)
+
+    def dragMoveEvent(self, event: QtGui.QDragMoveEvent):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+        else:
+            super().dragMoveEvent(event)
+
+    def dropEvent(self, event: QtGui.QDropEvent):
+        urls = event.mimeData().urls()
+        if not urls:
+            return
+        paths = [Path(url.toLocalFile()) for url in urls]
+        folders = [p for p in paths if p.is_dir()]
+        files = [p for p in paths if p.is_file()]
+        if folders:
+            folder = folders[0]
+            wizard = ImportWizard(self, on_complete=self._load_tracks)
+            wizard.folder_input.setText(str(folder))
+            wizard.exec()
+        elif files:
+            from lumbago_app.core.audio import AUDIO_EXTENSIONS
+            audio_files = [p for p in files if p.suffix.lower() in AUDIO_EXTENSIONS]
+            if audio_files:
+                wizard = ImportWizard(self, on_complete=self._load_tracks)
+                wizard.folder_input.setText(str(audio_files[0].parent))
+                wizard.exec()
+        event.acceptProposedAction()
 
 
