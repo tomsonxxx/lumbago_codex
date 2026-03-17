@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import sessionmaker
 
 from lumbago_app.core.config import load_settings
@@ -15,6 +15,14 @@ def get_engine():
     if _engine is None:
         settings = load_settings()
         _engine = create_engine(f"sqlite:///{settings.db_path}", future=True)
+
+        @event.listens_for(_engine, "connect")
+        def _set_wal_mode(dbapi_connection, connection_record):
+            cursor = dbapi_connection.cursor()
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA synchronous=NORMAL")
+            cursor.close()
+
     return _engine
 
 

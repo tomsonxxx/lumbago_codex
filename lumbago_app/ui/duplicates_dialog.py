@@ -9,6 +9,7 @@ from lumbago_app.ui.widgets import apply_dialog_fade, dialog_icon_pixmap
 
 from lumbago_app.core.models import DuplicateGroup, Track
 from lumbago_app.core.audio import file_hash
+from lumbago_app.core.backup import perform_pre_operation_backup
 from lumbago_app.core.services import DuplicateResult, find_duplicates_by_tags
 from lumbago_app.data.repository import (
     delete_tracks_by_paths,
@@ -86,7 +87,7 @@ class DuplicatesDialog(QtWidgets.QDialog):
 
         actions = QtWidgets.QHBoxLayout()
         self.mark_btn = QtWidgets.QPushButton("Zaznacz duplikaty")
-        self.mark_btn.setToolTip("Zaznacz wszystkie duplikaty (zostaw pierwsze)")
+        self.mark_btn.setToolTip("Zaznacz duplikaty do usunięcia (smart: zostaw najlepszy format/bitrate)")
         self.mark_btn.clicked.connect(self._mark_duplicates)
         self.clear_btn = QtWidgets.QPushButton("Wyczyść zaznaczenie")
         self.clear_btn.setToolTip("Odznacz wszystkie pozycje")
@@ -98,7 +99,7 @@ class DuplicatesDialog(QtWidgets.QDialog):
         self.merge_btn.setToolTip("Scal brakujące tagi do pierwszego utworu w grupie")
         self.merge_btn.clicked.connect(self._merge_selected)
         self.delete_btn = QtWidgets.QPushButton("Usuń zaznaczone")
-        self.delete_btn.setToolTip("Usuń zaznaczone pliki z dysku i bazy")
+        self.delete_btn.setToolTip("Przenieś zaznaczone pliki do kosza i usuń z bazy")
         self.delete_btn.clicked.connect(self._delete_selected)
         self.export_btn = QtWidgets.QPushButton("Eksportuj raport")
         self.export_btn.setToolTip("Zapisz raport CSV z wynikami")
@@ -198,9 +199,28 @@ class DuplicatesDialog(QtWidgets.QDialog):
             parent = self.tree.topLevelItem(i)
             if parent.childCount() <= 1:
                 continue
-            parent.child(0).setCheckState(0, QtCore.Qt.CheckState.Unchecked)
-            for idx in range(1, parent.childCount()):
-                parent.child(idx).setCheckState(0, QtCore.Qt.CheckState.Checked)
+            best_idx = self._best_track_index(parent)
+            for idx in range(parent.childCount()):
+                state = QtCore.Qt.CheckState.Unchecked if idx == best_idx else QtCore.Qt.CheckState.Checked
+                parent.child(idx).setCheckState(0, state)
+
+    def _best_track_index(self, parent: QtWidgets.QTreeWidgetItem) -> int:
+        _FORMAT_SCORE = {"audio/flac": 3, "audio/x-flac": 3, "audio/mpeg": 2, "audio/mp4": 2, "audio/wav": 1}
+        best_idx = 0
+        best_score = -1
+        for idx in range(parent.childCount()):
+            path = parent.child(idx).data(0, QtCore.Qt.ItemDataRole.UserRole) or ""
+            track = self._track_map.get(path)
+            if not track:
+                continue
+            fmt_score = _FORMAT_SCORE.get((track.format or "").lower(), 0)
+            bitrate = track.bitrate or 0
+            tag_count = sum(1 for f in (track.title, track.artist, track.album, track.genre, track.key) if f)
+            score = fmt_score * 10000 + bitrate * 10 + tag_count
+            if score > best_score:
+                best_score = score
+                best_idx = idx
+        return best_idx
 
     def _clear_marks(self):
         for i in range(self.tree.topLevelItemCount()):
@@ -248,17 +268,32 @@ class DuplicatesDialog(QtWidgets.QDialog):
         confirm = QtWidgets.QMessageBox.question(
             self,
             "Potwierdzenie",
-            "Czy na pewno usunąć zaznaczone pliki z dysku i bazy?",
+            f"Przenieść {len(paths)} plik(ów) do kosza i usunąć z bazy?",
         )
         if confirm != QtWidgets.QMessageBox.StandardButton.Yes:
             return
+        perform_pre_operation_backup()
+        trash_dir = Path(paths[0]).parent.parent / ".lumbago_trash"
+        trash_dir.mkdir(parents=True, exist_ok=True)
+        moved: list[str] = []
         for path in paths:
+            src = Path(path)
+            if not src.exists():
+                moved.append(path)
+                continue
+            dst = trash_dir / src.name
+            counter = 1
+            while dst.exists():
+                dst = trash_dir / f"{src.stem}_{counter}{src.suffix}"
+                counter += 1
             try:
-                Path(path).unlink(missing_ok=True)
+                shutil.move(str(src), str(dst))
+                moved.append(path)
             except Exception:
                 continue
-        delete_tracks_by_paths(paths)
-        self.accept()
+        if moved:
+            delete_tracks_by_paths(moved)
+            self.accept()
 
     def _export_report(self):
         path, _ = QtWidgets.QFileDialog.getSaveFileName(

@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from PyQt6 import QtWidgets, QtGui
 
@@ -10,7 +10,7 @@ class SettingsDialog(QtWidgets.QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Ustawienia / Klucze API")
-        self.setMinimumWidth(520)
+        self.setMinimumWidth(560)
         apply_dialog_fade(self)
         self._build_ui()
         self._load()
@@ -39,62 +39,12 @@ class SettingsDialog(QtWidgets.QDialog):
         title_row.addStretch(1)
         layout.addLayout(title_row)
 
-        form = QtWidgets.QFormLayout()
+        self.tabs = QtWidgets.QTabWidget()
+        layout.addWidget(self.tabs, 1)
 
-        self.acoustid_key = QtWidgets.QLineEdit()
-        self.musicbrainz_app = QtWidgets.QLineEdit()
-        self.discogs_token = QtWidgets.QLineEdit()
-        self.cloud_provider = QtWidgets.QComboBox()
-        self.cloud_provider.addItems(["", "openai", "gemini", "grok", "deepseek"])
-        self.cloud_api_key = QtWidgets.QLineEdit()
-        self.grok_api_key = QtWidgets.QLineEdit()
-        self.deepseek_api_key = QtWidgets.QLineEdit()
-        self.openai_api_key = QtWidgets.QLineEdit()
-        self.openai_base_url = QtWidgets.QLineEdit()
-        self.openai_model = QtWidgets.QLineEdit()
-        self.grok_base_url = QtWidgets.QLineEdit()
-        self.grok_model = QtWidgets.QLineEdit()
-        self.deepseek_base_url = QtWidgets.QLineEdit()
-        self.deepseek_model = QtWidgets.QLineEdit()
-        self.filename_patterns = QtWidgets.QTextEdit()
-        self.filename_patterns.setPlaceholderText(
-            "Przykład: (?P<artist>.+) - (?P<title>.+)"
-        )
-        self.validation_policy = QtWidgets.QComboBox()
-        self.validation_policy.addItems(["strict", "balanced", "lenient"])
-        self.metadata_cache_ttl = QtWidgets.QSpinBox()
-        self.metadata_cache_ttl.setRange(0, 365)
-        self.metadata_cache_ttl.setSuffix(" dni")
-
-        for field in [
-            self.acoustid_key,
-            self.discogs_token,
-            self.cloud_api_key,
-            self.grok_api_key,
-            self.deepseek_api_key,
-            self.openai_api_key,
-        ]:
-            field.setEchoMode(QtWidgets.QLineEdit.EchoMode.Password)
-
-        form.addRow("Klucz API AcoustID", self.acoustid_key)
-        form.addRow("Nazwa aplikacji MusicBrainz", self.musicbrainz_app)
-        form.addRow("Token Discogs", self.discogs_token)
-        form.addRow("Dostawca AI (chmura)", self.cloud_provider)
-        form.addRow("Klucz AI (chmura)", self.cloud_api_key)
-        form.addRow("Klucz Grok API", self.grok_api_key)
-        form.addRow("Adres bazowy Grok (URL)", self.grok_base_url)
-        form.addRow("Model Grok", self.grok_model)
-        form.addRow("Klucz DeepSeek API", self.deepseek_api_key)
-        form.addRow("Adres bazowy DeepSeek (URL)", self.deepseek_base_url)
-        form.addRow("Model DeepSeek", self.deepseek_model)
-        form.addRow("Klucz OpenAI API", self.openai_api_key)
-        form.addRow("Adres bazowy OpenAI (URL)", self.openai_base_url)
-        form.addRow("Model OpenAI", self.openai_model)
-        form.addRow("Wzorce nazw plików (regex, 1 na linię)", self.filename_patterns)
-        form.addRow("Walidacja metadanych", self.validation_policy)
-        form.addRow("Cache metadanych (TTL)", self.metadata_cache_ttl)
-
-        layout.addLayout(form)
+        self._build_metadata_tab()
+        self._build_ai_tab()
+        self._build_advanced_tab()
 
         btn_row = QtWidgets.QHBoxLayout()
         btn_row.addStretch(1)
@@ -105,6 +55,178 @@ class SettingsDialog(QtWidgets.QDialog):
         btn_row.addWidget(save_btn)
         btn_row.addWidget(cancel_btn)
         layout.addLayout(btn_row)
+
+    def _build_metadata_tab(self):
+        tab = QtWidgets.QWidget()
+        form = QtWidgets.QFormLayout(tab)
+        form.setContentsMargins(12, 12, 12, 12)
+        form.setSpacing(8)
+
+        self.acoustid_key = QtWidgets.QLineEdit()
+        self.acoustid_key.setEchoMode(QtWidgets.QLineEdit.EchoMode.Password)
+        acoustid_row = self._key_row(self.acoustid_key, self._test_acoustid)
+        form.addRow("Klucz API AcoustID", acoustid_row)
+
+        self.musicbrainz_app = QtWidgets.QLineEdit()
+        form.addRow("Nazwa aplikacji MusicBrainz", self.musicbrainz_app)
+
+        self.discogs_token = QtWidgets.QLineEdit()
+        self.discogs_token.setEchoMode(QtWidgets.QLineEdit.EchoMode.Password)
+        discogs_row = self._key_row(self.discogs_token, self._test_discogs)
+        form.addRow("Token Discogs", discogs_row)
+
+        self.validation_policy = QtWidgets.QComboBox()
+        self.validation_policy.addItems(["strict", "balanced", "lenient"])
+        form.addRow("Walidacja metadanych", self.validation_policy)
+
+        self.metadata_cache_ttl = QtWidgets.QSpinBox()
+        self.metadata_cache_ttl.setRange(0, 365)
+        self.metadata_cache_ttl.setSuffix(" dni")
+        form.addRow("Cache metadanych (TTL)", self.metadata_cache_ttl)
+
+        self.tabs.addTab(tab, "Metadane")
+
+    def _build_ai_tab(self):
+        tab = QtWidgets.QWidget()
+        form = QtWidgets.QFormLayout(tab)
+        form.setContentsMargins(12, 12, 12, 12)
+        form.setSpacing(8)
+
+        self.cloud_provider = QtWidgets.QComboBox()
+        self.cloud_provider.addItems(["", "openai", "gemini", "grok", "deepseek"])
+        form.addRow("Dostawca AI (chmura)", self.cloud_provider)
+
+        self.cloud_api_key = QtWidgets.QLineEdit()
+        self.cloud_api_key.setEchoMode(QtWidgets.QLineEdit.EchoMode.Password)
+        form.addRow("Klucz AI (aktywny dostawca)", self.cloud_api_key)
+
+        self.openai_api_key = QtWidgets.QLineEdit()
+        self.openai_api_key.setEchoMode(QtWidgets.QLineEdit.EchoMode.Password)
+        openai_row = self._key_row(self.openai_api_key, lambda: self._test_openai_compatible("openai"))
+        form.addRow("Klucz OpenAI API", openai_row)
+
+        self.openai_model = QtWidgets.QLineEdit()
+        form.addRow("Model OpenAI", self.openai_model)
+
+        self.grok_api_key = QtWidgets.QLineEdit()
+        self.grok_api_key.setEchoMode(QtWidgets.QLineEdit.EchoMode.Password)
+        grok_row = self._key_row(self.grok_api_key, lambda: self._test_openai_compatible("grok"))
+        form.addRow("Klucz Grok API", grok_row)
+
+        self.grok_model = QtWidgets.QLineEdit()
+        form.addRow("Model Grok", self.grok_model)
+
+        self.deepseek_api_key = QtWidgets.QLineEdit()
+        self.deepseek_api_key.setEchoMode(QtWidgets.QLineEdit.EchoMode.Password)
+        deepseek_row = self._key_row(self.deepseek_api_key, lambda: self._test_openai_compatible("deepseek"))
+        form.addRow("Klucz DeepSeek API", deepseek_row)
+
+        self.deepseek_model = QtWidgets.QLineEdit()
+        form.addRow("Model DeepSeek", self.deepseek_model)
+
+        self.tabs.addTab(tab, "AI Cloud")
+
+    def _build_advanced_tab(self):
+        tab = QtWidgets.QWidget()
+        form = QtWidgets.QFormLayout(tab)
+        form.setContentsMargins(12, 12, 12, 12)
+        form.setSpacing(8)
+
+        self.openai_base_url = QtWidgets.QLineEdit()
+        form.addRow("Adres bazowy OpenAI (URL)", self.openai_base_url)
+
+        self.grok_base_url = QtWidgets.QLineEdit()
+        form.addRow("Adres bazowy Grok (URL)", self.grok_base_url)
+
+        self.deepseek_base_url = QtWidgets.QLineEdit()
+        form.addRow("Adres bazowy DeepSeek (URL)", self.deepseek_base_url)
+
+        self.filename_patterns = QtWidgets.QTextEdit()
+        self.filename_patterns.setPlaceholderText("Przykład: (?P<artist>.+) - (?P<title>.+)")
+        self.filename_patterns.setMaximumHeight(100)
+        form.addRow("Wzorce nazw plików (regex, 1 na linię)", self.filename_patterns)
+
+        self.tabs.addTab(tab, "Zaawansowane")
+
+    def _key_row(self, field: QtWidgets.QLineEdit, test_fn) -> QtWidgets.QWidget:
+        widget = QtWidgets.QWidget()
+        row = QtWidgets.QHBoxLayout(widget)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(6)
+        row.addWidget(field, 1)
+        btn = QtWidgets.QPushButton("Testuj")
+        btn.setFixedWidth(64)
+        btn.setToolTip("Sprawdź poprawność klucza API")
+        btn.clicked.connect(test_fn)
+        row.addWidget(btn)
+        return widget
+
+    def _test_acoustid(self):
+        key = self.acoustid_key.text().strip()
+        if not key:
+            QtWidgets.QMessageBox.warning(self, "Test AcoustID", "Podaj klucz API.")
+            return
+        try:
+            import requests
+            resp = requests.get(
+                "https://api.acoustid.org/v2/lookup",
+                params={"client": key, "meta": "recordings", "duration": "1", "fingerprint": "test"},
+                timeout=10,
+            )
+            if resp.status_code in (200, 400):
+                QtWidgets.QMessageBox.information(self, "Test AcoustID", "Klucz działa poprawnie.")
+            else:
+                QtWidgets.QMessageBox.warning(self, "Test AcoustID", f"Odpowiedź: {resp.status_code}")
+        except Exception as exc:
+            QtWidgets.QMessageBox.critical(self, "Test AcoustID", f"Błąd połączenia: {exc}")
+
+    def _test_discogs(self):
+        token = self.discogs_token.text().strip()
+        if not token:
+            QtWidgets.QMessageBox.warning(self, "Test Discogs", "Podaj token.")
+            return
+        try:
+            import requests
+            resp = requests.get(
+                "https://api.discogs.com/oauth/identity",
+                headers={"Authorization": f"Discogs token={token}"},
+                timeout=10,
+            )
+            if resp.status_code == 200:
+                QtWidgets.QMessageBox.information(self, "Test Discogs", "Token działa poprawnie.")
+            else:
+                QtWidgets.QMessageBox.warning(self, "Test Discogs", f"Odpowiedź: {resp.status_code}")
+        except Exception as exc:
+            QtWidgets.QMessageBox.critical(self, "Test Discogs", f"Błąd połączenia: {exc}")
+
+    def _test_openai_compatible(self, provider: str):
+        key_map = {"openai": self.openai_api_key, "grok": self.grok_api_key, "deepseek": self.deepseek_api_key}
+        url_map = {
+            "openai": self.openai_base_url.text().strip() or "https://api.openai.com/v1",
+            "grok": self.grok_base_url.text().strip(),
+            "deepseek": self.deepseek_base_url.text().strip(),
+        }
+        key = key_map[provider].text().strip()
+        base_url = url_map[provider]
+        if not key:
+            QtWidgets.QMessageBox.warning(self, f"Test {provider}", "Podaj klucz API.")
+            return
+        if not base_url:
+            QtWidgets.QMessageBox.warning(self, f"Test {provider}", "Podaj adres bazowy URL.")
+            return
+        try:
+            import requests
+            resp = requests.get(
+                f"{base_url.rstrip('/')}/models",
+                headers={"Authorization": f"Bearer {key}"},
+                timeout=10,
+            )
+            if resp.status_code == 200:
+                QtWidgets.QMessageBox.information(self, f"Test {provider}", "Klucz działa poprawnie.")
+            else:
+                QtWidgets.QMessageBox.warning(self, f"Test {provider}", f"Odpowiedź: {resp.status_code}")
+        except Exception as exc:
+            QtWidgets.QMessageBox.critical(self, f"Test {provider}", f"Błąd połączenia: {exc}")
 
     def _load(self):
         settings = load_settings()
@@ -149,6 +271,3 @@ class SettingsDialog(QtWidgets.QDialog):
             }
         )
         self.accept()
-
-
-

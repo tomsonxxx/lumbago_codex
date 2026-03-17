@@ -31,7 +31,7 @@ class CloudAiTagger:
 
     def analyze(self, track: Track) -> AnalysisResult:
         if not self.provider or not self.api_key:
-            return AnalysisResult(description="Cloud AI not configured", confidence=0.0)
+            return AnalysisResult(confidence=0.0)
         if self.provider == "gemini":
             base_url = self.base_url or "https://generativelanguage.googleapis.com/v1beta"
             model = self.model or "gemini-2.5-flash"
@@ -39,11 +39,11 @@ class CloudAiTagger:
             base_url = self.base_url
             model = self.model
         if not base_url or not model:
-            return AnalysisResult(description="Cloud AI missing base URL or model", confidence=0.0)
+            return AnalysisResult(confidence=0.0)
 
         missing = _missing_fields(track)
         if not missing:
-            return AnalysisResult(description="No missing fields", confidence=1.0)
+            return AnalysisResult(confidence=1.0)
         prompt = _build_prompt(track, missing)
         try:
             if self.provider == "openai":
@@ -63,11 +63,10 @@ class CloudAiTagger:
                 mood=_to_str(payload.get("mood")),
                 energy=_to_float(payload.get("energy")),
                 genre=_to_str(payload.get("genre")),
-                description=_to_str(payload.get("description")),
                 confidence=_to_float(payload.get("confidence")),
             )
-        except Exception as exc:
-            return AnalysisResult(description=f"Cloud AI error: {exc}", confidence=0.0)
+        except Exception:
+            return AnalysisResult(confidence=0.0)
 
 
 def _missing_fields(track: Track) -> list[str]:
@@ -87,18 +86,18 @@ def _missing_fields(track: Track) -> list[str]:
 
 def _build_prompt(track: Track, missing: list[str]) -> str:
     return (
-        "Zwroc JSON tylko dla pol: "
+        "Return JSON with only these fields: "
         + ", ".join(missing)
-        + ". Wartosci puste ustaw na null. "
-        "Dane wejsciowe:\n"
-        f"Tytul: {track.title or ''}\n"
-        f"Artysta: {track.artist or ''}\n"
+        + ". Set unknown values to null. "
+        "Input data:\n"
+        f"Title: {track.title or ''}\n"
+        f"Artist: {track.artist or ''}\n"
         f"Album: {track.album or ''}\n"
-        f"Gatunek: {track.genre or ''}\n"
+        f"Genre: {track.genre or ''}\n"
         f"BPM: {track.bpm or ''}\n"
-        f"Tonacja: {track.key or ''}\n"
-        f"Nastroj: {track.mood or ''}\n"
-        f"Energia: {track.energy or ''}\n"
+        f"Key: {track.key or ''}\n"
+        f"Mood: {track.mood or ''}\n"
+        f"Energy: {track.energy or ''}\n"
     )
 
 
@@ -137,7 +136,7 @@ def _call_openai_compatible_chat(
     payload = {
         "model": model,
         "messages": [
-            {"role": "system", "content": "Zwracaj tylko JSON."},
+            {"role": "system", "content": "Return only valid JSON."},
             {"role": "user", "content": prompt},
         ],
         "temperature": 0.2,

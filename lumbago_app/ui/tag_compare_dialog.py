@@ -67,6 +67,13 @@ class TagCompareDialog(QtWidgets.QDialog):
         header.addWidget(self.new_tags_view, 1)
         layout.addLayout(header)
 
+        filter_row = QtWidgets.QHBoxLayout()
+        self.diff_only_check = QtWidgets.QCheckBox("Pokaż tylko różnice")
+        self.diff_only_check.stateChanged.connect(lambda _: self._load_track())
+        filter_row.addWidget(self.diff_only_check)
+        filter_row.addStretch(1)
+        layout.addLayout(filter_row)
+
         self.table = QtWidgets.QTableWidget(0, 4)
         self.table.setHorizontalHeaderLabels(["Tag", "Stare", "Nowe", "Użyj starego"])
         header_table = self.table.horizontalHeader()
@@ -90,9 +97,6 @@ class TagCompareDialog(QtWidgets.QDialog):
         self.apply_all_btn = QtWidgets.QPushButton("Zapisz wszystkie")
         self.apply_all_btn.clicked.connect(self._apply_all)
         self.apply_all_btn.setToolTip("Zapisz tagi dla wszystkich utworów z listy")
-        self.apply_diff_btn = QtWidgets.QPushButton("Zastosuj tylko różnice")
-        self.apply_diff_btn.clicked.connect(self._apply_diff_current)
-        self.apply_diff_btn.setToolTip("Zapisz tylko zmienione tagi")
         self.cancel_btn = QtWidgets.QPushButton("Anuluj")
         self.cancel_btn.clicked.connect(self.reject)
         nav.addWidget(self.prev_btn)
@@ -100,7 +104,6 @@ class TagCompareDialog(QtWidgets.QDialog):
         nav.addStretch(1)
         nav.addWidget(self.apply_current_btn)
         nav.addWidget(self.apply_all_btn)
-        nav.addWidget(self.apply_diff_btn)
         nav.addWidget(self.cancel_btn)
         layout.addLayout(nav)
 
@@ -118,17 +121,29 @@ class TagCompareDialog(QtWidgets.QDialog):
                 else:
                     new_tags.setdefault(key, "")
         tags = order_tags(old_tags, new_tags)
+        diff_only = self.diff_only_check.isChecked()
         self.table.setRowCount(0)
         for tag in tags:
+            old_val = old_tags.get(tag, "")
+            new_val = new_tags.get(tag, "")
+            is_diff = old_val != new_val
+            if diff_only and not is_diff:
+                continue
             row = self.table.rowCount()
             self.table.insertRow(row)
             self.table.setItem(row, 0, QtWidgets.QTableWidgetItem(tag))
-            old_item = QtWidgets.QTableWidgetItem(old_tags.get(tag, ""))
+            old_item = QtWidgets.QTableWidgetItem(old_val)
             old_item.setFlags(old_item.flags() & ~QtCore.Qt.ItemFlag.ItemIsEditable)
             self.table.setItem(row, 1, old_item)
-            new_item = QtWidgets.QTableWidgetItem(new_tags.get(tag, ""))
+            new_item = QtWidgets.QTableWidgetItem(new_val)
             new_item.setFlags(new_item.flags() | QtCore.Qt.ItemFlag.ItemIsEditable)
             self.table.setItem(row, 2, new_item)
+            if is_diff:
+                highlight = QtGui.QColor("#1a3a1a")
+                old_item.setBackground(highlight)
+                new_item.setBackground(QtGui.QColor("#1a2a3a"))
+                old_item.setForeground(QtGui.QColor("#ff9966"))
+                new_item.setForeground(QtGui.QColor("#66ccff"))
             btn = QtWidgets.QPushButton("Użyj")
             btn.clicked.connect(lambda _, r=row: self._copy_new(r))
             self.table.setCellWidget(row, 3, btn)
