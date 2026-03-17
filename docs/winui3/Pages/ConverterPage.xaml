@@ -1,4 +1,4 @@
-<Page
+﻿<Page
     x:Class="LumbagoWin.Pages.ConverterPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
@@ -7,20 +7,20 @@
         <TextBlock Text="Konwerter XML" Style="{StaticResource TitleText}"/>
 
         <Grid Grid.Row="1" ColumnDefinitions="*,*" ColumnSpacing="16">
-            <Grid Style="{StaticResource NeonCard}">
+            <Border Style="{StaticResource NeonCardBorder}">
                 <StackPanel Spacing="12">
                     <TextBlock Text="Wejście: Rekordbox" Style="{StaticResource SectionText}"/>
                     <Button Content="Wybierz plik XML" Style="{StaticResource GhostButton}"/>
                     <TextBlock Text="Podgląd: 0 utworów" Style="{StaticResource CaptionText}"/>
                 </StackPanel>
-            </Grid>
-            <Grid Style="{StaticResource NeonCard}">
+            </Border>
+            <Border Style="{StaticResource NeonCardBorder}">
                 <StackPanel Spacing="12">
                     <TextBlock Text="Wyjście: VirtualDJ" Style="{StaticResource SectionText}"/>
                     <Button Content="Zapisz XML" Style="{StaticResource PrimaryButton}"/>
                     <TextBlock Text="Tryb: dry-run / produkcyjny" Style="{StaticResource CaptionText}"/>
                 </StackPanel>
-            </Grid>
+            </Border>
         </Grid>
     </Grid>
 </Page>
