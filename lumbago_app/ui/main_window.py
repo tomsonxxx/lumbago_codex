@@ -484,6 +484,17 @@ class MainWindow(QtWidgets.QMainWindow):
         )
         row.addWidget(self._topbar_title)
         row.addStretch(1)
+
+        settings_topbar_btn = QtWidgets.QPushButton("Ustawienia")
+        settings_topbar_btn.setObjectName("NavItem")
+        settings_topbar_btn.setFixedHeight(36)
+        settings_topbar_btn.setCursor(QtGui.QCursor(QtCore.Qt.CursorShape.PointingHandCursor))
+        settings_topbar_btn.setStyleSheet(
+            "QPushButton { padding: 0 16px; font-size: 12px; border-radius: 8px; }"
+        )
+        settings_topbar_btn.clicked.connect(lambda: self._switch_page(4))
+        row.addWidget(settings_topbar_btn)
+
         return frame
 
     def _build_library_page(self) -> QtWidgets.QWidget:
