@@ -2,13 +2,14 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "Lumbago Music AI",
-      "runtimeExecutable": "C:/Users/tomso/AppData/Local/Python/bin/python.exe",
-      "runtimeArgs": ["-m", "lumbago_app.main"],
-      "port": 0
+      "name": "Frontend React",
+      "runtimeExecutable": "E:/nodejs/node.exe",
+      "runtimeArgs": ["node_modules/vite/bin/vite.js", "--port", "5173", "--host"],
+      "cwd": "inteligentny_tagger_id3_src",
+      "port": 5173
     },
     {
-      "name": "Lumbago Music AI (Safe Mode)",
+      "name": "Lumbago Music AI",
       "runtimeExecutable": "C:/Users/tomso/AppData/Local/Python/bin/python.exe",
       "runtimeArgs": ["-m", "lumbago_app.main"],
       "port": 0
