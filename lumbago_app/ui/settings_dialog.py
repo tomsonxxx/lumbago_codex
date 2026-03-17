@@ -146,6 +146,11 @@ class SettingsDialog(QtWidgets.QDialog):
         self.filename_patterns.setMaximumHeight(100)
         form.addRow("Wzorce nazw plików (regex, 1 na linię)", self.filename_patterns)
 
+        self.ui_theme = QtWidgets.QComboBox()
+        self.ui_theme.addItems(["cyber", "minimal_dark"])
+        self.ui_theme.setToolTip("Zmiana motywu wymaga restartu aplikacji")
+        form.addRow("Motyw UI", self.ui_theme)
+
         self.tabs.addTab(tab, "Zaawansowane")
 
     def _key_row(self, field: QtWidgets.QLineEdit, test_fn) -> QtWidgets.QWidget:
@@ -247,6 +252,7 @@ class SettingsDialog(QtWidgets.QDialog):
         self.filename_patterns.setPlainText("\n".join(settings.filename_patterns or []))
         self.validation_policy.setCurrentText(settings.validation_policy or "balanced")
         self.metadata_cache_ttl.setValue(settings.metadata_cache_ttl_days)
+        self.ui_theme.setCurrentText(settings.ui_theme or "cyber")
 
     def _save(self):
         save_settings(
@@ -268,6 +274,7 @@ class SettingsDialog(QtWidgets.QDialog):
                 "FILENAME_PATTERNS": self.filename_patterns.toPlainText().strip(),
                 "VALIDATION_POLICY": self.validation_policy.currentText().strip(),
                 "METADATA_CACHE_TTL_DAYS": str(self.metadata_cache_ttl.value()),
+                "UI_THEME": self.ui_theme.currentText().strip(),
             }
         )
         self.accept()

@@ -11,9 +11,9 @@ from dotenv import load_dotenv
 from PyQt6 import QtCore, QtGui, QtWidgets
 
 from lumbago_app.ui.main_window import MainWindow
-from lumbago_app.ui.theme import CYBER_QSS
+from lumbago_app.ui.theme import get_qss
 from lumbago_app.ui.widgets import apply_window_fade
-from lumbago_app.core.config import app_data_dir
+from lumbago_app.core.config import app_data_dir, load_settings
 
 
 def main() -> int:
@@ -22,7 +22,11 @@ def main() -> int:
     QtCore.QCoreApplication.setAttribute(QtCore.Qt.ApplicationAttribute.AA_UseSoftwareOpenGL)
     app = QtWidgets.QApplication(sys.argv)
     app.setFont(QtGui.QFont("Segoe UI", 10))
-    app.setStyleSheet(CYBER_QSS)
+    try:
+        theme = load_settings().ui_theme
+    except Exception:
+        theme = "cyber"
+    app.setStyleSheet(get_qss(theme))
     app.aboutToQuit.connect(lambda: _write_log("app.log", "aboutToQuit"))
     try:
         if os.getenv("LUMBAGO_SAFE_MODE", "0") == "1":

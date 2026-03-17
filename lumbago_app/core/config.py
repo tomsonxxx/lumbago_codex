@@ -77,6 +77,7 @@ class Settings:
     filename_patterns: list[str]
     validation_policy: str | None
     metadata_cache_ttl_days: int
+    ui_theme: str
 
 
 def load_settings() -> Settings:
@@ -178,6 +179,7 @@ def load_settings() -> Settings:
             ),
             default=30,
         ),
+        ui_theme=_first_value(payload.get("UI_THEME"), os.getenv("UI_THEME")) or "cyber",
     )
 
 

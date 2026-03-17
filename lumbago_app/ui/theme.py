@@ -403,3 +403,105 @@ QMessageBox QLabel {
     color: #e8f3ff;
 }
 """
+
+MINIMAL_DARK_QSS = """
+QWidget {
+    background-color: #1e1e1e;
+    color: #d4d4d4;
+    font-family: "Segoe UI", "Noto Sans", "Arial";
+    font-size: 12px;
+}
+QDialog, QMainWindow {
+    background-color: #1e1e1e;
+}
+QAbstractButton { icon-size: 16px; }
+QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QTextEdit, QPlainTextEdit {
+    background-color: #252526;
+    border: 1px solid #3c3c3c;
+    border-radius: 6px;
+    padding: 6px 8px;
+    selection-background-color: #264f78;
+}
+QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus, QTextEdit:focus {
+    border-color: #569cd6;
+}
+QPushButton, QToolButton {
+    background-color: #2d2d2d;
+    border: 1px solid #3c3c3c;
+    border-radius: 6px;
+    padding: 6px 12px;
+    color: #d4d4d4;
+}
+QPushButton:hover, QToolButton:hover {
+    background-color: #3c3c3c;
+    border-color: #569cd6;
+}
+QPushButton:pressed, QToolButton:pressed {
+    background-color: #264f78;
+}
+QPushButton#PrimaryAction {
+    background-color: #0e639c;
+    color: #fff;
+    border-color: #1177bb;
+    font-weight: 600;
+}
+QPushButton#PrimaryAction:hover { background-color: #1177bb; }
+QPushButton#DangerAction {
+    background-color: #6e1f1f;
+    color: #f48771;
+    border-color: #8b3333;
+    font-weight: 600;
+}
+QLabel#SectionTitle { color: #569cd6; font-weight: 700; font-size: 13px; }
+QLabel#DialogTitle { color: #d4d4d4; font-weight: 700; font-size: 16px; padding: 2px 0 6px 0; }
+QLabel#ModePill { background-color: #252526; border: 1px solid #3c3c3c; border-radius: 8px; padding: 3px 8px; }
+QFrame { border-radius: 8px; }
+QFrame#Card { background-color: #252526; border: 1px solid #3c3c3c; border-radius: 8px; }
+QFrame#DialogCard { background-color: #252526; border: 1px solid #3c3c3c; border-radius: 10px; }
+QFrame#Toolbar { background-color: #2d2d2d; border-bottom: 1px solid #3c3c3c; border-radius: 0px; }
+QFrame#Sidebar { background-color: #252526; border-right: 1px solid #3c3c3c; border-radius: 0px; }
+QFrame#PlayerDock { background-color: #252526; border-top: 1px solid #3c3c3c; border-radius: 0px; }
+QTableView, QTableWidget, QListView, QListWidget, QTreeView, QTreeWidget {
+    background-color: #1e1e1e;
+    alternate-background-color: #252526;
+    gridline-color: #2d2d2d;
+    border: 1px solid #3c3c3c;
+    border-radius: 4px;
+}
+QTableView::item:selected, QTableWidget::item:selected,
+QListView::item:selected, QListWidget::item:selected {
+    background-color: #264f78;
+    color: #fff;
+}
+QHeaderView::section {
+    background-color: #2d2d2d;
+    border: none;
+    border-right: 1px solid #3c3c3c;
+    border-bottom: 1px solid #3c3c3c;
+    padding: 4px 8px;
+}
+QScrollBar:vertical { background-color: #1e1e1e; width: 10px; }
+QScrollBar::handle:vertical { background-color: #424242; border-radius: 5px; min-height: 20px; }
+QScrollBar::handle:vertical:hover { background-color: #569cd6; }
+QScrollBar:horizontal { background-color: #1e1e1e; height: 10px; }
+QScrollBar::handle:horizontal { background-color: #424242; border-radius: 5px; min-width: 20px; }
+QTabWidget::pane { border: 1px solid #3c3c3c; background-color: #252526; }
+QTabBar::tab { background-color: #2d2d2d; border: 1px solid #3c3c3c; padding: 6px 14px; }
+QTabBar::tab:selected { background-color: #252526; border-bottom: none; color: #569cd6; }
+QStatusBar { background-color: #007acc; color: #fff; border-top: 1px solid #005f9e; }
+QProgressBar { background-color: #252526; border: 1px solid #3c3c3c; border-radius: 4px; height: 8px; text-align: center; }
+QProgressBar::chunk { background-color: #0e639c; border-radius: 4px; }
+QMenuBar { background-color: #2d2d2d; }
+QMenuBar::item:selected { background-color: #3c3c3c; }
+QMenu { background-color: #252526; border: 1px solid #454545; }
+QMenu::item:selected { background-color: #094771; }
+QMessageBox { background-color: #252526; }
+QMessageBox QLabel { color: #d4d4d4; }
+"""
+
+
+def get_qss(theme_name: str = "cyber") -> str:
+    """Zwraca arkusz QSS dla podanego motywu. Dostępne: 'cyber', 'minimal_dark'."""
+    if theme_name == "minimal_dark":
+        return MINIMAL_DARK_QSS
+    return CYBER_QSS

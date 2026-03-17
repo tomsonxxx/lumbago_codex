@@ -117,6 +117,133 @@ def export_rekordbox_xml(tracks: Iterable[XmlTrack], output_path: Path) -> None:
     tree.write(output_path, encoding="utf-8", xml_declaration=True)
 
 
+def parse_traktor_nml(path: Path) -> list[XmlTrack]:
+    """Parsuje kolekcję Traktor NML (.nml)."""
+    tree = ET.parse(path)
+    root = tree.getroot()
+    tracks: list[XmlTrack] = []
+    for entry in root.findall(".//ENTRY"):
+        loc = entry.find("LOCATION")
+        if loc is None:
+            continue
+        vol = loc.get("VOLUME", "")
+        dir_ = loc.get("DIR", "")
+        file_ = loc.get("FILE", "")
+        # Traktor DIR format: "/:folder/:subfolder/:" → "folder/subfolder/"
+        dir_clean = dir_.replace("/:", "/").lstrip("/")
+        if vol and vol.endswith(":"):
+            # Windows ścieżka: "C:" + "Music\\" + "file.mp3"
+            path_str = vol + "\\" + dir_clean.replace("/", "\\") + file_
+        else:
+            path_str = dir_clean + file_
+
+        tempo = entry.find("TEMPO")
+        bpm = tempo.get("BPM") if tempo is not None else None
+
+        info = entry.find("INFO")
+        genre = info.get("GENRE") if info is not None else None
+        key = info.get("KEY") if info is not None else None
+        if not key:
+            mk = entry.find("MUSICAL_KEY")
+            if mk is not None:
+                key = _traktor_key_to_camelot(mk.get("VALUE"))
+
+        album_el = entry.find("ALBUM")
+        album = album_el.get("TITLE") if album_el is not None else None
+
+        hot_cues: list[tuple[int, float]] = []
+        for cue in entry.findall("CUE_V2"):
+            if cue.get("TYPE") == "0":
+                try:
+                    hc_num = int(cue.get("HOTCUE", "-1"))
+                    if hc_num >= 0:
+                        pos = float(cue.get("START", "0"))
+                        hot_cues.append((hc_num, pos))
+                except (ValueError, TypeError):
+                    pass
+
+        tracks.append(
+            XmlTrack(
+                path=path_str,
+                title=entry.get("TITLE"),
+                artist=entry.get("ARTIST"),
+                album=album,
+                genre=genre,
+                bpm=bpm,
+                key=key,
+                hot_cues=hot_cues or None,
+            )
+        )
+    return tracks
+
+
+def export_traktor_nml(tracks: Iterable[XmlTrack], output_path: Path) -> None:
+    """Eksport kolekcji do formatu Traktor NML."""
+    root = ET.Element("NML", VERSION="19")
+    head = ET.SubElement(root, "HEAD")
+    head.set("COMPANY", "Native Instruments")
+    head.set("PROGRAM", "Traktor")
+    ET.SubElement(root, "MUSICFOLDERS")
+    track_list = list(tracks)
+    collection = ET.SubElement(root, "COLLECTION")
+    collection.set("ENTRIES", str(len(track_list)))
+    for item in track_list:
+        entry = ET.SubElement(collection, "ENTRY")
+        entry.set("TITLE", item.title or "")
+        entry.set("ARTIST", item.artist or "")
+        # LOCATION
+        p = Path(item.path) if item.path else Path("")
+        loc = ET.SubElement(entry, "LOCATION")
+        loc.set("VOLUME", p.drive or "")
+        parts = p.parts[1:] if p.drive else p.parts
+        dir_path = "/:" + "/:" .join(parts[:-1]) + "/:" if len(parts) > 1 else "/:"
+        loc.set("DIR", dir_path)
+        loc.set("FILE", p.name)
+        # INFO
+        info_el = ET.SubElement(entry, "INFO")
+        if item.genre:
+            info_el.set("GENRE", item.genre)
+        if item.key:
+            info_el.set("KEY", item.key)
+        if item.album:
+            album_el = ET.SubElement(entry, "ALBUM")
+            album_el.set("TITLE", item.album)
+        # TEMPO
+        if item.bpm:
+            tempo_el = ET.SubElement(entry, "TEMPO")
+            tempo_el.set("BPM", str(item.bpm))
+        # Hot cues
+        if item.hot_cues:
+            for num, pos in item.hot_cues:
+                cue = ET.SubElement(entry, "CUE_V2")
+                cue.set("NAME", f"Cue {num + 1}")
+                cue.set("DISPL_ORDER", str(num))
+                cue.set("TYPE", "0")
+                cue.set("START", f"{pos:.6f}")
+                cue.set("LEN", "0.000000")
+                cue.set("REPEATS", "-1")
+                cue.set("HOTCUE", str(num))
+    tree = ET.ElementTree(root)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    tree.write(output_path, encoding="utf-8", xml_declaration=True)
+
+
+# Traktor MUSICAL_KEY VALUE 0-23 → Camelot notation
+_TRAKTOR_KEY_MAP = [
+    "1B", "2B", "3B", "4B", "5B", "6B", "7B", "8B", "9B", "10B", "11B", "12B",
+    "9A", "10A", "11A", "12A", "1A", "2A", "3A", "4A", "5A", "6A", "7A", "8A",
+]
+
+
+def _traktor_key_to_camelot(value: str | None) -> str | None:
+    if value is None:
+        return None
+    try:
+        return _TRAKTOR_KEY_MAP[int(value)]
+    except (ValueError, IndexError):
+        return None
+
+
 def parse_virtualdj_xml(path: Path) -> list[XmlTrack]:
     tree = ET.parse(path)
     root = tree.getroot()
