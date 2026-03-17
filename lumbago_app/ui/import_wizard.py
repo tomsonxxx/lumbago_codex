@@ -196,12 +196,6 @@ class ImportWizard(QtWidgets.QDialog):
         self.ext_input.setText(".mp3,.flac,.wav,.m4a,.ogg,.aac")
         layout.addWidget(QtWidgets.QLabel("Rozszerzenia (oddzielone przecinkami)"))
         layout.addWidget(self.ext_input)
-
-        self.batch_size = QtWidgets.QSpinBox()
-        self.batch_size.setRange(10, 5000)
-        self.batch_size.setValue(200)
-        layout.addWidget(QtWidgets.QLabel("Batch commit (ile plików na zapis)"))
-        layout.addWidget(self.batch_size)
         layout.addStretch(1)
         return page
 
@@ -209,8 +203,10 @@ class ImportWizard(QtWidgets.QDialog):
         page = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(page)
         layout.addWidget(QtWidgets.QLabel("Krok 3: Podgląd"))
-        self.preview_table = QtWidgets.QTableWidget(0, 4)
-        self.preview_table.setHorizontalHeaderLabels(["Title", "Artist", "Album", "Path"])
+        self.preview_table = QtWidgets.QTableWidget(0, 6)
+        self.preview_table.setHorizontalHeaderLabels(
+            ["Tytuł", "Artysta", "Album", "Czas", "BPM", "Ścieżka"]
+        )
         self.preview_table.horizontalHeader().setStretchLastSection(True)
         layout.addWidget(self.preview_table, 1)
         self.scan_progress = QtWidgets.QProgressBar()
@@ -308,7 +304,14 @@ class ImportWizard(QtWidgets.QDialog):
             self.preview_table.setItem(row, 0, QtWidgets.QTableWidgetItem(track.title or ""))
             self.preview_table.setItem(row, 1, QtWidgets.QTableWidgetItem(track.artist or ""))
             self.preview_table.setItem(row, 2, QtWidgets.QTableWidgetItem(track.album or ""))
-            self.preview_table.setItem(row, 3, QtWidgets.QTableWidgetItem(track.path))
+            duration = ""
+            if track.duration:
+                m, s = divmod(int(track.duration), 60)
+                duration = f"{m}:{s:02d}"
+            self.preview_table.setItem(row, 3, QtWidgets.QTableWidgetItem(duration))
+            bpm = f"{track.bpm:.0f}" if track.bpm else ""
+            self.preview_table.setItem(row, 4, QtWidgets.QTableWidgetItem(bpm))
+            self.preview_table.setItem(row, 5, QtWidgets.QTableWidgetItem(track.path))
         if canceled:
             QtWidgets.QMessageBox.information(self, "Import", "Skanowanie anulowane.")
 
@@ -319,7 +322,7 @@ class ImportWizard(QtWidgets.QDialog):
         self.import_progress.setRange(0, len(self._tracks))
         self.import_progress.setValue(0)
         self.import_status.setText("Import w toku...")
-        self._import_worker = ImportWizardWorker(self._tracks, self.batch_size.value())
+        self._import_worker = ImportWizardWorker(self._tracks, 200)
         self._import_worker.signals.progress.connect(self._import_progress)
         self._import_worker.signals.finished.connect(self._import_finished)
         self.thread_pool.start(self._import_worker)

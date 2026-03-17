@@ -72,8 +72,9 @@ def _render_pattern(track: Track, pattern: str, index: int) -> str:
         "title": track.title or "",
         "album": track.album or "",
         "genre": track.genre or "",
-        "bpm": str(track.bpm or ""),
+        "bpm": str(int(track.bpm)) if track.bpm else "",
         "key": track.key or "",
+        "year": track.year or "",
         "index": str(index),
     }
     result = pattern

@@ -182,24 +182,7 @@ class TrackGridDelegate(QtWidgets.QStyledItemDelegate):
         image_rect = QtCore.QRect(rect.x() + 8, rect.y() + 6, 96, 96)
         painter.drawPixmap(image_rect, pixmap)
 
-        waveform_rect = QtCore.QRect(rect.x() + 8, rect.y() + 104, 96, 8)
-        painter.setPen(QtCore.Qt.PenStyle.NoPen)
-        painter.setBrush(QtGui.QColor("#1f2a3d"))
-        painter.drawRoundedRect(waveform_rect, 3, 3)
-        painter.setBrush(QtGui.QColor("#39ff14"))
-        if track and track.path:
-            seed = abs(hash(track.path)) % 100
-        else:
-            seed = 42
-        bars = 12
-        bar_w = max(2, waveform_rect.width() // bars)
-        for i in range(bars):
-            height = (seed + i * 7) % 8 + 2
-            x = waveform_rect.x() + i * bar_w + 1
-            y = waveform_rect.y() + (waveform_rect.height() - height)
-            painter.drawRect(x, y, bar_w - 2, height)
-
-        text_rect = QtCore.QRect(rect.x() + 8, rect.y() + 108, rect.width() - 16, rect.height() - 112)
+        text_rect = QtCore.QRect(rect.x() + 8, rect.y() + 106, rect.width() - 16, rect.height() - 110)
         painter.setPen(QtGui.QColor("#e8f8ff"))
         font = painter.font()
         font.setPointSize(9)

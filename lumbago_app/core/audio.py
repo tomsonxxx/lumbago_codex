@@ -123,10 +123,8 @@ def clear_tags(path: Path) -> None:
 
 def apply_local_metadata(track: Track, path: Path) -> None:
     _apply_folder_json(track, path)
-    _apply_sidecar_json(track, path)
     _apply_filename_metadata(track, path)
     _apply_filename_patterns(track, path)
-    _apply_cue_metadata(track, path)
     _apply_folder_metadata(track, path)
 
 

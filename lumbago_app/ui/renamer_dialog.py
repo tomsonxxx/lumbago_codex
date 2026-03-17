@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from PyQt6 import QtCore, QtWidgets
 from lumbago_app.ui.widgets import apply_dialog_fade, dialog_icon_pixmap
@@ -8,15 +8,25 @@ from lumbago_app.core.renamer import apply_rename_plan, build_rename_plan, undo_
 from lumbago_app.data.repository import update_track_paths_bulk
 
 
+_PRESETS = [
+    ("{artist} - {title}", "Artysta - Tytuł"),
+    ("{artist} - {album} - {title}", "Artysta - Album - Tytuł"),
+    ("{bpm}_{key} - {artist} - {title}", "BPM_Tonacja - Artysta - Tytuł"),
+    ("{year} - {artist} - {title}", "Rok - Artysta - Tytuł"),
+    ("{title}", "Tylko tytuł"),
+]
+
+
 class RenamerDialog(QtWidgets.QDialog):
     def __init__(self, tracks: list[Track], parent=None):
         super().__init__(parent)
         self.setWindowTitle("Renamer")
-        self.setMinimumSize(860, 520)
+        self.setMinimumSize(900, 560)
         apply_dialog_fade(self)
         self._tracks = tracks
         self._plan = []
         self._build_ui()
+        self._preview()
 
     def _build_ui(self):
         layout = QtWidgets.QVBoxLayout(self)
@@ -42,20 +52,53 @@ class RenamerDialog(QtWidgets.QDialog):
         title_row.addStretch(1)
         layout.addLayout(title_row)
 
-        row = QtWidgets.QHBoxLayout()
-        row.addWidget(QtWidgets.QLabel("Wzorzec:"))
+        # Presets
+        preset_row = QtWidgets.QHBoxLayout()
+        preset_row.addWidget(QtWidgets.QLabel("Szablon:"))
+        self.preset_combo = QtWidgets.QComboBox()
+        self.preset_combo.addItem("— wybierz szablon —", "")
+        for pattern, label in _PRESETS:
+            self.preset_combo.addItem(label, pattern)
+        self.preset_combo.currentIndexChanged.connect(self._on_preset_changed)
+        preset_row.addWidget(self.preset_combo, 1)
+        layout.addLayout(preset_row)
+
+        # Pattern input
+        pattern_row = QtWidgets.QHBoxLayout()
+        pattern_row.addWidget(QtWidgets.QLabel("Wzorzec:"))
         self.pattern = QtWidgets.QLineEdit("{artist} - {title}")
-        self.pattern.setToolTip("Użyj pól: {artist} {title} {album} {genre} {bpm} {key} {index}")
-        row.addWidget(self.pattern, 1)
-        self.preview_btn = QtWidgets.QPushButton("Podgląd")
-        self.preview_btn.clicked.connect(self._preview)
-        row.addWidget(self.preview_btn)
-        layout.addLayout(row)
+        self.pattern.setToolTip(
+            "Dostępne zmienne: {artist} {title} {album} {genre} {bpm} {key} {year} {index}"
+        )
+        self.pattern.textChanged.connect(self._preview)
+        pattern_row.addWidget(self.pattern, 1)
+        layout.addLayout(pattern_row)
+
+        # Variable buttons
+        vars_row = QtWidgets.QHBoxLayout()
+        vars_row.addWidget(QtWidgets.QLabel("Wstaw:"))
+        for var in ["{artist}", "{title}", "{album}", "{genre}", "{bpm}", "{key}", "{year}"]:
+            btn = QtWidgets.QPushButton(var)
+            btn.setFixedHeight(24)
+            btn.setMaximumWidth(80)
+            btn.clicked.connect(lambda _, v=var: self._insert_variable(v))
+            vars_row.addWidget(btn)
+        vars_row.addStretch(1)
+        layout.addLayout(vars_row)
 
         self.table = QtWidgets.QTableWidget(0, 3)
         self.table.setHorizontalHeaderLabels(["Stara nazwa", "Nowa nazwa", "Status"])
         self.table.horizontalHeader().setStretchLastSection(True)
+        self.table.horizontalHeader().setSectionResizeMode(
+            0, QtWidgets.QHeaderView.ResizeMode.Interactive
+        )
+        self.table.horizontalHeader().setSectionResizeMode(
+            1, QtWidgets.QHeaderView.ResizeMode.Interactive
+        )
         layout.addWidget(self.table, 1)
+
+        self.status_label = QtWidgets.QLabel("")
+        layout.addWidget(self.status_label)
 
         actions = QtWidgets.QHBoxLayout()
         self.apply_btn = QtWidgets.QPushButton("Zastosuj")
@@ -72,19 +115,41 @@ class RenamerDialog(QtWidgets.QDialog):
         actions.addWidget(self.close_btn)
         layout.addLayout(actions)
 
+    def _on_preset_changed(self, idx: int):
+        pattern = self.preset_combo.itemData(idx)
+        if pattern:
+            self.pattern.setText(pattern)
+
+    def _insert_variable(self, var: str):
+        pos = self.pattern.cursorPosition()
+        text = self.pattern.text()
+        self.pattern.setText(text[:pos] + var + text[pos:])
+        self.pattern.setCursorPosition(pos + len(var))
+
     def _preview(self):
         self._plan = build_rename_plan(self._tracks, self.pattern.text().strip())
         self.table.setRowCount(0)
+        ok_count = 0
+        conflict_count = 0
         for item in self._plan:
             row = self.table.rowCount()
             self.table.insertRow(row)
-            self.table.setItem(row, 0, QtWidgets.QTableWidgetItem(str(item.old_path)))
-            self.table.setItem(row, 1, QtWidgets.QTableWidgetItem(str(item.new_path)))
-            status = "OK" if not item.conflict else f"Konflikt: {item.reason}"
-            status_item = QtWidgets.QTableWidgetItem(status)
+            self.table.setItem(row, 0, QtWidgets.QTableWidgetItem(item.old_path.name))
+            self.table.setItem(row, 1, QtWidgets.QTableWidgetItem(item.new_path.name))
             if item.conflict:
+                status = f"Konflikt: {item.reason}"
+                status_item = QtWidgets.QTableWidgetItem(status)
                 status_item.setForeground(QtCore.Qt.GlobalColor.red)
+                conflict_count += 1
+            else:
+                status_item = QtWidgets.QTableWidgetItem("OK")
+                status_item.setForeground(QtCore.Qt.GlobalColor.green)
+                ok_count += 1
             self.table.setItem(row, 2, status_item)
+        self.status_label.setText(
+            f"Razem: {len(self._plan)} | OK: {ok_count} | Konflikty: {conflict_count}"
+        )
+        self.apply_btn.setEnabled(ok_count > 0)
 
     def _apply(self):
         if not self._plan:
@@ -98,7 +163,3 @@ class RenamerDialog(QtWidgets.QDialog):
         flipped = [{"old": item["new"], "new": item["old"]} for item in history]
         update_track_paths_bulk(flipped)
         self.accept()
-
-
-
-
