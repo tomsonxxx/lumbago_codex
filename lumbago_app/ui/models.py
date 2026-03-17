@@ -42,6 +42,11 @@ class TrackTableModel(QtCore.QAbstractTableModel):
     def __init__(self, tracks: list[Track] | None = None):
         super().__init__()
         self._tracks = tracks or []
+        self._now_playing: str | None = None
+
+    def set_now_playing(self, path: str | None) -> None:
+        self._now_playing = path
+        self.layoutChanged.emit()
 
     def rowCount(self, parent=QtCore.QModelIndex()) -> int:
         return len(self._tracks)
@@ -91,6 +96,9 @@ class TrackTableModel(QtCore.QAbstractTableModel):
                     if not pixmap.isNull():
                         return QtGui.QIcon(pixmap.scaled(96, 96, QtCore.Qt.AspectRatioMode.KeepAspectRatio))
         if role == QtCore.Qt.ItemDataRole.BackgroundRole:
+            # Now Playing ma najwyższy priorytet
+            if self._now_playing and track.path == self._now_playing:
+                return QtGui.QColor(0, 80, 60)       # ciemnozielony — odtwarzany
             energy = track.energy
             if energy is not None:
                 if energy >= 0.7:

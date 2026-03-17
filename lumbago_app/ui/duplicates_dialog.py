@@ -83,6 +83,8 @@ class DuplicatesDialog(QtWidgets.QDialog):
         header.setSectionsMovable(True)
         header.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
         header.customContextMenuRequested.connect(self._show_column_menu)
+        self.tree.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
+        self.tree.customContextMenuRequested.connect(self._tree_context_menu)
         layout.addWidget(self.tree, 1)
 
         actions = QtWidgets.QHBoxLayout()
@@ -323,6 +325,26 @@ class DuplicatesDialog(QtWidgets.QDialog):
                         ]
                     )
 
+    def _tree_context_menu(self, pos):
+        item = self.tree.itemAt(pos)
+        if not item:
+            return
+        menu = QtWidgets.QMenu(self)
+        compare_action = menu.addAction("Porównaj tagi (side-by-side)")
+        action = menu.exec(self.tree.mapToGlobal(pos))
+        if action != compare_action:
+            return
+        # Zbierz tracki z grupy (parent lub current item's parent)
+        parent = item.parent() or item
+        tracks = []
+        for i in range(parent.childCount()):
+            path = parent.child(i).data(0, QtCore.Qt.ItemDataRole.UserRole)
+            if path and path in self._track_map:
+                tracks.append(self._track_map[path])
+        if len(tracks) < 2:
+            return
+        _DuplicateCompareDialog(tracks, self).exec()
+
     def _merge_selected(self):
         changed = False
         for i in range(self.tree.topLevelItemCount()):
@@ -355,6 +377,54 @@ class DuplicatesDialog(QtWidgets.QDialog):
                 update_track(master_track)
         if changed:
             self.accept()
+
+
+class _DuplicateCompareDialog(QtWidgets.QDialog):
+    """Side-by-side porównanie tagów duplikatów."""
+
+    _FIELDS = [
+        ("Tytuł", "title"), ("Artysta", "artist"), ("Album", "album"),
+        ("Rok", "year"), ("Gatunek", "genre"), ("BPM", "bpm"),
+        ("Tonacja", "key"), ("Format", "format"), ("Bitrate", "bitrate"),
+        ("Rozmiar", "file_size"), ("Ścieżka", "path"),
+    ]
+
+    def __init__(self, tracks: list[Track], parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Porównanie tagów duplikatów")
+        self.setMinimumSize(800, 400)
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(12, 12, 12, 12)
+
+        cols = ["Pole"] + [Path(t.path).name for t in tracks]
+        table = QtWidgets.QTableWidget(len(self._FIELDS), len(cols))
+        table.setHorizontalHeaderLabels(cols)
+        table.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
+        table.horizontalHeader().setStretchLastSection(True)
+        table.setAlternatingRowColors(True)
+
+        for row, (label, attr) in enumerate(self._FIELDS):
+            table.setItem(row, 0, QtWidgets.QTableWidgetItem(label))
+            values = [str(getattr(t, attr) or "") for t in tracks]
+            all_same = len(set(values)) == 1
+            for col, val in enumerate(values, 1):
+                item = QtWidgets.QTableWidgetItem(val)
+                if not all_same:
+                    item.setBackground(QtWidgets.QApplication.palette().highlight()
+                                       if col == 1 else item.background())
+                    item.setForeground(
+                        QtWidgets.QApplication.palette().highlightedText()
+                        if not all_same else item.foreground()
+                    )
+                    # Kolor różnic: cyan dla pierwszej kolumny, magenta dla pozostałych
+                    from PyQt6.QtGui import QColor
+                    item.setForeground(QColor("#66ccff") if col == 1 else QColor("#ff88cc"))
+                table.setItem(row, col, item)
+
+        layout.addWidget(table, 1)
+        close_btn = QtWidgets.QPushButton("Zamknij")
+        close_btn.clicked.connect(self.accept)
+        layout.addWidget(close_btn, 0, QtCore.Qt.AlignmentFlag.AlignRight)
 
 
 def _safe_size(path: str) -> int | None:

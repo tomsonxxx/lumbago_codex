@@ -587,6 +587,11 @@ class MainWindow(QtWidgets.QMainWindow):
                       self.detail_year, self.detail_genre, self.detail_bpm, self.detail_key):
             field.textChanged.connect(self._autosave_timer.start)
 
+        self.tag_quality_label = QtWidgets.QLabel("")
+        self.tag_quality_label.setObjectName("DialogHint")
+        self.tag_quality_label.setToolTip("Procent wypełnionych pól metadanych")
+        layout.addWidget(self.tag_quality_label)
+
         self.save_btn = AnimatedButton("Zapisz zmiany")
         self.save_btn.setToolTip("Zapisz zmiany w bazie (auto-save działa po 1.5s)")
         self.save_btn.clicked.connect(self._save_detail_changes)
@@ -889,6 +894,7 @@ class MainWindow(QtWidgets.QMainWindow):
         url = QtCore.QUrl.fromLocalFile(track.path)
         self.player.setSource(url)
         self.player.play()
+        self.table_model.set_now_playing(track.path)
 
     def _toggle_playback(self):
         if not self.player:
@@ -1182,6 +1188,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._selected_track = track
         # BPM sync indicator
         self._update_bpm_sync(track.bpm)
+        # Tag quality
+        self._update_tag_quality(track)
         self._selected_snapshot = {
             "title": track.title,
             "artist": track.artist,
@@ -1196,6 +1204,20 @@ class MainWindow(QtWidgets.QMainWindow):
         pixmap = QtGui.QPixmap(str(wave_path))
         if not pixmap.isNull():
             self.waveform_label.setPixmap(pixmap)
+
+    def _update_tag_quality(self, track: Track):
+        if not hasattr(self, "tag_quality_label"):
+            return
+        fields = [track.title, track.artist, track.album, track.year, track.genre,
+                  track.bpm, track.key, track.artwork_path, track.mood, track.energy]
+        filled = sum(1 for f in fields if f)
+        total = len(fields)
+        pct = int(filled / total * 100)
+        color = "#66ff66" if pct >= 80 else "#ffaa44" if pct >= 50 else "#ff6666"
+        self.tag_quality_label.setText(
+            f'<span style="color:{color}">Jakość tagów: {filled}/{total} ({pct}%)</span>'
+        )
+        self.tag_quality_label.setTextFormat(QtCore.Qt.TextFormat.RichText)
 
     def _update_bpm_sync(self, new_bpm: float | None):
         """Aktualizuje wskaźnik różnicy BPM między poprzednim a bieżącym trackiem."""
@@ -1800,6 +1822,7 @@ class MainWindow(QtWidgets.QMainWindow):
         tools.addAction("Auto‑cue (intro/outro)", self._auto_cue_selected)
         tools.addAction("Wykryj tonację (auto‑key)", self._run_key_detection)
         tools.addAction("Skanuj BPM librosa (brakujące)", self._run_bpm_scan)
+        tools.addAction("Statystyki biblioteki", self._show_library_stats)
         tools.addAction("Metadane lokalne", self._apply_local_metadata_selected)
         tools.addAction("Duplikaty", self._open_duplicates)
         tools.addAction("Renamer", self._open_renamer)
@@ -1827,6 +1850,8 @@ class MainWindow(QtWidgets.QMainWindow):
         menu.addSeparator()
         stats_action = menu.addAction("Statystyki playlisty")
         export_m3u_action = menu.addAction("Eksportuj do M3U")
+        import_m3u_action = menu.addAction("Importuj M3U jako playlistę")
+        merge_action = menu.addAction("Scal z inną playlistą…")
         action = menu.exec(self.playlist_list.mapToGlobal(pos))
         if action == add_action:
             self._open_playlist_editor()
@@ -1852,6 +1877,10 @@ class MainWindow(QtWidgets.QMainWindow):
             self._show_playlist_stats(item)
         elif action == export_m3u_action:
             self._export_playlist_m3u(item)
+        elif action == import_m3u_action:
+            self._import_playlist_m3u()
+        elif action == merge_action and item:
+            self._merge_playlist(item)
 
     def _show_playlist_stats(self, item: QtWidgets.QListWidgetItem | None):
         if item:
@@ -1888,6 +1917,47 @@ class MainWindow(QtWidgets.QMainWindow):
         )
         QtWidgets.QMessageBox.information(self, "Statystyki playlisty", msg)
 
+    def _show_library_stats(self):
+        tracks = list_tracks()
+        count = len(tracks)
+        total_s = sum(t.duration or 0 for t in tracks)
+        total_h, rem = divmod(int(total_s), 3600)
+        total_m, total_sec = divmod(rem, 60)
+        total_size = sum(t.file_size or 0 for t in tracks)
+        size_gb = total_size / 1024 / 1024 / 1024
+        bpms = [t.bpm for t in tracks if t.bpm]
+        avg_bpm = f"{sum(bpms)/len(bpms):.1f}" if bpms else "—"
+        genres: dict[str, int] = {}
+        for t in tracks:
+            g = (t.genre or "").strip()
+            if g:
+                genres[g] = genres.get(g, 0) + 1
+        top_genres = sorted(genres.items(), key=lambda x: x[1], reverse=True)[:8]
+        genre_lines = "  " + ", ".join(f"{g} ({n})" for g, n in top_genres) if top_genres else "  —"
+        keys: dict[str, int] = {}
+        for t in tracks:
+            k = (t.key or "").strip()
+            if k:
+                keys[k] = keys.get(k, 0) + 1
+        top_keys = sorted(keys.items(), key=lambda x: x[1], reverse=True)[:6]
+        key_line = "  " + ", ".join(f"{k} ({n})" for k, n in top_keys) if top_keys else "  —"
+        fmt: dict[str, int] = {}
+        for t in tracks:
+            f = (t.format or "?").upper()
+            fmt[f] = fmt.get(f, 0) + 1
+        fmt_line = "  " + ", ".join(f"{f} ({n})" for f, n in sorted(fmt.items(), key=lambda x: x[1], reverse=True))
+        msg = (
+            f"<b>Statystyki biblioteki</b><br><br>"
+            f"Liczba utworów: <b>{count}</b><br>"
+            f"Łączny czas: <b>{total_h}h {total_m:02d}m {total_sec:02d}s</b><br>"
+            f"Łączny rozmiar: <b>{size_gb:.2f} GB</b><br>"
+            f"Średnie BPM: <b>{avg_bpm}</b><br><br>"
+            f"Formaty:<br>{fmt_line}<br><br>"
+            f"Najczęstsze gatunki:<br>{genre_lines}<br><br>"
+            f"Najczęstsze tonacje:<br>{key_line}"
+        )
+        QtWidgets.QMessageBox.information(self, "Statystyki biblioteki", msg)
+
     def _export_playlist_m3u(self, item: QtWidgets.QListWidgetItem | None):
         if item:
             playlist = item.data(QtCore.Qt.ItemDataRole.UserRole)
@@ -1918,6 +1988,57 @@ class MainWindow(QtWidgets.QMainWindow):
             lines.append(track.path)
         Path(path).write_text("\n".join(lines), encoding="utf-8")
         self._show_message(f"Wyeksportowano {len(tracks)} utworów do M3U.")
+
+    def _import_playlist_m3u(self):
+        path, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self, "Importuj M3U", "", "M3U (*.m3u *.m3u8)"
+        )
+        if not path:
+            return
+        lines = Path(path).read_text(encoding="utf-8", errors="ignore").splitlines()
+        file_paths = [ln.strip() for ln in lines if ln.strip() and not ln.startswith("#")]
+        if not file_paths:
+            self._show_message("Brak ścieżek w pliku M3U.")
+            return
+        playlist_name = Path(path).stem
+        create_playlist(playlist_name)
+        added = 0
+        for fp in file_paths:
+            try:
+                add_track_to_playlist(playlist_name, fp)
+                added += 1
+            except Exception:
+                pass
+        self._load_playlists()
+        self._show_message(f"Zaimportowano playlistę '{playlist_name}' ({added} utworów).")
+
+    def _merge_playlist(self, item: QtWidgets.QListWidgetItem):
+        src_playlist = item.data(QtCore.Qt.ItemDataRole.UserRole)
+        if not src_playlist or not src_playlist.playlist_id:
+            return
+        all_playlists = list_playlists_full()
+        others = [p for p in all_playlists if p.playlist_id != src_playlist.playlist_id]
+        if not others:
+            self._show_message("Brak innych playlisty do scalenia.")
+            return
+        names = [p.name for p in others]
+        chosen, ok = QtWidgets.QInputDialog.getItem(
+            self, "Scal playliste",
+            f"Dodaj tracki z '{src_playlist.name}' do:", names, 0, False
+        )
+        if not ok or not chosen:
+            return
+        target = next(p for p in others if p.name == chosen)
+        src_tracks = list_playlist_tracks(src_playlist.playlist_id)
+        merged = 0
+        for track in src_tracks:
+            try:
+                add_track_to_playlist(target.name, track.path)
+                merged += 1
+            except Exception:
+                pass
+        self._load_playlists()
+        self._show_message(f"Scalono {merged} utworów do '{target.name}'.")
 
     def _open_playlist_editor(self, playlist=None):
         dialog = PlaylistEditorDialog(playlist, self)
