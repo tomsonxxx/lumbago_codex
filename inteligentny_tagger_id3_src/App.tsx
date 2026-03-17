@@ -2,10 +2,22 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 
-// Components
-import Footer from './components/Footer';
-import ThemeToggle from './components/ThemeToggle';
-import SettingsModal from './components/SettingsModal';
+// Layout components
+import Sidebar from './components/Sidebar';
+import TopBar from './components/TopBar';
+import PlayerBar from './components/PlayerBar';
+
+// View components
+import DashboardView from './components/DashboardView';
+import LibraryView from './components/LibraryView';
+import ImportView from './components/ImportView';
+import DuplicatesView from './components/DuplicatesView';
+import SettingsView from './components/SettingsView';
+import PlayerView from './components/PlayerView';
+import AiTaggerView from './components/AiTaggerView';
+import XmlConverterView from './components/XmlConverterView';
+
+// Modal components (preserved)
 import EditTagsModal from './components/EditTagsModal';
 import RenameModal from './components/RenameModal';
 import ConfirmationModal from './components/ConfirmationModal';
@@ -13,18 +25,13 @@ import BatchEditModal from './components/BatchEditModal';
 import PostDownloadModal from './components/PostDownloadModal';
 import AlbumCoverModal from './components/AlbumCoverModal';
 import PreviewChangesModal from './components/PreviewChangesModal';
-import MainToolbar from './components/MainToolbar';
-import TabbedInterface, { Tab } from './components/TabbedInterface';
-import LibraryTab from './components/LibraryTab';
-import ScanTab from './components/ScanTab';
-import PlaceholderTab from './components/PlaceholderTab';
 
 // Types
-import { AudioFile, ProcessingState, ID3Tags } from './types';
+import { AudioFile, ProcessingState, ID3Tags, ViewType, ActivityEntry } from './types';
 import { AIProvider, ApiKeys, fetchTagsForFile, fetchTagsForBatch } from './services/aiService';
 
 // Utils
-import { readID3Tags, applyTags, saveFileDirectly, isTagWritingSupported } from './utils/audioUtils';
+import { readID3Tags, applyTags, saveFileDirectly, isTagWritingSupported, readAudioDuration } from './utils/audioUtils';
 import { generatePath } from './utils/filenameUtils';
 import { sortFiles, SortKey } from './utils/sortingUtils';
 import { exportFilesToCsv } from './utils/csvUtils';
@@ -42,12 +49,11 @@ interface RenamePreview {
     isTooLong: boolean;
 }
 
-type ModalState = 
+type ModalState =
   | { type: 'none' }
   | { type: 'edit'; fileId: string }
   | { type: 'rename' }
   | { type: 'delete'; fileId: string | 'selected' | 'all' }
-  | { type: 'settings' }
   | { type: 'batch-edit' }
   | { type: 'post-download'; count: number }
   | { type: 'zoom-cover', imageUrl: string }
@@ -57,6 +63,7 @@ interface SerializableAudioFile {
   id: string; state: ProcessingState; originalTags: ID3Tags; fetchedTags?: ID3Tags;
   newName?: string; isSelected?: boolean; errorMessage?: string; dateAdded: number;
   webkitRelativePath?: string; fileName: string; fileType: string;
+  duration?: number; rating?: number;
 }
 
 async function* getFilesRecursively(entry: any): AsyncGenerator<{ file: File, handle: any, path: string }> {
@@ -77,7 +84,7 @@ async function* getFilesRecursively(entry: any): AsyncGenerator<{ file: File, ha
 const App: React.FC = () => {
     const isRestoredRef = useRef(false);
     const [isRestored, setIsRestored] = useState(false);
-    
+
     const [files, setFiles] = useState<AudioFile[]>(() => {
         const saved = localStorage.getItem('audioFiles');
         if (saved) {
@@ -96,34 +103,44 @@ const App: React.FC = () => {
     const [isSaving, setIsSaving] = useState(false);
     const [savingFileId, setSavingFileId] = useState<string | null>(null);
     const [directoryHandle, setDirectoryHandle] = useState<any | null>(null);
-    const [theme, setTheme] = useState<'light' | 'dark'>(() => (localStorage.getItem('theme') as 'light' | 'dark') || 'dark');
     const [apiKeys, setApiKeys] = useState<ApiKeys>(() => JSON.parse(localStorage.getItem('apiKeys') || '{"grok":"","openai":""}'));
     const [aiProvider, setAiProvider] = useState<AIProvider>(() => (localStorage.getItem('aiProvider') as AIProvider) || 'gemini');
     const [sortKey, setSortKey] = useState<SortKey>(() => (localStorage.getItem('sortKey') as SortKey) || 'dateAdded');
     const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>(() => (localStorage.getItem('sortDirection') as 'asc' | 'desc') || 'asc');
     const [renamePattern, setRenamePattern] = useState<string>(() => localStorage.getItem('renamePattern') || '[artist] - [title]');
     const [modalState, setModalState] = useState<ModalState>({ type: 'none' });
-    const [activeTab, setActiveTab] = useState('library');
+    const [activeView, setActiveView] = useState<ViewType>('dashboard');
+    const [globalSearch, setGlobalSearch] = useState('');
+    const [playerCurrentFileId, setPlayerCurrentFileId] = useState<string | null>(null);
+    const [activityLog, setActivityLog] = useState<ActivityEntry[]>(() => {
+        try { return JSON.parse(localStorage.getItem('activityLog') || '[]'); } catch { return []; }
+    });
 
     const processingQueueRef = useRef<string[]>([]);
     const activeRequestsRef = useRef(0);
+
+    // Activity log helper
+    const addActivityEntry = useCallback((entry: Omit<ActivityEntry, 'id' | 'timestamp'>) => {
+        const newEntry: ActivityEntry = { ...entry, id: uuid?.v4?.() || Math.random().toString(36), timestamp: Date.now() };
+        setActivityLog(prev => [newEntry, ...prev].slice(0, 20));
+    }, []);
 
     useEffect(() => {
         if (isRestoredRef.current) {
             setIsRestored(true);
             isRestoredRef.current = false;
-            setActiveTab('library');
+            setActiveView('library');
         } else if (files.length === 0) {
-            setActiveTab('scan');
+            setActiveView('import');
         }
-    }, []); // Only run once on mount
-    
-    useEffect(() => { localStorage.setItem('theme', theme); document.documentElement.className = theme; }, [theme]);
+    }, []);
+
     useEffect(() => { localStorage.setItem('apiKeys', JSON.stringify(apiKeys)); }, [apiKeys]);
     useEffect(() => { localStorage.setItem('aiProvider', aiProvider); }, [aiProvider]);
     useEffect(() => { localStorage.setItem('sortKey', sortKey); }, [sortKey]);
     useEffect(() => { localStorage.setItem('sortDirection', sortDirection); }, [sortDirection]);
     useEffect(() => { localStorage.setItem('renamePattern', renamePattern); }, [renamePattern]);
+    useEffect(() => { localStorage.setItem('activityLog', JSON.stringify(activityLog)); }, [activityLog]);
 
     useEffect(() => {
         if (files.length === 0 && !isRestored) {
@@ -134,6 +151,7 @@ const App: React.FC = () => {
             id: f.id, state: f.state, originalTags: f.originalTags, fetchedTags: f.fetchedTags,
             newName: f.newName, isSelected: f.isSelected, errorMessage: f.errorMessage, dateAdded: f.dateAdded,
             webkitRelativePath: f.webkitRelativePath, fileName: f.file.name, fileType: f.file.type,
+            duration: f.duration, rating: f.rating,
         }));
         localStorage.setItem('audioFiles', JSON.stringify(serializableFiles));
     }, [files, isRestored]);
@@ -141,7 +159,7 @@ const App: React.FC = () => {
     useEffect(() => {
         setFiles(currentFiles => currentFiles.map(file => ({ ...file, newName: generatePath(renamePattern, file.fetchedTags || file.originalTags, file.file.name) })));
     }, [renamePattern, files.map(f => f.fetchedTags).join(',')]);
-    
+
     const updateFileState = useCallback((id: string, updates: Partial<AudioFile>) => {
         setFiles(prevFiles => prevFiles.map(f => f.id === id ? { ...f, ...updates } : f));
     }, []);
@@ -157,35 +175,42 @@ const App: React.FC = () => {
         try {
             const fetchedTags = await fetchTagsForFile(file.file.name, file.originalTags, aiProvider, apiKeys);
             updateFileState(fileId, { state: ProcessingState.SUCCESS, fetchedTags });
+            addActivityEntry({ type: 'ai_tag', message: `Otagowano: ${file.originalTags.title || file.file.name}` });
         } catch (error) {
             updateFileState(fileId, { state: ProcessingState.ERROR, errorMessage: error instanceof Error ? error.message : "Błąd" });
         } finally {
             activeRequestsRef.current--;
             processQueue();
         }
-    }, [files, aiProvider, apiKeys, updateFileState]);
+    }, [files, aiProvider, apiKeys, updateFileState, addActivityEntry]);
 
-    const handleClearAndReset = () => { setFiles([]); setIsRestored(false); setDirectoryHandle(null); setActiveTab('scan'); };
+    const handleClearAndReset = () => { setFiles([]); setIsRestored(false); setDirectoryHandle(null); setActiveView('import'); };
 
     const addFilesToQueue = useCallback(async (filesToAdd: { file: File, handle?: any, path?: string }[]) => {
         if (typeof uuid === 'undefined') { alert("Błąd: Biblioteka 'uuid' nie załadowana."); return; }
         const validAudioFiles = filesToAdd.filter(item => SUPPORTED_FORMATS.includes(item.file.type));
         if (validAudioFiles.length === 0) throw new Error(`Brak obsługiwanych formatów audio.`);
         setIsRestored(false);
-        const newAudioFiles: AudioFile[] = await Promise.all(validAudioFiles.map(async item => ({
-            id: uuid.v4(), file: item.file, handle: item.handle, webkitRelativePath: item.path || item.file.webkitRelativePath,
-            state: ProcessingState.PENDING, originalTags: await readID3Tags(item.file), dateAdded: Date.now(),
-        })));
+        const newAudioFiles: AudioFile[] = await Promise.all(validAudioFiles.map(async item => {
+            const tags = await readID3Tags(item.file);
+            const duration = await readAudioDuration(item.file);
+            return {
+                id: uuid.v4(), file: item.file, handle: item.handle,
+                webkitRelativePath: item.path || item.file.webkitRelativePath,
+                state: ProcessingState.PENDING, originalTags: tags, dateAdded: Date.now(), duration,
+            };
+        }));
         setFiles(prev => [...prev, ...newAudioFiles]);
-        setActiveTab('library');
+        addActivityEntry({ type: 'import', message: `Zaimportowano ${newAudioFiles.length} plików`, fileCount: newAudioFiles.length });
+        setActiveView('library');
         if (!directoryHandle) {
             processingQueueRef.current.push(...newAudioFiles.map(f => f.id));
             for(let i=0; i<MAX_CONCURRENT_REQUESTS; i++) processQueue();
         }
-    }, [processQueue, directoryHandle]);
+    }, [processQueue, directoryHandle, addActivityEntry]);
 
     const handleFilesSelected = useCallback(async (selectedFiles: FileList) => {
-        try { await addFilesToQueue(Array.from(selectedFiles).map(f => ({ file: f }))); } 
+        try { await addFilesToQueue(Array.from(selectedFiles).map(f => ({ file: f }))); }
         catch (e) { alert(`Błąd: ${e instanceof Error ? e.message : e}`); }
     }, [addFilesToQueue]);
 
@@ -209,12 +234,12 @@ const App: React.FC = () => {
             await addFilesToQueue([{ file: new File([blob], filename, { type: blob.type }) }]);
         } catch (e) { alert(`Błąd URL: ${e instanceof Error ? e.message : e}`); throw e; }
     };
-    
+
     const handleProcessFile = useCallback((file: AudioFile) => {
         if (!processingQueueRef.current.includes(file.id)) processingQueueRef.current.push(file.id);
         processQueue();
     }, [processQueue]);
-    
+
     const sortedFiles = useMemo(() => sortFiles([...files], sortKey, sortDirection), [files, sortKey, sortDirection]);
     const selectedFiles = useMemo(() => files.filter(f => f.isSelected), [files]);
     const allFilesSelected = useMemo(() => files.length > 0 && files.every(f => f.isSelected), [files]);
@@ -223,8 +248,8 @@ const App: React.FC = () => {
 
     const handleSelectionChange = (fileId: string, isSelected: boolean) => updateFileState(fileId, { isSelected });
     const handleToggleSelectAll = () => setFiles(prev => prev.map(f => ({ ...f, isSelected: !allFilesSelected })));
-    const handleSaveSettings = (keys: ApiKeys, provider: AIProvider) => { setApiKeys(keys); setAiProvider(provider); setModalState({ type: 'none' }); };
-    
+    const handleSaveSettings = (keys: ApiKeys, provider: AIProvider) => { setApiKeys(keys); setAiProvider(provider); };
+
     const handleDelete = (fileId: string) => {
         if (fileId === 'all') handleClearAndReset();
         else if (fileId === 'selected') setFiles(f => f.filter(file => !file.isSelected));
@@ -237,7 +262,11 @@ const App: React.FC = () => {
         setModalState({ type: 'delete', fileId: id });
     };
 
-    const handleSaveTags = (fileId: string, tags: ID3Tags) => { updateFileState(fileId, { fetchedTags: tags }); setModalState({ type: 'none' }); };
+    const handleSaveTags = (fileId: string, tags: ID3Tags) => {
+        updateFileState(fileId, { fetchedTags: tags });
+        setModalState({ type: 'none' });
+        addActivityEntry({ type: 'tags_edited', message: `Edytowano tagi: ${tags.title || fileId}` });
+    };
 
     const handleApplyTags = async (fileId: string, tags: ID3Tags) => {
         if (!directoryHandle) return;
@@ -253,7 +282,7 @@ const App: React.FC = () => {
         } catch (e) { updateFileState(fileId, { state: ProcessingState.ERROR, errorMessage: e instanceof Error ? e.message : "Błąd", fetchedTags: tags });
         } finally { setSavingFileId(null); }
     };
-    
+
     const handleManualSearch = async (query: string, file: AudioFile) => {
         updateFileState(file.id, { state: ProcessingState.PROCESSING });
         try {
@@ -264,7 +293,7 @@ const App: React.FC = () => {
 
     const handleSaveRenamePattern = (newPattern: string) => {
         const filesToPreview = selectedFiles.length > 0 ? selectedFiles : files.slice(0, 5);
-        if (filesToPreview.length === 0) { setRenamePattern(newPattern); setModalState({ type: 'none' }); return; }
+        if (filesToPreview.length === 0) { setRenamePattern(newPattern); return; }
         const previews = filesToPreview.map(f => ({ originalName: f.webkitRelativePath || f.file.name, newName: generatePath(newPattern, f.fetchedTags || f.originalTags, f.file.name), isTooLong: (f.newName || "").length > 255 }));
         setModalState({ type: 'preview-changes', title: 'Potwierdź zmianę szablonu', confirmationText: 'Nowy szablon zostanie zastosowany. Czy kontynuować?', previews, onConfirm: () => { setRenamePattern(newPattern); setModalState({ type: 'none' }); } });
     };
@@ -278,6 +307,7 @@ const App: React.FC = () => {
             } return file;
         }));
         setModalState({ type: 'none' });
+        addActivityEntry({ type: 'tags_edited', message: `Edycja hurtowa: ${selectedFiles.length} plików` });
     };
 
     const executeDownloadOrSave = async () => {
@@ -299,6 +329,7 @@ const App: React.FC = () => {
                 }
             });
             setFiles(currentFiles => currentFiles.map(file => updates.has(file.id) ? { ...file, ...updates.get(file.id) } : file));
+            addActivityEntry({ type: 'export', message: `Zapisano ${successCount} plików na dysk` });
             alert(`Zapisano pomyślnie ${successCount} z ${filesToSave.length} plików.`);
         } else {
             const filesToDownload = selectedFiles.filter(f => f.state === ProcessingState.SUCCESS || f.state === ProcessingState.PENDING);
@@ -323,6 +354,7 @@ const App: React.FC = () => {
                 const zipBlob = await zip.generateAsync({ type: 'blob' });
                 saveAs(zipBlob, 'tagged-music.zip');
                 setModalState({ type: 'post-download', count: Object.keys(zip.files).length });
+                addActivityEntry({ type: 'export', message: `Pobrano ZIP: ${Object.keys(zip.files).length} plików` });
             }
             setFiles(files => files.map(f => {
                 if (errorUpdates.has(f.id)) return { ...f, ...errorUpdates.get(f.id) };
@@ -332,7 +364,7 @@ const App: React.FC = () => {
         }
         setIsSaving(false);
     };
-    
+
     const handleDownloadOrSave = async () => {
         const filesToProcess = selectedFiles.length > 0 ? selectedFiles : [];
         if (filesToProcess.length === 0) {
@@ -352,7 +384,7 @@ const App: React.FC = () => {
         setModalState({
             type: 'preview-changes',
             title: `Potwierdź ${directoryHandle ? 'zapis i zmianę nazw' : 'pobieranie ze zmianą nazw'}`,
-            confirmationText: `Nazwy ${previews.length} z ${selectedFiles.length} zaznaczonych plików zostaną zmienione zgodnie z szablonem przed zapisaniem. Czy chcesz kontynuować?`,
+            confirmationText: `Nazwy ${previews.length} z ${selectedFiles.length} zaznaczonych plików zostaną zmienione. Czy kontynuować?`,
             previews: previews,
             onConfirm: () => { setModalState({ type: 'none' }); setTimeout(() => executeDownloadOrSave(), 50); }
         });
@@ -364,11 +396,12 @@ const App: React.FC = () => {
             const csvData = exportFilesToCsv(files);
             const blob = new Blob([csvData], { type: 'text/csv;charset=utf-8;' });
             saveAs(blob, `id3-tagger-export-${new Date().toISOString().replace(/[:.]/g, '-')}.csv`);
+            addActivityEntry({ type: 'export', message: `Eksport CSV: ${files.length} plików` });
         } catch (error) {
-            alert(`Wystąpił błąd podczas eksportowania pliku CSV: ${error instanceof Error ? error.message : String(error)}`);
+            alert(`Błąd eksportu CSV: ${error instanceof Error ? error.message : String(error)}`);
         }
     };
-    
+
     const handlePostDownloadRemove = () => { setFiles(f => f.filter(file => !file.isSelected)); setModalState({ type: 'none' }); };
 
     const handleBatchAnalyze = async (filesToProcess: AudioFile[]) => {
@@ -388,21 +421,30 @@ const App: React.FC = () => {
                     } return { ...f, state: ProcessingState.ERROR, errorMessage: "Brak odpowiedzi AI." };
                 } return f;
             }));
+            addActivityEntry({ type: 'ai_tag', message: `Batch AI: otagowano ${ids.length} plików`, fileCount: ids.length });
         } catch (e) {
             setFiles(prev => prev.map(f => ids.includes(f.id) ? { ...f, state: ProcessingState.ERROR, errorMessage: e instanceof Error ? e.message : "Błąd" } : f));
         } finally { setIsBatchAnalyzing(false); }
     };
-    
+
     const handleBatchAnalyzeAll = () => {
         const toAnalyze = files.filter(f => f.state !== ProcessingState.SUCCESS);
         if (toAnalyze.length === 0) return alert("Wszystkie pliki przetworzone.");
         handleBatchAnalyze(toAnalyze);
     };
 
+    const handleRatingChange = useCallback((fileId: string, rating: number) => {
+        updateFileState(fileId, { rating });
+    }, [updateFileState]);
+
+    const handleDeleteFiles = useCallback((fileIds: string[]) => {
+        setFiles(prev => prev.filter(f => !fileIds.includes(f.id)));
+    }, []);
+
     const handleDirectoryPicker = async () => {
         try {
             if (!('showDirectoryPicker' in window)) {
-                alert("Twoja przeglądarka nie obsługuje File System Access API. Użyj zakładki 'Import / Skan' do ręcznego wyboru plików.");
+                alert("Twoja przeglądarka nie obsługuje File System Access API.");
                 return;
             }
             const handle = await (window as any).showDirectoryPicker();
@@ -415,54 +457,187 @@ const App: React.FC = () => {
     };
 
     const filesForRenamePreview = selectedFiles.length > 0 ? selectedFiles : files.slice(0, 5);
-    
-    const tabs: Tab[] = [
-        { id: 'library', label: 'Biblioteka', component: <LibraryTab 
-            files={files} sortedFiles={sortedFiles} selectedFiles={selectedFiles} allFilesSelected={allFilesSelected}
-            isBatchAnalyzing={isBatchAnalyzing} isSaving={isSaving} directoryHandle={directoryHandle} isRestored={isRestored}
-            onToggleSelectAll={handleToggleSelectAll} onBatchAnalyze={handleBatchAnalyze} onBatchAnalyzeAll={handleBatchAnalyzeAll}
-            onDownloadOrSave={handleDownloadOrSave} onBatchEdit={() => setModalState({ type: 'batch-edit' })}
-            onSingleItemEdit={(id) => setModalState({ type: 'edit', fileId: id })} onRename={() => setModalState({ type: 'rename' })}
-            onExportCsv={handleExportCsv} onDeleteItem={openDeleteModal} onClearAll={() => openDeleteModal('all')}
-            onProcessFile={handleProcessFile} onSelectionChange={handleSelectionChange} onTabChange={setActiveTab}
-        /> },
-        { id: 'scan', label: 'Import / Skan', component: <ScanTab 
-            onFilesSelected={handleFilesSelected} onUrlSubmitted={handleUrlSubmitted}
-            onDirectoryConnect={handleDirectoryConnect} isProcessing={isProcessing}
-        /> },
-        { id: 'player', label: 'Odtwarzacz', component: <PlaceholderTab title="Odtwarzacz" /> },
-        { id: 'tagger', label: 'Smart Tagger AI', component: <PlaceholderTab title="Smart Tagger AI" /> },
-        { id: 'duplicates', label: 'Wyszukiwarka Duplikatów', component: <PlaceholderTab title="Wyszukiwarka Duplikatów" /> },
-        { id: 'converter', label: 'Konwerter XML', component: <PlaceholderTab title="Konwerter XML" /> },
-    ];
+    const playerFile = useMemo(() => files.find(f => f.id === playerCurrentFileId) || null, [files, playerCurrentFileId]);
 
     return (
-        <div className="bg-slate-50 dark:bg-slate-900 min-h-screen font-sans text-slate-800 dark:text-slate-200">
-            <main className="container mx-auto px-4 py-8">
-                <header className="flex justify-between items-center mb-4">
-                    <h1 className="text-3xl font-bold text-slate-900 dark:text-white">Lumbago Music AI</h1>
-                    <div className="flex items-center space-x-2">
-                         <ThemeToggle theme={theme} setTheme={setTheme} />
-                         <button onClick={() => setModalState({ type: 'settings' })} className="p-2 rounded-full text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800" title="Ustawienia">
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-                         </button>
-                    </div>
-                </header>
-                
-                <MainToolbar onTabChange={setActiveTab} onDirectorySelect={handleDirectoryPicker} />
-                <TabbedInterface tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} />
-                
-                <Footer />
-            </main>
-            
-            {modalState.type === 'settings' && <SettingsModal isOpen={true} onClose={() => setModalState({ type: 'none' })} onSave={handleSaveSettings} currentKeys={apiKeys} currentProvider={aiProvider} />}
-            {modalState.type === 'edit' && modalFile && <EditTagsModal isOpen={true} onClose={() => setModalState({ type: 'none' })} onSave={(tags) => handleSaveTags(modalFile.id, tags)} onApply={(tags) => handleApplyTags(modalFile.id, tags)} isApplying={savingFileId === modalFile.id} isDirectAccessMode={!!directoryHandle} file={modalFile} onManualSearch={handleManualSearch} onZoomCover={(imageUrl) => setModalState({ type: 'zoom-cover', imageUrl })} />}
-            {modalState.type === 'rename' && <RenameModal isOpen={true} onClose={() => setModalState({ type: 'none' })} onSave={handleSaveRenamePattern} currentPattern={renamePattern} files={filesForRenamePreview} />}
-            {modalState.type === 'delete' && <ConfirmationModal isOpen={true} onCancel={() => setModalState({ type: 'none' })} onConfirm={() => handleDelete(modalState.fileId)} title="Potwierdź usunięcie">{`Czy na pewno chcesz usunąć ${modalState.fileId === 'all' ? 'wszystkie pliki' : modalState.fileId === 'selected' ? `${selectedFiles.length} zaznaczone pliki` : 'ten plik'} z kolejki?`}</ConfirmationModal>}
-            {modalState.type === 'batch-edit' && <BatchEditModal isOpen={true} onClose={() => setModalState({ type: 'none' })} onSave={handleBatchEditSave} files={selectedFiles} />}
-            {modalState.type === 'post-download' && <PostDownloadModal isOpen={true} onKeep={() => setModalState({ type: 'none' })} onRemove={handlePostDownloadRemove} count={modalState.count} />}
-            {modalState.type === 'zoom-cover' && <AlbumCoverModal isOpen={true} onClose={() => setModalState({ type: 'none' })} imageUrl={modalState.imageUrl} />}
-            {modalState.type === 'preview-changes' && <PreviewChangesModal isOpen={true} onCancel={() => setModalState({ type: 'none' })} onConfirm={modalState.onConfirm} title={modalState.title} previews={modalState.previews}>{modalState.confirmationText}</PreviewChangesModal>}
+        <div style={{ display: 'flex', height: '100vh', background: 'var(--bg-primary)', overflow: 'hidden' }}>
+            <Sidebar activeView={activeView} onNavigate={setActiveView} fileCount={files.length} />
+
+            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+                <TopBar
+                    searchQuery={globalSearch}
+                    onSearchChange={setGlobalSearch}
+                    activeView={activeView}
+                />
+
+                <main style={{ flex: 1, overflowY: 'auto', padding: '24px', paddingBottom: '100px' }}>
+                    {activeView === 'dashboard' && (
+                        <DashboardView
+                            activityLog={activityLog}
+                            fileCount={files.length}
+                            onNavigate={setActiveView}
+                        />
+                    )}
+                    {activeView === 'library' && (
+                        <LibraryView
+                            files={sortedFiles}
+                            sortKey={sortKey}
+                            sortDirection={sortDirection}
+                            onSortChange={(key, dir) => { setSortKey(key); setSortDirection(dir); }}
+                            globalSearch={globalSearch}
+                            onEditFile={(id) => setModalState({ type: 'edit', fileId: id })}
+                            onDeleteFile={(id) => openDeleteModal(id)}
+                            onProcessFile={handleProcessFile}
+                            onSelectionChange={handleSelectionChange}
+                            onToggleSelectAll={handleToggleSelectAll}
+                            allFilesSelected={allFilesSelected}
+                            selectedFiles={selectedFiles}
+                            onBatchAnalyze={handleBatchAnalyze}
+                            onBatchAnalyzeAll={handleBatchAnalyzeAll}
+                            onDownloadOrSave={handleDownloadOrSave}
+                            onBatchEdit={() => setModalState({ type: 'batch-edit' })}
+                            onExportCsv={handleExportCsv}
+                            onDeleteSelected={() => openDeleteModal('selected')}
+                            onClearAll={() => openDeleteModal('all')}
+                            onRenamePattern={() => setModalState({ type: 'rename' })}
+                            isBatchAnalyzing={isBatchAnalyzing}
+                            isSaving={isSaving}
+                            directoryHandle={directoryHandle}
+                            isRestored={isRestored}
+                            onSetPlayer={setPlayerCurrentFileId}
+                            onRatingChange={handleRatingChange}
+                        />
+                    )}
+                    {activeView === 'import' && (
+                        <ImportView
+                            onFilesSelected={handleFilesSelected}
+                            onDirectoryConnect={handleDirectoryConnect}
+                            onDirectoryPicker={handleDirectoryPicker}
+                            onUrlSubmitted={handleUrlSubmitted}
+                            isProcessing={isProcessing}
+                            onNavigate={setActiveView}
+                        />
+                    )}
+                    {activeView === 'duplicates' && (
+                        <DuplicatesView
+                            files={files}
+                            onDeleteFiles={handleDeleteFiles}
+                            onUpdateFiles={(updates) => setFiles(prev => prev.map(f => {
+                                const u = updates.find(u => u.id === f.id);
+                                return u ? { ...f, ...u } : f;
+                            }))}
+                        />
+                    )}
+                    {activeView === 'settings' && (
+                        <SettingsView
+                            apiKeys={apiKeys}
+                            aiProvider={aiProvider}
+                            renamePattern={renamePattern}
+                            onSave={handleSaveSettings}
+                            onRenamePatternChange={setRenamePattern}
+                        />
+                    )}
+                    {activeView === 'player' && (
+                        <PlayerView
+                            files={sortedFiles}
+                            currentFileId={playerCurrentFileId}
+                            onFileChange={setPlayerCurrentFileId}
+                        />
+                    )}
+                    {activeView === 'tagger' && (
+                        <AiTaggerView
+                            files={files}
+                            aiProvider={aiProvider}
+                            apiKeys={apiKeys}
+                            isBatchAnalyzing={isBatchAnalyzing}
+                            onAiProvider={setAiProvider}
+                            onProcessFile={handleProcessFile}
+                            onBatchAnalyze={handleBatchAnalyze}
+                            onBatchAnalyzeAll={handleBatchAnalyzeAll}
+                            onEditFile={(id) => setModalState({ type: 'edit', fileId: id })}
+                            onSelectionChange={handleSelectionChange}
+                        />
+                    )}
+                    {activeView === 'converter' && (
+                        <XmlConverterView files={files} />
+                    )}
+                </main>
+
+                <PlayerBar
+                    currentFile={playerFile}
+                    files={sortedFiles}
+                    onFileChange={setPlayerCurrentFileId}
+                    onNavigateToPlayer={() => setActiveView('player')}
+                />
+            </div>
+
+            {/* Modalne dialogi */}
+            {modalState.type === 'edit' && modalFile && (
+                <EditTagsModal
+                    isOpen={true}
+                    onClose={() => setModalState({ type: 'none' })}
+                    onSave={(tags) => handleSaveTags(modalFile.id, tags)}
+                    onApply={(tags) => handleApplyTags(modalFile.id, tags)}
+                    isApplying={savingFileId === modalFile.id}
+                    isDirectAccessMode={!!directoryHandle}
+                    file={modalFile}
+                    onManualSearch={handleManualSearch}
+                    onZoomCover={(imageUrl) => setModalState({ type: 'zoom-cover', imageUrl })}
+                />
+            )}
+            {modalState.type === 'rename' && (
+                <RenameModal
+                    isOpen={true}
+                    onClose={() => setModalState({ type: 'none' })}
+                    onSave={handleSaveRenamePattern}
+                    currentPattern={renamePattern}
+                    files={filesForRenamePreview}
+                />
+            )}
+            {modalState.type === 'delete' && (
+                <ConfirmationModal
+                    isOpen={true}
+                    onCancel={() => setModalState({ type: 'none' })}
+                    onConfirm={() => handleDelete(modalState.fileId)}
+                    title="Potwierdź usunięcie"
+                >
+                    {`Czy na pewno chcesz usunąć ${modalState.fileId === 'all' ? 'wszystkie pliki' : modalState.fileId === 'selected' ? `${selectedFiles.length} zaznaczone pliki` : 'ten plik'} z kolejki?`}
+                </ConfirmationModal>
+            )}
+            {modalState.type === 'batch-edit' && (
+                <BatchEditModal
+                    isOpen={true}
+                    onClose={() => setModalState({ type: 'none' })}
+                    onSave={handleBatchEditSave}
+                    files={selectedFiles}
+                />
+            )}
+            {modalState.type === 'post-download' && (
+                <PostDownloadModal
+                    isOpen={true}
+                    onKeep={() => setModalState({ type: 'none' })}
+                    onRemove={handlePostDownloadRemove}
+                    count={modalState.count}
+                />
+            )}
+            {modalState.type === 'zoom-cover' && (
+                <AlbumCoverModal
+                    isOpen={true}
+                    onClose={() => setModalState({ type: 'none' })}
+                    imageUrl={modalState.imageUrl}
+                />
+            )}
+            {modalState.type === 'preview-changes' && (
+                <PreviewChangesModal
+                    isOpen={true}
+                    onCancel={() => setModalState({ type: 'none' })}
+                    onConfirm={modalState.onConfirm}
+                    title={modalState.title}
+                    previews={modalState.previews}
+                >
+                    {modalState.confirmationText}
+                </PreviewChangesModal>
+            )}
         </div>
     );
 };

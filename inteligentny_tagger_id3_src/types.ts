@@ -17,13 +17,13 @@ export interface ID3Tags {
   comments?: string;
   bitrate?: number;
   sampleRate?: number;
-  trackNumber?: string; // Can be "1" or "1/12"
+  trackNumber?: string;
   albumArtist?: string;
   composer?: string;
   copyright?: string;
   encodedBy?: string;
   originalArtist?: string;
-  discNumber?: string; // Can be "1" or "1/2"
+  discNumber?: string;
   bpm?: number;
   key?: string;
 }
@@ -38,8 +38,35 @@ export interface AudioFile {
   isSelected?: boolean;
   errorMessage?: string;
   dateAdded: number;
-  handle?: any; // FileSystemFileHandle for direct saving
-  webkitRelativePath?: string; // The relative path of the file within the directory
+  handle?: any;
+  webkitRelativePath?: string;
+  duration?: number;
+  rating?: number;
 }
 
 export type GroupKey = 'artist' | 'album' | 'none';
+
+export type ViewType = 'dashboard' | 'library' | 'import' | 'duplicates' | 'settings' | 'player' | 'tagger' | 'converter';
+
+export interface ActivityEntry {
+  id: string;
+  type: 'import' | 'ai_tag' | 'duplicate_found' | 'tags_edited' | 'export';
+  message: string;
+  timestamp: number;
+  fileCount?: number;
+}
+
+export interface LibraryFilters {
+  genre: string | null;
+  status: ProcessingState | null;
+  bpmMin: number | null;
+  bpmMax: number | null;
+  key: string | null;
+  rating: number | null;
+}
+
+export interface DuplicateGroup {
+  id: string;
+  confidence: 'very_high' | 'high' | 'medium';
+  fileIds: string[];
+}

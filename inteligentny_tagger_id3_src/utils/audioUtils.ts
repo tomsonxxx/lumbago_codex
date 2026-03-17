@@ -481,3 +481,33 @@ export const saveFileDirectly = async (
     return { success: false, errorMessage: err.message || "Wystąpił nieznany błąd zapisu." };
   }
 };
+
+/**
+ * Reads the duration of an audio file using the HTML5 Audio element.
+ * @param file The audio file to read.
+ * @returns A promise resolving to the duration in seconds, or 0 on error.
+ */
+export const readAudioDuration = (file: File): Promise<number> =>
+  new Promise((resolve) => {
+    if (!file || file.size === 0) { resolve(0); return; }
+    const url = URL.createObjectURL(file);
+    const audio = new Audio(url);
+    audio.addEventListener('loadedmetadata', () => {
+      URL.revokeObjectURL(url);
+      resolve(isFinite(audio.duration) ? audio.duration : 0);
+    });
+    audio.addEventListener('error', () => {
+      URL.revokeObjectURL(url);
+      resolve(0);
+    });
+  });
+
+/**
+ * Formats seconds into mm:ss string.
+ */
+export const formatDuration = (seconds: number): string => {
+  if (!seconds || seconds <= 0) return '--:--';
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m}:${s.toString().padStart(2, '0')}`;
+};
