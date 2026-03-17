@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+*.pyo
+.lumbago_data/
+.claude/settings.local.json

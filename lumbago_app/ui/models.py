@@ -37,6 +37,7 @@ class TrackTableModel(QtCore.QAbstractTableModel):
         "Waveform",
         "Ścieżka",
         "Tagi",
+        "Status",
     ]
 
     def __init__(self, tracks: list[Track] | None = None):

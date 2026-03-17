@@ -14,6 +14,14 @@ class LocalAiTagger:
         return heuristic_analysis(track)
 
 
+_PROVIDER_DEFAULTS: dict[str, tuple[str, str]] = {
+    "openai": ("https://api.openai.com/v1", "gpt-4.1-mini"),
+    "grok": ("https://api.x.ai/v1", "grok-2-latest"),
+    "deepseek": ("https://api.deepseek.com/v1", "deepseek-chat"),
+    "gemini": ("https://generativelanguage.googleapis.com/v1beta", "gemini-2.5-flash"),
+}
+
+
 class CloudAiTagger:
     def __init__(
         self,
@@ -32,12 +40,9 @@ class CloudAiTagger:
     def analyze(self, track: Track) -> AnalysisResult:
         if not self.provider or not self.api_key:
             return AnalysisResult(confidence=0.0)
-        if self.provider == "gemini":
-            base_url = self.base_url or "https://generativelanguage.googleapis.com/v1beta"
-            model = self.model or "gemini-2.5-flash"
-        else:
-            base_url = self.base_url
-            model = self.model
+        defaults = _PROVIDER_DEFAULTS.get(self.provider, (None, None))
+        base_url = self.base_url or defaults[0]
+        model = self.model or defaults[1]
         if not base_url or not model:
             return AnalysisResult(confidence=0.0)
 
@@ -46,11 +51,12 @@ class CloudAiTagger:
             return AnalysisResult(confidence=1.0)
         prompt = _build_prompt(track, missing)
         try:
-            if self.provider == "openai":
-                text = _call_openai_responses(base_url, self.api_key, model, prompt, self.timeout)
-            elif self.provider == "gemini":
+            if self.provider == "gemini":
                 text = _call_gemini_generate_content(base_url, self.api_key, model, prompt, self.timeout)
+            elif self.provider == "openai":
+                text = _call_openai_responses(base_url, self.api_key, model, prompt, self.timeout)
             else:
+                # grok, deepseek i inne — OpenAI-compatible /chat/completions
                 text = _call_openai_compatible_chat(
                     base_url, self.api_key, model, prompt, self.timeout
                 )
@@ -67,6 +73,52 @@ class CloudAiTagger:
             )
         except Exception:
             return AnalysisResult(confidence=0.0)
+
+    @staticmethod
+    def test_connection(
+        provider: str,
+        api_key: str,
+        base_url: str | None = None,
+        model: str | None = None,
+    ) -> tuple[bool, str]:
+        """Testuje połączenie z API. Zwraca (sukces, komunikat)."""
+        defaults = _PROVIDER_DEFAULTS.get(provider, (None, None))
+        base_url = base_url or defaults[0]
+        model = model or defaults[1]
+        if not api_key:
+            return False, "Brak klucza API."
+        if not base_url:
+            return False, "Brak adresu bazowego URL."
+        try:
+            if provider == "gemini":
+                url = f"{base_url.rstrip('/')}/models"
+                resp = requests.get(
+                    url,
+                    headers={"x-goog-api-key": api_key},
+                    timeout=10,
+                )
+            else:
+                url = f"{base_url.rstrip('/')}/models"
+                resp = requests.get(
+                    url,
+                    headers={"Authorization": f"Bearer {api_key}"},
+                    timeout=10,
+                )
+            if resp.status_code == 200:
+                data = resp.json()
+                model_count = len(data.get("data", data.get("models", [])))
+                return True, f"OK — {model_count} modeli dostępnych. Model: {model}"
+            if resp.status_code == 401:
+                return False, "Błąd 401: Nieprawidłowy klucz API."
+            if resp.status_code == 403:
+                return False, "Błąd 403: Brak uprawnień."
+            return False, f"Odpowiedź: {resp.status_code}"
+        except requests.Timeout:
+            return False, "Timeout — serwer nie odpowiada."
+        except requests.ConnectionError:
+            return False, f"Błąd połączenia z {base_url}"
+        except Exception as exc:
+            return False, f"Błąd: {exc}"
 
 
 def _missing_fields(track: Track) -> list[str]:

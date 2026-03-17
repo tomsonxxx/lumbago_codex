@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from PyQt6 import QtWidgets, QtGui
 
+import os
+
 from lumbago_app.core.config import load_settings, save_settings
 from lumbago_app.ui.widgets import apply_dialog_fade, dialog_icon_pixmap
 
@@ -89,42 +91,81 @@ class SettingsDialog(QtWidgets.QDialog):
 
     def _build_ai_tab(self):
         tab = QtWidgets.QWidget()
-        form = QtWidgets.QFormLayout(tab)
-        form.setContentsMargins(12, 12, 12, 12)
-        form.setSpacing(8)
+        layout = QtWidgets.QVBoxLayout(tab)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(10)
+
+        # ── Wybór aktywnego dostawcy ─────────────────────────────────────
+        provider_card = QtWidgets.QFrame()
+        provider_card.setObjectName("Card")
+        pc_lay = QtWidgets.QVBoxLayout(provider_card)
+        pc_lay.setContentsMargins(14, 12, 14, 12)
+        pc_lay.setSpacing(8)
+
+        pc_title = QtWidgets.QLabel("Aktywny dostawca AI")
+        pc_title.setObjectName("SectionTitle")
+        pc_lay.addWidget(pc_title)
 
         self.cloud_provider = QtWidgets.QComboBox()
         self.cloud_provider.addItems(["", "openai", "gemini", "grok", "deepseek"])
-        form.addRow("Dostawca AI (chmura)", self.cloud_provider)
+        self.cloud_provider.setToolTip("Wybierz dostawcę AI do tagowania w chmurze")
+        self.cloud_provider.currentTextChanged.connect(self._on_provider_changed)
+        pc_lay.addWidget(self.cloud_provider)
 
         self.cloud_api_key = QtWidgets.QLineEdit()
         self.cloud_api_key.setEchoMode(QtWidgets.QLineEdit.EchoMode.Password)
-        form.addRow("Klucz AI (aktywny dostawca)", self.cloud_api_key)
+        self.cloud_api_key.setPlaceholderText("Klucz API aktywnego dostawcy (opcjonalny override)")
+        pc_lay.addWidget(self.cloud_api_key)
 
+        self._provider_status = QtWidgets.QLabel("")
+        self._provider_status.setObjectName("DialogHint")
+        self._provider_status.setWordWrap(True)
+        pc_lay.addWidget(self._provider_status)
+
+        layout.addWidget(provider_card)
+
+        # ── Klucze API per dostawca ──────────────────────────────────────
+        form = QtWidgets.QFormLayout()
+        form.setSpacing(8)
+
+        # OpenAI
         self.openai_api_key = QtWidgets.QLineEdit()
         self.openai_api_key.setEchoMode(QtWidgets.QLineEdit.EchoMode.Password)
-        openai_row = self._key_row(self.openai_api_key, lambda: self._test_openai_compatible("openai"))
-        form.addRow("Klucz OpenAI API", openai_row)
-
+        self.openai_api_key.setPlaceholderText("sk-...")
+        openai_row = self._key_row_with_test(self.openai_api_key, "openai")
+        form.addRow("Klucz OpenAI", openai_row)
         self.openai_model = QtWidgets.QLineEdit()
+        self.openai_model.setPlaceholderText("gpt-4.1-mini")
         form.addRow("Model OpenAI", self.openai_model)
+        self._openai_env_lbl = self._env_label("OPENAI_API_KEY")
+        form.addRow("", self._openai_env_lbl)
 
+        # Grok
         self.grok_api_key = QtWidgets.QLineEdit()
         self.grok_api_key.setEchoMode(QtWidgets.QLineEdit.EchoMode.Password)
-        grok_row = self._key_row(self.grok_api_key, lambda: self._test_openai_compatible("grok"))
-        form.addRow("Klucz Grok API", grok_row)
-
+        self.grok_api_key.setPlaceholderText("xai-...")
+        grok_row = self._key_row_with_test(self.grok_api_key, "grok")
+        form.addRow("Klucz Grok (xAI)", grok_row)
         self.grok_model = QtWidgets.QLineEdit()
+        self.grok_model.setPlaceholderText("grok-2-latest")
         form.addRow("Model Grok", self.grok_model)
+        self._grok_env_lbl = self._env_label("GROK_API_KEY")
+        form.addRow("", self._grok_env_lbl)
 
+        # DeepSeek
         self.deepseek_api_key = QtWidgets.QLineEdit()
         self.deepseek_api_key.setEchoMode(QtWidgets.QLineEdit.EchoMode.Password)
-        deepseek_row = self._key_row(self.deepseek_api_key, lambda: self._test_openai_compatible("deepseek"))
-        form.addRow("Klucz DeepSeek API", deepseek_row)
-
+        self.deepseek_api_key.setPlaceholderText("sk-...")
+        deepseek_row = self._key_row_with_test(self.deepseek_api_key, "deepseek")
+        form.addRow("Klucz DeepSeek", deepseek_row)
         self.deepseek_model = QtWidgets.QLineEdit()
+        self.deepseek_model.setPlaceholderText("deepseek-chat")
         form.addRow("Model DeepSeek", self.deepseek_model)
+        self._deepseek_env_lbl = self._env_label("DEEPSEEK_API_KEY")
+        form.addRow("", self._deepseek_env_lbl)
 
+        layout.addLayout(form)
+        layout.addStretch(1)
         self.tabs.addTab(tab, "AI Cloud")
 
     def _build_advanced_tab(self):
@@ -305,6 +346,77 @@ class SettingsDialog(QtWidgets.QDialog):
                 QtWidgets.QMessageBox.warning(self, "Test Discogs", f"Odpowiedź: {resp.status_code}")
         except Exception as exc:
             QtWidgets.QMessageBox.critical(self, "Test Discogs", f"Błąd połączenia: {exc}")
+
+    def _key_row_with_test(self, field: QtWidgets.QLineEdit, provider: str) -> QtWidgets.QWidget:
+        """Wiersz: pole klucza + przycisk Testuj (używa CloudAiTagger.test_connection)."""
+        widget = QtWidgets.QWidget()
+        row = QtWidgets.QHBoxLayout(widget)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(6)
+        row.addWidget(field, 1)
+        btn = QtWidgets.QPushButton("Testuj")
+        btn.setFixedWidth(64)
+        btn.setToolTip("Sprawdź poprawność klucza API")
+        btn.clicked.connect(lambda: self._run_provider_test(provider))
+        row.addWidget(btn)
+        return widget
+
+    def _env_label(self, env_var: str) -> QtWidgets.QLabel:
+        """Etykieta informująca czy zmienna środowiskowa jest ustawiona."""
+        value = os.getenv(env_var)
+        if value:
+            text = f"✓ Wykryto {env_var} w środowisku"
+            color = "#4ade80"
+        else:
+            text = f"✗ {env_var} nie ustawiona"
+            color = "#64748b"
+        lbl = QtWidgets.QLabel(text)
+        lbl.setStyleSheet(f"color: {color}; font-size: 11px;")
+        return lbl
+
+    def _on_provider_changed(self, provider: str):
+        """Aktualizuj status aktywnego dostawcy."""
+        if not provider:
+            self._provider_status.setText("")
+            return
+        key_map = {
+            "openai": self.openai_api_key,
+            "grok": self.grok_api_key,
+            "deepseek": self.deepseek_api_key,
+            "gemini": self.cloud_api_key,
+        }
+        field = key_map.get(provider)
+        has_key = bool(field and field.text().strip())
+        env_map = {"openai": "OPENAI_API_KEY", "grok": "GROK_API_KEY", "deepseek": "DEEPSEEK_API_KEY", "gemini": "GEMINI_API_KEY"}
+        has_env = bool(os.getenv(env_map.get(provider, "")))
+        if has_key:
+            self._provider_status.setText(f"✓ Klucz {provider} skonfigurowany")
+            self._provider_status.setStyleSheet("color: #4ade80; font-size: 11px;")
+        elif has_env:
+            self._provider_status.setText(f"✓ Klucz {provider} wykryty w środowisku")
+            self._provider_status.setStyleSheet("color: #4ade80; font-size: 11px;")
+        else:
+            self._provider_status.setText(f"✗ Brak klucza dla {provider}")
+            self._provider_status.setStyleSheet("color: #f59e0b; font-size: 11px;")
+
+    def _run_provider_test(self, provider: str):
+        """Testuj połączenie z wybranym dostawcą AI."""
+        from lumbago_app.services.ai_tagger import CloudAiTagger
+        key_map = {"openai": self.openai_api_key, "grok": self.grok_api_key, "deepseek": self.deepseek_api_key, "gemini": self.cloud_api_key}
+        url_map = {"openai": self.openai_base_url, "grok": self.grok_base_url, "deepseek": self.deepseek_base_url}
+        model_map = {"openai": self.openai_model, "grok": self.grok_model, "deepseek": self.deepseek_model}
+        key = key_map.get(provider)
+        api_key = key.text().strip() if key else ""
+        if not api_key:
+            QtWidgets.QMessageBox.warning(self, f"Test {provider}", "Podaj klucz API.")
+            return
+        base_url = url_map[provider].text().strip() if provider in url_map else None
+        model = model_map[provider].text().strip() if provider in model_map else None
+        ok, msg = CloudAiTagger.test_connection(provider, api_key, base_url or None, model or None)
+        if ok:
+            QtWidgets.QMessageBox.information(self, f"Test {provider}", msg)
+        else:
+            QtWidgets.QMessageBox.warning(self, f"Test {provider}", msg)
 
     def _test_openai_compatible(self, provider: str):
         key_map = {"openai": self.openai_api_key, "grok": self.grok_api_key, "deepseek": self.deepseek_api_key}

@@ -145,7 +145,7 @@ class AiTaggerDialog(QtWidgets.QDialog):
         if provider == "local":
             tagger = LocalAiTagger()
         else:
-            key = settings.cloud_ai_api_key or settings.openai_api_key or settings.grok_api_key or settings.deepseek_api_key
+            key = _provider_api_key(provider, settings)
             base_url, model = _provider_settings(provider, settings)
             if not key:
                 QtWidgets.QMessageBox.warning(
@@ -307,6 +307,19 @@ def _build_ai_tags(result: AnalysisResult) -> list[str]:
     if result.description:
         tags.append(f"description:{result.description}")
     return tags
+
+
+def _provider_api_key(provider: str, settings) -> str | None:
+    """Zwraca klucz API właściwy dla danego dostawcy."""
+    if provider == "openai":
+        return settings.openai_api_key or settings.cloud_ai_api_key
+    if provider == "grok":
+        return settings.grok_api_key or settings.cloud_ai_api_key
+    if provider == "deepseek":
+        return settings.deepseek_api_key or settings.cloud_ai_api_key
+    if provider == "gemini":
+        return settings.cloud_ai_api_key
+    return settings.cloud_ai_api_key
 
 
 def _provider_settings(provider: str, settings) -> tuple[str | None, str | None]:
