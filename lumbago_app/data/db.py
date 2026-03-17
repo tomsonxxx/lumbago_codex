@@ -26,6 +26,42 @@ def get_engine():
     return _engine
 
 
+def ensure_fts(engine=None) -> None:
+    eng = engine or get_engine()
+    with eng.connect() as conn:
+        conn.execute(text(
+            """
+            CREATE VIRTUAL TABLE IF NOT EXISTS tracks_fts
+            USING fts5(title, artist, album, genre, content='tracks', content_rowid='id')
+            """
+        ))
+        conn.execute(text(
+            """
+            INSERT OR IGNORE INTO tracks_fts(rowid, title, artist, album, genre)
+            SELECT id, COALESCE(title,''), COALESCE(artist,''), COALESCE(album,''), COALESCE(genre,'')
+            FROM tracks
+            WHERE id NOT IN (SELECT rowid FROM tracks_fts)
+            """
+        ))
+        conn.commit()
+
+
+def fts_search(query: str, engine=None) -> list[int]:
+    if not query:
+        return []
+    eng = engine or get_engine()
+    escaped = query.replace('"', '""')
+    with eng.connect() as conn:
+        try:
+            rows = conn.execute(
+                text("SELECT rowid FROM tracks_fts WHERE tracks_fts MATCH :q ORDER BY rank"),
+                {"q": f'"{escaped}"*'},
+            ).fetchall()
+            return [row[0] for row in rows]
+        except Exception:
+            return []
+
+
 def get_session_factory():
     global _Session
     if _Session is None:

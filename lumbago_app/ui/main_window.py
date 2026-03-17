@@ -37,6 +37,7 @@ from lumbago_app.data.repository import (
     list_playlists_full,
     list_tracks,
     reset_library,
+    search_tracks_fts,
     set_playlist_track_order,
     update_playlist,
     update_tracks,
@@ -52,6 +53,7 @@ from lumbago_app.ui.models import TrackGridDelegate, TrackTableModel
 from lumbago_app.ui.playlist_dialog import PlaylistEditorDialog
 from lumbago_app.ui.playlist_order_dialog import PlaylistOrderDialog
 from lumbago_app.ui.recognition_queue import RecognitionBatchWorker
+from lumbago_app.ui.recognition_results_dialog import RecognitionResultsDialog
 from lumbago_app.ui.renamer_dialog import RenamerDialog
 from lumbago_app.ui.settings_dialog import SettingsDialog
 from lumbago_app.ui.tag_compare_dialog import TagCompareDialog
@@ -696,7 +698,22 @@ class MainWindow(QtWidgets.QMainWindow):
         self.table_model.update_tracks(list_playlist_tracks(playlist.playlist_id))
 
     def _apply_filters(self):
-        self.filter_proxy.search_text = self.search_input.text().strip().lower()
+        query = self.search_input.text().strip()
+        if len(query) >= 3:
+            fts_results = search_tracks_fts(query)
+            if fts_results:
+                self.table_model.update_tracks(fts_results)
+                self.filter_proxy.search_text = ""
+                self.filter_proxy.bpm_min = self.bpm_min.value() or None
+                self.filter_proxy.bpm_max = self.bpm_max.value() or None
+                self.filter_proxy.key = self.key_input.text().strip()
+                self.filter_proxy.genre = self.genre_input.text().strip()
+                self.filter_proxy.invalidateFilter()
+                return
+        if not query:
+            tracks = getattr(self, "_all_tracks", list_tracks())
+            self.table_model.update_tracks(tracks)
+        self.filter_proxy.search_text = query.lower()
         self.filter_proxy.bpm_min = self.bpm_min.value() or None
         self.filter_proxy.bpm_max = self.bpm_max.value() or None
         self.filter_proxy.key = self.key_input.text().strip()
@@ -1444,10 +1461,13 @@ class MainWindow(QtWidgets.QMainWindow):
             if progress.wasCanceled():
                 self._recognition_worker.stop()
 
-        def on_finished(processed: int, errors: int):
+        def on_finished(results: list):
             progress.close()
-            self._load_tracks()
-            self.status.showMessage(f"Rozpoznawanie zakończone. Błędy: {errors}")
+            dialog = RecognitionResultsDialog(results, self)
+            if dialog.exec():
+                self._load_tracks()
+            success = sum(1 for r in results if r.success)
+            self.status.showMessage(f"Rozpoznano: {success}/{len(results)}")
 
         self._recognition_worker.signals.progress.connect(on_progress)
         self._recognition_worker.signals.finished.connect(on_finished)

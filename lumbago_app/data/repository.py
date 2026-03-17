@@ -7,7 +7,7 @@ import json
 from sqlalchemy import delete, select, update, text
 
 from lumbago_app.core.models import Playlist, Track
-from lumbago_app.data.db import get_session_factory, get_engine
+from lumbago_app.data.db import get_session_factory, get_engine, ensure_fts, fts_search
 from lumbago_app.data.schema import (
     Base,
     ChangeLogOrm,
@@ -24,6 +24,22 @@ def init_db() -> None:
     engine = get_engine()
     Base.metadata.create_all(engine)
     _ensure_track_columns(engine)
+    try:
+        ensure_fts(engine)
+    except Exception:
+        pass
+
+
+def search_tracks_fts(query: str) -> list[Track]:
+    ids = fts_search(query)
+    if not ids:
+        return []
+    Session = get_session_factory()
+    with Session() as session:
+        id_order = {track_id: pos for pos, track_id in enumerate(ids)}
+        rows = session.scalars(select(TrackOrm).where(TrackOrm.id.in_(ids))).all()
+        rows_sorted = sorted(rows, key=lambda r: id_order.get(r.id, 9999))
+        return [_orm_to_track(r) for r in rows_sorted]
 
 
 def _ensure_track_columns(engine) -> None:
