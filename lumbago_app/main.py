@@ -14,11 +14,16 @@ from lumbago_app.ui.main_window import MainWindow
 from lumbago_app.ui.theme import get_qss
 from lumbago_app.ui.widgets import apply_window_fade
 from lumbago_app.core.config import app_data_dir, load_settings
+from lumbago_app.core.backup import perform_scheduled_backup
 
 
 def main() -> int:
     load_dotenv()
     _install_exception_hooks()
+    try:
+        perform_scheduled_backup(interval_days=7)
+    except Exception:
+        pass
     QtCore.QCoreApplication.setAttribute(QtCore.Qt.ApplicationAttribute.AA_UseSoftwareOpenGL)
     app = QtWidgets.QApplication(sys.argv)
     app.setFont(QtGui.QFont("Segoe UI", 10))

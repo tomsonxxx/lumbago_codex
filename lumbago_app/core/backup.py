@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 import zipfile
 
@@ -35,6 +35,31 @@ def restore_backup(archive_path: Path) -> None:
             dest = data_dir / name
             with zf.open(name) as src, dest.open("wb") as dst:
                 dst.write(src.read())
+
+
+def perform_scheduled_backup(interval_days: int = 7, max_backups: int = 10) -> bool:
+    """Wykonuje backup tylko jeśli od ostatniego minęło co najmniej interval_days dni.
+
+    Returns True jeśli backup został wykonany, False jeśli pominięto.
+    """
+    data_dir = app_data_dir()
+    backups_dir = data_dir / "backups"
+    backups_dir.mkdir(parents=True, exist_ok=True)
+    files = sorted(backups_dir.glob("*.zip"), key=lambda p: p.stat().st_mtime, reverse=True)
+    if files:
+        last_mtime = datetime.fromtimestamp(files[0].stat().st_mtime)
+        if datetime.now() - last_mtime < timedelta(days=interval_days):
+            return False
+    perform_backup(max_backups=max_backups)
+    return True
+
+
+def list_backups() -> list[Path]:
+    """Zwraca listę plików backup posortowanych od najnowszego."""
+    backups_dir = app_data_dir() / "backups"
+    if not backups_dir.exists():
+        return []
+    return sorted(backups_dir.glob("*.zip"), key=lambda p: p.stat().st_mtime, reverse=True)
 
 
 def _trim_backups(backups_dir: Path, max_backups: int) -> None:

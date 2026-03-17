@@ -226,11 +226,8 @@ class SettingsDialog(QtWidgets.QDialog):
             QtWidgets.QMessageBox.critical(self, "Vacuum", f"Błąd: {exc}")
 
     def _open_restore_dialog(self):
-        from lumbago_app.core.config import app_data_dir
-        from lumbago_app.core.backup import restore_backup
-        backups_dir = app_data_dir() / "backups"
-        files = sorted(backups_dir.glob("*.zip"), key=lambda p: p.stat().st_mtime, reverse=True) \
-            if backups_dir.exists() else []
+        from lumbago_app.core.backup import list_backups, restore_backup
+        files = list_backups()
         if not files:
             QtWidgets.QMessageBox.information(self, "Przywróć backup", "Brak kopii zapasowych.")
             return
