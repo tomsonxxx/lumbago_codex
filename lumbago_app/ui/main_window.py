@@ -411,6 +411,17 @@ class MainWindow(QtWidgets.QMainWindow):
         self.btn_scan.enable_pulse()
         layout.addWidget(self.btn_scan)
 
+        self.btn_watchfolder = AnimatedButton("Watchfolder")
+        self.btn_watchfolder.setToolTip(
+            "Monitoruj folder i automatycznie importuj nowe pliki audio.\n"
+            "Kliknij ponownie aby zatrzymać."
+        )
+        self.btn_watchfolder.setCheckable(True)
+        self.btn_watchfolder.clicked.connect(self._toggle_watchfolder)
+        self._watchfolder_watcher: QtCore.QFileSystemWatcher | None = None
+        self._watchfolder_path: str | None = None
+        layout.addWidget(self.btn_watchfolder)
+
         self.btn_recognition = AnimatedButton("Rozpoznaj metadane (wsadowo)")
         self.btn_recognition.setToolTip("Rozpoznaj i uzupełnij metadane dla zaznaczonych utworów")
         self.btn_recognition.clicked.connect(self._run_recognition_queue)
@@ -843,6 +854,48 @@ class MainWindow(QtWidgets.QMainWindow):
     def _open_import_wizard(self):
         wizard = ImportWizard(self, on_complete=self._load_tracks)
         wizard.exec()
+
+    def _toggle_watchfolder(self, checked: bool):
+        if not checked:
+            if self._watchfolder_watcher:
+                self._watchfolder_watcher.deleteLater()
+                self._watchfolder_watcher = None
+                self._watchfolder_path = None
+            self.btn_watchfolder.setText("Watchfolder")
+            self.status.showMessage("Watchfolder zatrzymany.")
+            return
+        folder = QtWidgets.QFileDialog.getExistingDirectory(
+            self, "Wybierz folder do monitorowania"
+        )
+        if not folder:
+            self.btn_watchfolder.setChecked(False)
+            return
+        self._watchfolder_path = folder
+        self._watchfolder_watcher = QtCore.QFileSystemWatcher([folder], self)
+        self._watchfolder_watcher.directoryChanged.connect(self._on_watchfolder_changed)
+        self.btn_watchfolder.setText(f"Watchfolder: {Path(folder).name}")
+        self.status.showMessage(f"Watchfolder aktywny: {folder}")
+
+    def _on_watchfolder_changed(self, path: str):
+        """Wywoływane gdy folder jest zmodyfikowany — importuje nowe pliki audio."""
+        if not path:
+            return
+        from lumbago_app.core.audio import iter_audio_files, extract_metadata
+        from lumbago_app.data.repository import upsert_tracks
+        known_paths = {t.path for t in self._all_tracks} if hasattr(self, "_all_tracks") else set()
+        new_tracks = []
+        for audio_path in iter_audio_files(Path(path), recursive=False):
+            if str(audio_path) not in known_paths:
+                try:
+                    new_tracks.append(extract_metadata(audio_path))
+                except Exception:
+                    pass
+        new_count = len(new_tracks)
+        if new_tracks:
+            upsert_tracks(new_tracks)
+        if new_count > 0:
+            self._load_tracks()
+            self.status.showMessage(f"Watchfolder: zaimportowano {new_count} nowych plików.")
 
     def _update_scan_progress(self, current: int, total: int):
         self.status.showMessage(f"Scanning {current}/{total} files")
