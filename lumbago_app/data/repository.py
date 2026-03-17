@@ -28,6 +28,28 @@ def init_db() -> None:
         ensure_fts(engine)
     except Exception:
         pass
+    _seed_default_playlists()
+
+
+def _seed_default_playlists() -> None:
+    """Tworzy domyślne playlisty jeśli baza jest pusta."""
+    defaults = [
+        ("Favorites", "Ulubione utwory", False, None),
+        ("Recent Imports", "Ostatnio zaimportowane", False, None),
+        (
+            "Nowo dodane (30 dni)",
+            "Automatyczna playlista — tracki dodane w ostatnich 30 dniach",
+            True,
+            '{"date_added_days": 30}',
+        ),
+    ]
+    Session = get_session_factory()
+    with Session() as session:
+        for name, desc, is_smart, rules in defaults:
+            existing = session.scalar(select(PlaylistOrm).where(PlaylistOrm.name == name))
+            if existing is None:
+                session.add(PlaylistOrm(name=name, description=desc, is_smart=1 if is_smart else 0, rules=rules))
+        session.commit()
 
 
 def search_tracks_fts(query: str) -> list[Track]:

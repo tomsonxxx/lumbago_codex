@@ -90,6 +90,15 @@ class TrackTableModel(QtCore.QAbstractTableModel):
                     pixmap = QtGui.QPixmap(str(path))
                     if not pixmap.isNull():
                         return QtGui.QIcon(pixmap.scaled(96, 96, QtCore.Qt.AspectRatioMode.KeepAspectRatio))
+        if role == QtCore.Qt.ItemDataRole.BackgroundRole:
+            energy = track.energy
+            if energy is not None:
+                if energy >= 0.7:
+                    return QtGui.QColor(50, 18, 8)   # ciepły czerwono-pomarańczowy — wysoka energia
+                elif energy >= 0.5:
+                    return QtGui.QColor(18, 35, 18)  # zielonkawy — średnia energia
+                elif energy <= 0.3:
+                    return QtGui.QColor(8, 18, 40)   # niebieski — niska energia
         if role == QtCore.Qt.ItemDataRole.UserRole:
             return track
         return None

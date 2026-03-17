@@ -92,8 +92,13 @@ class AiTaggerDialog(QtWidgets.QDialog):
         )
         if self._auto_method_default:
             self.auto_method.setCurrentText(_auto_method_label(self._auto_method_default))
+        self.auto_accept_check = QtWidgets.QCheckBox("Auto‑akceptuj przy pewności ≥ 85%")
+        self.auto_accept_check.setChecked(True)
+        self.auto_accept_check.setToolTip("Automatycznie akceptuj wyniki z wysoką pewnością (confidence ≥ 0.85)")
         options.addWidget(self.auto_fetch)
         options.addWidget(self.auto_method)
+        options.addSpacing(16)
+        options.addWidget(self.auto_accept_check)
         options.addStretch(1)
         if not self._allow_auto_fetch:
             self.auto_fetch.setChecked(False)
@@ -175,6 +180,7 @@ class AiTaggerDialog(QtWidgets.QDialog):
         def on_finished(results: list[tuple[Track, AnalysisResult]]):
             progress.close()
             error_messages = []
+            auto_accepted = 0
             for track, result in results:
                 self._results[track.path] = result
                 row = self.table.rowCount()
@@ -186,11 +192,22 @@ class AiTaggerDialog(QtWidgets.QDialog):
                 self.table.setItem(row, 4, QtWidgets.QTableWidgetItem(result.genre or ""))
                 self.table.setItem(row, 5, QtWidgets.QTableWidgetItem(result.mood or ""))
                 self.table.setItem(row, 6, QtWidgets.QTableWidgetItem(str(result.energy or "")))
-                self.table.setItem(row, 7, QtWidgets.QTableWidgetItem(str(result.confidence or "")))
-                self.table.setItem(row, 8, QtWidgets.QTableWidgetItem(result.description or ""))
+                conf_val = result.confidence or 0.0
+                conf_item = QtWidgets.QTableWidgetItem(f"{conf_val:.2f}")
+                self.table.setItem(row, 7, conf_item)
+                # Status: OK / Błąd / Niska pewność
+                if result.bpm or result.genre or result.key:
+                    status_text = "OK"
+                else:
+                    status_text = "Brak danych"
+                self.table.setItem(row, 8, QtWidgets.QTableWidgetItem(status_text))
                 action = QtWidgets.QComboBox()
                 action.addItems(["Akceptuj", "Odrzuć"])
                 action.setToolTip("Akceptuj lub odrzuć propozycję")
+                # Auto-akceptacja przy wysokiej pewności
+                if self.auto_accept_check.isChecked() and conf_val >= 0.85:
+                    action.setCurrentText("Akceptuj")
+                    auto_accepted += 1
                 self.table.setCellWidget(row, 9, action)
                 if result.description and "Cloud AI" in result.description:
                     error_messages.append(result.description)
@@ -203,7 +220,8 @@ class AiTaggerDialog(QtWidgets.QDialog):
                     f"{message}\nSprawdź ustawienia providera, modelu i limitów rozliczeń.",
                 )
             else:
-                self.status_label.setText("Analiza zakończona. Sprawdź wyniki i wybierz akcje.")
+                suffix = f" • {auto_accepted} auto-zaakceptowanych" if auto_accepted else ""
+                self.status_label.setText(f"Analiza zakończona. Sprawdź wyniki i wybierz akcje.{suffix}")
 
         self._worker.signals.progress.connect(on_progress)
         self._worker.signals.finished.connect(on_finished)
@@ -242,7 +260,7 @@ class AiTaggerDialog(QtWidgets.QDialog):
         provider = settings.cloud_ai_provider or "local"
         source = f"ai:{provider}"
         for row_idx, track in enumerate(self._tracks):
-            action = self.table.cellWidget(row_idx, 6)
+            action = self.table.cellWidget(row_idx, 9)
             if isinstance(action, QtWidgets.QComboBox) and action.currentText() != "Akceptuj":
                 continue
             result = self._results.get(track.path)
@@ -269,7 +287,7 @@ class AiTaggerDialog(QtWidgets.QDialog):
 
     def _set_all_actions(self, label: str) -> None:
         for row_idx in range(self.table.rowCount()):
-            action = self.table.cellWidget(row_idx, 6)
+            action = self.table.cellWidget(row_idx, 9)
             if isinstance(action, QtWidgets.QComboBox):
                 action.setCurrentText(label)
 

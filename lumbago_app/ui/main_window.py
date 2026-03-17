@@ -1590,6 +1590,7 @@ class MainWindow(QtWidgets.QMainWindow):
         delete_action = menu.addAction("Usuń playlistę")
         order_action = menu.addAction("Kolejność utworów")
         menu.addSeparator()
+        stats_action = menu.addAction("Statystyki playlisty")
         export_m3u_action = menu.addAction("Eksportuj do M3U")
         action = menu.exec(self.playlist_list.mapToGlobal(pos))
         if action == add_action:
@@ -1612,8 +1613,45 @@ class MainWindow(QtWidgets.QMainWindow):
                 if dialog.exec():
                     set_playlist_track_order(playlist.playlist_id, dialog.ordered_paths())
                     self._apply_playlist_view()
+        elif action == stats_action:
+            self._show_playlist_stats(item)
         elif action == export_m3u_action:
             self._export_playlist_m3u(item)
+
+    def _show_playlist_stats(self, item: QtWidgets.QListWidgetItem | None):
+        if item:
+            playlist = item.data(QtCore.Qt.ItemDataRole.UserRole)
+            if playlist and playlist.playlist_id:
+                tracks = list_playlist_tracks(playlist.playlist_id)
+                name = playlist.name
+            else:
+                tracks = list(self.table_model._tracks)
+                name = "Wszystkie utwory"
+        else:
+            tracks = list(self.table_model._tracks)
+            name = "Wszystkie utwory"
+
+        count = len(tracks)
+        total_s = sum(t.duration or 0 for t in tracks)
+        total_min, total_sec = divmod(int(total_s), 60)
+        total_h, total_min = divmod(total_min, 60)
+        bpms = [t.bpm for t in tracks if t.bpm]
+        avg_bpm = f"{sum(bpms) / len(bpms):.1f}" if bpms else "—"
+        keys = [t.key for t in tracks if t.key]
+        key_dist: dict[str, int] = {}
+        for k in keys:
+            key_dist[k] = key_dist.get(k, 0) + 1
+        top_keys = sorted(key_dist.items(), key=lambda x: x[1], reverse=True)[:5]
+        key_text = ", ".join(f"{k} ({n})" for k, n in top_keys) if top_keys else "—"
+
+        msg = (
+            f"<b>Playlista: {name}</b><br><br>"
+            f"Liczba utworów: <b>{count}</b><br>"
+            f"Łączny czas: <b>{total_h}h {total_min:02d}m {total_sec:02d}s</b><br>"
+            f"Średnie BPM: <b>{avg_bpm}</b><br>"
+            f"Najczęstsze tonacje: <b>{key_text}</b>"
+        )
+        QtWidgets.QMessageBox.information(self, "Statystyki playlisty", msg)
 
     def _export_playlist_m3u(self, item: QtWidgets.QListWidgetItem | None):
         if item:
@@ -1682,6 +1720,11 @@ class MainWindow(QtWidgets.QMainWindow):
         key = (rules.get("key") or "").lower()
         bpm_min = rules.get("bpm_min")
         bpm_max = rules.get("bpm_max")
+        date_added_days = rules.get("date_added_days")
+        cutoff_dt = None
+        if date_added_days:
+            from datetime import timedelta
+            cutoff_dt = datetime.utcnow() - timedelta(days=int(date_added_days))
         filtered: list[Track] = []
         for track in tracks:
             blob = f"{track.title or ''} {track.artist or ''} {track.album or ''}".lower()
@@ -1694,6 +1737,8 @@ class MainWindow(QtWidgets.QMainWindow):
             if bpm_min is not None and track.bpm is not None and track.bpm < bpm_min:
                 continue
             if bpm_max is not None and track.bpm is not None and track.bpm > bpm_max:
+                continue
+            if cutoff_dt is not None and track.date_added is not None and track.date_added < cutoff_dt:
                 continue
             filtered.append(track)
         return filtered

@@ -3,6 +3,20 @@ from __future__ import annotations
 from typing import Iterable
 
 
+def detect_bpm(path: str, max_duration: float = 60.0) -> float | None:
+    """Wykrywa BPM z pliku audio używając librosa. Zwraca None przy błędzie."""
+    try:
+        import librosa  # opcjonalna zależność
+        y, sr = librosa.load(path, mono=True, duration=max_duration, sr=22050)
+        tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
+        bpm = float(tempo[0]) if hasattr(tempo, "__len__") else float(tempo)
+        if 40.0 <= bpm <= 220.0:
+            return round(bpm, 1)
+        return None
+    except Exception:
+        return None
+
+
 def compute_beatgrid(duration_s: int | None, bpm: float | None) -> list[float]:
     if not duration_s or not bpm or bpm <= 0:
         return []
