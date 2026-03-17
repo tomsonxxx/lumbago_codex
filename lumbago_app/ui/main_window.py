@@ -61,6 +61,12 @@ from lumbago_app.ui.tag_compare_dialog import TagCompareDialog
 from lumbago_app.ui.widgets import AnimatedButton
 from lumbago_app.ui.xml_converter_dialog import XmlConverterDialog
 from lumbago_app.ui.xml_import_dialog import XmlImportDialog
+from lumbago_app.ui.import_page import ImportPage
+from lumbago_app.ui.settings_page import SettingsPage
+from lumbago_app.ui.ai_tagger_page import AiTaggerPage
+from lumbago_app.ui.player_page import PlayerPage
+from lumbago_app.ui.duplicates_page import DuplicatesPage
+from lumbago_app.ui.xml_converter_page import XmlConverterPage
 
 
 def _debug_log(message: str) -> None:
@@ -346,53 +352,36 @@ class MainWindow(QtWidgets.QMainWindow):
         self._page_stack.addWidget(library_page)
 
         # Strona 2: Import
-        self._page_stack.addWidget(self._build_placeholder_page(
-            "📥", "Import plików",
-            "Importuj pliki MP3, FLAC, WAV, OGG z dysku lub folderu.",
-            [("Importuj / Skanuj", "PrimaryAction", self._open_import_wizard),
-             ("Watchfolder", None, self._setup_watchfolder_from_page)],
-        ))
+        self._import_page = ImportPage()
+        self._import_page.import_finished.connect(self._on_import_page_finished)
+        self._page_stack.addWidget(self._import_page)
 
         # Strona 3: Duplikaty
-        self._page_stack.addWidget(self._build_placeholder_page(
-            "🔍", "Duplikaty",
-            "Znajdź i usuń duplikaty plików muzycznych w bibliotece.",
-            [("Wyszukaj duplikaty", "PrimaryAction", self._open_duplicates),
-             ("Zmiana nazw plików", None, self._open_renamer)],
-        ))
+        self._duplicates_page = DuplicatesPage()
+        self._duplicates_page.tracks_deleted.connect(self._on_duplicates_deleted)
+        self._page_stack.addWidget(self._duplicates_page)
 
         # Strona 4: Ustawienia
-        self._page_stack.addWidget(self._build_placeholder_page(
-            "⚙️", "Ustawienia",
-            "Konfiguracja aplikacji, klucze API i preferencje.",
-            [("Otwórz ustawienia", "PrimaryAction", self._open_settings)],
-        ))
+        self._settings_page = SettingsPage()
+        self._settings_page.settings_saved.connect(self._on_settings_saved)
+        self._page_stack.addWidget(self._settings_page)
 
         # Strona 5: Odtwarzacz
-        self._page_stack.addWidget(self._build_placeholder_page(
-            "🎵", "Odtwarzacz",
-            "Wybierz utwór w Bibliotece (podwójne kliknięcie) aby odtwarzać.\n"
-            "Kontrolki odtwarzania są dostępne na pasku poniżej.",
-            [],
-        ))
+        self._player_page = PlayerPage()
+        self._player_page.play_requested.connect(self._on_player_play)
+        self._player_page.next_requested.connect(self._play_next)
+        self._player_page.prev_requested.connect(self._play_prev)
+        self._page_stack.addWidget(self._player_page)
 
         # Strona 6: AI Tagger
-        self._page_stack.addWidget(self._build_placeholder_page(
-            "🤖", "AI Tagger",
-            "Automatyczne tagowanie AI — BPM, tonacja, gatunek, nastrój.\n"
-            "Najpierw zaznacz pliki w Bibliotece, a następnie uruchom tagger.",
-            [("Tagger AI (lokalny)", "PrimaryAction", self._run_ai_tagger),
-             ("AutoTag (wyszukiwanie)", "AutoTagSearch", self._run_auto_tagger),
-             ("AutoTag (API)", "AutoTagApi", self._run_auto_tagger_cloud)],
-        ))
+        self._ai_tagger_page = AiTaggerPage()
+        self._ai_tagger_page.tags_applied.connect(self._refresh_table)
+        self._page_stack.addWidget(self._ai_tagger_page)
 
         # Strona 7: Konwerter XML
-        self._page_stack.addWidget(self._build_placeholder_page(
-            "📋", "Konwerter XML",
-            "Konwersja biblioteki do/z formatów DJ:\nVirtualDJ, Rekordbox, Traktor NML.",
-            [("Eksport XML (VirtualDJ)", "PrimaryAction", self._open_xml_converter),
-             ("Import XML", None, self._open_xml_import)],
-        ))
+        self._xml_converter_page = XmlConverterPage()
+        self._xml_converter_page.tracks_imported.connect(self._on_xml_imported)
+        self._page_stack.addWidget(self._xml_converter_page)
 
         # ── Globalny PlayerDock (dół) ─────────────────────────────────────
         player = self._build_player()
@@ -670,6 +659,17 @@ class MainWindow(QtWidgets.QMainWindow):
             track_count = len(getattr(self, "_all_tracks", []))
             self._dashboard_view.update_stats(track_count, self._activity_log)
 
+        # Przekaż dane do widoków przy przełączaniu
+        tracks = getattr(self, "_all_tracks", [])
+        if idx == 3 and hasattr(self, "_duplicates_page"):
+            self._duplicates_page.set_tracks(tracks)
+        if idx == 6 and hasattr(self, "_ai_tagger_page"):
+            selected = self._selected_tracks()
+            self._ai_tagger_page.set_tracks(selected if selected else tracks)
+        if idx == 7 and hasattr(self, "_xml_converter_page"):
+            self._xml_converter_page.set_tracks(tracks)
+            self._xml_converter_page.set_track_count(len(tracks))
+
     def _on_dashboard_navigate(self, view_name: str):
         """Obsługuje sygnał nawigacji z DashboardView."""
         mapping = {
@@ -682,6 +682,76 @@ class MainWindow(QtWidgets.QMainWindow):
             "converter": 7,
         }
         self._switch_page(mapping.get(view_name, 0))
+
+    # ── Obsługa sygnałów z widoków inline ──────────────────────────────
+
+    def _on_import_page_finished(self, tracks: list):
+        """Import zakończony — odśwież bibliotekę."""
+        self._load_tracks()
+        self._activity_log.append({
+            "type": "import",
+            "message": f"Zaimportowano {len(tracks)} plików",
+            "timestamp": datetime.now().timestamp(),
+        })
+        self.status.showMessage(f"Import zakończony: {len(tracks)} plików")
+
+    def _on_duplicates_deleted(self, paths: list):
+        """Pliki usunięte przez widok duplikatów — odśwież."""
+        self._load_tracks()
+        self.status.showMessage(f"Usunięto {len(paths)} duplikatów")
+
+    def _on_settings_saved(self):
+        """Ustawienia zapisane — odśwież konfigurację."""
+        self.status.showMessage("Ustawienia zapisane")
+
+    def _on_player_play(self, path: str):
+        """Odtwórz utwór z PlayerPage."""
+        if not self.player:
+            return
+        url = QtCore.QUrl.fromLocalFile(path)
+        self.player.setSource(url)
+        self.player.play()
+        self.table_model.set_now_playing(path)
+
+    def _play_next(self):
+        """Odtwórz następny utwór."""
+        if not self.player:
+            return
+        indexes = self.table_view.selectionModel().selectedRows()
+        if not indexes:
+            return
+        current = self.filter_proxy.mapToSource(indexes[0]).row()
+        next_row = current + 1
+        if next_row < self.table_model.rowCount():
+            source_idx = self.table_model.index(next_row, 0)
+            proxy_idx = self.filter_proxy.mapFromSource(source_idx)
+            self.table_view.selectRow(proxy_idx.row())
+            self._play_selected()
+
+    def _play_prev(self):
+        """Odtwórz poprzedni utwór."""
+        if not self.player:
+            return
+        indexes = self.table_view.selectionModel().selectedRows()
+        if not indexes:
+            return
+        current = self.filter_proxy.mapToSource(indexes[0]).row()
+        prev_row = current - 1
+        if prev_row >= 0:
+            source_idx = self.table_model.index(prev_row, 0)
+            proxy_idx = self.filter_proxy.mapFromSource(source_idx)
+            self.table_view.selectRow(proxy_idx.row())
+            self._play_selected()
+
+    def _on_xml_imported(self, imported: list):
+        """Tracki zaimportowane z XML — odśwież."""
+        self._load_tracks()
+        self._activity_log.append({
+            "type": "import",
+            "message": f"Import XML: {len(imported)} utworów",
+            "timestamp": datetime.now().timestamp(),
+        })
+        self.status.showMessage(f"Import XML: {len(imported)} utworów")
 
     def _setup_watchfolder_from_page(self):
         """Odpowiednik _toggle_watchfolder uruchamiany ze strony Import."""
