@@ -88,6 +88,7 @@ class TrackTableModel(QtCore.QAbstractTableModel):
                 track.waveform_path or "",
                 track.path,
                 _format_tags(track.tags),
+                _format_status(track),
             ][index.column()]
         if role == QtCore.Qt.ItemDataRole.DecorationRole and index.column() == 0:
             if track.artwork_path:
@@ -177,6 +178,17 @@ def _format_tags(tags: list) -> str:
     if not tags:
         return ""
     return ", ".join(tag.value for tag in tags if tag.value)
+
+
+def _format_status(track: Track) -> str:
+    parts = []
+    if track.tags and any(getattr(t, "source", "").startswith("ai:") for t in track.tags):
+        parts.append("⚡")
+    if all([track.title, track.artist]):
+        parts.append("✓")
+    if not track.artwork_path:
+        parts.append("?")
+    return " ".join(parts)
 
 
 class StarRatingDelegate(QtWidgets.QStyledItemDelegate):
