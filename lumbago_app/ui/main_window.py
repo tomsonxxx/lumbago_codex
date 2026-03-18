@@ -45,6 +45,7 @@ from lumbago_app.data.repository import (
     upsert_tracks,
 )
 from lumbago_app.ui.ai_tagger_dialog import AiTaggerDialog
+from lumbago_app.ui.inter_tager_dialog import InterTagerDialog
 from lumbago_app.ui.bulk_edit_dialog import BulkEditDialog
 from lumbago_app.ui.dashboard_view import DashboardView
 from lumbago_app.ui.change_history_dialog import ChangeHistoryDialog
@@ -2059,6 +2060,18 @@ class MainWindow(QtWidgets.QMainWindow):
         if dialog.exec():
             self._load_tracks()
 
+    def _run_inter_tager(self):
+        """InterTager — pełna analiza, wyszukiwanie i tagowanie jednym kliknięciem."""
+        tracks = self._selected_tracks()
+        if not tracks:
+            tracks = list(getattr(self, "_all_tracks", []))
+        if not tracks:
+            self._show_message("Zaznacz co najmniej jeden utwór lub załaduj bibliotekę.")
+            return
+        dialog = InterTagerDialog(tracks, self)
+        dialog.tags_applied.connect(self._load_tracks)
+        dialog.exec()
+
     def _apply_local_metadata_selected(self):
         tracks = self._selected_tracks()
         if not tracks:
@@ -2410,6 +2423,7 @@ class MainWindow(QtWidgets.QMainWindow):
         tools.addAction("Zeruj bibliotekę", self._reset_library)
         tools.addAction("AutoTagowanie (wyszukiwanie)", self._run_auto_tagger)
         tools.addAction("AutoTagowanie (API)", self._run_auto_tagger_cloud)
+        tools.addAction("InterTager — pełne tagowanie AI", self._run_inter_tager)
         tools.addAction("Analiza loudness (LUFS)", self._run_loudness_analysis)
         tools.addAction("Normalizuj do -14 LUFS (nowy plik)", self._run_loudness_normalize)
         tools.addAction("Auto‑cue (intro/outro)", self._auto_cue_selected)
