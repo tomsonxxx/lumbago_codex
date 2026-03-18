@@ -1,6 +1,7 @@
 
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { Analytics } from '@vercel/analytics/react';
 
 // Components
 import Footer from './components/Footer';
@@ -463,6 +464,7 @@ const App: React.FC = () => {
             {modalState.type === 'post-download' && <PostDownloadModal isOpen={true} onKeep={() => setModalState({ type: 'none' })} onRemove={handlePostDownloadRemove} count={modalState.count} />}
             {modalState.type === 'zoom-cover' && <AlbumCoverModal isOpen={true} onClose={() => setModalState({ type: 'none' })} imageUrl={modalState.imageUrl} />}
             {modalState.type === 'preview-changes' && <PreviewChangesModal isOpen={true} onCancel={() => setModalState({ type: 'none' })} onConfirm={modalState.onConfirm} title={modalState.title} previews={modalState.previews}>{modalState.confirmationText}</PreviewChangesModal>}
+            <Analytics />
         </div>
     );
 };
