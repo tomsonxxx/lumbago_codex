@@ -375,7 +375,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Strona 6: AI Tagger
         self._ai_tagger_page = AiTaggerPage()
-        self._ai_tagger_page.tags_applied.connect(self._refresh_table)
+        self._ai_tagger_page.tags_applied.connect(self._load_tracks)
         self._page_stack.addWidget(self._ai_tagger_page)
 
         # Strona 7: Konwerter XML
