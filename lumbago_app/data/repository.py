@@ -107,8 +107,11 @@ def upsert_tracks(tracks: Iterable[Track]) -> None:
                 existing.album = track.album
                 existing.year = track.year
                 existing.genre = track.genre
-                existing.bpm = track.bpm
-                existing.key = track.key
+                # Nie nadpisuj BPM/key/energy/mood wartością None — zachowaj dane z AI tagger lub ręcznej edycji
+                if track.bpm is not None:
+                    existing.bpm = track.bpm
+                if track.key is not None:
+                    existing.key = track.key
                 existing.loudness_lufs = track.loudness_lufs
                 existing.duration = track.duration
                 existing.file_size = track.file_size
@@ -117,8 +120,10 @@ def upsert_tracks(tracks: Iterable[Track]) -> None:
                 existing.format = track.format
                 existing.bitrate = track.bitrate
                 existing.sample_rate = track.sample_rate
-                existing.energy = track.energy
-                existing.mood = track.mood
+                if track.energy is not None:
+                    existing.energy = track.energy
+                if track.mood is not None:
+                    existing.mood = track.mood
                 existing.cue_in_ms = track.cue_in_ms
                 existing.cue_out_ms = track.cue_out_ms
                 existing.artwork_path = track.artwork_path

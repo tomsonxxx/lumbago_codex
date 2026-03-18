@@ -68,6 +68,32 @@ def extract_metadata(path: Path) -> Track:
         or tag_value("TYER")
     )
     track.genre = tag_value("TCON") or tag_value("genre")
+
+    # BPM — ID3: TBPM, Vorbis/FLAC/M4A: bpm
+    bpm_raw = tag_value("TBPM") or tag_value("bpm")
+    if bpm_raw:
+        try:
+            track.bpm = float(str(bpm_raw).split()[0])
+        except (ValueError, TypeError):
+            pass
+
+    # Key — ID3: TKEY, Vorbis: initialkey / key
+    track.key = tag_value("TKEY") or tag_value("initialkey") or tag_value("key")
+
+    # Energy i Mood — niestandardowe TXXX frames (Rekordbox, Serato, itp.)
+    for tag_key in list(tags.keys()):
+        tag_lower = str(tag_key).lower()
+        if "energy" in tag_lower and track.energy is None:
+            val = tag_value(str(tag_key))
+            if val:
+                try:
+                    track.energy = max(0.0, min(1.0, float(val)))
+                except (ValueError, TypeError):
+                    pass
+        elif "mood" in tag_lower and not track.mood:
+            track.mood = tag_value(str(tag_key))
+
+
     apply_local_metadata(track, path)
     return track
 
