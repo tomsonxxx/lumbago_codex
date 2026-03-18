@@ -17,7 +17,7 @@ from lumbago_app.core.audio import (
 )
 import shutil
 from lumbago_app.core.analysis_cache import save_analysis_cache
-from lumbago_app.core.backup import perform_backup
+from lumbago_app.core.backup import perform_backup, perform_pre_operation_backup
 from lumbago_app.core.config import cache_dir, load_settings
 from lumbago_app.core.models import Track
 from lumbago_app.core.services import heuristic_analysis
@@ -1551,6 +1551,7 @@ class MainWindow(QtWidgets.QMainWindow):
         )
         if confirm != QtWidgets.QMessageBox.StandardButton.Yes:
             return
+        perform_pre_operation_backup()
         reset_library()
         self._load_tracks()
         self._load_playlists()
@@ -2455,6 +2456,7 @@ class MainWindow(QtWidgets.QMainWindow):
         elif action == delete_action and item:
             playlist = item.data(0, QtCore.Qt.ItemDataRole.UserRole)
             if playlist and playlist.playlist_id:
+                perform_pre_operation_backup()
                 delete_playlist(playlist.playlist_id)
                 self._load_playlists()
                 self._load_tracks()

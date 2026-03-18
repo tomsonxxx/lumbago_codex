@@ -32,7 +32,6 @@ class AiTaggerDialog(QtWidgets.QDialog):
         self._force_cloud = force_cloud
         self._results: dict[str, AnalysisResult] = {}
         self._build_ui()
-        self._analyze()
 
     def _build_ui(self):
         layout = QtWidgets.QVBoxLayout(self)
@@ -108,6 +107,9 @@ class AiTaggerDialog(QtWidgets.QDialog):
         layout.addLayout(options)
 
         row = QtWidgets.QHBoxLayout()
+        self.analyze_btn = QtWidgets.QPushButton("Analizuj")
+        self.analyze_btn.setToolTip("Uruchom analizę AI dla zaznaczonych utworów")
+        self.analyze_btn.clicked.connect(self._analyze)
         self.accept_all_btn = QtWidgets.QPushButton("Akceptuj wszystko")
         self.accept_all_btn.setToolTip("Ustaw akcję Akceptuj dla wszystkich")
         self.accept_all_btn.clicked.connect(lambda: self._set_all_actions("Akceptuj"))
@@ -120,6 +122,7 @@ class AiTaggerDialog(QtWidgets.QDialog):
         self.cancel_btn = QtWidgets.QPushButton("Anuluj")
         self.cancel_btn.setToolTip("Zamknij bez zapisywania")
         self.cancel_btn.clicked.connect(self.reject)
+        row.addWidget(self.analyze_btn)
         row.addStretch(1)
         row.addWidget(self.accept_all_btn)
         row.addWidget(self.reject_all_btn)
