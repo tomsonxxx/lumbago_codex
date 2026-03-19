@@ -1,0 +1,31 @@
+# Secrets / local config
+.env
+set_api_keys.py
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+*.egg-info/
+build/
+dist/
+output/
+tmp/
+
+# Test / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local app data
+.lumbago_data/
+
+# Tooling / generated worktrees
+.claude/
+.codex/
+
+# IDE
+.vscode/
+.idea/
+*.swp
