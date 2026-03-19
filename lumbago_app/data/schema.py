@@ -193,7 +193,6 @@ class AnalysisJobOrm(Base):
 
 class AudioFeaturesOrm(Base):
     __tablename__ = "audio_features"
-    __table_args__ = (Index("ix_audio_features_track", "track_id"),)
 
     id = Column(Integer, ForeignKey("tracks.id", ondelete="CASCADE"), primary_key=True)
     mfcc_json = Column(Text, nullable=False, default="[]")

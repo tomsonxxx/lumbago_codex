@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import queue
+from dataclasses import dataclass, field
 from typing import Any
 
 import requests
@@ -237,10 +239,6 @@ def _to_str(value: Any) -> str | None:
 # ---------------------------------------------------------------------------
 # BatchAiQueueWorker
 # ---------------------------------------------------------------------------
-
-from __future__ import annotations
-import queue
-from dataclasses import dataclass, field
 
 try:
     from PyQt6 import QtCore
