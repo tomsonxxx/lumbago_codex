@@ -1,0 +1,5 @@
+{
+  "name": "Copy of Inteligentny Tagger ID3",
+  "description": "Aplikacja internetowa, która wykorzystuje AI do automatycznego wyszukiwania i uzupełniania brakujących tagów ID3 w plikach audio. Użytkownicy mogą przesyłać utwory, a aplikacja analizuje ich nazwy, aby znaleźć informacje takie jak wykonawca, album, rok i gatunek, a następnie umożliwia pobranie zaktualizowanych plików.",
+  "requestFramePermissions": []
+}

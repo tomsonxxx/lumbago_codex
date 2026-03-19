@@ -1,0 +1,47 @@
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body, #root { height: 100%; }
+
+/* Custom Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { @apply bg-slate-100 dark:bg-slate-950; }
+::-webkit-scrollbar-thumb { @apply bg-slate-300 dark:bg-slate-700 rounded-full hover:bg-slate-400 dark:hover:bg-slate-600 transition-colors; }
+* { scrollbar-width: thin; scrollbar-color: theme('colors.slate.700') theme('colors.slate.950'); }
+
+/* Glassmorphism */
+.glass { @apply bg-white/70 dark:bg-slate-900/70 backdrop-blur-md border border-white/20 dark:border-white/5; }
+.glass-panel { @apply bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border border-white/20 dark:border-slate-700/50 shadow-2xl; }
+
+/* Effects */
+.neon-text-indigo { text-shadow: 0 0 10px rgba(99, 102, 241, 0.5); }
+.neon-border-indigo { box-shadow: 0 0 15px rgba(99, 102, 241, 0.15); }
+
+/* Animations */
+@keyframes fade-in { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+.animate-fade-in { animation: fade-in 0.3s ease-out forwards; }
+
+@keyframes fade-out { from { opacity: 1; max-height: 100px; transform: scaleY(1); } to { opacity: 0; max-height: 0; padding: 0; margin: 0; transform: scaleY(0); } }
+.animate-fade-out { animation: fade-out 0.3s ease-out forwards; transform-origin: top; overflow: hidden; }
+
+@keyframes fade-in-scale { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+.animate-fade-in-scale { animation: fade-in-scale 0.2s ease-out forwards; }
+
+@keyframes slide-in-right { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+.animate-slide-in-right { animation: slide-in-right 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+
+@keyframes fade-in-up { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+.animate-fade-in-up { animation: fade-in-up 0.1s ease-out forwards; }
+
+.btn-spinner {
+  display: inline-block; width: 1.25em; height: 1.25em;
+  border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%;
+  animation: spin 0.75s linear infinite; margin-right: 0.5rem;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.custom-scrollbar {
+    scrollbar-gutter: stable;
+}

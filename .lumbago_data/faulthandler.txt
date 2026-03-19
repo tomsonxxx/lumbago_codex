@@ -1,0 +1,7 @@
+Windows fatal exception: code 0x8001010d
+
+Current thread 0x00004788 (most recent call first):
+  File "C:\Users\tomso\Desktop\Nowy folder\lumbago_app\main.py", line 35 in main
+  File "C:\Users\tomso\Desktop\Nowy folder\lumbago_app\main.py", line 92 in <module>
+  File "D:\Program Files\Python310\lib\runpy.py", line 86 in _run_code
+  File "D:\Program Files\Python310\lib\runpy.py", line 196 in _run_module_as_main

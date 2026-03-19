@@ -1,0 +1,145 @@
+2026-03-14 21:23:59 MainWindow: start init
+2026-03-14 21:23:59 MainWindow: init_db ok
+2026-03-14 21:24:00 MainWindow: build_ui ok
+2026-03-14 21:24:00 MainWindow: load_tracks ok
+2026-03-14 21:24:00 MainWindow: load_settings ok
+2026-03-14 21:24:41 MainWindow: start init
+2026-03-14 21:24:41 MainWindow: init_db ok
+2026-03-14 21:24:41 MainWindow: build_ui ok
+2026-03-14 21:24:41 MainWindow: load_tracks ok
+2026-03-14 21:24:41 MainWindow: load_settings ok
+2026-03-14 21:24:41 MainWindow: showEvent
+2026-03-14 21:26:47 MainWindow: start init
+2026-03-14 21:26:47 MainWindow: init_db ok
+2026-03-14 21:26:48 MainWindow: build_ui ok
+2026-03-14 21:26:48 MainWindow: load_tracks ok
+2026-03-14 21:26:48 MainWindow: load_settings ok
+2026-03-14 21:26:48 MainWindow: showEvent
+2026-03-14 21:27:28 MainWindow: start init
+2026-03-14 21:27:28 MainWindow: init_db ok
+2026-03-14 21:27:28 MainWindow: build_ui ok
+2026-03-14 21:27:28 MainWindow: load_tracks ok
+2026-03-14 21:27:28 MainWindow: load_settings ok
+2026-03-14 21:27:28 MainWindow: showEvent
+2026-03-14 21:27:53 MainWindow: start init
+2026-03-14 21:27:53 MainWindow: init_db ok
+2026-03-14 21:27:53 MainWindow: build_ui ok
+2026-03-14 21:27:53 MainWindow: load_tracks ok
+2026-03-14 21:27:53 MainWindow: load_settings ok
+2026-03-14 21:27:53 MainWindow: showEvent
+2026-03-14 21:28:47 MainWindow: start init
+2026-03-14 21:28:47 MainWindow: init_db ok
+2026-03-14 21:28:47 Player init skipped (LUMBAGO_DISABLE_MULTIMEDIA=1)
+2026-03-14 21:28:47 MainWindow: build_ui ok
+2026-03-14 21:28:47 MainWindow: load_tracks ok
+2026-03-14 21:28:47 MainWindow: load_settings ok
+2026-03-14 21:28:48 MainWindow: showEvent
+2026-03-14 21:29:09 MainWindow: start init
+2026-03-14 21:29:09 MainWindow: init_db ok
+2026-03-14 21:29:10 Player init skipped (LUMBAGO_DISABLE_MULTIMEDIA=1)
+2026-03-14 21:29:10 MainWindow: build_ui ok
+2026-03-14 21:29:10 MainWindow: load_tracks ok
+2026-03-14 21:29:10 MainWindow: load_settings ok
+2026-03-14 21:29:10 MainWindow: showEvent
+2026-03-14 21:29:42 MainWindow: start init
+2026-03-14 21:29:42 MainWindow: init_db ok
+2026-03-14 21:29:42 Player init skipped (LUMBAGO_DISABLE_MULTIMEDIA=1)
+2026-03-14 21:29:42 MainWindow: build_ui ok
+2026-03-14 21:29:42 MainWindow: load_tracks ok
+2026-03-14 21:29:42 MainWindow: load_settings ok
+2026-03-14 21:29:42 MainWindow: showEvent
+2026-03-14 21:30:24 MainWindow: start init
+2026-03-14 21:30:24 MainWindow: init_db ok
+2026-03-14 21:30:24 Player init skipped (LUMBAGO_DISABLE_MULTIMEDIA=1)
+2026-03-14 21:30:24 MainWindow: build_ui ok
+2026-03-14 21:30:24 MainWindow: load_tracks ok
+2026-03-14 21:30:24 MainWindow: load_settings ok
+2026-03-14 21:30:24 MainWindow: showEvent
+2026-03-14 21:35:56 MainWindow: start init
+2026-03-14 21:35:56 MainWindow: init_db ok
+2026-03-14 21:35:56 Player init skipped (LUMBAGO_DISABLE_MULTIMEDIA=1)
+2026-03-14 21:35:57 MainWindow: build_ui ok
+2026-03-14 21:35:57 MainWindow: load_tracks ok
+2026-03-14 21:35:57 MainWindow: load_settings ok
+2026-03-14 21:35:57 MainWindow: showEvent
+2026-03-14 21:36:41 MainWindow: closeEvent
+2026-03-15 02:45:13 MainWindow: start init
+2026-03-15 02:45:14 MainWindow: init_db ok
+2026-03-15 02:45:14 Player init skipped (LUMBAGO_DISABLE_MULTIMEDIA=1)
+2026-03-15 02:45:14 MainWindow: build_ui ok
+2026-03-15 02:45:14 MainWindow: load_tracks ok
+2026-03-15 02:45:14 MainWindow: load_settings ok
+2026-03-15 02:45:16 MainWindow: showEvent
+2026-03-15 02:58:08 MainWindow: start init
+2026-03-15 02:58:08 MainWindow: init_db ok
+2026-03-15 02:58:09 Player init skipped (LUMBAGO_DISABLE_MULTIMEDIA=1)
+2026-03-15 02:58:09 MainWindow: build_ui ok
+2026-03-15 02:58:09 MainWindow: load_tracks ok
+2026-03-15 02:58:09 MainWindow: load_settings ok
+2026-03-15 02:58:09 MainWindow: showEvent
+2026-03-15 03:10:33 MainWindow: start init
+2026-03-15 03:10:33 MainWindow: init_db ok
+2026-03-15 03:10:33 Player init skipped (LUMBAGO_DISABLE_MULTIMEDIA=1)
+2026-03-15 03:10:33 MainWindow: build_ui ok
+2026-03-15 03:10:33 MainWindow: load_tracks ok
+2026-03-15 03:10:33 MainWindow: load_settings ok
+2026-03-15 03:10:33 MainWindow: showEvent
+2026-03-15 03:12:04 MainWindow: start init
+2026-03-15 03:12:04 MainWindow: init_db ok
+2026-03-15 03:12:04 Player init skipped (LUMBAGO_DISABLE_MULTIMEDIA=1)
+2026-03-15 03:12:04 MainWindow: build_ui ok
+2026-03-15 03:12:04 MainWindow: load_tracks ok
+2026-03-15 03:12:04 MainWindow: load_settings ok
+2026-03-15 03:12:05 MainWindow: showEvent
+2026-03-15 03:24:50 MainWindow: showEvent
+2026-03-16 22:42:10 MainWindow: start init
+2026-03-16 22:42:10 MainWindow: init_db ok
+2026-03-16 22:42:10 Player init skipped (LUMBAGO_DISABLE_MULTIMEDIA=1)
+2026-03-16 22:42:11 MainWindow: build_ui ok
+2026-03-16 22:42:11 MainWindow: load_tracks ok
+2026-03-16 22:42:11 MainWindow: load_settings ok
+2026-03-16 22:42:11 MainWindow: showEvent
+2026-03-16 22:52:02 MainWindow: start init
+2026-03-16 22:52:02 MainWindow: init_db ok
+2026-03-16 22:52:02 Player init skipped (LUMBAGO_DISABLE_MULTIMEDIA=1)
+2026-03-16 22:52:02 MainWindow: build_ui ok
+2026-03-16 22:52:02 MainWindow: load_tracks ok
+2026-03-16 22:52:02 MainWindow: load_settings ok
+2026-03-16 22:52:02 MainWindow: showEvent
+2026-03-16 22:59:27 MainWindow: start init
+2026-03-16 22:59:27 MainWindow: init_db ok
+2026-03-16 23:00:02 MainWindow: start init
+2026-03-16 23:00:02 MainWindow: init_db ok
+2026-03-16 23:00:34 MainWindow: start init
+2026-03-16 23:00:34 MainWindow: init_db ok
+2026-03-16 23:00:34 Player init skipped (LUMBAGO_DISABLE_MULTIMEDIA=1)
+2026-03-16 23:00:34 MainWindow: build_ui ok
+2026-03-16 23:00:34 MainWindow: load_tracks ok
+2026-03-16 23:00:34 MainWindow: load_settings ok
+2026-03-16 23:00:35 MainWindow: showEvent
+2026-03-16 23:03:48 MainWindow: showEvent
+2026-03-16 23:03:49 MainWindow: showEvent
+2026-03-16 23:03:51 MainWindow: showEvent
+2026-03-16 23:03:52 MainWindow: showEvent
+2026-03-16 23:07:49 MainWindow: start init
+2026-03-16 23:07:49 MainWindow: init_db ok
+2026-03-16 23:07:49 Player init skipped (LUMBAGO_DISABLE_MULTIMEDIA=1)
+2026-03-16 23:07:49 MainWindow: build_ui ok
+2026-03-16 23:07:49 MainWindow: load_tracks ok
+2026-03-16 23:07:49 MainWindow: load_settings ok
+2026-03-16 23:07:50 MainWindow: showEvent
+2026-03-16 23:08:40 MainWindow: showEvent
+2026-03-16 23:11:58 MainWindow: start init
+2026-03-16 23:11:58 MainWindow: init_db ok
+2026-03-16 23:11:59 Player init skipped (LUMBAGO_DISABLE_MULTIMEDIA=1)
+2026-03-16 23:11:59 MainWindow: build_ui ok
+2026-03-16 23:11:59 MainWindow: load_tracks ok
+2026-03-16 23:11:59 MainWindow: load_settings ok
+2026-03-16 23:11:59 MainWindow: showEvent
+2026-03-16 23:35:24 MainWindow: start init
+2026-03-16 23:35:25 MainWindow: init_db ok
+2026-03-16 23:35:26 Player init skipped (LUMBAGO_DISABLE_MULTIMEDIA=1)
+2026-03-16 23:35:26 MainWindow: build_ui ok
+2026-03-16 23:35:26 MainWindow: load_tracks ok
+2026-03-16 23:35:26 MainWindow: load_settings ok
+2026-03-16 23:35:26 MainWindow: showEvent
