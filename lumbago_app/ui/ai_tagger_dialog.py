@@ -6,7 +6,7 @@ from lumbago_app.core.config import load_settings
 from lumbago_app.core.models import AnalysisResult, Track
 import re
 from lumbago_app.data.repository import replace_track_tags, update_tracks
-from lumbago_app.services.ai_tagger import CloudAiTagger, LocalAiTagger
+from lumbago_app.services.ai_tagger import BatchAiQueueWorker, CloudAiTagger, LocalAiTagger
 from lumbago_app.services.metadata_enricher import AutoMetadataFiller
 from lumbago_app.ui.widgets import apply_dialog_fade, dialog_icon_pixmap
 
@@ -106,6 +106,59 @@ class AiTaggerDialog(QtWidgets.QDialog):
         options.addWidget(self.analyze_btn)
         layout.addLayout(options)
 
+        # --- Batch queue panel ---
+        queue_frame = QtWidgets.QFrame()
+        queue_frame.setObjectName("DialogCard")
+        queue_layout = QtWidgets.QVBoxLayout(queue_frame)
+        queue_layout.setContentsMargins(10, 8, 10, 8)
+        queue_layout.setSpacing(6)
+
+        queue_hdr = QtWidgets.QHBoxLayout()
+        queue_lbl = QtWidgets.QLabel("Kolejka wsadowa (BatchAI)")
+        queue_lbl.setObjectName("SectionTitle")
+        self._batch_toggle_btn = QtWidgets.QPushButton("▼ Rozwiń")
+        self._batch_toggle_btn.setFixedWidth(90)
+        queue_hdr.addWidget(queue_lbl)
+        queue_hdr.addStretch()
+        queue_hdr.addWidget(self._batch_toggle_btn)
+        queue_layout.addLayout(queue_hdr)
+
+        self._batch_panel = QtWidgets.QWidget()
+        bp = QtWidgets.QVBoxLayout(self._batch_panel)
+        bp.setContentsMargins(0, 0, 0, 0)
+        bp.setSpacing(4)
+
+        self._batch_progress = QtWidgets.QProgressBar()
+        self._batch_progress.setRange(0, max(1, len(self._tracks)))
+        self._batch_progress.setValue(0)
+        self._batch_progress.setFixedHeight(14)
+        bp.addWidget(self._batch_progress)
+
+        self._batch_log = QtWidgets.QPlainTextEdit()
+        self._batch_log.setReadOnly(True)
+        self._batch_log.setMaximumHeight(90)
+        self._batch_log.setPlaceholderText("Log kolejki wsadowej…")
+        bp.addWidget(self._batch_log)
+
+        batch_row = QtWidgets.QHBoxLayout()
+        self._batch_start_btn = QtWidgets.QPushButton("Uruchom kolejkę")
+        self._batch_start_btn.setToolTip("Przetwórz wszystkie załadowane ścieżki przez BatchAiQueueWorker")
+        self._batch_start_btn.clicked.connect(self._run_batch_queue)
+        self._batch_stop_btn = QtWidgets.QPushButton("Zatrzymaj")
+        self._batch_stop_btn.setEnabled(False)
+        batch_row.addWidget(self._batch_start_btn)
+        batch_row.addWidget(self._batch_stop_btn)
+        batch_row.addStretch()
+        bp.addLayout(batch_row)
+
+        self._batch_panel.setVisible(False)
+        queue_layout.addWidget(self._batch_panel)
+        self._batch_toggle_btn.clicked.connect(self._toggle_batch_panel)
+        layout.addWidget(queue_frame)
+        self._batch_worker: BatchAiQueueWorker | None = None
+        self._batch_done_count = 0
+        # -------------------------
+
         row = QtWidgets.QHBoxLayout()
         self.accept_all_btn = QtWidgets.QPushButton("Akceptuj wszystko")
         self.accept_all_btn.setToolTip("Ustaw akcję Akceptuj dla wszystkich")
@@ -132,6 +185,65 @@ class AiTaggerDialog(QtWidgets.QDialog):
         self.accept_all_btn.setEnabled(enabled)
         self.reject_all_btn.setEnabled(enabled)
         self.apply_all.setEnabled(enabled)
+
+    def _toggle_batch_panel(self) -> None:
+        visible = not self._batch_panel.isVisible()
+        self._batch_panel.setVisible(visible)
+        self._batch_toggle_btn.setText("▲ Zwiń" if visible else "▼ Rozwiń")
+
+    def _run_batch_queue(self) -> None:
+        if not self._tracks:
+            return
+        settings = load_settings()
+        provider = settings.cloud_ai_provider or "local"
+        if provider == "local":
+            tagger = LocalAiTagger()
+        else:
+            key = (
+                settings.cloud_ai_api_key
+                or settings.gemini_api_key
+                or settings.openai_api_key
+                or settings.grok_api_key
+                or settings.deepseek_api_key
+            )
+            base_url, model = _provider_settings(provider, settings)
+            if not key:
+                self._batch_log.appendPlainText("Brak klucza API — skonfiguruj w Ustawieniach.")
+                return
+            tagger = CloudAiTagger(provider, key, base_url=base_url, model=model)
+
+        self._batch_worker = BatchAiQueueWorker(self)
+        for idx, track in enumerate(self._tracks):
+            self._batch_worker.enqueue(track.path, priority=idx)
+
+        self._batch_stop_btn.setEnabled(True)
+        self._batch_start_btn.setEnabled(False)
+        self._batch_done_count = 0
+        self._batch_progress.setRange(0, len(self._tracks))
+        self._batch_progress.setValue(0)
+        self._batch_log.clear()
+
+        self._batch_worker.track_progress.connect(self._on_batch_field)
+        self._batch_worker.track_done.connect(self._on_batch_track_done)
+        self._batch_worker.batch_done.connect(self._on_batch_finished)
+        self._batch_stop_btn.clicked.connect(self._batch_worker.stop)
+
+        self._batch_log.appendPlainText(f"Kolejka: {len(self._tracks)} utworów | provider: {provider}")
+        self._batch_worker.process(tagger)
+
+    def _on_batch_field(self, path: str, field: str, value: str, confidence: float) -> None:
+        short = path.split("\\")[-1] if "\\" in path else path.split("/")[-1]
+        bar = "█" * int(confidence * 10)
+        self._batch_log.appendPlainText(f"  {short} | {field}: {value} [{bar} {confidence:.0%}]")
+
+    def _on_batch_track_done(self, path: str) -> None:
+        self._batch_done_count += 1
+        self._batch_progress.setValue(self._batch_done_count)
+
+    def _on_batch_finished(self) -> None:
+        self._batch_stop_btn.setEnabled(False)
+        self._batch_start_btn.setEnabled(True)
+        self._batch_log.appendPlainText(f"Gotowe — przetworzono {self._batch_done_count} utworów.")
 
     def _analyze(self):
         self.table.setRowCount(0)

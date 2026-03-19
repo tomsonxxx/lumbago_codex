@@ -232,3 +232,95 @@ def _to_str(value: Any) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+# ---------------------------------------------------------------------------
+# BatchAiQueueWorker
+# ---------------------------------------------------------------------------
+
+from __future__ import annotations
+import queue
+from dataclasses import dataclass, field
+
+try:
+    from PyQt6 import QtCore
+
+    _QT_AVAILABLE = True
+except ImportError:
+    _QT_AVAILABLE = False
+
+
+@dataclass(order=True)
+class _QueueItem:
+    priority: int
+    track_path: str = field(compare=False)
+
+
+@dataclass
+class AiTagResult:
+    track_path: str
+    field: str
+    value: str | None
+    confidence: float
+
+
+if _QT_AVAILABLE:
+
+    class BatchAiQueueWorker(QtCore.QObject):
+        """Queue-based AI tagger that processes tracks in priority order.
+
+        Confidence thresholds: Cloud AI → 0.85, Local AI → 0.60.
+        """
+
+        CONFIDENCE_CLOUD = 0.85
+        CONFIDENCE_LOCAL = 0.60
+
+        track_progress = QtCore.pyqtSignal(str, str, str, float)  # path, field, value, confidence
+        track_done = QtCore.pyqtSignal(str)  # path
+        batch_done = QtCore.pyqtSignal()
+
+        def __init__(self, parent=None):
+            super().__init__(parent)
+            self._queue: queue.PriorityQueue[_QueueItem] = queue.PriorityQueue()
+            self._running = False
+
+        def enqueue(self, track_path: str, priority: int = 5) -> None:
+            self._queue.put(_QueueItem(priority=priority, track_path=track_path))
+
+        def stop(self) -> None:
+            self._running = False
+
+        def process(self, tagger, repository=None) -> None:  # type: ignore[override]
+            self._running = True
+            is_cloud = isinstance(tagger, CloudAiTagger)
+            confidence = self.CONFIDENCE_CLOUD if is_cloud else self.CONFIDENCE_LOCAL
+            while self._running:
+                try:
+                    item = self._queue.get_nowait()
+                except queue.Empty:
+                    break
+                path = item.track_path
+                try:
+                    from lumbago_app.data.repository import list_tracks
+                    tracks = [t for t in list_tracks() if t.path == path]
+                    if not tracks:
+                        self.track_done.emit(path)
+                        continue
+                    track = tracks[0]
+                    result = tagger.analyze(track)
+                    fields: dict[str, Any] = {
+                        "bpm": str(result.bpm) if result.bpm else None,
+                        "key": result.key,
+                        "genre": result.genre,
+                        "mood": result.mood,
+                        "energy": str(result.energy) if result.energy is not None else None,
+                    }
+                    for fname, fval in fields.items():
+                        if fval:
+                            self.track_progress.emit(path, fname, fval, confidence)
+                except Exception:
+                    pass
+                self.track_done.emit(path)
+                QtCore.QCoreApplication.processEvents()
+            self.batch_done.emit()
+            self._running = False

@@ -58,7 +58,7 @@ class DuplicatesDialog(QtWidgets.QDialog):
         top = QtWidgets.QHBoxLayout()
         top.addWidget(QtWidgets.QLabel("Metoda wykrywania:"))
         self.method = QtWidgets.QComboBox()
-        self.method.addItems(["Hash", "Tagi", "Fingerprint", "Etapowo"])
+        self.method.addItems(["Hash", "Tagi", "Fingerprint", "Etapowo", "Fuzzy"])
         self.method.setToolTip("Wybierz metodę wykrywania duplikatów")
         top.addWidget(self.method)
         self.run_btn = QtWidgets.QPushButton("Szukaj")
@@ -118,6 +118,22 @@ class DuplicatesDialog(QtWidgets.QDialog):
     def _run_scan(self):
         self.tree.clear()
         method = self.method.currentText()
+
+        if method == "Fuzzy":
+            from lumbago_app.services.fuzzy_dedup import FuzzyDedupService
+            progress = QtWidgets.QProgressDialog("Skanowanie duplikatów (fuzzy)...", None, 0, 1, self)
+            progress.setWindowTitle("Duplikaty")
+            progress.setMinimumDuration(0)
+            progress.setValue(0)
+            QtWidgets.QApplication.processEvents()
+            svc = FuzzyDedupService()
+            groups = svc.find_fuzzy_duplicates(self._tracks)
+            result = [g.tracks for g in groups if len(g.tracks) > 1]
+            progress.setValue(1)
+            progress.close()
+            self._populate_tree_flat(result)
+            return
+
         progress = QtWidgets.QProgressDialog("Skanowanie duplikatów...", "Anuluj", 0, len(self._tracks), self)
         progress.setWindowTitle("Duplikaty")
         progress.setMinimumDuration(0)
@@ -173,6 +189,34 @@ class DuplicatesDialog(QtWidgets.QDialog):
                 continue
             self._groups.append(tracks)
             parent = QtWidgets.QTreeWidgetItem([f"Grupa {group_idx} (sim {group.similarity:.2f})"])
+            parent.setFirstColumnSpanned(True)
+            self.tree.addTopLevelItem(parent)
+            for track in tracks:
+                size = track.file_size or _safe_size(track.path)
+                item = QtWidgets.QTreeWidgetItem(
+                    [
+                        "",
+                        track.title or "",
+                        track.artist or "",
+                        track.path,
+                        f"{size or ''}",
+                        f"{track.bpm or ''}",
+                        track.key or "",
+                    ]
+                )
+                item.setCheckState(0, QtCore.Qt.CheckState.Unchecked)
+                item.setData(0, QtCore.Qt.ItemDataRole.UserRole, track.path)
+                parent.addChild(item)
+            parent.setExpanded(True)
+
+    def _populate_tree_flat(self, groups: list[list]):
+        """Populate tree from a flat list of track groups (used by Fuzzy mode)."""
+        self._groups = []
+        for group_idx, tracks in enumerate(groups, 1):
+            if len(tracks) < 2:
+                continue
+            self._groups.append(tracks)
+            parent = QtWidgets.QTreeWidgetItem([f"Grupa {group_idx}"])
             parent.setFirstColumnSpanned(True)
             self.tree.addTopLevelItem(parent)
             for track in tracks:

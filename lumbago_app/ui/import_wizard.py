@@ -147,11 +147,13 @@ class ImportWizard(QtWidgets.QDialog):
         self.page_options = self._build_options_page()
         self.page_preview = self._build_preview_page()
         self.page_import = self._build_import_page()
+        self.page_watch = self._build_watch_page()
 
         self.stack.addWidget(self.page_select)
         self.stack.addWidget(self.page_options)
         self.stack.addWidget(self.page_preview)
         self.stack.addWidget(self.page_import)
+        self.stack.addWidget(self.page_watch)
 
         nav = QtWidgets.QHBoxLayout()
         nav.addStretch(1)
@@ -217,6 +219,22 @@ class ImportWizard(QtWidgets.QDialog):
         layout.addWidget(self.scan_progress)
         return page
 
+    def _build_watch_page(self) -> QtWidgets.QWidget:
+        page = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(page)
+        layout.addWidget(QtWidgets.QLabel("Krok 5: Monitorowanie folderu"))
+        self.watch_check = QtWidgets.QCheckBox("Monitoruj ten folder automatycznie")
+        self.watch_check.setChecked(True)
+        layout.addWidget(self.watch_check)
+        self.watch_folder_label = QtWidgets.QLineEdit()
+        self.watch_folder_label.setReadOnly(True)
+        self.watch_folder_label.setPlaceholderText("Folder zostanie ustawiony po imporcie")
+        layout.addWidget(self.watch_folder_label)
+        self.watch_status = QtWidgets.QLabel("")
+        layout.addWidget(self.watch_status)
+        layout.addStretch(1)
+        return page
+
     def _build_import_page(self) -> QtWidgets.QWidget:
         page = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(page)
@@ -265,6 +283,9 @@ class ImportWizard(QtWidgets.QDialog):
             self._start_scan()
         if idx == 2:
             self._start_import()
+        if idx == 4:
+            self._finish_watch()
+            return
         if idx < self.stack.count() - 1:
             self.stack.setCurrentIndex(idx + 1)
         self._update_nav()
@@ -278,9 +299,12 @@ class ImportWizard(QtWidgets.QDialog):
     def _update_nav(self):
         idx = self.stack.currentIndex()
         self.back_btn.setEnabled(idx > 0)
-        if idx == self.stack.count() - 1:
-            self.next_btn.setEnabled(False)
+        last_idx = self.stack.count() - 1
+        if idx == last_idx:
+            self.next_btn.setText("Zakończ")
+            self.next_btn.setEnabled(True)
         else:
+            self.next_btn.setText("Dalej")
             self.next_btn.setEnabled(True)
 
     def _start_scan(self):
@@ -338,6 +362,21 @@ class ImportWizard(QtWidgets.QDialog):
         self.import_status.setText(f"Zaimportowano {len(self._tracks)} utworów.")
         if self.on_complete:
             self.on_complete()
+        self.watch_folder_label.setText(self.folder_input.text().strip())
+        self.stack.setCurrentIndex(4)
+        self._update_nav()
+
+    def _finish_watch(self):
+        if self.watch_check.isChecked():
+            try:
+                parent = self.parent()
+                if parent is not None and hasattr(parent, "_watch_folder_svc"):
+                    folder_text = self.folder_input.text().strip()
+                    if folder_text:
+                        parent._watch_folder_svc.add_folder(Path(folder_text))
+                        self.watch_status.setText("Folder dodany do monitorowania.")
+            except Exception as exc:
+                self.watch_status.setText(f"Błąd monitorowania: {exc}")
         self.accept()
 
     def _save_error_report(self):
