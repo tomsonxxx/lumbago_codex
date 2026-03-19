@@ -1,0 +1,91 @@
+:root {
+  --bg: #0f1720;
+  --panel: #1a2532;
+  --text: #ecf2ff;
+  --muted: #9db0cc;
+  --accent: #29d3ff;
+  --danger: #ff6b6b;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Segoe UI", sans-serif;
+  color: var(--text);
+  background: radial-gradient(circle at 20% 0%, #1b2a3a 0%, var(--bg) 60%);
+}
+
+.layout {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.card {
+  background: rgba(26, 37, 50, 0.9);
+  border: 1px solid #2b3a4f;
+  border-radius: 12px;
+  padding: 14px;
+  margin-bottom: 12px;
+}
+
+.row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.error {
+  color: var(--danger);
+  margin-top: 8px;
+}
+
+button {
+  border: 1px solid #365173;
+  background: #203247;
+  color: var(--text);
+  border-radius: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+input,
+select {
+  background: #122131;
+  color: var(--text);
+  border: 1px solid #2b3a4f;
+  border-radius: 8px;
+  padding: 8px;
+}
+
+.modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: grid;
+  place-items: center;
+  padding: 16px;
+}
+
+.modal .card {
+  width: min(780px, 95vw);
+}
+
+.group {
+  border-top: 1px solid #314357;
+  padding-top: 8px;
+  margin-top: 8px;
+}
+

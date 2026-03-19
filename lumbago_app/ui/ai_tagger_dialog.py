@@ -31,8 +31,8 @@ class AiTaggerDialog(QtWidgets.QDialog):
         self._allow_auto_fetch = allow_auto_fetch
         self._force_cloud = force_cloud
         self._results: dict[str, AnalysisResult] = {}
+        self._worker = None
         self._build_ui()
-        self._analyze()
 
     def _build_ui(self):
         layout = QtWidgets.QVBoxLayout(self)
@@ -100,6 +100,10 @@ class AiTaggerDialog(QtWidgets.QDialog):
             self.auto_fetch.setEnabled(False)
             self.auto_method.setEnabled(False)
             self.auto_method.setVisible(False)
+        self.analyze_btn = QtWidgets.QPushButton("Analizuj")
+        self.analyze_btn.setToolTip("Uruchom analizę AI dla zaznaczonych utworów")
+        self.analyze_btn.clicked.connect(self._analyze)
+        options.addWidget(self.analyze_btn)
         layout.addLayout(options)
 
         row = QtWidgets.QHBoxLayout()
@@ -121,9 +125,19 @@ class AiTaggerDialog(QtWidgets.QDialog):
         row.addWidget(self.apply_all)
         row.addWidget(self.cancel_btn)
         layout.addLayout(row)
+        self._set_actions_enabled(False)
+        self.status_label.setText("Kliknij Analizuj, aby pobrać propozycje tagów.")
+
+    def _set_actions_enabled(self, enabled: bool) -> None:
+        self.accept_all_btn.setEnabled(enabled)
+        self.reject_all_btn.setEnabled(enabled)
+        self.apply_all.setEnabled(enabled)
 
     def _analyze(self):
         self.table.setRowCount(0)
+        self._results.clear()
+        self._set_actions_enabled(False)
+        self.status_label.setText("Trwa analiza AI...")
         settings = load_settings()
         provider = settings.cloud_ai_provider or "local"
         mode_label = "tryb API" if self._force_cloud else "tryb mieszany"
@@ -200,6 +214,7 @@ class AiTaggerDialog(QtWidgets.QDialog):
                 self.table.setCellWidget(row, 9, action)
                 if result.description and "Cloud AI" in result.description:
                     error_messages.append(result.description)
+            self._set_actions_enabled(bool(results))
             if error_messages:
                 message = error_messages[0]
                 self.status_label.setText(f"Problem z API: {message}")
@@ -248,13 +263,13 @@ class AiTaggerDialog(QtWidgets.QDialog):
         provider = settings.cloud_ai_provider or "local"
         source = f"ai:{provider}"
         for row_idx, track in enumerate(self._tracks):
-            action = self.table.cellWidget(row_idx, 6)
+            action = self.table.cellWidget(row_idx, 9)
             if isinstance(action, QtWidgets.QComboBox) and action.currentText() != "Akceptuj":
                 continue
             result = self._results.get(track.path)
             if not result:
                 continue
-            if _below_confidence(result, settings.validation_policy):
+            if _below_confidence(result, settings.validation_policy, provider):
                 continue
             result = _sanitize_ai_result(result, settings.validation_policy)
             track.bpm = result.bpm or track.bpm
@@ -271,11 +286,19 @@ class AiTaggerDialog(QtWidgets.QDialog):
             )
         if accepted_tracks:
             update_tracks(accepted_tracks)
-        self.accept()
+            self.accept()
+            return
+        self.status_label.setText("Brak zmian do zapisania. Sprawdź pewność/politykę walidacji.")
+        QtWidgets.QMessageBox.information(
+            self,
+            "AutoTagowanie AI",
+            "Nie zastosowano zmian. Dla trybu lokalnego ustaw walidację na lenient "
+            "lub użyj dostawcy chmurowego.",
+        )
 
     def _set_all_actions(self, label: str) -> None:
         for row_idx in range(self.table.rowCount()):
-            action = self.table.cellWidget(row_idx, 6)
+            action = self.table.cellWidget(row_idx, 9)
             if isinstance(action, QtWidgets.QComboBox):
                 action.setCurrentText(label)
 
@@ -329,8 +352,10 @@ def _auto_method_label(method: str) -> str:
     return "MusicBrainz (wyszukiwanie)"
 
 
-def _below_confidence(result: AnalysisResult, policy: str | None) -> bool:
+def _below_confidence(result: AnalysisResult, policy: str | None, provider: str | None = None) -> bool:
     if result.confidence is None:
+        return False
+    if (provider or "").lower() == "local":
         return False
     threshold = 0.6
     if policy == "strict":
