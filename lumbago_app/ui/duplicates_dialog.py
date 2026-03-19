@@ -9,6 +9,8 @@ from lumbago_app.ui.widgets import apply_dialog_fade, dialog_icon_pixmap
 
 from lumbago_app.core.models import DuplicateGroup, Track
 from lumbago_app.core.audio import file_hash
+from lumbago_app.core.backup import perform_backup
+from lumbago_app.core.config import app_data_dir
 from lumbago_app.core.services import DuplicateResult, find_duplicates_by_tags
 from lumbago_app.data.repository import (
     delete_tracks_by_paths,
@@ -224,6 +226,7 @@ class DuplicatesDialog(QtWidgets.QDialog):
         paths = self._selected_paths()
         if not paths:
             return
+        perform_backup()
         target_dir = QtWidgets.QFileDialog.getExistingDirectory(self, "Wybierz folder docelowy")
         if not target_dir:
             return
@@ -252,12 +255,23 @@ class DuplicatesDialog(QtWidgets.QDialog):
         )
         if confirm != QtWidgets.QMessageBox.StandardButton.Yes:
             return
+        perform_backup()
+        trash_dir = app_data_dir() / "trash"
+        trash_dir.mkdir(parents=True, exist_ok=True)
+        moved_paths: list[str] = []
         for path in paths:
             try:
-                Path(path).unlink(missing_ok=True)
+                src = Path(path)
+                if not src.exists():
+                    continue
+                target = trash_dir / src.name
+                if target.exists():
+                    target = trash_dir / f"{src.stem}_{int(QtCore.QDateTime.currentSecsSinceEpoch())}{src.suffix}"
+                shutil.move(str(src), str(target))
+                moved_paths.append(path)
             except Exception:
                 continue
-        delete_tracks_by_paths(paths)
+        delete_tracks_by_paths(moved_paths)
         self.accept()
 
     def _export_report(self):

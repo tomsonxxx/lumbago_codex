@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find 'C:\\\\Users\\\\tomso\\\\Desktop\\\\Nowy folder' -type f -name *.py -o -name *.md -o -name *.toml -o -name *.txt -o -name *.json -o -name *.yaml -o -name *.yml)"
+    ]
+  }
+}

@@ -22,11 +22,28 @@ class Tag:
 
 @dataclass
 class AnalysisResult:
+    title: str | None = None
+    artist: str | None = None
+    album: str | None = None
+    year: str | None = None
     bpm: float | None = None
     key: str | None = None
     mood: str | None = None
     energy: float | None = None
+    danceability: float | None = None
     genre: str | None = None
+    track_number: str | None = None
+    disc_number: str | None = None
+    album_artist: str | None = None
+    composer: str | None = None
+    copyright: str | None = None
+    encoded_by: str | None = None
+    original_artist: str | None = None
+    comments: str | None = None
+    album_cover_url: str | None = None
+    isrc: str | None = None
+    release_type: str | None = None
+    record_label: str | None = None
     description: str | None = None
     confidence: float | None = None
 
@@ -52,7 +69,19 @@ class Track:
     play_count: int = 0
     rating: int = 0
     energy: float | None = None
+    danceability: float | None = None
     mood: str | None = None
+    track_number: str | None = None
+    disc_number: str | None = None
+    album_artist: str | None = None
+    composer: str | None = None
+    copyright: str | None = None
+    encoded_by: str | None = None
+    original_artist: str | None = None
+    comments: str | None = None
+    isrc: str | None = None
+    release_type: str | None = None
+    record_label: str | None = None
     cue_in_ms: int | None = None
     cue_out_ms: int | None = None
     fingerprint: str | None = None

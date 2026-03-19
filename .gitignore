@@ -1,0 +1,28 @@
+# Tajne klucze i konfiguracja lokalna
+.env
+set_api_keys.py
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+*.egg-info/
+dist/
+build/
+output/
+tmp/
+*.spec
+
+# Testy
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Dane lokalne aplikacji
+.lumbago_data/
+
+# IDE
+.vscode/
+.idea/
+*.swp

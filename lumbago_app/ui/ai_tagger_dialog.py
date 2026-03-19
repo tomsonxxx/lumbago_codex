@@ -31,8 +31,8 @@ class AiTaggerDialog(QtWidgets.QDialog):
         self._allow_auto_fetch = allow_auto_fetch
         self._force_cloud = force_cloud
         self._results: dict[str, AnalysisResult] = {}
+        self._worker = None
         self._build_ui()
-        self._analyze()
 
     def _build_ui(self):
         layout = QtWidgets.QVBoxLayout(self)
@@ -100,6 +100,11 @@ class AiTaggerDialog(QtWidgets.QDialog):
             self.auto_fetch.setEnabled(False)
             self.auto_method.setEnabled(False)
             self.auto_method.setVisible(False)
+
+        self.analyze_btn = QtWidgets.QPushButton("Analizuj")
+        self.analyze_btn.setToolTip("Uruchom analizę AI dla zaznaczonych utworów")
+        self.analyze_btn.clicked.connect(self._analyze)
+        options.addWidget(self.analyze_btn)
         layout.addLayout(options)
 
         row = QtWidgets.QHBoxLayout()
@@ -121,9 +126,19 @@ class AiTaggerDialog(QtWidgets.QDialog):
         row.addWidget(self.apply_all)
         row.addWidget(self.cancel_btn)
         layout.addLayout(row)
+        self._set_actions_enabled(False)
+        self.status_label.setText("Kliknij Analizuj, aby pobrać propozycje tagów.")
+
+    def _set_actions_enabled(self, enabled: bool) -> None:
+        self.accept_all_btn.setEnabled(enabled)
+        self.reject_all_btn.setEnabled(enabled)
+        self.apply_all.setEnabled(enabled)
 
     def _analyze(self):
         self.table.setRowCount(0)
+        self._results.clear()
+        self._set_actions_enabled(False)
+        self.status_label.setText("Trwa analiza AI...")
         settings = load_settings()
         provider = settings.cloud_ai_provider or "local"
         mode_label = "tryb API" if self._force_cloud else "tryb mieszany"
@@ -194,6 +209,7 @@ class AiTaggerDialog(QtWidgets.QDialog):
                 self.table.setCellWidget(row, 9, action)
                 if result.description and "Cloud AI" in result.description:
                     error_messages.append(result.description)
+            self._set_actions_enabled(bool(results))
             if error_messages:
                 message = error_messages[0]
                 self.status_label.setText(f"Problem z API: {message}")
@@ -242,7 +258,7 @@ class AiTaggerDialog(QtWidgets.QDialog):
         provider = settings.cloud_ai_provider or "local"
         source = f"ai:{provider}"
         for row_idx, track in enumerate(self._tracks):
-            action = self.table.cellWidget(row_idx, 6)
+            action = self.table.cellWidget(row_idx, 9)
             if isinstance(action, QtWidgets.QComboBox) and action.currentText() != "Akceptuj":
                 continue
             result = self._results.get(track.path)
@@ -251,11 +267,7 @@ class AiTaggerDialog(QtWidgets.QDialog):
             if _below_confidence(result, settings.validation_policy):
                 continue
             result = _sanitize_ai_result(result, settings.validation_policy)
-            track.bpm = result.bpm or track.bpm
-            track.key = result.key or track.key
-            track.mood = result.mood or track.mood
-            track.energy = result.energy or track.energy
-            track.genre = result.genre or track.genre
+            _merge_analysis_into_track(track, result)
             accepted_tracks.append(track)
             replace_track_tags(
                 track.path,
@@ -269,13 +281,21 @@ class AiTaggerDialog(QtWidgets.QDialog):
 
     def _set_all_actions(self, label: str) -> None:
         for row_idx in range(self.table.rowCount()):
-            action = self.table.cellWidget(row_idx, 6)
+            action = self.table.cellWidget(row_idx, 9)
             if isinstance(action, QtWidgets.QComboBox):
                 action.setCurrentText(label)
 
 
 def _build_ai_tags(result: AnalysisResult) -> list[str]:
     tags: list[str] = []
+    if result.title:
+        tags.append(f"title:{result.title}")
+    if result.artist:
+        tags.append(f"artist:{result.artist}")
+    if result.album:
+        tags.append(f"album:{result.album}")
+    if result.year:
+        tags.append(f"year:{result.year}")
     if result.genre:
         tags.append(f"genre:{result.genre}")
     if result.mood:
@@ -286,6 +306,24 @@ def _build_ai_tags(result: AnalysisResult) -> list[str]:
         tags.append(f"bpm:{result.bpm}")
     if result.energy is not None:
         tags.append(f"energy:{result.energy}")
+    if result.danceability is not None:
+        tags.append(f"danceability:{result.danceability}")
+    if result.track_number:
+        tags.append(f"track_number:{result.track_number}")
+    if result.disc_number:
+        tags.append(f"disc_number:{result.disc_number}")
+    if result.album_artist:
+        tags.append(f"album_artist:{result.album_artist}")
+    if result.composer:
+        tags.append(f"composer:{result.composer}")
+    if result.original_artist:
+        tags.append(f"original_artist:{result.original_artist}")
+    if result.comments:
+        tags.append(f"comments:{result.comments}")
+    if result.isrc:
+        tags.append(f"isrc:{result.isrc}")
+    if result.record_label:
+        tags.append(f"record_label:{result.record_label}")
     if result.description:
         tags.append(f"description:{result.description}")
     return tags
@@ -352,13 +390,33 @@ def _sanitize_ai_result(result: AnalysisResult, policy: str | None) -> AnalysisR
     energy = result.energy
     if energy is not None and (energy < 0.0 or energy > 1.0):
         energy = None
+    danceability = result.danceability
+    if danceability is not None and (danceability < 0.0 or danceability > 1.0):
+        danceability = None
 
     return AnalysisResult(
+        title=result.title,
+        artist=result.artist,
+        album=result.album,
+        year=result.year,
         bpm=bpm,
         key=key,
         mood=result.mood,
         energy=energy,
+        danceability=danceability,
         genre=result.genre,
+        track_number=result.track_number,
+        disc_number=result.disc_number,
+        album_artist=result.album_artist,
+        composer=result.composer,
+        copyright=result.copyright,
+        encoded_by=result.encoded_by,
+        original_artist=result.original_artist,
+        comments=result.comments,
+        album_cover_url=result.album_cover_url,
+        isrc=result.isrc,
+        release_type=result.release_type,
+        record_label=result.record_label,
         description=result.description,
         confidence=result.confidence,
     )
@@ -412,7 +470,91 @@ class AiTaggerWorker(QtCore.QRunnable):
             result = self.tagger.analyze(track)
             results.append((track, result))
             self.signals.progress.emit(idx, total)
+        results = _harmonize_batch_results(results)
         self.signals.finished.emit(results)
+
+
+def _merge_analysis_into_track(track: Track, result: AnalysisResult) -> None:
+    _set_if_better(track, "title", result.title)
+    _set_if_better(track, "artist", result.artist)
+    _set_if_better(track, "album", result.album)
+    _set_if_better(track, "year", result.year)
+    _set_if_better(track, "genre", result.genre)
+    _set_if_better(track, "key", result.key)
+    _set_if_better(track, "mood", result.mood)
+    _set_if_better(track, "track_number", result.track_number)
+    _set_if_better(track, "disc_number", result.disc_number)
+    _set_if_better(track, "album_artist", result.album_artist)
+    _set_if_better(track, "composer", result.composer)
+    _set_if_better(track, "copyright", result.copyright)
+    _set_if_better(track, "encoded_by", result.encoded_by)
+    _set_if_better(track, "original_artist", result.original_artist)
+    _set_if_better(track, "comments", result.comments)
+    _set_if_better(track, "isrc", result.isrc)
+    _set_if_better(track, "release_type", result.release_type)
+    _set_if_better(track, "record_label", result.record_label)
+    if result.bpm is not None:
+        track.bpm = result.bpm
+    if result.energy is not None:
+        track.energy = result.energy
+    if result.danceability is not None:
+        track.danceability = result.danceability
+
+
+def _set_if_better(track: Track, field: str, candidate: str | None) -> None:
+    if not candidate:
+        return
+    current = getattr(track, field, None)
+    if current and _is_weak_text(candidate):
+        return
+    setattr(track, field, candidate)
+
+
+def _is_weak_text(value: str) -> bool:
+    lowered = value.lower().strip()
+    return lowered in {"unknown", "n/a", "none", "undefined", "various artists", "brak danych"}
+
+
+def _harmonize_batch_results(
+    results: list[tuple[Track, AnalysisResult]],
+) -> list[tuple[Track, AnalysisResult]]:
+    groups: dict[tuple[str, str], list[int]] = {}
+    for idx, (track, _) in enumerate(results):
+        artist = (track.artist or "").strip().lower()
+        album = (track.album or "").strip().lower()
+        if artist and album:
+            groups.setdefault((artist, album), []).append(idx)
+
+    for indexes in groups.values():
+        if len(indexes) < 2:
+            continue
+        common_artist = _majority_text([results[i][1].artist for i in indexes])
+        common_album = _majority_text([results[i][1].album for i in indexes])
+        common_album_artist = _majority_text([results[i][1].album_artist for i in indexes])
+        for i in indexes:
+            track, analysis = results[i]
+            if common_artist and not _is_weak_text(common_artist):
+                analysis.artist = common_artist
+            if common_album and not _is_weak_text(common_album):
+                analysis.album = common_album
+            if common_album_artist and not _is_weak_text(common_album_artist):
+                analysis.album_artist = common_album_artist
+            results[i] = (track, analysis)
+    return results
+
+
+def _majority_text(values: list[str | None]) -> str | None:
+    counts: dict[str, int] = {}
+    for value in values:
+        if not value:
+            continue
+        cleaned = value.strip()
+        if not cleaned or _is_weak_text(cleaned):
+            continue
+        counts[cleaned] = counts.get(cleaned, 0) + 1
+    if not counts:
+        return None
+    return max(counts.items(), key=lambda pair: pair[1])[0]
 
 
 

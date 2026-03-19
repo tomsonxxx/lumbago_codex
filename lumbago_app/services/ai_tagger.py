@@ -57,12 +57,30 @@ class CloudAiTagger:
             payload = _safe_json(text)
             if not isinstance(payload, dict):
                 return AnalysisResult(description="Cloud AI returned non-JSON response", confidence=0.0)
+            payload = _postprocess_payload(payload)
             return AnalysisResult(
+                title=_to_str(payload.get("title")),
+                artist=_to_str(payload.get("artist")),
+                album=_to_str(payload.get("album")),
+                year=_to_year(payload.get("year")),
                 bpm=_to_float(payload.get("bpm")),
                 key=_to_str(payload.get("key")),
                 mood=_to_str(payload.get("mood")),
                 energy=_to_float(payload.get("energy")),
+                danceability=_to_float(payload.get("danceability")),
                 genre=_to_str(payload.get("genre")),
+                track_number=_to_str(payload.get("track_number") or payload.get("trackNumber")),
+                disc_number=_to_str(payload.get("disc_number") or payload.get("discNumber")),
+                album_artist=_to_str(payload.get("album_artist") or payload.get("albumArtist")),
+                composer=_to_str(payload.get("composer")),
+                copyright=_to_str(payload.get("copyright")),
+                encoded_by=_to_str(payload.get("encoded_by") or payload.get("encodedBy")),
+                original_artist=_to_str(payload.get("original_artist") or payload.get("originalArtist")),
+                comments=_to_str(payload.get("comments")),
+                album_cover_url=_to_str(payload.get("album_cover_url") or payload.get("albumCoverUrl")),
+                isrc=_to_str(payload.get("isrc")),
+                release_type=_to_str(payload.get("release_type") or payload.get("releaseType")),
+                record_label=_to_str(payload.get("record_label") or payload.get("recordLabel")),
                 description=_to_str(payload.get("description")),
                 confidence=_to_float(payload.get("confidence")),
             )
@@ -72,6 +90,14 @@ class CloudAiTagger:
 
 def _missing_fields(track: Track) -> list[str]:
     missing = []
+    if not track.title:
+        missing.append("title")
+    if not track.artist:
+        missing.append("artist")
+    if not track.album:
+        missing.append("album")
+    if not track.year:
+        missing.append("year")
     if not track.bpm:
         missing.append("bpm")
     if not track.key:
@@ -82,24 +108,50 @@ def _missing_fields(track: Track) -> list[str]:
         missing.append("energy")
     if not track.genre:
         missing.append("genre")
+    if not track.track_number:
+        missing.append("track_number")
+    if not track.disc_number:
+        missing.append("disc_number")
+    if not track.album_artist:
+        missing.append("album_artist")
+    if not track.composer:
+        missing.append("composer")
+    if not track.original_artist:
+        missing.append("original_artist")
+    if not track.comments:
+        missing.append("comments")
+    if not track.record_label:
+        missing.append("record_label")
     return missing
 
 
 def _build_prompt(track: Track, missing: list[str]) -> str:
-    return (
-        "Zwroc JSON tylko dla pol: "
-        + ", ".join(missing)
-        + ". Wartosci puste ustaw na null. "
-        "Dane wejsciowe:\n"
-        f"Tytul: {track.title or ''}\n"
-        f"Artysta: {track.artist or ''}\n"
-        f"Album: {track.album or ''}\n"
-        f"Gatunek: {track.genre or ''}\n"
-        f"BPM: {track.bpm or ''}\n"
-        f"Tonacja: {track.key or ''}\n"
-        f"Nastroj: {track.mood or ''}\n"
-        f"Energia: {track.energy or ''}\n"
-    )
+    return f"""
+Zwroc wyłącznie JSON. Uzupełnij tylko pola: {", ".join(missing)}.
+Wartości niepewne ustaw na null.
+ZASADY:
+- nie nadpisuj danych gorszą wartością typu "Unknown", "N/A", "various artists"
+- preferuj wydanie studyjne (nie kompilacje typu Greatest Hits)
+- rok ma mieć format YYYY
+- energy i danceability skala 0-1
+- bpm dodatni, key w notacji Camelot lub muzycznej
+
+Dane wejściowe:
+Tytul: {track.title or ''}
+Artysta: {track.artist or ''}
+Album: {track.album or ''}
+Rok: {track.year or ''}
+Gatunek: {track.genre or ''}
+BPM: {track.bpm or ''}
+Tonacja: {track.key or ''}
+Nastroj: {track.mood or ''}
+Energia: {track.energy or ''}
+Numer utworu: {track.track_number or ''}
+Numer dysku: {track.disc_number or ''}
+Album Artist: {track.album_artist or ''}
+Komentarz: {track.comments or ''}
+ISRC: {track.isrc or ''}
+""".strip()
 
 
 def _call_openai_responses(
@@ -232,3 +284,42 @@ def _to_str(value: Any) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _to_year(value: Any) -> str | None:
+    text = _to_str(value)
+    if not text:
+        return None
+    if len(text) >= 4 and text[:4].isdigit():
+        return text[:4]
+    return None
+
+
+def _postprocess_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    cleaned: dict[str, Any] = {}
+    for key, value in payload.items():
+        if isinstance(value, str):
+            stripped = value.strip()
+            if _is_placeholder(stripped):
+                cleaned[key] = None
+                continue
+            cleaned[key] = stripped
+            continue
+        cleaned[key] = value
+    return cleaned
+
+
+def _is_placeholder(value: str) -> bool:
+    lowered = value.lower().strip()
+    if not lowered:
+        return True
+    placeholders = {
+        "unknown",
+        "n/a",
+        "na",
+        "none",
+        "undefined",
+        "various artists",
+        "brak danych",
+    }
+    return lowered in placeholders
