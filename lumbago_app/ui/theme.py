@@ -481,6 +481,8 @@ class TokenEngine:
         """Podmienia tokeny w formacie {token_name} wewnątrz szablonu QSS."""
         result = template
         for key, value in self._tokens.items():
+            if not isinstance(value, str):
+                value = str(value)
             result = result.replace(f"{{{key}}}", value)
         return result
 
