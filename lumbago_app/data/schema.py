@@ -121,3 +121,68 @@ class MetadataCacheOrm(Base):
     payload = Column(Text, nullable=False)
     source = Column(Text)
     created_at = Column(DateTime, default=func.now())
+
+
+class CuePointOrm(Base):
+    __tablename__ = "cue_points"
+    __table_args__ = (Index("ix_cue_points_track", "track_id"),)
+
+    id = Column(Integer, primary_key=True)
+    track_id = Column(Integer, ForeignKey("tracks.id"), nullable=False)
+    time_ms = Column(Integer, nullable=False)
+    cue_type = Column(Text, default="hotcue")
+    hotcue_index = Column(Integer)
+    loop_end_ms = Column(Integer)
+    label = Column(Text)
+    color = Column(Text)
+    created_at = Column(DateTime, default=func.now())
+
+    track = relationship("TrackOrm")
+
+
+class BeatMarkerOrm(Base):
+    __tablename__ = "beat_markers"
+    __table_args__ = (Index("ix_beat_markers_track", "track_id"),)
+
+    id = Column(Integer, primary_key=True)
+    track_id = Column(Integer, ForeignKey("tracks.id"), nullable=False)
+    time_ms = Column(Integer, nullable=False)
+    beat_number = Column(Integer)
+    confidence = Column(Float)
+    created_at = Column(DateTime, default=func.now())
+
+    track = relationship("TrackOrm")
+
+
+class AnalysisJobOrm(Base):
+    __tablename__ = "analysis_jobs"
+    __table_args__ = (Index("ix_analysis_jobs_track", "track_id"),)
+
+    id = Column(Integer, primary_key=True)
+    track_id = Column(Integer, ForeignKey("tracks.id"), nullable=False)
+    job_type = Column(Text, nullable=False)
+    status = Column(Text, default="pending")
+    error_message = Column(Text)
+    created_at = Column(DateTime, default=func.now())
+    finished_at = Column(DateTime)
+
+    track = relationship("TrackOrm")
+
+
+class AudioFeaturesOrm(Base):
+    __tablename__ = "audio_features"
+    __table_args__ = (Index("ix_audio_features_track", "track_id"),)
+
+    id = Column(Integer, primary_key=True)
+    track_id = Column(Integer, ForeignKey("tracks.id"), nullable=False, unique=True)
+    spectral_centroid = Column(Float)
+    spectral_rolloff = Column(Float)
+    zero_crossing_rate = Column(Float)
+    mfcc_json = Column(Text)
+    chroma_json = Column(Text)
+    tempo = Column(Float)
+    danceability = Column(Float)
+    valence = Column(Float)
+    created_at = Column(DateTime, default=func.now())
+
+    track = relationship("TrackOrm")

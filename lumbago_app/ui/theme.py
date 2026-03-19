@@ -403,3 +403,67 @@ QMessageBox QLabel {
     color: #e8f3ff;
 }
 """
+
+
+class TokenEngine:
+    """Prosty silnik tokenów kolorów motywu.
+
+    Umożliwia podmienianie wartości kolorów w arkuszu QSS poprzez słownik tokenów.
+    Domyślne tokeny odpowiadają palecie CYBER_QSS.
+    """
+
+    _DEFAULTS: dict[str, str] = {
+        "bg_base": "#0b0f16",
+        "bg_surface": "#141a2a",
+        "bg_elevated": "#131a2b",
+        "border": "#283247",
+        "border_accent": "#2b3a55",
+        "text_primary": "#e8f3ff",
+        "text_secondary": "#8fb8d8",
+        "text_muted": "#cfe6ff",
+        "accent_cyan": "#63f2ff",
+        "accent_pink": "#ff6bd5",
+        "accent_green": "#39ff14",
+        "selection": "#1c3a52",
+    }
+
+    def __init__(self, overrides: dict[str, str] | None = None) -> None:
+        self._tokens: dict[str, str] = dict(self._DEFAULTS)
+        if overrides:
+            self._tokens.update(overrides)
+
+    def get(self, token: str) -> str:
+        """Zwraca wartość tokenu lub pusty string gdy token nie istnieje."""
+        return self._tokens.get(token, "")
+
+    def set(self, token: str, value: str) -> None:
+        """Ustawia wartość tokenu."""
+        self._tokens[token] = value
+
+    def render(self, template: str) -> str:
+        """Podmienia tokeny w formacie {token_name} wewnątrz szablonu QSS."""
+        result = template
+        for key, value in self._tokens.items():
+            result = result.replace(f"{{{key}}}", value)
+        return result
+
+    def stylesheet(self) -> str:
+        """Zwraca gotowy stylesheet CYBER_QSS (bez podstawiania tokenów)."""
+        return CYBER_QSS
+
+
+def apply_theme(app: object, engine: TokenEngine | None = None) -> None:
+    """Aplikuje motyw CYBER_QSS do instancji QApplication.
+
+    Parameters
+    ----------
+    app:
+        Instancja ``QApplication`` lub dowolny obiekt posiadający metodę
+        ``setStyleSheet(str)``.
+    engine:
+        Opcjonalny ``TokenEngine``. Jeśli None, używany jest domyślny silnik
+        z paletą CYBER_QSS.
+    """
+    if engine is None:
+        engine = TokenEngine()
+    app.setStyleSheet(engine.stylesheet())

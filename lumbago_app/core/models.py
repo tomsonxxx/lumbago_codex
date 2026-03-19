@@ -8,7 +8,9 @@ from typing import Optional
 @dataclass
 class CuePoint:
     time_ms: int
-    cue_type: str
+    cue_type: str = "hotcue"
+    hotcue_index: int | None = None
+    loop_end_ms: int | None = None
     label: str | None = None
     color: str | None = None
 

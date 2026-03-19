@@ -47,6 +47,9 @@ class SettingsDialog(QtWidgets.QDialog):
         self.cloud_provider = QtWidgets.QComboBox()
         self.cloud_provider.addItems(["", "openai", "gemini", "grok", "deepseek"])
         self.cloud_api_key = QtWidgets.QLineEdit()
+        self.gemini_api_key = QtWidgets.QLineEdit()
+        self.gemini_base_url = QtWidgets.QLineEdit()
+        self.gemini_model = QtWidgets.QLineEdit()
         self.grok_api_key = QtWidgets.QLineEdit()
         self.deepseek_api_key = QtWidgets.QLineEdit()
         self.openai_api_key = QtWidgets.QLineEdit()
@@ -70,6 +73,7 @@ class SettingsDialog(QtWidgets.QDialog):
             self.acoustid_key,
             self.discogs_token,
             self.cloud_api_key,
+            self.gemini_api_key,
             self.grok_api_key,
             self.deepseek_api_key,
             self.openai_api_key,
@@ -81,6 +85,9 @@ class SettingsDialog(QtWidgets.QDialog):
         form.addRow("Token Discogs", self.discogs_token)
         form.addRow("Dostawca AI (chmura)", self.cloud_provider)
         form.addRow("Klucz AI (chmura)", self.cloud_api_key)
+        form.addRow("Klucz Gemini API", self.gemini_api_key)
+        form.addRow("Adres bazowy Gemini (URL)", self.gemini_base_url)
+        form.addRow("Model Gemini", self.gemini_model)
         form.addRow("Klucz Grok API", self.grok_api_key)
         form.addRow("Adres bazowy Grok (URL)", self.grok_base_url)
         form.addRow("Model Grok", self.grok_model)
@@ -113,6 +120,9 @@ class SettingsDialog(QtWidgets.QDialog):
         self.discogs_token.setText(settings.discogs_token or "")
         self.cloud_provider.setCurrentText(settings.cloud_ai_provider or "")
         self.cloud_api_key.setText(settings.cloud_ai_api_key or "")
+        self.gemini_api_key.setText(settings.gemini_api_key or "")
+        self.gemini_base_url.setText(settings.gemini_base_url or "")
+        self.gemini_model.setText(settings.gemini_model or "")
         self.grok_api_key.setText(settings.grok_api_key or "")
         self.grok_base_url.setText(settings.grok_base_url or "")
         self.grok_model.setText(settings.grok_model or "")
@@ -134,6 +144,9 @@ class SettingsDialog(QtWidgets.QDialog):
                 "DISCOGS_TOKEN": self.discogs_token.text().strip(),
                 "CLOUD_AI_PROVIDER": self.cloud_provider.currentText().strip(),
                 "CLOUD_AI_API_KEY": self.cloud_api_key.text().strip(),
+                "GEMINI_API_KEY": self.gemini_api_key.text().strip(),
+                "GEMINI_BASE_URL": self.gemini_base_url.text().strip(),
+                "GEMINI_MODEL": self.gemini_model.text().strip(),
                 "GROK_API_KEY": self.grok_api_key.text().strip(),
                 "GROK_BASE_URL": self.grok_base_url.text().strip(),
                 "GROK_MODEL": self.grok_model.text().strip(),

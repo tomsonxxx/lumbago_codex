@@ -4,6 +4,11 @@ on:
   push:
     branches: ["main"]
   pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: desktop-ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   tests:
@@ -36,8 +41,15 @@ jobs:
       - name: Run tests (Windows)
         if: runner.os == 'Windows'
         run: python -m pytest -q tests
+      - name: Smoke UI
+        shell: bash
+        env:
+          LUMBAGO_SMOKE_SECONDS: "3"
+        run: python -m lumbago_app.main
 
   build_windows:
+    needs: tests
+    name: Build Windows Artifact
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -50,3 +62,10 @@ jobs:
           pip install -r requirements.txt
       - name: Build
         run: pyinstaller pyinstaller.spec --noconfirm
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LumbagoMusicAI-windows
+          path: |
+            dist/LumbagoMusicAI/**
+            dist/LumbagoMusicAI.exe

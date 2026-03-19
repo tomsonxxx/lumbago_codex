@@ -65,9 +65,12 @@ class Settings:
     discogs_token: str | None
     cloud_ai_provider: str | None
     cloud_ai_api_key: str | None
+    gemini_api_key: str | None
     grok_api_key: str | None
     deepseek_api_key: str | None
     openai_api_key: str | None
+    gemini_base_url: str | None
+    gemini_model: str | None
     openai_base_url: str | None
     openai_model: str | None
     grok_base_url: str | None
@@ -119,6 +122,12 @@ def load_settings() -> Settings:
             os.getenv("CLOUD_AI_API_KEY"),
             os.getenv("GEMINI_API_KEY"),
             auto.get("CLOUD_AI_API_KEY"),
+            auto.get("GEMINI_API_KEY"),
+        ),
+        gemini_api_key=_first_value(
+            payload.get("GEMINI_API_KEY"),
+            os.getenv("GEMINI_API_KEY"),
+            auto.get("GEMINI_API_KEY"),
         ),
         grok_api_key=_first_value(
             payload.get("GROK_API_KEY"),
@@ -135,6 +144,16 @@ def load_settings() -> Settings:
             os.getenv("OPENAI_API_KEY"),
             auto.get("OPENAI_API_KEY"),
         ),
+        gemini_base_url=_first_value(
+            payload.get("GEMINI_BASE_URL"),
+            os.getenv("GEMINI_BASE_URL"),
+        )
+        or "https://generativelanguage.googleapis.com/v1beta",
+        gemini_model=_first_value(
+            payload.get("GEMINI_MODEL"),
+            os.getenv("GEMINI_MODEL"),
+        )
+        or "gemini-2.5-flash",
         openai_base_url=_first_value(
             payload.get("OPENAI_BASE_URL"),
             os.getenv("OPENAI_BASE_URL"),
@@ -239,6 +258,9 @@ def _read_registry_keys() -> dict[str, str]:
             "DISCOGS_TOKEN",
             "CLOUD_AI_PROVIDER",
             "CLOUD_AI_API_KEY",
+            "GEMINI_API_KEY",
+            "GEMINI_BASE_URL",
+            "GEMINI_MODEL",
             "GROK_API_KEY",
             "DEEPSEEK_API_KEY",
             "OPENAI_API_KEY",

@@ -2,11 +2,42 @@ from __future__ import annotations
 
 import math
 import subprocess
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Sequence
 
 from PyQt6 import QtGui
 
 from lumbago_app.core.config import cache_dir
+
+
+@dataclass
+class WaveformData:
+    """Przechowuje surowe piki waveformy jako listę wartości float [0.0, 1.0]."""
+
+    peaks: list[float] = field(default_factory=list)
+    duration_s: float = 0.0
+
+    def is_empty(self) -> bool:
+        """Zwraca True jeśli brak danych waveformy."""
+        return len(self.peaks) == 0
+
+    def normalized_peaks(self, target_width: int = 600) -> list[float]:
+        """Zwraca listę pików przeskalowanych do target_width próbek, wartości w [0.0, 1.0]."""
+        if self.is_empty():
+            return [0.0] * target_width
+        src = self.peaks
+        n = len(src)
+        if n == target_width:
+            return list(src)
+        result: list[float] = []
+        for i in range(target_width):
+            src_i = i * n / target_width
+            lo = int(src_i)
+            hi = min(lo + 1, n - 1)
+            frac = src_i - lo
+            result.append(src[lo] * (1 - frac) + src[hi] * frac)
+        return result
 
 
 def waveform_cache_path(audio_path: Path) -> Path:
