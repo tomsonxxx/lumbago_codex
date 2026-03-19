@@ -43,19 +43,7 @@ class TrackOrm(Base):
     play_count = Column(Integer, default=0)
     rating = Column(Integer, default=0)
     energy = Column(Float)
-    danceability = Column(Float)
     mood = Column(Text)
-    track_number = Column(Text)
-    disc_number = Column(Text)
-    album_artist = Column(Text)
-    composer = Column(Text)
-    copyright = Column(Text)
-    encoded_by = Column(Text)
-    original_artist = Column(Text)
-    comments = Column(Text)
-    isrc = Column(Text)
-    release_type = Column(Text)
-    record_label = Column(Text)
     cue_in_ms = Column(Integer)
     cue_out_ms = Column(Integer)
     fingerprint = Column(Text)
@@ -122,23 +110,6 @@ class ChangeLogOrm(Base):
     old_value = Column(Text)
     new_value = Column(Text)
     source = Column(Text, default="user")
-    changed_at = Column(DateTime, default=func.now())
-
-
-class TagHistoryOrm(Base):
-    __tablename__ = "tag_history"
-    __table_args__ = (
-        Index("ix_tag_history_track_changed", "track_id", "changed_at"),
-        Index("ix_tag_history_field", "field"),
-    )
-
-    id = Column(Integer, primary_key=True)
-    track_id = Column(Integer, ForeignKey("tracks.id"), nullable=False)
-    field = Column(Text, nullable=False)
-    old_value = Column(Text)
-    new_value = Column(Text)
-    source = Column(Text, default="user")
-    changed_by = Column(Text)
     changed_at = Column(DateTime, default=func.now())
 
 

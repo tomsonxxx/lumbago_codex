@@ -3,7 +3,6 @@
 from PyQt6 import QtCore, QtWidgets
 from lumbago_app.ui.widgets import apply_dialog_fade, dialog_icon_pixmap
 
-from lumbago_app.core.backup import perform_backup
 from lumbago_app.core.models import Track
 from lumbago_app.core.renamer import apply_rename_plan, build_rename_plan, undo_last_rename
 from lumbago_app.data.repository import update_track_paths_bulk
@@ -90,13 +89,11 @@ class RenamerDialog(QtWidgets.QDialog):
     def _apply(self):
         if not self._plan:
             self._preview()
-        perform_backup()
         history = apply_rename_plan(self._plan)
         update_track_paths_bulk(history)
         self.accept()
 
     def _undo(self):
-        perform_backup()
         history = undo_last_rename()
         flipped = [{"old": item["new"], "new": item["old"]} for item in history]
         update_track_paths_bulk(flipped)

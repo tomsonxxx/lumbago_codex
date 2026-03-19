@@ -15,7 +15,6 @@ from lumbago_app.data.schema import (
     PlaylistOrm,
     PlaylistTrackOrm,
     SettingsOrm,
-    TagHistoryOrm,
     TagOrm,
     TrackOrm,
 )
@@ -34,18 +33,6 @@ def _ensure_track_columns(engine) -> None:
         "fingerprint": "TEXT",
         "year": "TEXT",
         "loudness_lufs": "REAL",
-        "danceability": "REAL",
-        "track_number": "TEXT",
-        "disc_number": "TEXT",
-        "album_artist": "TEXT",
-        "composer": "TEXT",
-        "copyright": "TEXT",
-        "encoded_by": "TEXT",
-        "original_artist": "TEXT",
-        "comments": "TEXT",
-        "isrc": "TEXT",
-        "release_type": "TEXT",
-        "record_label": "TEXT",
         "cue_in_ms": "INTEGER",
         "cue_out_ms": "INTEGER",
     }
@@ -81,19 +68,7 @@ def upsert_tracks(tracks: Iterable[Track]) -> None:
                 existing.bitrate = track.bitrate
                 existing.sample_rate = track.sample_rate
                 existing.energy = track.energy
-                existing.danceability = track.danceability
                 existing.mood = track.mood
-                existing.track_number = track.track_number
-                existing.disc_number = track.disc_number
-                existing.album_artist = track.album_artist
-                existing.composer = track.composer
-                existing.copyright = track.copyright
-                existing.encoded_by = track.encoded_by
-                existing.original_artist = track.original_artist
-                existing.comments = track.comments
-                existing.isrc = track.isrc
-                existing.release_type = track.release_type
-                existing.record_label = track.record_label
                 existing.cue_in_ms = track.cue_in_ms
                 existing.cue_out_ms = track.cue_out_ms
                 existing.artwork_path = track.artwork_path
@@ -118,19 +93,7 @@ def upsert_tracks(tracks: Iterable[Track]) -> None:
                         bitrate=track.bitrate,
                         sample_rate=track.sample_rate,
                         energy=track.energy,
-                        danceability=track.danceability,
                         mood=track.mood,
-                        track_number=track.track_number,
-                        disc_number=track.disc_number,
-                        album_artist=track.album_artist,
-                        composer=track.composer,
-                        copyright=track.copyright,
-                        encoded_by=track.encoded_by,
-                        original_artist=track.original_artist,
-                        comments=track.comments,
-                        isrc=track.isrc,
-                        release_type=track.release_type,
-                        record_label=track.record_label,
                         cue_in_ms=track.cue_in_ms,
                         cue_out_ms=track.cue_out_ms,
                         artwork_path=track.artwork_path,
@@ -165,19 +128,7 @@ def list_tracks() -> list[Track]:
                 play_count=row.play_count,
                 rating=row.rating,
                 energy=row.energy,
-                danceability=row.danceability,
                 mood=row.mood,
-                track_number=row.track_number,
-                disc_number=row.disc_number,
-                album_artist=row.album_artist,
-                composer=row.composer,
-                copyright=row.copyright,
-                encoded_by=row.encoded_by,
-                original_artist=row.original_artist,
-                comments=row.comments,
-                isrc=row.isrc,
-                release_type=row.release_type,
-                record_label=row.record_label,
                 cue_in_ms=row.cue_in_ms,
                 cue_out_ms=row.cue_out_ms,
                 fingerprint=row.fingerprint,
@@ -206,19 +157,7 @@ def update_track(track: Track) -> None:
         existing.loudness_lufs = track.loudness_lufs
         existing.rating = track.rating
         existing.energy = track.energy
-        existing.danceability = track.danceability
         existing.mood = track.mood
-        existing.track_number = track.track_number
-        existing.disc_number = track.disc_number
-        existing.album_artist = track.album_artist
-        existing.composer = track.composer
-        existing.copyright = track.copyright
-        existing.encoded_by = track.encoded_by
-        existing.original_artist = track.original_artist
-        existing.comments = track.comments
-        existing.isrc = track.isrc
-        existing.release_type = track.release_type
-        existing.record_label = track.record_label
         existing.cue_in_ms = track.cue_in_ms
         existing.cue_out_ms = track.cue_out_ms
         existing.artwork_path = track.artwork_path
@@ -245,19 +184,7 @@ def update_tracks(tracks: Iterable[Track]) -> None:
             existing.loudness_lufs = track.loudness_lufs
             existing.rating = track.rating
             existing.energy = track.energy
-            existing.danceability = track.danceability
             existing.mood = track.mood
-            existing.track_number = track.track_number
-            existing.disc_number = track.disc_number
-            existing.album_artist = track.album_artist
-            existing.composer = track.composer
-            existing.copyright = track.copyright
-            existing.encoded_by = track.encoded_by
-            existing.original_artist = track.original_artist
-            existing.comments = track.comments
-            existing.isrc = track.isrc
-            existing.release_type = track.release_type
-            existing.record_label = track.record_label
             existing.cue_in_ms = track.cue_in_ms
             existing.cue_out_ms = track.cue_out_ms
             existing.artwork_path = track.artwork_path
@@ -300,7 +227,6 @@ def reset_library() -> None:
         session.execute(delete(PlaylistOrm))
         session.execute(delete(TagOrm))
         session.execute(delete(ChangeLogOrm))
-        session.execute(delete(TagHistoryOrm))
         session.execute(delete(MetadataCacheOrm))
         session.execute(delete(TrackOrm))
         session.commit()
@@ -393,16 +319,6 @@ def add_change_log(track_path: str, field: str, old: str | None, new: str | None
                 source=source,
             )
         )
-        session.add(
-            TagHistoryOrm(
-                track_id=track.id,
-                field=field,
-                old_value=old,
-                new_value=new,
-                source=source,
-                changed_by=source,
-            )
-        )
         session.commit()
 
 
@@ -413,22 +329,16 @@ def list_change_log(track_path: str) -> list[dict[str, str]]:
         if not track:
             return []
         rows = session.scalars(
-            select(TagHistoryOrm)
-            .where(TagHistoryOrm.track_id == track.id)
-            .order_by(TagHistoryOrm.changed_at.desc(), TagHistoryOrm.id.desc())
+            select(ChangeLogOrm)
+            .where(ChangeLogOrm.track_id == track.id)
+            .order_by(ChangeLogOrm.changed_at.desc(), ChangeLogOrm.id.desc())
         ).all()
-        if not rows:
-            rows = session.scalars(
-                select(ChangeLogOrm)
-                .where(ChangeLogOrm.track_id == track.id)
-                .order_by(ChangeLogOrm.changed_at.desc(), ChangeLogOrm.id.desc())
-            ).all()
         return [
             {
                 "field": row.field,
                 "old": row.old_value or "",
                 "new": row.new_value or "",
-                "source": (row.source or "") if hasattr(row, "source") else "",
+                "source": row.source or "",
                 "changed_at": str(row.changed_at) if row.changed_at else "",
             }
             for row in rows
@@ -570,19 +480,7 @@ def list_playlist_tracks(playlist_id: int) -> list[Track]:
                 play_count=row[0].play_count,
                 rating=row[0].rating,
                 energy=row[0].energy,
-                danceability=row[0].danceability,
                 mood=row[0].mood,
-                track_number=row[0].track_number,
-                disc_number=row[0].disc_number,
-                album_artist=row[0].album_artist,
-                composer=row[0].composer,
-                copyright=row[0].copyright,
-                encoded_by=row[0].encoded_by,
-                original_artist=row[0].original_artist,
-                comments=row[0].comments,
-                isrc=row[0].isrc,
-                release_type=row[0].release_type,
-                record_label=row[0].record_label,
                 cue_in_ms=row[0].cue_in_ms,
                 cue_out_ms=row[0].cue_out_ms,
                 fingerprint=row[0].fingerprint,

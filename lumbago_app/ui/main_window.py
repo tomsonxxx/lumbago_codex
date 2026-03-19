@@ -518,12 +518,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.detail_genre = QtWidgets.QLineEdit()
         self.detail_bpm = QtWidgets.QLineEdit()
         self.detail_key = QtWidgets.QLineEdit()
-        self.detail_track_number = QtWidgets.QLineEdit()
-        self.detail_disc_number = QtWidgets.QLineEdit()
-        self.detail_album_artist = QtWidgets.QLineEdit()
-        self.detail_composer = QtWidgets.QLineEdit()
-        self.detail_comments = QtWidgets.QLineEdit()
-        self.detail_isrc = QtWidgets.QLineEdit()
         self.detail_loudness = QtWidgets.QLineEdit()
         self.detail_loudness.setReadOnly(True)
         self.detail_loudness.setToolTip("Zintegrowana głośność (LUFS)")
@@ -534,12 +528,6 @@ class MainWindow(QtWidgets.QMainWindow):
         form.addRow("Gatunek", self.detail_genre)
         form.addRow("BPM", self.detail_bpm)
         form.addRow("Tonacja", self.detail_key)
-        form.addRow("Track #", self.detail_track_number)
-        form.addRow("Disc #", self.detail_disc_number)
-        form.addRow("Album Artist", self.detail_album_artist)
-        form.addRow("Composer", self.detail_composer)
-        form.addRow("ISRC", self.detail_isrc)
-        form.addRow("Komentarz", self.detail_comments)
         form.addRow("LUFS", self.detail_loudness)
         layout.addLayout(form)
 
@@ -749,11 +737,6 @@ class MainWindow(QtWidgets.QMainWindow):
             f"Genre: {track.genre or ''}",
             f"BPM: {track.bpm or ''}",
             f"Key: {track.key or ''}",
-            f"Track#: {track.track_number or ''}",
-            f"Disc#: {track.disc_number or ''}",
-            f"Album Artist: {track.album_artist or ''}",
-            f"Composer: {track.composer or ''}",
-            f"ISRC: {track.isrc or ''}",
             f"LUFS: {track.loudness_lufs or ''}",
             f"Cue A: {track.cue_in_ms or ''}",
             f"Cue B: {track.cue_out_ms or ''}",
@@ -776,15 +759,9 @@ class MainWindow(QtWidgets.QMainWindow):
             f"Title: {track.title or ''}",
             f"Artist: {track.artist or ''}",
             f"Album: {track.album or ''}",
-            f"Year: {track.year or ''}",
             f"Genre: {track.genre or ''}",
             f"BPM: {track.bpm or ''}",
             f"Key: {track.key or ''}",
-            f"Track#: {track.track_number or ''}",
-            f"Disc#: {track.disc_number or ''}",
-            f"Album Artist: {track.album_artist or ''}",
-            f"Composer: {track.composer or ''}",
-            f"ISRC: {track.isrc or ''}",
             f"LUFS: {track.loudness_lufs or ''}",
             f"Cue A: {track.cue_in_ms or ''}",
             f"Cue B: {track.cue_out_ms or ''}",
@@ -927,7 +904,6 @@ class MainWindow(QtWidgets.QMainWindow):
         )
         if confirm != QtWidgets.QMessageBox.StandardButton.Yes:
             return
-        perform_backup()
         reset_library()
         self._load_tracks()
         self._load_playlists()
@@ -1060,12 +1036,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.detail_genre.setText(track.genre or "")
         self.detail_bpm.setText(str(track.bpm or ""))
         self.detail_key.setText(track.key or "")
-        self.detail_track_number.setText(track.track_number or "")
-        self.detail_disc_number.setText(track.disc_number or "")
-        self.detail_album_artist.setText(track.album_artist or "")
-        self.detail_composer.setText(track.composer or "")
-        self.detail_isrc.setText(track.isrc or "")
-        self.detail_comments.setText(track.comments or "")
         self.detail_loudness.setText(str(track.loudness_lufs or ""))
         self._cue_a = track.cue_in_ms
         self._cue_b = track.cue_out_ms
@@ -1078,12 +1048,6 @@ class MainWindow(QtWidgets.QMainWindow):
             "genre": track.genre,
             "bpm": track.bpm,
             "key": track.key,
-            "track_number": track.track_number,
-            "disc_number": track.disc_number,
-            "album_artist": track.album_artist,
-            "composer": track.composer,
-            "isrc": track.isrc,
-            "comments": track.comments,
         }
         self._update_cover_preview(track.artwork_path)
         wave_path = generate_waveform(Path(track.path))
@@ -1102,12 +1066,6 @@ class MainWindow(QtWidgets.QMainWindow):
         track.year = self.detail_year.text().strip()
         track.genre = self.detail_genre.text().strip()
         track.key = self.detail_key.text().strip()
-        track.track_number = self.detail_track_number.text().strip()
-        track.disc_number = self.detail_disc_number.text().strip()
-        track.album_artist = self.detail_album_artist.text().strip()
-        track.composer = self.detail_composer.text().strip()
-        track.isrc = self.detail_isrc.text().strip()
-        track.comments = self.detail_comments.text().strip()
         try:
             track.bpm = float(self.detail_bpm.text()) if self.detail_bpm.text().strip() else None
         except ValueError:
@@ -1118,21 +1076,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._show_message("Utwór zaktualizowany.")
 
     def _log_changes(self, track: Track, snapshot: dict):
-        for field in [
-            "title",
-            "artist",
-            "album",
-            "year",
-            "genre",
-            "bpm",
-            "key",
-            "track_number",
-            "disc_number",
-            "album_artist",
-            "composer",
-            "isrc",
-            "comments",
-        ]:
+        for field in ["title", "artist", "album", "year", "genre", "bpm", "key"]:
             old_val = snapshot.get(field)
             new_val = getattr(track, field)
             if old_val != new_val:
@@ -1156,12 +1100,6 @@ class MainWindow(QtWidgets.QMainWindow):
             "genre": self.detail_genre.text().strip(),
             "bpm": self.detail_bpm.text().strip(),
             "key": self.detail_key.text().strip(),
-            "tracknumber": self.detail_track_number.text().strip(),
-            "discnumber": self.detail_disc_number.text().strip(),
-            "albumartist": self.detail_album_artist.text().strip(),
-            "composer": self.detail_composer.text().strip(),
-            "isrc": self.detail_isrc.text().strip(),
-            "comment": self.detail_comments.text().strip(),
         }
         try:
             write_tags(Path(track.path), tags)
@@ -1171,12 +1109,6 @@ class MainWindow(QtWidgets.QMainWindow):
             track.album = refreshed.album
             track.year = refreshed.year
             track.genre = refreshed.genre
-            track.track_number = tags["tracknumber"] or track.track_number
-            track.disc_number = tags["discnumber"] or track.disc_number
-            track.album_artist = tags["albumartist"] or track.album_artist
-            track.composer = tags["composer"] or track.composer
-            track.isrc = tags["isrc"] or track.isrc
-            track.comments = tags["comment"] or track.comments
             update_track(track)
             self._load_tracks()
             self._show_message("Tagi zapisane do pliku.")
@@ -1189,18 +1121,11 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         try:
             refreshed = extract_metadata(Path(track.path))
-            raw_tags = read_tags(Path(track.path))
             track.title = refreshed.title
             track.artist = refreshed.artist
             track.album = refreshed.album
             track.year = refreshed.year
             track.genre = refreshed.genre
-            track.track_number = raw_tags.get("tracknumber")
-            track.disc_number = raw_tags.get("discnumber")
-            track.album_artist = raw_tags.get("albumartist")
-            track.composer = raw_tags.get("composer")
-            track.isrc = raw_tags.get("isrc")
-            track.comments = raw_tags.get("comment")
             update_track(track)
             self._load_tracks()
             self._show_message("Tagi odczytane z pliku.")
@@ -1220,12 +1145,6 @@ class MainWindow(QtWidgets.QMainWindow):
             track.genre = None
             track.bpm = None
             track.key = None
-            track.track_number = None
-            track.disc_number = None
-            track.album_artist = None
-            track.composer = None
-            track.isrc = None
-            track.comments = None
             update_track(track)
             self._load_tracks()
             self._show_message("Tagi wyczyszczone.")
@@ -1649,7 +1568,6 @@ class MainWindow(QtWidgets.QMainWindow):
         elif action == delete_action and item:
             playlist = item.data(QtCore.Qt.ItemDataRole.UserRole)
             if playlist and playlist.playlist_id:
-                perform_backup()
                 delete_playlist(playlist.playlist_id)
                 self._load_playlists()
                 self._load_tracks()
