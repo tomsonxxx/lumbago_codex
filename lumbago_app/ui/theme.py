@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+import pathlib
+
 
 CYBER_QSS = """
 QWidget {
@@ -427,10 +430,44 @@ class TokenEngine:
         "selection": "#1c3a52",
     }
 
-    def __init__(self, overrides: dict[str, str] | None = None) -> None:
+    _THEMES_DIR: pathlib.Path = pathlib.Path(__file__).parent.parent.parent / "assets" / "themes"
+
+    def __init__(
+        self,
+        theme_name_or_overrides: str | dict[str, str] | None = None,
+        overrides: dict[str, str] | None = None,
+    ) -> None:
         self._tokens: dict[str, str] = dict(self._DEFAULTS)
-        if overrides:
+        self._theme_data: dict = {}
+        if isinstance(theme_name_or_overrides, str):
+            self._load_from_json(theme_name_or_overrides)
+            if overrides:
+                self._tokens.update(overrides)
+        elif isinstance(theme_name_or_overrides, dict):
+            self._tokens.update(theme_name_or_overrides)
+        elif overrides:
             self._tokens.update(overrides)
+
+    def _load_from_json(self, theme_name: str) -> None:
+        """Ładuje tokeny z pliku JSON motywu."""
+        token_file = self._THEMES_DIR / f"{theme_name}.tokens.json"
+        if not token_file.exists():
+            return
+        try:
+            data = json.loads(token_file.read_text(encoding="utf-8"))
+            self._theme_data = data
+            colors = data.get("colors", {})
+            self._tokens.update(colors)
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    def generate_qss(self) -> str:
+        """Generuje arkusz QSS na podstawie załadowanych tokenów.
+
+        Jeśli załadowano motyw z JSON, tokeny kolorów są podstawiane w CYBER_QSS.
+        W przeciwnym razie zwraca domyślny CYBER_QSS.
+        """
+        return self.render(CYBER_QSS) if self._theme_data else CYBER_QSS
 
     def get(self, token: str) -> str:
         """Zwraca wartość tokenu lub pusty string gdy token nie istnieje."""
@@ -452,18 +489,17 @@ class TokenEngine:
         return CYBER_QSS
 
 
-def apply_theme(app: object, engine: TokenEngine | None = None) -> None:
-    """Aplikuje motyw CYBER_QSS do instancji QApplication.
+def apply_theme(app: object, theme_name: str = "cyberpunk") -> None:
+    """Wczytuje motyw z JSON i stosuje QSS do aplikacji.
 
     Parameters
     ----------
     app:
         Instancja ``QApplication`` lub dowolny obiekt posiadający metodę
         ``setStyleSheet(str)``.
-    engine:
-        Opcjonalny ``TokenEngine``. Jeśli None, używany jest domyślny silnik
-        z paletą CYBER_QSS.
+    theme_name:
+        Nazwa motywu odpowiadająca plikowi ``{theme_name}.tokens.json``
+        w katalogu ``assets/themes/``. Domyślnie ``"cyberpunk"``.
     """
-    if engine is None:
-        engine = TokenEngine()
-    app.setStyleSheet(engine.stylesheet())
+    engine = TokenEngine(theme_name)
+    app.setStyleSheet(engine.generate_qss())

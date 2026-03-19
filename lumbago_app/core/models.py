@@ -85,3 +85,46 @@ class ImportJob:
     total_files: int
     processed_files: int = 0
     errors: int = 0
+
+
+@dataclass
+class BeatMarker:
+    time_ms: float
+    beat_number: int
+    bar_number: int
+    confidence: float | None = None
+
+
+@dataclass
+class AnalysisJob:
+    track_id: int
+    job_type: str
+    priority: int = 5
+    status: str = "pending"
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    error_msg: str | None = None
+    job_id: int | None = None
+
+
+@dataclass
+class AudioFeatures:
+    track_id: int
+    mfcc_json: str = "[]"
+    tempo: float | None = None
+    spectral_centroid: float | None = None
+    spectral_rolloff: float | None = None
+    brightness: float | None = None
+    roughness: float | None = None
+    zero_crossing_rate: float | None = None
+    chroma_json: str | None = None
+    danceability: float | None = None
+    valence: float | None = None
+    waveform_blob: bytes | None = None
+
+
+@dataclass
+class WatchFolder:
+    path: str
+    active: bool = True
+    folder_id: int | None = None

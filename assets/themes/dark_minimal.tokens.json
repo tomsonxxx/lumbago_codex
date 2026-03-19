@@ -1,0 +1,20 @@
+{
+  "name": "Dark Minimal",
+  "colors": {
+    "bg_primary": "#121212", "bg_secondary": "#1e1e1e", "bg_card": "#242424",
+    "bg_hover": "#2a2a2a", "bg_selected": "#1a3a5c",
+    "accent_primary": "#4a9eff", "accent_secondary": "#bb86fc",
+    "accent_green": "#03dac6", "accent_orange": "#ff9800",
+    "text_primary": "#e0e0e0", "text_secondary": "#9e9e9e",
+    "text_muted": "#616161", "text_disabled": "#424242",
+    "border_default": "#2d2d2d", "border_focus": "#4a9eff", "border_hover": "#3d3d3d",
+    "danger": "#cf6679", "success": "#03dac6", "warning": "#ff9800",
+    "scrollbar_bg": "#1e1e1e", "scrollbar_handle": "#3d3d3d", "scrollbar_handle_hover": "#555555",
+    "player_bg": "#0a0a0a", "waveform_peak": "#4a9eff", "waveform_rms": "#1a3050",
+    "hotcue_colors": ["#03dac6","#4a9eff","#bb86fc","#ff9800","#cf6679","#7c4dff","#ffffff","#ff6d00"]
+  },
+  "radii": {"sm": "4px", "md": "6px", "lg": "10px", "xl": "14px", "pill": "16px"},
+  "spacing": {"xs": "4px", "sm": "8px", "md": "12px", "lg": "16px", "xl": "24px"},
+  "font": {"family": "\"Segoe UI\", Arial, sans-serif", "size_xs": "10px", "size_sm": "11px", "size_base": "12px", "size_md": "13px", "size_lg": "15px", "size_title": "16px", "size_header": "20px"},
+  "sizes": {"sidebar_width": "220px", "detail_panel_width": "280px", "player_height": "180px", "toolbar_height": "44px", "row_height": "30px"}
+}

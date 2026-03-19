@@ -1,6 +1,21 @@
 from __future__ import annotations
 
-from sqlalchemy import CheckConstraint, Column, DateTime, Float, ForeignKey, Index, Integer, String, Text, func
+from datetime import datetime
+
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    LargeBinary,
+    String,
+    Text,
+    func,
+)
 from sqlalchemy.orm import DeclarativeBase, relationship
 
 
@@ -53,6 +68,10 @@ class TrackOrm(Base):
     date_modified = Column(DateTime)
 
     tags = relationship("TagOrm", back_populates="track", cascade="all, delete-orphan")
+    cue_points = relationship("CuePointOrm", back_populates="track", cascade="all, delete-orphan")
+    beat_markers = relationship("BeatMarkerOrm", back_populates="track", cascade="all, delete-orphan")
+    analysis_jobs = relationship("AnalysisJobOrm", back_populates="track", cascade="all, delete-orphan")
+    audio_features = relationship("AudioFeaturesOrm", back_populates="track", uselist=False, cascade="all, delete-orphan")
 
 
 class TagOrm(Base):
@@ -127,62 +146,75 @@ class CuePointOrm(Base):
     __tablename__ = "cue_points"
     __table_args__ = (Index("ix_cue_points_track", "track_id"),)
 
-    id = Column(Integer, primary_key=True)
-    track_id = Column(Integer, ForeignKey("tracks.id"), nullable=False)
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    track_id = Column(Integer, ForeignKey("tracks.id", ondelete="CASCADE"), nullable=False)
     time_ms = Column(Integer, nullable=False)
-    cue_type = Column(Text, default="hotcue")
-    hotcue_index = Column(Integer)
-    loop_end_ms = Column(Integer)
-    label = Column(Text)
-    color = Column(Text)
+    cue_type = Column(String(20), nullable=False, default="hotcue")
+    hotcue_index = Column(Integer, nullable=True)
+    loop_end_ms = Column(Integer, nullable=True)
+    label = Column(String(100), nullable=True)
+    color = Column(String(10), nullable=True)
     created_at = Column(DateTime, default=func.now())
 
-    track = relationship("TrackOrm")
+    track = relationship("TrackOrm", back_populates="cue_points")
 
 
 class BeatMarkerOrm(Base):
     __tablename__ = "beat_markers"
     __table_args__ = (Index("ix_beat_markers_track", "track_id"),)
 
-    id = Column(Integer, primary_key=True)
-    track_id = Column(Integer, ForeignKey("tracks.id"), nullable=False)
-    time_ms = Column(Integer, nullable=False)
-    beat_number = Column(Integer)
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    track_id = Column(Integer, ForeignKey("tracks.id", ondelete="CASCADE"), nullable=False)
+    time_ms = Column(Float, nullable=False)
+    beat_number = Column(Integer, nullable=False)
+    bar_number = Column(Integer, nullable=False)
     confidence = Column(Float)
     created_at = Column(DateTime, default=func.now())
 
-    track = relationship("TrackOrm")
+    track = relationship("TrackOrm", back_populates="beat_markers")
 
 
 class AnalysisJobOrm(Base):
     __tablename__ = "analysis_jobs"
     __table_args__ = (Index("ix_analysis_jobs_track", "track_id"),)
 
-    id = Column(Integer, primary_key=True)
-    track_id = Column(Integer, ForeignKey("tracks.id"), nullable=False)
-    job_type = Column(Text, nullable=False)
-    status = Column(Text, default="pending")
-    error_message = Column(Text)
-    created_at = Column(DateTime, default=func.now())
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    track_id = Column(Integer, ForeignKey("tracks.id", ondelete="CASCADE"), nullable=False)
+    job_type = Column(String(30), nullable=False)
+    priority = Column(Integer, nullable=False, default=5)
+    status = Column(String(20), nullable=False, default="pending")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    error_msg = Column(Text, nullable=True)
     finished_at = Column(DateTime)
 
-    track = relationship("TrackOrm")
+    track = relationship("TrackOrm", back_populates="analysis_jobs")
 
 
 class AudioFeaturesOrm(Base):
     __tablename__ = "audio_features"
     __table_args__ = (Index("ix_audio_features_track", "track_id"),)
 
-    id = Column(Integer, primary_key=True)
-    track_id = Column(Integer, ForeignKey("tracks.id"), nullable=False, unique=True)
-    spectral_centroid = Column(Float)
-    spectral_rolloff = Column(Float)
+    id = Column(Integer, ForeignKey("tracks.id", ondelete="CASCADE"), primary_key=True)
+    mfcc_json = Column(Text, nullable=False, default="[]")
+    tempo = Column(Float, nullable=True)
+    spectral_centroid = Column(Float, nullable=True)
+    spectral_rolloff = Column(Float, nullable=True)
+    brightness = Column(Float, nullable=True)
+    roughness = Column(Float, nullable=True)
     zero_crossing_rate = Column(Float)
-    mfcc_json = Column(Text)
     chroma_json = Column(Text)
-    tempo = Column(Float)
     danceability = Column(Float)
     valence = Column(Float)
+    waveform_blob = Column(LargeBinary, nullable=True)
     created_at = Column(DateTime, default=func.now())
 
-    track = relationship("TrackOrm")
+    track = relationship("TrackOrm", back_populates="audio_features")
+
+
+class WatchFolderOrm(Base):
+    __tablename__ = "watch_folders"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    path = Column(String(1024), nullable=False, unique=True)
+    active = Column(Boolean, nullable=False, default=True)

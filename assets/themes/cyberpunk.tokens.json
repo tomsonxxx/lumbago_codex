@@ -1,0 +1,24 @@
+{
+  "name": "Cyberpunk",
+  "colors": {
+    "bg_primary": "#0b0f16", "bg_secondary": "#111827", "bg_card": "#131a2b",
+    "bg_hover": "#1a2235", "bg_selected": "#162040",
+    "accent_primary": "#63f2ff", "accent_secondary": "#ff6bd5",
+    "accent_green": "#39ff14", "accent_orange": "#ff9500",
+    "text_primary": "#e8f3ff", "text_secondary": "#8fb8d8",
+    "text_muted": "#4a6080", "text_disabled": "#334455",
+    "border_default": "#1e2d42", "border_focus": "#63f2ff", "border_hover": "#2a3d5a",
+    "danger": "#ff4f4f", "success": "#39ff14", "warning": "#ffaa00",
+    "scrollbar_bg": "#111827", "scrollbar_handle": "#283247", "scrollbar_handle_hover": "#3a4f6a",
+    "player_bg": "#0d1320", "waveform_peak": "#63f2ff", "waveform_rms": "#1e4a5a",
+    "hotcue_colors": ["#39ff14","#63f2ff","#ff6bd5","#ffaa00","#ff4f4f","#aa55ff","#ffffff","#ff9500"]
+  },
+  "radii": {"sm": "6px", "md": "10px", "lg": "14px", "xl": "18px", "pill": "20px"},
+  "spacing": {"xs": "4px", "sm": "8px", "md": "12px", "lg": "16px", "xl": "24px"},
+  "font": {
+    "family": "\"Segoe UI\", \"Noto Sans\", Arial, sans-serif",
+    "size_xs": "10px", "size_sm": "11px", "size_base": "12px",
+    "size_md": "13px", "size_lg": "15px", "size_title": "16px", "size_header": "20px"
+  },
+  "sizes": {"sidebar_width": "220px", "detail_panel_width": "280px", "player_height": "180px", "toolbar_height": "44px", "row_height": "32px"}
+}

@@ -58,6 +58,9 @@ from lumbago_app.ui.tag_compare_dialog import TagCompareDialog
 from lumbago_app.ui.widgets import AnimatedButton
 from lumbago_app.ui.xml_converter_dialog import XmlConverterDialog
 from lumbago_app.ui.xml_import_dialog import XmlImportDialog
+from lumbago_app.ui.player_widget import PlayerWidget as DJPlayerWidget
+from lumbago_app.ui.library_widget import LibraryWidget
+from lumbago_app.ui.health_dashboard import HealthReportDashboard
 
 
 def _debug_log(message: str) -> None:
@@ -278,6 +281,8 @@ class MainWindow(QtWidgets.QMainWindow):
         _debug_log("MainWindow: load_tracks ok")
         self._load_settings()
         _debug_log("MainWindow: load_settings ok")
+        self._init_watch_folder_service()
+        _debug_log("MainWindow: watch_folder_service ok")
 
     def _build_ui(self):
         central = QtWidgets.QWidget()
@@ -338,6 +343,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.view_stack = QtWidgets.QStackedWidget()
         self.view_stack.addWidget(self.table_view)
         self.view_stack.addWidget(self.grid_view)
+        self.library_widget = LibraryWidget()
+        self.library_widget.track_selected.connect(self._update_detail_panel_from_library)
+        self.library_widget.track_activated.connect(self._on_library_track_activated)
+        self.view_stack.addWidget(self.library_widget)
 
         header = self._build_header()
         main_column.addWidget(header)
@@ -349,6 +358,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         player = self._build_player()
         main_column.addWidget(player)
+        dj_player_container = self._build_dj_player()
+        main_column.addWidget(dj_player_container)
 
         self.status = QtWidgets.QStatusBar()
         self.setStatusBar(self.status)
@@ -417,6 +428,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.btn_settings.clicked.connect(self._open_settings)
         layout.addWidget(self.btn_settings)
 
+        self.btn_health = AnimatedButton("Raport zdrowia")
+        self.btn_health.setToolTip("Sprawdź kompletność metadanych biblioteki")
+        self.btn_health.clicked.connect(self._open_health_report)
+        layout.addWidget(self.btn_health)
+
         playlists_title = QtWidgets.QLabel("Playlisty")
         playlists_title.setObjectName("SectionTitle")
         layout.addWidget(playlists_title)
@@ -482,7 +498,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.view_toggle = QtWidgets.QComboBox()
         self.view_toggle.setObjectName("ViewToggle")
-        self.view_toggle.addItems(["Lista", "Siatka"])
+        self.view_toggle.addItems(["Lista", "Siatka", "DJ Crate"])
         self.view_toggle.setToolTip("Przełącz widok listy/siatki")
         self.view_toggle.currentIndexChanged.connect(self._on_view_toggle)
         row.addWidget(self.view_toggle)
@@ -656,6 +672,8 @@ class MainWindow(QtWidgets.QMainWindow):
         tracks = list_tracks()
         self._all_tracks = tracks
         self._apply_playlist_view()
+        if hasattr(self, "library_widget") and self.view_toggle.currentIndex() == 2:
+            self.library_widget.set_tracks(tracks)
 
     def _load_playlists(self):
         self.playlist_list.clear()
@@ -694,6 +712,9 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _on_view_toggle(self, index: int):
         self.view_stack.setCurrentIndex(index)
+        if index == 2:
+            tracks = getattr(self, "_all_tracks", [])
+            self.library_widget.set_tracks(tracks)
         self._animate_view_change()
 
     def _animate_view_change(self):
@@ -772,15 +793,19 @@ class MainWindow(QtWidgets.QMainWindow):
         self._fill_detail_fields(track)
 
     def _play_selected(self):
-        if not self.player:
-            self._show_message("Odtwarzacz jest niedostępny w tej wersji.")
-            return
         indexes = self.table_view.selectionModel().selectedRows()
         if not indexes:
             return
         source_index = self.filter_proxy.mapToSource(indexes[0])
         track = self.table_model.track_at(source_index.row())
         if not track:
+            return
+        if hasattr(self, "_dj_player"):
+            self._dj_player.load_track(track)
+            self._dj_player.play()
+            return
+        if not self.player:
+            self._show_message("Odtwarzacz jest niedostępny w tej wersji.")
             return
         self._cue_a = track.cue_in_ms
         self._cue_b = track.cue_out_ms
@@ -1461,6 +1486,81 @@ class MainWindow(QtWidgets.QMainWindow):
         dialog = SettingsDialog(self)
         if dialog.exec():
             self._load_settings()
+
+    def _open_health_report(self):
+        tracks = getattr(self, "_all_tracks", None) or list_tracks()
+        dialog = HealthReportDashboard(tracks, self)
+        dialog.action_requested.connect(self._on_health_action)
+        dialog.exec()
+
+    def _on_health_action(self, action: str):
+        if action in ("bpm", "key"):
+            self._run_key_detection()
+        elif action == "run_ai":
+            self._run_ai_tagger()
+
+    def _build_dj_player(self) -> QtWidgets.QWidget:
+        try:
+            self._dj_player = DJPlayerWidget(self)
+            self._dj_player.setVisible(False)
+            toggle_btn = AnimatedButton("DJ Player ▼")
+            toggle_btn.setToolTip("Pokaż/ukryj zaawansowany odtwarzacz DJ")
+            container = QtWidgets.QWidget()
+            vl = QtWidgets.QVBoxLayout(container)
+            vl.setContentsMargins(0, 0, 0, 0)
+            vl.setSpacing(0)
+            vl.addWidget(toggle_btn)
+            vl.addWidget(self._dj_player)
+            _player_ref = self._dj_player
+
+            def _toggle():
+                visible = not _player_ref.isVisible()
+                _player_ref.setVisible(visible)
+                toggle_btn.setText("DJ Player ▲" if visible else "DJ Player ▼")
+
+            toggle_btn.clicked.connect(_toggle)
+            return container
+        except Exception as exc:
+            _debug_log(f"DJPlayerWidget init failed: {exc}")
+            self._dj_player = None
+            return QtWidgets.QWidget()
+
+    def _init_watch_folder_service(self):
+        try:
+            from lumbago_app.services.watch_folder import WatchFolderService
+            self._watch_folder_svc = WatchFolderService(self)
+            self._watch_folder_svc.new_files_detected.connect(self._on_new_watch_files)
+            self._watch_folder_svc.error_occurred.connect(
+                lambda msg: self.status.showMessage(f"Watch folder: {msg}", 4000)
+            )
+        except Exception as exc:
+            _debug_log(f"WatchFolderService init failed: {exc}")
+            self._watch_folder_svc = None
+
+    def _on_new_watch_files(self, paths: list):
+        self.status.showMessage(f"Wykryto {len(paths)} nowych plików — odświeżanie biblioteki…", 4000)
+        self._load_tracks()
+
+    def _update_detail_panel_from_library(self, track):
+        self._fill_detail_fields(track)
+        detail = [
+            f"Title: {track.title or ''}",
+            f"Artist: {track.artist or ''}",
+            f"BPM: {track.bpm or ''}",
+            f"Key: {track.key or ''}",
+            f"Genre: {track.genre or ''}",
+            f"Duration: {track.duration or ''}",
+            f"Path: {track.path}",
+        ]
+        self.detail_text.setPlainText("\n".join(detail))
+
+    def _on_library_track_activated(self, track):
+        self._update_detail_panel_from_library(track)
+        if self._dj_player is not None:
+            if not self._dj_player.isVisible():
+                self._dj_player.setVisible(True)
+            self._dj_player.load_track(track)
+            self._dj_player.play()
 
     def _load_settings(self):
         self.settings = load_settings()

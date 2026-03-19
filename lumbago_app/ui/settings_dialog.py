@@ -1,5 +1,6 @@
 ﻿from __future__ import annotations
 
+import requests
 from PyQt6 import QtWidgets, QtGui
 
 from lumbago_app.core.config import load_settings, save_settings
@@ -103,6 +104,33 @@ class SettingsDialog(QtWidgets.QDialog):
 
         layout.addLayout(form)
 
+        test_row = QtWidgets.QGridLayout()
+        self.test_acoustid_btn = QtWidgets.QPushButton("Test AcoustID")
+        self.test_acoustid_btn.clicked.connect(self._test_acoustid)
+        self.test_musicbrainz_btn = QtWidgets.QPushButton("Test MusicBrainz")
+        self.test_musicbrainz_btn.clicked.connect(self._test_musicbrainz)
+        self.test_discogs_btn = QtWidgets.QPushButton("Test Discogs")
+        self.test_discogs_btn.clicked.connect(self._test_discogs)
+        self.test_cloud_btn = QtWidgets.QPushButton("Test Cloud (provider)")
+        self.test_cloud_btn.clicked.connect(self._test_cloud_provider)
+        self.test_gemini_btn = QtWidgets.QPushButton("Test Gemini")
+        self.test_gemini_btn.clicked.connect(self._test_gemini)
+        self.test_openai_btn = QtWidgets.QPushButton("Test OpenAI")
+        self.test_openai_btn.clicked.connect(self._test_openai)
+        self.test_grok_btn = QtWidgets.QPushButton("Test Grok")
+        self.test_grok_btn.clicked.connect(self._test_grok)
+        self.test_deepseek_btn = QtWidgets.QPushButton("Test DeepSeek")
+        self.test_deepseek_btn.clicked.connect(self._test_deepseek)
+        test_row.addWidget(self.test_acoustid_btn, 0, 0)
+        test_row.addWidget(self.test_musicbrainz_btn, 0, 1)
+        test_row.addWidget(self.test_discogs_btn, 0, 2)
+        test_row.addWidget(self.test_cloud_btn, 0, 3)
+        test_row.addWidget(self.test_gemini_btn, 1, 0)
+        test_row.addWidget(self.test_openai_btn, 1, 1)
+        test_row.addWidget(self.test_grok_btn, 1, 2)
+        test_row.addWidget(self.test_deepseek_btn, 1, 3)
+        layout.addLayout(test_row)
+
         btn_row = QtWidgets.QHBoxLayout()
         btn_row.addStretch(1)
         save_btn = QtWidgets.QPushButton("Zapisz")
@@ -162,6 +190,147 @@ class SettingsDialog(QtWidgets.QDialog):
             }
         )
         self.accept()
+
+    def _show_test_result(self, title: str, ok: bool, detail: str = "") -> None:
+        text = "Połączenie OK." if ok else "Test nieudany."
+        if detail:
+            text = f"{text}\n{detail}"
+        if ok:
+            QtWidgets.QMessageBox.information(self, title, text)
+        else:
+            QtWidgets.QMessageBox.warning(self, title, text)
+
+    def _test_acoustid(self) -> None:
+        api_key = self.acoustid_key.text().strip()
+        if not api_key:
+            self._show_test_result("AcoustID", False, "Brak klucza API.")
+            return
+        url = "https://api.acoustid.org/v2/lookup"
+        params = {
+            "client": api_key,
+            "meta": "recordings",
+            "duration": "1",
+            "fingerprint": "test",
+        }
+        try:
+            response = requests.get(url, params=params, timeout=12)
+            data = response.json() if response.headers.get("content-type", "").startswith("application/json") else {}
+            status = data.get("status")
+            if response.status_code == 200 and status in {"ok", "error"}:
+                self._show_test_result("AcoustID", True, f"HTTP {response.status_code}, status: {status}")
+                return
+            self._show_test_result("AcoustID", False, f"HTTP {response.status_code}")
+        except Exception as exc:
+            self._show_test_result("AcoustID", False, str(exc))
+
+    def _test_musicbrainz(self) -> None:
+        app_name = self.musicbrainz_app.text().strip() or "LumbagoMusicAI"
+        url = "https://musicbrainz.org/ws/2/recording"
+        headers = {"User-Agent": f"{app_name}/1.0"}
+        params = {"query": "recording:test", "fmt": "json", "limit": "1"}
+        try:
+            response = requests.get(url, headers=headers, params=params, timeout=12)
+            if response.status_code == 200:
+                self._show_test_result("MusicBrainz", True, "Zapytanie działa poprawnie.")
+                return
+            self._show_test_result("MusicBrainz", False, f"HTTP {response.status_code}")
+        except Exception as exc:
+            self._show_test_result("MusicBrainz", False, str(exc))
+
+    def _test_discogs(self) -> None:
+        token = self.discogs_token.text().strip()
+        if not token:
+            self._show_test_result("Discogs", False, "Brak tokenu.")
+            return
+        url = "https://api.discogs.com/database/search"
+        headers = {
+            "Authorization": f"Discogs token={token}",
+            "User-Agent": "LumbagoMusicAI/1.0",
+        }
+        params = {"q": "test", "type": "release", "per_page": "1"}
+        self._test_http_get("Discogs", url, headers=headers, params=params)
+
+    def _test_cloud_provider(self) -> None:
+        provider = self.cloud_provider.currentText().strip()
+        if provider == "gemini":
+            self._test_gemini()
+            return
+        if provider == "openai":
+            self._test_openai()
+            return
+        if provider == "grok":
+            self._test_grok()
+            return
+        if provider == "deepseek":
+            self._test_deepseek()
+            return
+        self._show_test_result("Cloud AI", False, "Wybierz dostawcę chmurowego.")
+
+    def _test_gemini(self) -> None:
+        api_key = self.gemini_api_key.text().strip() or self.cloud_api_key.text().strip()
+        base_url = self.gemini_base_url.text().strip() or "https://generativelanguage.googleapis.com/v1beta"
+        if not api_key:
+            self._show_test_result("Gemini", False, "Brak klucza API.")
+            return
+        url = f"{base_url.rstrip('/')}/models"
+        headers = {"x-goog-api-key": api_key}
+        self._test_http_get("Gemini", url, headers=headers)
+
+    def _test_openai(self) -> None:
+        api_key = self.openai_api_key.text().strip() or self.cloud_api_key.text().strip()
+        base_url = self.openai_base_url.text().strip() or "https://api.openai.com/v1"
+        if not api_key:
+            self._show_test_result("OpenAI", False, "Brak klucza API.")
+            return
+        self._test_openai_like_api("OpenAI", base_url, api_key)
+
+    def _test_grok(self) -> None:
+        api_key = self.grok_api_key.text().strip() or self.cloud_api_key.text().strip()
+        base_url = self.grok_base_url.text().strip() or "https://api.x.ai/v1"
+        if not api_key:
+            self._show_test_result("Grok", False, "Brak klucza API.")
+            return
+        self._test_openai_like_api("Grok", base_url, api_key)
+
+    def _test_deepseek(self) -> None:
+        api_key = self.deepseek_api_key.text().strip() or self.cloud_api_key.text().strip()
+        base_url = self.deepseek_base_url.text().strip() or "https://api.deepseek.com/v1"
+        if not api_key:
+            self._show_test_result("DeepSeek", False, "Brak klucza API.")
+            return
+        self._test_openai_like_api("DeepSeek", base_url, api_key)
+
+    def _test_openai_like_api(self, title: str, base_url: str, api_key: str) -> None:
+        url = f"{base_url.rstrip('/')}/models"
+        headers = {"Authorization": f"Bearer {api_key}"}
+        self._test_http_get(title, url, headers=headers)
+
+    def _test_http_get(
+        self,
+        title: str,
+        url: str,
+        headers: dict[str, str] | None = None,
+        params: dict[str, str] | None = None,
+    ) -> None:
+        try:
+            response = requests.get(url, headers=headers or {}, params=params or {}, timeout=12)
+            if response.status_code == 200:
+                self._show_test_result(title, True, "Połączenie i autoryzacja działają.")
+                return
+            detail = f"HTTP {response.status_code}"
+            try:
+                payload = response.json()
+                error = payload.get("error")
+                if isinstance(error, dict):
+                    message = str(error.get("message", "")).strip()
+                    detail = f"{detail}: {message}" if message else detail
+                elif isinstance(error, str):
+                    detail = f"{detail}: {error}"
+            except Exception:
+                pass
+            self._show_test_result(title, False, detail)
+        except Exception as exc:
+            self._show_test_result(title, False, str(exc))
 
 
 
