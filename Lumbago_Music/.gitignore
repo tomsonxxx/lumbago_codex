@@ -1,0 +1,87 @@
+# ===================================================================
+# Lumbago Music — .gitignore
+# ===================================================================
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+.venv/
+venv/
+env/
+pip-wheel-metadata/
+*.whl
+
+# Środowisko
+.env
+.env.local
+.env.*.local
+
+# Baza danych
+*.db
+*.db-shm
+*.db-wal
+*.sqlite3
+
+# Alembic
+lumbago_app/data/migrations/versions/*.py
+!lumbago_app/data/migrations/versions/.gitkeep
+
+# Logi
+logs/
+*.log
+
+# Cache
+.cache/
+*.cache
+__librosa_cache__/
+
+# PyInstaller
+*.spec.bak
+dist_installer/
+build_installer/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Testy
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+*.coveragerc
+
+# Mypy
+.mypy_cache/
+
+# Ruff
+.ruff_cache/
+
+# Wygenerowane zasoby
+assets/icons/*.png
+assets/icons/*.ico
+assets/qss/*.qss
+
+# Bundled binaries (nie commituj — pobieraj przez installer)
+bundled/ffmpeg/*.exe
+bundled/ffmpeg/ffmpeg
+bundled/ffmpeg/ffprobe
+bundled/fpcalc/*.exe
+bundled/fpcalc/fpcalc
+
+# Tymczasowe
+*.tmp
+*.bak
+*.orig
+export_tmp/
