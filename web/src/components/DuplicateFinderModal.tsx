@@ -1,40 +1,40 @@
-import { useMemo, useState } from "react";
-import type { Track } from "../types";
+import { useEffect, useState } from "react";
+import { analyzeDuplicates } from "../api/client";
+import type { DuplicateGroup } from "../types";
 
 type Props = {
   open: boolean;
-  tracks: Track[];
   onClose: () => void;
 };
 
 type Mode = "hash" | "fingerprint" | "metadata";
 
-function groupDuplicates(tracks: Track[], mode: Mode): Track[][] {
-  const buckets = new Map<string, Track[]>();
-  for (const track of tracks) {
-    const key =
-      mode === "hash"
-        ? track.hash ?? ""
-        : mode === "fingerprint"
-          ? track.fingerprint ?? ""
-          : `${track.title.toLowerCase()}|${track.artist.toLowerCase()}`;
-    if (!key) continue;
-    const current = buckets.get(key) ?? [];
-    current.push(track);
-    buckets.set(key, current);
-  }
-  return [...buckets.values()].filter((g) => g.length > 1);
-}
-
-export function DuplicateFinderModal({ open, tracks, onClose }: Props) {
+export function DuplicateFinderModal({ open, onClose }: Props) {
   const [mode, setMode] = useState<Mode>("hash");
-  const groups = useMemo(() => groupDuplicates(tracks, mode), [tracks, mode]);
+  const [groups, setGroups] = useState<DuplicateGroup[]>([]);
   const [removed, setRemoved] = useState<number[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!open) return;
+    setLoading(true);
+    void analyzeDuplicates(mode)
+      .then((result) => {
+        setGroups(result.groups);
+        setError("");
+      })
+      .catch((err) => {
+        setGroups([]);
+        setError(err instanceof Error ? err.message : "Nie udalo sie wykryc duplikatow.");
+      })
+      .finally(() => setLoading(false));
+  }, [open, mode]);
 
   if (!open) return null;
 
-  function keepFirst(group: Track[]) {
-    const idsToRemove = group.slice(1).map((x) => x.id);
+  function keepFirst(group: DuplicateGroup) {
+    const idsToRemove = group.tracks.slice(1).map((x) => x.id);
     setRemoved((prev) => [...prev, ...idsToRemove]);
   }
 
@@ -50,12 +50,15 @@ export function DuplicateFinderModal({ open, tracks, onClose }: Props) {
             <option value="metadata">metadata</option>
           </select>
         </div>
+        {loading ? <div className="muted">Analiza duplikatow w toku...</div> : null}
+        {error ? <div className="error">{error}</div> : null}
         <div className="muted">Wykryte grupy: {groups.length}</div>
         {groups.map((group, idx) => (
           <div key={idx} className="group">
             <strong>Grupa {idx + 1}</strong>
+            <div className="muted">Podobienstwo: {Math.round(group.similarity * 100)}%</div>
             <ul>
-              {group.map((track) => (
+              {group.tracks.map((track) => (
                 <li key={track.id}>
                   #{track.id} {track.artist} - {track.title}
                   {removed.includes(track.id) ? " (usuniety)" : ""}
@@ -72,4 +75,3 @@ export function DuplicateFinderModal({ open, tracks, onClose }: Props) {
     </div>
   );
 }
-

@@ -1,25 +1,40 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { getTracks } from "./api/client";
 import { AudioPlayer } from "./components/AudioPlayer";
 import { DuplicateFinderModal } from "./components/DuplicateFinderModal";
 import { ImportWizardModal } from "./components/ImportWizardModal";
 import type { Track } from "./types";
 import { filterTracks } from "./utils/filterTracks";
 
-const DEMO_TRACKS: Track[] = [
-  { id: 1, title: "Sunrise", artist: "A", key: "8A", hash: "h1", fingerprint: "f1", url: "" },
-  { id: 2, title: "Sunrise", artist: "A", key: "Am", hash: "h1", fingerprint: "f1", url: "" },
-  { id: 3, title: "Night Drive", artist: "B", key: "10B", hash: "h3", fingerprint: "f3", url: "" }
-];
-
 export function App() {
+  const [libraryTracks, setLibraryTracks] = useState<Track[]>([]);
   const [search, setSearch] = useState("");
   const [keyFilter, setKeyFilter] = useState("");
   const [showImport, setShowImport] = useState(false);
   const [showDuplicates, setShowDuplicates] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    void refreshTracks();
+  }, []);
+
+  async function refreshTracks() {
+    setLoading(true);
+    try {
+      const rows = await getTracks();
+      setLibraryTracks(rows);
+      setError("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Nie udalo sie pobrac biblioteki.");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   const tracks = useMemo(
-    () => filterTracks(DEMO_TRACKS, { search, key: keyFilter }),
-    [search, keyFilter]
+    () => filterTracks(libraryTracks, { search, key: keyFilter }),
+    [libraryTracks, search, keyFilter]
   );
 
   return (
@@ -38,14 +53,17 @@ export function App() {
         />
         <button onClick={() => setShowImport(true)}>Import Wizard</button>
         <button onClick={() => setShowDuplicates(true)}>Duplicate Finder</button>
+        <button onClick={() => void refreshTracks()}>Odswiez</button>
       </div>
 
       <div className="card">
+        {loading ? <div className="muted">Ladowanie biblioteki...</div> : null}
+        {error ? <div className="error">{error}</div> : null}
         <h3>Library ({tracks.length})</h3>
         <ul>
           {tracks.map((t) => (
             <li key={t.id}>
-              {t.artist} - {t.title} [{t.key}]
+              {t.artist} - {t.title} [{t.key ?? "-"}]
             </li>
           ))}
         </ul>
@@ -53,13 +71,15 @@ export function App() {
 
       <AudioPlayer src="/sample.mp3" />
 
-      <ImportWizardModal open={showImport} onClose={() => setShowImport(false)} />
+      <ImportWizardModal
+        open={showImport}
+        onClose={() => setShowImport(false)}
+        onImported={() => void refreshTracks()}
+      />
       <DuplicateFinderModal
         open={showDuplicates}
-        tracks={DEMO_TRACKS}
         onClose={() => setShowDuplicates(false)}
       />
     </main>
   );
 }
-
