@@ -33,6 +33,30 @@ def heuristic_analysis(track: Track) -> AnalysisResult:
     )
 
 
+def enrich_track_with_analysis(
+    track: Track,
+    *,
+    detected_bpm: float | None = None,
+    detected_key: str | None = None,
+    detected_energy: float | None = None,
+) -> Track:
+    if detected_bpm is not None:
+        track.bpm = float(detected_bpm)
+    if detected_key:
+        track.key = detected_key
+    if detected_energy is not None:
+        track.energy = max(0.0, min(1.0, float(detected_energy)))
+
+    inferred = heuristic_analysis(track)
+    if track.energy is None and inferred.energy is not None:
+        track.energy = inferred.energy
+    if inferred.mood:
+        track.mood = inferred.mood
+    if inferred.genre and not track.genre:
+        track.genre = inferred.genre
+    return track
+
+
 @dataclass
 class DuplicateResult:
     groups: list[DuplicateGroup]

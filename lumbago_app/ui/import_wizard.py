@@ -10,7 +10,9 @@ from lumbago_app.ui.widgets import apply_dialog_fade, dialog_icon_pixmap
 from lumbago_app.core.config import cache_dir
 from lumbago_app.core.audio import extract_metadata, iter_audio_files
 from lumbago_app.core.models import Track
+from lumbago_app.core.services import enrich_track_with_analysis
 from lumbago_app.data.repository import upsert_tracks
+from lumbago_app.services.key_detection import detect_key
 
 
 @dataclass
@@ -41,6 +43,13 @@ class ScanWizardWorker(QtCore.QRunnable):
         self._stop = True
 
     def run(self):
+        try:
+            from lumbago_app.services.audio_features import AudioFeatureExtractor
+
+            extractor = AudioFeatureExtractor()
+        except Exception:
+            extractor = None
+
         files = list(
             iter_audio_files(
                 self.options.folder,
@@ -58,6 +67,32 @@ class ScanWizardWorker(QtCore.QRunnable):
                 break
             try:
                 track = extract_metadata(path)
+                detected_bpm = None
+                detected_energy = None
+                if extractor is not None:
+                    try:
+                        audio_result = extractor.extract(path)
+                        detected_bpm = audio_result.tempo
+                        energy_parts = [
+                            value
+                            for value in (audio_result.brightness, audio_result.roughness)
+                            if isinstance(value, (int, float))
+                        ]
+                        if energy_parts:
+                            detected_energy = sum(energy_parts) / len(energy_parts)
+                    except Exception as exc:
+                        errors.append({"path": str(path), "stage": "audio", "error": str(exc)})
+                detected_key = None
+                try:
+                    detected_key = detect_key(path) if not track.key else track.key
+                except Exception as exc:
+                    errors.append({"path": str(path), "stage": "key", "error": str(exc)})
+                enrich_track_with_analysis(
+                    track,
+                    detected_bpm=detected_bpm,
+                    detected_key=detected_key,
+                    detected_energy=detected_energy,
+                )
                 tracks.append(track)
             except Exception as exc:
                 errors.append({"path": str(path), "stage": "scan", "error": str(exc)})
