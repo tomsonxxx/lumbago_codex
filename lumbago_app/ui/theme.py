@@ -457,7 +457,12 @@ class TokenEngine:
             data = json.loads(token_file.read_text(encoding="utf-8"))
             self._theme_data = data
             colors = data.get("colors", {})
-            self._tokens.update(colors)
+            # W plikach motywów mogą pojawić się listy/słowniki (np. palety hotcue).
+            # QSS wymaga wartości tekstowych, więc normalizujemy wszystko do str.
+            normalized: dict[str, str] = {}
+            for key, value in colors.items():
+                normalized[str(key)] = _token_to_str(value)
+            self._tokens.update(normalized)
         except (json.JSONDecodeError, OSError):
             pass
 
@@ -481,9 +486,7 @@ class TokenEngine:
         """Podmienia tokeny w formacie {token_name} wewnątrz szablonu QSS."""
         result = template
         for key, value in self._tokens.items():
-            if not isinstance(value, str):
-                value = str(value)
-            result = result.replace(f"{{{key}}}", value)
+            result = result.replace(f"{{{str(key)}}}", _token_to_str(value))
         return result
 
     def stylesheet(self) -> str:
@@ -505,3 +508,16 @@ def apply_theme(app: object, theme_name: str = "cyberpunk") -> None:
     """
     engine = TokenEngine(theme_name)
     app.setStyleSheet(engine.generate_qss())
+
+
+def _token_to_str(value: object) -> str:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (int, float, bool)):
+        return str(value)
+    if isinstance(value, list):
+        return ", ".join(_token_to_str(item) for item in value)
+    if isinstance(value, dict):
+        # Zachowujemy czytelność, ale dalej traktujemy to jako tekst.
+        return json.dumps(value, ensure_ascii=False)
+    return str(value)
