@@ -116,12 +116,12 @@ class MetadataEnricher:
             track, candidate.get("title"), _first_artist(candidate), policy=self.validation_policy
         ):
             return None
-        track.title = track.title or candidate.get("title")
-        track.artist = track.artist or _first_artist(candidate)
+        _set_if_missing(track, "title", candidate.get("title"))
+        _set_if_missing(track, "artist", _first_artist(candidate))
         # Extract ISRC from search results
         isrcs = candidate.get("isrcs", [])
         if isrcs and isinstance(isrcs, list):
-            track.isrc = track.isrc or isrcs[0]
+            _set_if_missing(track, "isrc", isrcs[0])
         return track
 
     def enrich_from_discogs_search(self, track: Track, token: str | None) -> Track | None:
@@ -142,13 +142,13 @@ class MetadataEnricher:
             track, candidate.get("title"), candidate.get("artist"), policy=self.validation_policy
         ):
             return None
-        track.title = track.title or candidate.get("title")
-        track.artist = track.artist or candidate.get("artist")
-        track.genre = track.genre or candidate.get("genre")
-        track.album = track.album or candidate.get("album")
-        track.publisher = track.publisher or candidate.get("label")
-        track.year = track.year or candidate.get("year")
-        track.copyright = track.copyright or candidate.get("label")
+        _set_if_missing(track, "title", candidate.get("title"))
+        _set_if_missing(track, "artist", candidate.get("artist"))
+        _set_if_missing(track, "genre", candidate.get("genre"))
+        _set_if_missing(track, "album", candidate.get("album"))
+        _set_if_missing(track, "publisher", candidate.get("label"))
+        _set_if_missing(track, "year", candidate.get("year"))
+        _set_if_missing(track, "copyright", candidate.get("label"))
         return track
 
     def _fetch_musicbrainz_recording(self, recording_id: str) -> dict[str, Any] | None:
@@ -182,51 +182,51 @@ def _select_recording_id(payload: dict[str, Any]) -> str | None:
 
 
 def _apply_musicbrainz_metadata(track: Track, payload: dict[str, Any]) -> str | None:
-    track.title = track.title or payload.get("title")
+    _set_if_missing(track, "title", payload.get("title"))
     artists = payload.get("artist-credit", [])
     if artists:
         names = [artist.get("name") for artist in artists if isinstance(artist, dict)]
         if names:
-            track.artist = track.artist or ", ".join(names)
+            _set_if_missing(track, "artist", ", ".join(names))
     # ISRC
     isrcs = payload.get("isrcs", [])
     if isrcs and isinstance(isrcs, list):
-        track.isrc = track.isrc or isrcs[0]
+        _set_if_missing(track, "isrc", isrcs[0])
     releases = payload.get("releases", [])
     release_id = None
     if releases:
         release = releases[0]
         album_candidate = release.get("title")
         if album_candidate and not _is_compilation_album(album_candidate):
-            track.album = track.album or album_candidate
+            _set_if_missing(track, "album", album_candidate)
             release_id = release.get("id")
             release_date = release.get("date")
             release_year = _parse_year(release_date)
             if release_year and _is_valid_year(release_year):
-                track.year = track.year or str(release_year)
+                _set_if_missing(track, "year", str(release_year))
         # Track number from release media
         media = release.get("media", [])
         if media:
             for medium in media:
                 for mb_track in medium.get("tracks", medium.get("track-list", [])):
                     if mb_track.get("id") == payload.get("id") or mb_track.get("title") == payload.get("title"):
-                        track.tracknumber = track.tracknumber or mb_track.get("number")
+                        _set_if_missing(track, "tracknumber", mb_track.get("number"))
                         position = medium.get("position")
                         if position:
-                            track.discnumber = track.discnumber or str(position)
+                            _set_if_missing(track, "discnumber", str(position))
                         break
         # Album artist from release artist-credit
         release_artists = release.get("artist-credit", [])
         if release_artists:
             ra_names = [a.get("name") for a in release_artists if isinstance(a, dict)]
             if ra_names:
-                track.albumartist = track.albumartist or ", ".join(ra_names)
+                _set_if_missing(track, "albumartist", ", ".join(ra_names))
     tags = payload.get("tags", [])
     if tags:
         top = max(tags, key=lambda item: item.get("count", 0))
         tag_name = top.get("name")
         if tag_name:
-            track.genre = track.genre or tag_name
+            _set_if_missing(track, "genre", tag_name)
     return release_id
 
 
@@ -248,10 +248,12 @@ def _fetch_cover_art(release_id: str, track_path: str) -> Path | None:
 
 
 def _build_text_query(track: Track) -> str | None:
-    if track.artist and track.title:
-        return f'artist:"{track.artist}" AND recording:"{track.title}"'
-    if track.title:
-        return f'recording:"{track.title}"'
+    artist = _clean_text_value(track.artist)
+    title = _clean_text_value(track.title)
+    if artist and title:
+        return f'artist:"{artist}" AND recording:"{title}"'
+    if title:
+        return f'recording:"{title}"'
     return None
 
 
@@ -469,13 +471,13 @@ class AutoMetadataFiller:
         filename_fields = _collect_changed_fields(before, refreshed, allowed={"title", "artist"})
         for field_name in ("title", "artist"):
             value = getattr(refreshed, field_name)
-            if value and not getattr(track, field_name):
+            if _has_value(value) and not _has_value(getattr(track, field_name)):
                 setattr(track, field_name, value)
 
         folder_before = deepcopy(track)
         for field_name in ("album", "artist"):
             value = getattr(refreshed, field_name)
-            if value and not getattr(track, field_name):
+            if _has_value(value) and not _has_value(getattr(track, field_name)):
                 setattr(track, field_name, value)
         folder_fields = _collect_changed_fields(folder_before, track, allowed={"album", "artist"})
 
@@ -614,11 +616,29 @@ def _apply_mapping(target: Track, payload: dict[str, Any], field_map: dict[str, 
     return sorted(changed)
 
 
+def _set_if_missing(target: Track, field_name: str, value: Any) -> bool:
+    if not _has_value(value):
+        return False
+    if _has_value(getattr(target, field_name, None)):
+        return False
+    setattr(target, field_name, value)
+    return True
+
+
+def _clean_text_value(value: str | None) -> str | None:
+    if not _has_value(value):
+        return None
+    return value.strip()
+
+
 def _has_value(value: Any) -> bool:
     if value is None:
         return False
     if isinstance(value, str):
-        return bool(value.strip())
+        normalized = value.strip().lower()
+        if not normalized:
+            return False
+        return normalized not in {"-", "—", "\\", "/", "unknown", "n/a", "none", "null", "brak"}
     return True
 
 

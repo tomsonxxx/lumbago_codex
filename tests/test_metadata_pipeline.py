@@ -1,7 +1,12 @@
 from pathlib import Path
 
 from lumbago_app.core.audio import extract_metadata
-from lumbago_app.services.metadata_enricher import LOCAL_SOURCE_LABELS, available_metadata_methods
+from lumbago_app.services.metadata_enricher import (
+    LOCAL_SOURCE_LABELS,
+    MetadataEnricher,
+    _build_text_query,
+    available_metadata_methods,
+)
 
 
 class _FakeInfo:
@@ -57,3 +62,75 @@ def test_extract_metadata_reads_extended_tags(monkeypatch, tmp_path: Path):
     assert track.key == "8A"
     assert track.mood == "peak time"
     assert track.energy == 0.87
+
+
+def test_copy_missing_fields_treats_placeholders_as_empty():
+    from lumbago_app.core.models import Track
+    from lumbago_app.services.metadata_enricher import _copy_missing_fields
+
+    target = Track(path="target.mp3", title="\\", artist="unknown", album="-")
+    source = Track(path="source.mp3", title="Fixed Title", artist="Fixed Artist", album="Fixed Album")
+
+    changed = _copy_missing_fields(target, source, {"title", "artist", "album"})
+
+    assert changed == ["album", "artist", "title"]
+    assert target.title == "Fixed Title"
+    assert target.artist == "Fixed Artist"
+    assert target.album == "Fixed Album"
+
+
+def test_build_text_query_ignores_placeholder_values():
+    from lumbago_app.core.models import Track
+
+    track = Track(path="target.mp3", title="\\", artist="unknown")
+
+    assert _build_text_query(track) is None
+
+
+def test_musicbrainz_search_replaces_placeholder_values(monkeypatch):
+    from lumbago_app.core.models import Track
+
+    track = Track(path="target.mp3", title="\\", artist="unknown", isrc="-")
+    enricher = MetadataEnricher(acoustid_key=None, musicbrainz_app="test-app")
+
+    monkeypatch.setattr(
+        "lumbago_app.services.metadata_enricher.get_metadata_cache",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        "lumbago_app.services.metadata_enricher.set_metadata_cache",
+        lambda *_args, **_kwargs: None,
+    )
+
+    class _FakeProvider:
+        def __init__(self, _app_name):
+            pass
+
+        def search_recording(self, query: str):
+            assert query == 'recording:"Fixed Title"'
+            return {
+                "recordings": [
+                    {
+                        "title": "Fixed Title",
+                        "artist-credit": [{"name": "Fixed Artist"}],
+                        "isrcs": ["PLTEST123456"],
+                    }
+                ]
+            }
+
+    monkeypatch.setattr("lumbago_app.services.metadata_enricher.MusicBrainzProvider", _FakeProvider)
+    monkeypatch.setattr(
+        "lumbago_app.services.metadata_enricher._build_text_query",
+        lambda _track: 'recording:"Fixed Title"',
+    )
+    monkeypatch.setattr(
+        "lumbago_app.services.metadata_enricher._validate_candidate",
+        lambda *_args, **_kwargs: True,
+    )
+
+    enriched = enricher.enrich_from_musicbrainz_search(track)
+
+    assert enriched is track
+    assert track.title == "Fixed Title"
+    assert track.artist == "Fixed Artist"
+    assert track.isrc == "PLTEST123456"
