@@ -84,6 +84,11 @@ def extract_metadata(path: Path) -> Track:
         or tag_value("key")
         or tag_value("INITIALKEY")
     )
+    track.rating = _parse_rating_tag(
+        tag_value("POPM")
+        or tag_value("rating")
+        or tag_value("RATING")
+    ) or 0
     track.mood = tag_value("mood") or tag_value("MOOD")
     track.energy = _parse_float_tag(tag_value("energy") or tag_value("ENERGY"))
     track.comment = tag_value("COMM") or tag_value("comment") or tag_value("COMM::eng")
@@ -108,6 +113,7 @@ def read_tags(path: Path) -> dict[str, str]:
         "tracknumber": "tracknumber",
         "discnumber": "discnumber",
         "composer": "composer",
+        "rating": "rating", "popm": "rating",
         "comment": "comment",
         "lyrics": "lyrics",
         "isrc": "isrc",
@@ -213,8 +219,7 @@ def _apply_folder_json(track: Track, path: Path) -> None:
 
 
 def _apply_filename_metadata(track: Track, path: Path) -> None:
-    name = path.stem
-    cleaned = name.replace("_", " ").replace(".", " ").strip()
+    cleaned = _cleanup_filename_tokens(path.stem)
     parts = [p.strip() for p in cleaned.split(" - ") if p.strip()]
     if len(parts) >= 2:
         possible_title = parts[-1]
@@ -223,6 +228,25 @@ def _apply_filename_metadata(track: Track, path: Path) -> None:
         _fill_if_empty(track, "artist", possible_artist)
     elif len(parts) == 1:
         _fill_if_empty(track, "title", parts[0])
+
+
+_FILENAME_NOISE_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(
+        r"[\[(]\s*(official(\s+music)?\s+video|official\s+audio|lyrics?|lyric\s+video|visualizer|"
+        r"hq|hd|4k|8k|remaster(ed)?|live|explicit)\s*[\])]",
+        re.IGNORECASE,
+    ),
+    re.compile(r"\b(official(\s+music)?\s+video|official\s+audio|lyrics?|lyric\s+video|visualizer)\b", re.IGNORECASE),
+)
+
+
+def _cleanup_filename_tokens(value: str) -> str:
+    text = value.replace("_", " ").replace(".", " ")
+    for pattern in _FILENAME_NOISE_PATTERNS:
+        text = pattern.sub(" ", text)
+    text = re.sub(r"[^\w\s\-]", " ", text, flags=re.UNICODE)
+    text = re.sub(r"\s+", " ", text).strip(" -_")
+    return text
 
 
 def _apply_filename_patterns(track: Track, path: Path) -> None:
@@ -335,6 +359,22 @@ def _parse_float_tag(value: str | None) -> float | None:
         return float(str(value).replace(",", "."))
     except ValueError:
         return None
+
+
+def _parse_rating_tag(value: str | None) -> int | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    match = re.search(r"\d+", text)
+    if not match:
+        return None
+    rating = int(match.group(0))
+    # ID3 POPM commonly uses 0..255 scale.
+    if rating > 5:
+        rating = max(0, min(5, round((rating / 255) * 5)))
+    return rating if 0 <= rating <= 5 else None
 
 
 def file_hash(path: Path) -> str:

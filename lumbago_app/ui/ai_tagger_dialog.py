@@ -25,7 +25,7 @@ from lumbago_app.ui.widgets import apply_dialog_fade
 FIELDS = [
     "title", "artist", "album", "albumartist", "year", "genre",
     "tracknumber", "discnumber", "composer",
-    "bpm", "key", "mood", "energy",
+    "bpm", "key", "rating", "mood", "energy",
     "comment", "lyrics", "isrc", "publisher", "grouping", "copyright", "remixer",
 ]
 AI_FIELDS = {"genre", "bpm", "key", "mood", "energy"}
@@ -42,6 +42,7 @@ FIELD_LABELS = {
     "composer": "Kompozytor",
     "bpm": "BPM",
     "key": "Tonacja",
+    "rating": "Ocena",
     "mood": "Nastrój",
     "energy": "Energia",
     "comment": "Komentarz",
@@ -100,6 +101,11 @@ def _format_value(field_name: str, value: Any) -> str:
         return f"{float(value):.2f}"
     if field_name == "bpm":
         return f"{float(value):.1f}"
+    if field_name == "rating":
+        try:
+            return str(int(value))
+        except Exception:
+            return str(value)
     return str(value)
 
 
@@ -875,3 +881,4 @@ def _is_valid_key(value: str) -> bool:
     if re.match(r"^(1[0-2]|[1-9])[AB]$", value, re.IGNORECASE):
         return True
     return bool(re.match(r"^[A-G](#|b)?m?$", value, re.IGNORECASE))
+

@@ -68,12 +68,12 @@ def undo_last_rename() -> list[dict[str, str]]:
 
 def _render_pattern(track: Track, pattern: str, index: int) -> str:
     mapping = {
-        "artist": track.artist or "",
-        "title": track.title or "",
-        "album": track.album or "",
-        "genre": track.genre or "",
-        "bpm": str(track.bpm or ""),
-        "key": track.key or "",
+        "artist": _cleanup_metadata_fragment(track.artist or ""),
+        "title": _cleanup_metadata_fragment(track.title or ""),
+        "album": _cleanup_metadata_fragment(track.album or ""),
+        "genre": _cleanup_metadata_fragment(track.genre or ""),
+        "bpm": _cleanup_metadata_fragment(str(track.bpm or "")),
+        "key": _cleanup_metadata_fragment(track.key or ""),
         "index": str(index),
     }
     result = pattern
@@ -85,9 +85,38 @@ def _render_pattern(track: Track, pattern: str, index: int) -> str:
 
 
 def _sanitize_filename(name: str) -> str:
-    name = re.sub(r"[\\/:*?\"<>|]", "_", name)
-    name = re.sub(r"\\s+", " ", name).strip()
-    return name[:180] if len(name) > 180 else name
+    cleaned = _cleanup_metadata_fragment(name)
+    cleaned = re.sub(r"[\\/:*?\"<>|]", " ", cleaned)
+    cleaned = re.sub(r"[_]+", " ", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" .-_")
+    if not cleaned:
+        cleaned = "untitled"
+    return cleaned[:180] if len(cleaned) > 180 else cleaned
+
+
+_NOISE_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(
+        r"[\[(]\s*(official(\s+music)?\s+video|official\s+audio|audio|lyrics?|lyric\s+video|visualizer|"
+        r"hq|hd|4k|8k|remastered(\s+\d{4})?|live|full\s+album|explicit)\s*[\])]",
+        re.IGNORECASE,
+    ),
+    re.compile(r"\b(official(\s+music)?\s+video|official\s+audio|lyrics?|lyric\s+video|visualizer)\b", re.IGNORECASE),
+    re.compile(r"\b(hq|hd|4k|8k|remastered(\s+\d{4})?)\b", re.IGNORECASE),
+)
+_ORPHAN_BRACKETS_RE = re.compile(r"[\[\](){}]")
+_MULTI_SEPARATOR_RE = re.compile(r"\s*[-–—_|]+\s*")
+_NOISY_PUNCT_RE = re.compile(r"[^\w\s\-\.,&+]+", re.UNICODE)
+
+
+def _cleanup_metadata_fragment(value: str) -> str:
+    text = str(value or "")
+    for pattern in _NOISE_PATTERNS:
+        text = pattern.sub(" ", text)
+    text = _ORPHAN_BRACKETS_RE.sub(" ", text)
+    text = _NOISY_PUNCT_RE.sub(" ", text)
+    text = _MULTI_SEPARATOR_RE.sub(" - ", text)
+    text = re.sub(r"\s+", " ", text).strip(" .-_")
+    return text
 
 
 def _history_path() -> Path:

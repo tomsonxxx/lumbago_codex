@@ -23,6 +23,7 @@ class _FakeAudio:
             "TCON": ["House"],
             "TBPM": ["124.5"],
             "TKEY": ["8A"],
+            "rating": ["5"],
             "mood": ["peak time"],
             "energy": ["0.87"],
         }
@@ -55,6 +56,7 @@ def test_extract_metadata_reads_extended_tags(monkeypatch, tmp_path: Path):
     assert track.genre == "House"
     assert track.bpm == 124.5
     assert track.key == "8A"
+    assert track.rating == 5
     assert track.mood == "peak time"
     assert track.energy == 0.87
 
