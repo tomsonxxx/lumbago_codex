@@ -46,9 +46,18 @@ jobs:
       - name: Run tests (Windows)
         if: runner.os == 'Windows'
         run: python -m pytest -q tests
-      - name: Smoke UI
+      - name: Smoke UI (Linux)
+        if: runner.os == 'Linux'
         shell: bash
         env:
+          LUMBAGO_SAFE_MODE: "1"
+          LUMBAGO_SMOKE_SECONDS: "3"
+        run: xvfb-run -a python -m lumbago_app.main
+      - name: Smoke UI (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        env:
+          LUMBAGO_SAFE_MODE: "1"
           LUMBAGO_SMOKE_SECONDS: "3"
         run: python -m lumbago_app.main
 
