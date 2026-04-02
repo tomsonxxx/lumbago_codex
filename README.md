@@ -36,3 +36,17 @@ Opcjonalne klucze API (ustawienia w UI lub `.env`):
 - Podstawowy player (QtMultimedia).
 - Lokalny tagger AI (heurystyki).
 - Duplikaty: hash + tag-based (fingerprint opcjonalny).
+
+## Linux (headless / CI)
+
+W środowisku bez GUI (np. kontener/CI) uruchom przez Xvfb:
+
+```bash
+./scripts/run_headless.sh
+```
+
+Skrypt przekazuje argumenty do aplikacji, np.:
+
+```bash
+./scripts/run_headless.sh --help
+```
