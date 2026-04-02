@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from datetime import datetime
 import hashlib
+import html
+import re
 from typing import Any
 from copy import deepcopy
 
@@ -56,6 +58,9 @@ LOCAL_SOURCE_LABELS = {
     "musicbrainz_recording": "MusicBrainz Recording",
     "discogs_search": "Discogs Search",
     "cover_art_archive": "Cover Art Archive",
+    "portal_search_youtube": "YouTube Search",
+    "portal_search_soundcloud": "SoundCloud Search",
+    "portal_search_spotify": "Spotify Search",
 }
 
 
@@ -432,6 +437,7 @@ class AutoMetadataFiller:
             self._run_local_sources(track, report)
             self._run_local_library_source(track, report)
             self._run_online_pipeline(enricher, track, report, include_acoustid=True)
+            self._run_portal_search_sources(track, report)
         else:
             report.sources.append(SourceProbe(method, method, "miss", detail="Nieznana metoda"))
 
@@ -585,6 +591,30 @@ class AutoMetadataFiller:
         fields = _collect_changed_fields(before, track)
         report.sources.append(SourceProbe("discogs_search", LOCAL_SOURCE_LABELS["discogs_search"], "hit" if enriched and fields else "miss", fields=fields))
 
+    def _run_portal_search_sources(self, track: Track, report: MetadataFillReport) -> None:
+        query = _build_portal_query(track)
+        if not query:
+            for portal_key, portal_name in _PORTAL_SOURCES:
+                report.sources.append(
+                    SourceProbe(portal_key, portal_name, "miss", detail="Brak klucza wyszukiwania")
+                )
+            return
+        for portal_key, portal_name in _PORTAL_SOURCES:
+            before = deepcopy(track)
+            candidate, result_count = _search_public_portal_candidate(track, portal_key, query)
+            if candidate is not None:
+                _apply_portal_candidate(track, candidate)
+            fields = _collect_changed_fields(before, track)
+            report.sources.append(
+                SourceProbe(
+                    portal_key,
+                    portal_name,
+                    "hit" if fields else "miss",
+                    fields=fields,
+                    detail=f"Wyniki: {result_count}",
+                )
+            )
+
 
 def available_metadata_methods() -> dict[str, str]:
     return dict(METHOD_CATALOG)
@@ -641,3 +671,122 @@ def _collect_changed_fields(before: Track, after: Track, allowed: set[str] | Non
         if getattr(before, field_name, None) != getattr(after, field_name, None):
             changed.append(field_name)
     return sorted(changed)
+
+
+_PORTAL_SOURCES = [
+    ("portal_search_youtube", LOCAL_SOURCE_LABELS["portal_search_youtube"]),
+    ("portal_search_soundcloud", LOCAL_SOURCE_LABELS["portal_search_soundcloud"]),
+    ("portal_search_spotify", LOCAL_SOURCE_LABELS["portal_search_spotify"]),
+]
+
+_PORTAL_SITE_QUERY = {
+    "portal_search_youtube": "site:youtube.com/watch",
+    "portal_search_soundcloud": "site:soundcloud.com",
+    "portal_search_spotify": "site:open.spotify.com/track",
+}
+
+_PORTAL_SUFFIX_CLEAN = [
+    " - youtube",
+    " | youtube",
+    " - soundcloud",
+    " | soundcloud",
+    " - spotify",
+    " | spotify",
+]
+
+_RESULT_TITLE_RE = re.compile(r'<a[^>]*class="[^"]*result__a[^"]*"[^>]*>(.*?)</a>', re.IGNORECASE | re.DOTALL)
+_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def _build_portal_query(track: Track) -> str:
+    parts = []
+    if track.artist:
+        parts.append(str(track.artist).strip())
+    if track.title:
+        parts.append(str(track.title).strip())
+    if not parts:
+        stem = Path(track.path).stem.replace("_", " ").replace(".", " ").strip()
+        if stem:
+            parts.append(stem)
+    return " ".join(part for part in parts if part).strip()
+
+
+def _search_public_portal_candidate(
+    track: Track, portal_key: str, query: str
+) -> tuple[dict[str, str] | None, int]:
+    site_query = _PORTAL_SITE_QUERY.get(portal_key)
+    if not site_query:
+        return None, 0
+    search_query = f"{site_query} {query}"
+    try:
+        response = requests.get(
+            "https://duckduckgo.com/html/",
+            params={"q": search_query},
+            headers={"User-Agent": "LumbagoMusicAI/0.1"},
+            timeout=12,
+        )
+        response.raise_for_status()
+    except Exception:
+        return None, 0
+
+    titles = _extract_result_titles(response.text)
+    for title in titles:
+        candidate = _parse_portal_candidate_from_title(title, portal_key)
+        if candidate is None:
+            continue
+        if _validate_candidate(
+            track,
+            candidate.get("title"),
+            candidate.get("artist"),
+            policy="lenient",
+        ):
+            return candidate, len(titles)
+    return None, len(titles)
+
+
+def _extract_result_titles(html_text: str) -> list[str]:
+    results: list[str] = []
+    for raw_title in _RESULT_TITLE_RE.findall(html_text):
+        no_tags = _TAG_RE.sub("", raw_title)
+        clean = html.unescape(no_tags).strip()
+        if clean:
+            results.append(clean)
+    return results
+
+
+def _parse_portal_candidate_from_title(result_title: str, portal_key: str) -> dict[str, str] | None:
+    clean_title = _cleanup_portal_title(result_title)
+    if not clean_title:
+        return None
+
+    if portal_key == "portal_search_spotify":
+        match = re.match(r"^(?P<title>.+?)\s+by\s+(?P<artist>.+?)(?:\s+\||$)", clean_title, re.IGNORECASE)
+        if match:
+            parsed_title = match.group("title").strip()
+            parsed_artist = match.group("artist").strip()
+            if parsed_title and parsed_artist:
+                return {"title": parsed_title, "artist": parsed_artist}
+
+    if " - " in clean_title:
+        left, right = [part.strip() for part in clean_title.split(" - ", 1)]
+        if left and right:
+            return {"artist": left, "title": right}
+
+    return {"title": clean_title}
+
+
+def _cleanup_portal_title(value: str) -> str:
+    cleaned = value.strip()
+    lowered = cleaned.lower()
+    for suffix in _PORTAL_SUFFIX_CLEAN:
+        if lowered.endswith(suffix):
+            cleaned = cleaned[: -len(suffix)].strip()
+            lowered = cleaned.lower()
+    return cleaned
+
+
+def _apply_portal_candidate(track: Track, candidate: dict[str, str]) -> None:
+    if candidate.get("title") and not _has_value(track.title):
+        track.title = candidate["title"]
+    if candidate.get("artist") and not _has_value(track.artist):
+        track.artist = candidate["artist"]
