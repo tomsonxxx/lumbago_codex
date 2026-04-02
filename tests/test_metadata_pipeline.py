@@ -57,3 +57,18 @@ def test_extract_metadata_reads_extended_tags(monkeypatch, tmp_path: Path):
     assert track.key == "8A"
     assert track.mood == "peak time"
     assert track.energy == 0.87
+
+
+def test_copy_missing_fields_treats_placeholders_as_empty():
+    from lumbago_app.core.models import Track
+    from lumbago_app.services.metadata_enricher import _copy_missing_fields
+
+    target = Track(path="target.mp3", title="\\", artist="unknown", album="-")
+    source = Track(path="source.mp3", title="Fixed Title", artist="Fixed Artist", album="Fixed Album")
+
+    changed = _copy_missing_fields(target, source, {"title", "artist", "album"})
+
+    assert changed == ["album", "artist", "title"]
+    assert target.title == "Fixed Title"
+    assert target.artist == "Fixed Artist"
+    assert target.album == "Fixed Album"
