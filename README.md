@@ -36,3 +36,27 @@ Opcjonalne klucze API (ustawienia w UI lub `.env`):
 - Podstawowy player (QtMultimedia).
 - Lokalny tagger AI (heurystyki).
 - Duplikaty: hash + tag-based (fingerprint opcjonalny).
+
+## Linux (headless / CI)
+
+W środowisku bez GUI (np. kontener/CI):
+
+```bash
+./scripts/run_headless.sh
+```
+
+Skrypt działa w trybie `auto`:
+- jeśli jest `xvfb-run`, uruchamia aplikację przez Xvfb,
+- jeśli nie ma `xvfb-run`, używa fallback `QT_QPA_PLATFORM=offscreen`.
+
+Możesz wymusić fallback offscreen:
+
+```bash
+LUMBAGO_HEADLESS_MODE=offscreen ./scripts/run_headless.sh
+```
+
+Skrypt przekazuje argumenty do aplikacji, np.:
+
+```bash
+./scripts/run_headless.sh --help
+```
