@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import queue
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -13,6 +14,8 @@ from lumbago_app.core.services import heuristic_analysis
 
 
 class LocalAiTagger:
+    provider_name = "local"
+
     def analyze(self, track: Track) -> AnalysisResult:
         return heuristic_analysis(track)
 
@@ -28,6 +31,7 @@ class CloudAiTagger:
         retries: int = 1,
     ):
         self.provider = provider
+        self.provider_name = provider or "cloud"
         self.api_key = api_key
         self.base_url = base_url
         self.model = model
@@ -81,6 +85,85 @@ class CloudAiTagger:
                     break
                 time.sleep(0.3 * (attempt + 1))
         return AnalysisResult(description=f"Cloud AI error: {last_exc}", confidence=0.0)
+
+
+class MultiAiTagger:
+    """Runs multiple AI providers in parallel and merges best field-level values."""
+
+    def __init__(self, taggers: list[Any], max_workers: int = 3):
+        self.taggers = [tagger for tagger in taggers if tagger is not None]
+        self.max_workers = max(1, int(max_workers))
+
+    def analyze(self, track: Track) -> AnalysisResult:
+        if not self.taggers:
+            return AnalysisResult(description="No AI providers selected", confidence=0.0)
+        if len(self.taggers) == 1:
+            return self.taggers[0].analyze(track)
+
+        results: list[tuple[str, AnalysisResult]] = []
+        with ThreadPoolExecutor(max_workers=min(self.max_workers, len(self.taggers))) as pool:
+            futures = {
+                pool.submit(tagger.analyze, track): getattr(tagger, "provider_name", tagger.__class__.__name__)
+                for tagger in self.taggers
+            }
+            for future in as_completed(futures):
+                provider_name = futures[future]
+                try:
+                    result = future.result()
+                except Exception as exc:
+                    result = AnalysisResult(description=f"{provider_name}: {exc}", confidence=0.0)
+                results.append((provider_name, result))
+
+        merged = _merge_results(results)
+        return merged
+
+
+def _merge_results(results: list[tuple[str, AnalysisResult]]) -> AnalysisResult:
+    if not results:
+        return AnalysisResult(description="No AI results", confidence=0.0)
+
+    field_names = ("bpm", "key", "mood", "energy", "genre")
+    winners: dict[str, Any] = {}
+    winner_confidences: list[float] = []
+
+    for field_name in field_names:
+        best_value = None
+        best_score = -1.0
+        for _provider, result in results:
+            value = getattr(result, field_name, None)
+            if not _has_nonempty_value(value):
+                continue
+            score = float(result.confidence or 0.0)
+            if score <= 0:
+                score = 0.6
+            if score > best_score:
+                best_score = score
+                best_value = value
+        winners[field_name] = best_value
+        if best_score > 0:
+            winner_confidences.append(best_score)
+
+    providers_info = ", ".join(
+        f"{provider}:{float(result.confidence or 0.0):.2f}" for provider, result in results
+    )
+    merged_conf = sum(winner_confidences) / len(winner_confidences) if winner_confidences else 0.0
+    return AnalysisResult(
+        bpm=_to_float(winners.get("bpm")),
+        key=_to_str(winners.get("key")),
+        mood=_to_str(winners.get("mood")),
+        energy=_to_float(winners.get("energy")),
+        genre=_to_str(winners.get("genre")),
+        description=f"Merged from providers ({providers_info})",
+        confidence=merged_conf,
+    )
+
+
+def _has_nonempty_value(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    return True
 
 
 def _missing_fields(track: Track) -> list[str]:

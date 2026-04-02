@@ -18,10 +18,10 @@ from lumbago_app.core.models import AnalysisResult, Track
 from lumbago_app.core.services import enrich_track_with_analysis
 from lumbago_app.core.audio import write_tags
 from lumbago_app.data.repository import replace_track_tags, update_tracks
-from lumbago_app.services.ai_tagger import CloudAiTagger, LocalAiTagger
+from lumbago_app.services.ai_tagger import CloudAiTagger, LocalAiTagger, MultiAiTagger
 from lumbago_app.services.ai_tagger_merge import _merge_analysis_into_track
 from lumbago_app.services.key_detection import detect_key
-from lumbago_app.services.metadata_enricher import AutoMetadataFiller, MetadataFillReport, available_metadata_methods
+from lumbago_app.services.metadata_enricher import AutoMetadataFiller, MetadataFillReport
 from lumbago_app.ui.widgets import apply_dialog_fade
 
 FIELDS = [
@@ -55,7 +55,11 @@ FIELD_LABELS = {
     "copyright": "Prawa autorskie",
     "remixer": "Remikser",
 }
-METHOD_ORDER = ["offline", "online", "mix"]
+METHOD_LABELS = {
+    "online": "Online",
+    "offline": "Offline",
+    "mix": "Mix",
+}
 PROFILE_PRESETS: dict[str, dict[str, Any]] = {
     "Szybki": {
         "audio": True,
@@ -63,7 +67,9 @@ PROFILE_PRESETS: dict[str, dict[str, Any]] = {
         "meta": False,
         "method": "offline",
         "audio_duration": 30,
-        "workers": 2,
+        "workers": 4,
+        "source_workers": 4,
+        "api_workers": 2,
         "accept_threshold": 0.7,
     },
     "Zbalansowany": {
@@ -72,7 +78,9 @@ PROFILE_PRESETS: dict[str, dict[str, Any]] = {
         "meta": True,
         "method": "mix",
         "audio_duration": 45,
-        "workers": 2,
+        "workers": 6,
+        "source_workers": 6,
+        "api_workers": 3,
         "accept_threshold": 0.6,
     },
     "Dokladny": {
@@ -81,7 +89,9 @@ PROFILE_PRESETS: dict[str, dict[str, Any]] = {
         "meta": True,
         "method": "online",
         "audio_duration": 120,
-        "workers": 1,
+        "workers": 8,
+        "source_workers": 8,
+        "api_workers": 4,
         "accept_threshold": 0.55,
     },
 }
@@ -487,6 +497,7 @@ class AiTaggerDialog(QtWidgets.QDialog):
         self._queue_model = TrackQueueModel(self._states)
         self._current_state: TrackAnalysisState | None = None
         self._worker: _PipelineWorker | None = None
+        self._last_run_providers: list[str] = []
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -502,83 +513,42 @@ class AiTaggerDialog(QtWidgets.QDialog):
         layout = QtWidgets.QHBoxLayout(toolbar)
         layout.setContentsMargins(10, 6, 10, 6)
         layout.setSpacing(10)
-        self._profile_combo = QtWidgets.QComboBox()
-        self._profile_combo.addItems(list(PROFILE_PRESETS.keys()))
-        default_profile = "Szybki" if len(self._tracks) >= 300 else "Zbalansowany"
-        self._profile_combo.setCurrentText(default_profile)
-        self._profile_combo.currentTextChanged.connect(self._apply_profile)
-        layout.addWidget(QtWidgets.QLabel("Profil:"))
-        layout.addWidget(self._profile_combo)
-        layout.addWidget(_vsep())
-        layout.addWidget(QtWidgets.QLabel("<b>Pipeline:</b>"))
-
-        self._chk_audio = QtWidgets.QCheckBox("Analiza audio")
-        self._chk_audio.setChecked(True)
-        self._chk_audio.setToolTip("Wylicza tempo, energiÄ™ i tonacjÄ™ z pliku audio.")
-        self._chk_ai = QtWidgets.QCheckBox("Autotagowanie AI")
-        self._chk_ai.setChecked(True)
-        self._chk_ai.setToolTip("UzupeĹ‚nia pola AI na podstawie bieĹĽÄ…cych metadanych i analizy audio.")
-        self._chk_meta = QtWidgets.QCheckBox("Metadane zewnÄ™trzne")
-        self._chk_meta.setChecked(self._auto_fetch_default)
-        self._chk_meta.setToolTip("Laczy metody lokalne i online, np. tagi pliku, MusicBrainz i publiczne portale.")
-        if not self._allow_auto_fetch:
-            self._chk_meta.setChecked(False)
-            self._chk_meta.setEnabled(False)
-        layout.addWidget(self._chk_audio)
-        layout.addWidget(self._chk_ai)
-        layout.addWidget(self._chk_meta)
-        layout.addWidget(_vsep())
-
-        layout.addWidget(QtWidgets.QLabel("Provider AI:"))
-        self._provider_combo = QtWidgets.QComboBox()
-        self._provider_combo.addItems(["local", "openai", "gemini", "grok", "deepseek"])
-        settings = load_settings()
-        default_provider = settings.cloud_ai_provider or "local"
-        self._provider_combo.setCurrentText("openai" if self._force_cloud and default_provider == "local" else default_provider)
-        layout.addWidget(self._provider_combo)
-
-        layout.addWidget(QtWidgets.QLabel("Metoda metadanych:"))
+        layout.addWidget(QtWidgets.QLabel("Metoda analizy:"))
         self._method_combo = QtWidgets.QComboBox()
-        methods = available_metadata_methods()
-        for method_id in METHOD_ORDER:
-            label = methods.get(method_id)
-            if label:
-                self._method_combo.addItem(label, method_id)
-        if self._auto_method_default:
+        for method_id in ("online", "offline", "mix"):
+            self._method_combo.addItem(METHOD_LABELS[method_id], method_id)
+        if self._auto_method_default in {"online", "offline", "mix"}:
             index = self._method_combo.findData(self._auto_method_default)
             if index >= 0:
                 self._method_combo.setCurrentIndex(index)
-        self._method_combo.setMinimumWidth(220)
         layout.addWidget(self._method_combo)
-        layout.addWidget(QtWidgets.QLabel("Audio (s):"))
-        self._audio_duration = QtWidgets.QSpinBox()
-        self._audio_duration.setRange(15, 180)
-        self._audio_duration.setSingleStep(15)
-        self._audio_duration.setValue(45)
-        layout.addWidget(self._audio_duration)
-        layout.addWidget(QtWidgets.QLabel("Watki:"))
-        self._workers_spin = QtWidgets.QSpinBox()
-        self._workers_spin.setRange(1, 4)
-        self._workers_spin.setValue(2)
-        layout.addWidget(self._workers_spin)
-        layout.addWidget(QtWidgets.QLabel("Prog auto-akceptacji:"))
-        self._accept_threshold = QtWidgets.QDoubleSpinBox()
-        self._accept_threshold.setRange(0.5, 0.95)
-        self._accept_threshold.setSingleStep(0.05)
-        self._accept_threshold.setValue(0.6)
-        layout.addWidget(self._accept_threshold)
+
+        self._options_btn = QtWidgets.QToolButton()
+        self._options_btn.setText("Opcje")
+        self._options_btn.setPopupMode(QtWidgets.QToolButton.ToolButtonPopupMode.InstantPopup)
+        self._options_btn.setToolButtonStyle(QtCore.Qt.ToolButtonStyle.ToolButtonTextOnly)
+        self._options_menu = QtWidgets.QMenu(self._options_btn)
+        self._options_btn.setMenu(self._options_menu)
+        self._build_options_menu()
+        layout.addWidget(self._options_btn)
         layout.addStretch()
 
         self._run_btn = QtWidgets.QPushButton("Start analizy")
         self._run_btn.setObjectName("PrimaryBtn")
         self._run_btn.clicked.connect(self._start_pipeline)
-        self._stop_btn = QtWidgets.QPushButton("Zatrzymaj")
+        self._stop_btn = QtWidgets.QPushButton("Stop")
         self._stop_btn.setObjectName("DangerBtn")
         self._stop_btn.setEnabled(False)
         self._stop_btn.clicked.connect(self._stop_pipeline)
+        self._apply_btn = QtWidgets.QPushButton("Zastosuj zmiany")
+        self._apply_btn.setObjectName("PrimaryBtn")
+        self._apply_btn.setEnabled(False)
+        self._apply_btn.clicked.connect(self._apply_accepted)
         layout.addWidget(self._run_btn)
         layout.addWidget(self._stop_btn)
-        self._apply_profile(self._profile_combo.currentText())
+        layout.addWidget(self._apply_btn)
+        default_profile = "Szybki" if len(self._tracks) >= 300 else "Zbalansowany"
+        self._apply_profile(default_profile)
         return toolbar
 
     def _build_main_area(self) -> QtWidgets.QWidget:
@@ -599,38 +569,16 @@ class AiTaggerDialog(QtWidgets.QDialog):
         self._detail_title = QtWidgets.QLabel("Wybierz utwĂłr z kolejki")
         self._detail_title.setObjectName("DialogTitle")
         right_layout.addWidget(self._detail_title)
-        self._tabs = QtWidgets.QTabWidget()
         self._field_comparison = FieldComparisonWidget()
         self._field_comparison.decisions_changed.connect(self._update_apply_btn)
-        self._audio_panel = AudioInfoPanel()
-        self._sources_panel = MetadataSourcesPanel()
         self._log_view = QtWidgets.QPlainTextEdit()
         self._log_view.setReadOnly(True)
         self._log_view.setPlaceholderText("Tutaj pojawi siÄ™ log przetwarzania.")
         self._log_view.setFont(QtGui.QFont("Consolas", 9))
-        self._tabs.addTab(self._field_comparison, "Propozycje")
-        self._tabs.addTab(self._audio_panel, "Analiza audio")
-        self._tabs.addTab(self._sources_panel, "ĹąrĂłdĹ‚a")
-        self._tabs.addTab(self._log_view, "Log")
-        right_layout.addWidget(self._tabs, 1)
-        buttons = QtWidgets.QHBoxLayout()
-        self._btn_accept_confident = QtWidgets.QPushButton("Akceptuj pewne pola")
-        self._btn_accept_confident.clicked.connect(
-            lambda: self._field_comparison.accept_all_confident(float(self._accept_threshold.value()))
-        )
-        self._btn_reject_track = QtWidgets.QPushButton("OdrzuÄ‡ pola utworu")
-        self._btn_reject_track.clicked.connect(self._field_comparison.reject_all)
-        self._show_changed_only_chk = QtWidgets.QCheckBox("Tylko zmienione pola")
-        self._show_changed_only_chk.setChecked(True)
-        self._show_changed_only_chk.toggled.connect(self._field_comparison.set_show_changed_only)
-        buttons.addWidget(self._btn_accept_confident)
-        buttons.addWidget(self._btn_reject_track)
-        buttons.addWidget(self._show_changed_only_chk)
-        buttons.addStretch()
-        right_layout.addLayout(buttons)
-        QtGui.QShortcut(QtGui.QKeySequence("Ctrl+Shift+A"), self, activated=lambda: self._field_comparison.accept_all_confident(float(self._accept_threshold.value())))
-        QtGui.QShortcut(QtGui.QKeySequence("Ctrl+Shift+R"), self, activated=self._field_comparison.reject_all)
-        QtGui.QShortcut(QtGui.QKeySequence("Ctrl+Shift+F"), self, activated=lambda: self._show_changed_only_chk.setChecked(not self._show_changed_only_chk.isChecked()))
+        self._field_comparison.set_show_changed_only(True)
+        right_layout.addWidget(self._field_comparison, 3)
+        right_layout.addWidget(QtWidgets.QLabel("<b>Log analizy</b>"))
+        right_layout.addWidget(self._log_view, 2)
         splitter.addWidget(right)
         splitter.setSizes([320, 780])
         return splitter
@@ -646,25 +594,6 @@ class AiTaggerDialog(QtWidgets.QDialog):
         progress_row.addWidget(self._progress_bar, 3)
         progress_row.addWidget(self._status_lbl, 2)
         layout.addLayout(progress_row)
-        actions = QtWidgets.QHBoxLayout()
-        self._accept_all_btn = QtWidgets.QPushButton("Akceptuj wszystko")
-        self._accept_all_btn.setEnabled(False)
-        self._accept_all_btn.clicked.connect(self._accept_all_tracks)
-        self._reject_all_btn = QtWidgets.QPushButton("OdrzuÄ‡ wszystko")
-        self._reject_all_btn.setEnabled(False)
-        self._reject_all_btn.clicked.connect(self._reject_all_tracks)
-        self._apply_btn = QtWidgets.QPushButton("Zastosuj zaakceptowane")
-        self._apply_btn.setObjectName("PrimaryBtn")
-        self._apply_btn.setEnabled(False)
-        self._apply_btn.clicked.connect(self._apply_accepted)
-        self._cancel_btn = QtWidgets.QPushButton("Anuluj")
-        self._cancel_btn.clicked.connect(self.reject)
-        actions.addWidget(self._accept_all_btn)
-        actions.addWidget(self._reject_all_btn)
-        actions.addStretch()
-        actions.addWidget(self._apply_btn)
-        actions.addWidget(self._cancel_btn)
-        layout.addLayout(actions)
         return bottom
 
     def _on_queue_selection(self, current: QtCore.QModelIndex, _previous: QtCore.QModelIndex) -> None:
@@ -674,51 +603,61 @@ class AiTaggerDialog(QtWidgets.QDialog):
         self._current_state = state
         self._detail_title.setText(Path(state.track.path).name)
         self._field_comparison.load_state(state)
-        self._audio_panel.load_result(state.audio_result)
-        self._sources_panel.load_report(state.metadata_report)
 
     def _apply_profile(self, profile_name: str) -> None:
         preset = PROFILE_PRESETS.get(profile_name)
         if not preset:
             return
-        self._chk_audio.setChecked(bool(preset["audio"]))
-        self._chk_ai.setChecked(bool(preset["ai"]))
+        self._action_audio.setChecked(bool(preset["audio"]))
+        self._action_ai.setChecked(bool(preset["ai"]))
         if self._allow_auto_fetch:
-            self._chk_meta.setChecked(bool(preset["meta"]))
+            self._action_meta.setChecked(bool(preset["meta"]))
         method_idx = self._method_combo.findData(preset["method"])
         if method_idx >= 0:
             self._method_combo.setCurrentIndex(method_idx)
         self._audio_duration.setValue(int(preset["audio_duration"]))
         self._workers_spin.setValue(int(preset["workers"]))
+        self._source_workers_spin.setValue(int(preset.get("source_workers", 6)))
+        self._api_workers_spin.setValue(int(preset.get("api_workers", 3)))
         self._accept_threshold.setValue(float(preset["accept_threshold"]))
 
     def _start_pipeline(self) -> None:
         settings = load_settings()
-        provider = self._provider_combo.currentText()
-        method = self._method_combo.currentData() or "auto"
+        method = self._method_combo.currentData() or "mix"
         tagger = None
-        if self._chk_ai.isChecked():
-            if provider == "local":
-                tagger = LocalAiTagger()
-            else:
+        selected_providers = self._selected_providers()
+        self._last_run_providers = selected_providers[:]
+        if self._action_ai.isChecked():
+            if not selected_providers:
+                QtWidgets.QMessageBox.warning(self, "Brak API", "Wybierz co najmniej jedno API w menu Opcje.")
+                return
+            taggers: list[Any] = []
+            for provider in selected_providers:
+                if provider == "local":
+                    taggers.append(LocalAiTagger())
+                    continue
                 api_key, base_url, model = _resolve_provider_config(provider, settings)
                 if not api_key:
                     QtWidgets.QMessageBox.warning(self, "Brak klucza API", f"Ustaw klucz API dla providera '{provider}' w ustawieniach.")
                     return
-                tagger = CloudAiTagger(
-                    provider,
-                    api_key,
-                    base_url=base_url,
-                    model=model,
-                    timeout=20 if self._profile_combo.currentText() != "Szybki" else 12,
-                    retries=1,
+                taggers.append(
+                    CloudAiTagger(
+                        provider,
+                        api_key,
+                        base_url=base_url,
+                        model=model,
+                        timeout=20,
+                        retries=1,
+                    )
                 )
+            tagger = MultiAiTagger(taggers, max_workers=int(self._api_workers_spin.value()))
         auto_filler = None
-        if self._chk_meta.isChecked():
+        if self._action_meta.isChecked():
             auto_filler = AutoMetadataFiller(
                 settings.musicbrainz_app_name,
                 settings.validation_policy,
                 settings.metadata_cache_ttl_days,
+                source_workers=int(self._source_workers_spin.value()),
             )
         for state in self._states:
             state.status = TrackStatus.QUEUED
@@ -731,8 +670,6 @@ class AiTaggerDialog(QtWidgets.QDialog):
         self._queue_model.refresh_all()
         self._progress_bar.setValue(0)
         self._log_view.clear()
-        self._accept_all_btn.setEnabled(False)
-        self._reject_all_btn.setEnabled(False)
         self._apply_btn.setEnabled(False)
         self._run_btn.setEnabled(False)
         self._stop_btn.setEnabled(True)
@@ -742,7 +679,7 @@ class AiTaggerDialog(QtWidgets.QDialog):
             tagger,
             auto_filler,
             method,
-            self._chk_audio.isChecked(),
+            self._action_audio.isChecked(),
             audio_duration_s=int(self._audio_duration.value()),
             max_workers=int(self._workers_spin.value()),
             accept_threshold=float(self._accept_threshold.value()),
@@ -773,19 +710,9 @@ class AiTaggerDialog(QtWidgets.QDialog):
         self._progress_bar.setValue(finished)
         if self._queue_list.currentIndex().isValid() and self._queue_list.currentIndex().row() == row:
             self._field_comparison.load_state(state)
-            self._audio_panel.load_result(state.audio_result)
-            self._sources_panel.load_report(state.metadata_report)
+            self._append_track_report_to_log(state)
         if state.status == TrackStatus.DONE:
-            changed = _changed_fields(state.track, state.proposed_track)
-            self._log_view.appendPlainText(f"  zmienione pola: {', '.join(changed) if changed else 'brak'}")
-            if state.metadata_report is not None:
-                self._log_view.appendPlainText(f"  ĹşrĂłdĹ‚a: {state.metadata_report.summary}")
-            if state.ai_result is not None:
-                self._log_view.appendPlainText(
-                    f"  AI: bpm={state.ai_result.bpm} key={state.ai_result.key} "
-                    f"genre={state.ai_result.genre} mood={state.ai_result.mood} energy={state.ai_result.energy} "
-                    f"conf={float(state.ai_result.confidence or 0.0):.0%}"
-                )
+            self._append_track_report_to_log(state)
         elif state.status == TrackStatus.ERROR:
             self._log_view.appendPlainText(f"  bĹ‚Ä…d: {state.error_msg}")
 
@@ -817,8 +744,6 @@ class AiTaggerDialog(QtWidgets.QDialog):
                 f"  Podsumowanie zmian: metadata={metadata_fields} ({metadata_fields/total_changed:.0%}), "
                 f"AI={ai_fields} ({ai_fields/total_changed:.0%}), audio={audio_fields} ({audio_fields/total_changed:.0%})"
             )
-        self._accept_all_btn.setEnabled(done > 0)
-        self._reject_all_btn.setEnabled(done > 0)
         self._update_apply_btn()
         if not self._queue_list.currentIndex().isValid():
             for row, state in enumerate(self._states):
@@ -826,27 +751,12 @@ class AiTaggerDialog(QtWidgets.QDialog):
                     self._queue_list.setCurrentIndex(self._queue_model.index(row))
                     break
 
-    def _accept_all_tracks(self) -> None:
-        for state in self._states:
-            for field_name in _changed_fields(state.track, state.proposed_track):
-                state.decisions[field_name] = True
-        if self._current_state is not None:
-            self._field_comparison.load_state(self._current_state)
-        self._update_apply_btn()
-
-    def _reject_all_tracks(self) -> None:
-        for state in self._states:
-            for field_name in _changed_fields(state.track, state.proposed_track):
-                state.decisions[field_name] = False
-        if self._current_state is not None:
-            self._field_comparison.load_state(self._current_state)
-        self._update_apply_btn()
-
     def _update_apply_btn(self) -> None:
         self._apply_btn.setEnabled(any(value is True for state in self._states for value in state.decisions.values()))
 
     def _apply_accepted(self) -> None:
-        source = f"ai:{self._provider_combo.currentText()}"
+        providers = self._last_run_providers or self._selected_providers()
+        source = "ai:" + ("+".join(providers) if providers else "manual")
         changed_tracks: list[Track] = []
         pending_file_writes: list[tuple[str, dict[str, str]]] = []
         write_errors: list[str] = []
@@ -870,7 +780,7 @@ class AiTaggerDialog(QtWidgets.QDialog):
         if changed_tracks:
             update_tracks(changed_tracks)
             if pending_file_writes:
-                max_workers = max(1, min(4, int(self._workers_spin.value())))
+                max_workers = max(1, min(16, int(self._workers_spin.value())))
                 with ThreadPoolExecutor(max_workers=max_workers) as pool:
                     future_map = {
                         pool.submit(write_tags, Path(track_path), tags): track_path
@@ -891,6 +801,90 @@ class AiTaggerDialog(QtWidgets.QDialog):
             self.accept()
         else:
             self._status_lbl.setText("Brak zaakceptowanych zmian do zapisania.")
+
+    def _build_options_menu(self) -> None:
+        self._action_audio = self._options_menu.addAction("Analiza audio")
+        self._action_audio.setCheckable(True)
+        self._action_audio.setChecked(True)
+        self._action_ai = self._options_menu.addAction("Analiza AI")
+        self._action_ai.setCheckable(True)
+        self._action_ai.setChecked(True)
+        self._action_meta = self._options_menu.addAction("Wzbogacanie metadanych")
+        self._action_meta.setCheckable(True)
+        self._action_meta.setChecked(self._auto_fetch_default)
+        if not self._allow_auto_fetch:
+            self._action_meta.setChecked(False)
+            self._action_meta.setEnabled(False)
+        self._options_menu.addSeparator()
+
+        providers_menu = self._options_menu.addMenu("API AI")
+        self._provider_actions: dict[str, QtGui.QAction] = {}
+        settings = load_settings()
+        default_provider = settings.cloud_ai_provider or "local"
+        for provider in ["local", "openai", "gemini", "grok", "deepseek"]:
+            action = providers_menu.addAction(provider)
+            action.setCheckable(True)
+            action.setChecked(provider == default_provider)
+            self._provider_actions[provider] = action
+        if self._force_cloud:
+            self._provider_actions["local"].setChecked(False)
+            self._provider_actions["openai"].setChecked(True)
+
+        self._options_menu.addSeparator()
+        form_widget = QtWidgets.QWidget()
+        form_layout = QtWidgets.QFormLayout(form_widget)
+        form_layout.setContentsMargins(8, 8, 8, 8)
+        form_layout.setSpacing(6)
+
+        self._audio_duration = QtWidgets.QSpinBox()
+        self._audio_duration.setRange(15, 180)
+        self._audio_duration.setSingleStep(15)
+        self._audio_duration.setValue(45)
+        form_layout.addRow("Audio (s)", self._audio_duration)
+
+        self._workers_spin = QtWidgets.QSpinBox()
+        self._workers_spin.setRange(1, 16)
+        self._workers_spin.setValue(6)
+        form_layout.addRow("Pliki równolegle", self._workers_spin)
+
+        self._source_workers_spin = QtWidgets.QSpinBox()
+        self._source_workers_spin.setRange(1, 16)
+        self._source_workers_spin.setValue(6)
+        form_layout.addRow("Źródła równolegle", self._source_workers_spin)
+
+        self._api_workers_spin = QtWidgets.QSpinBox()
+        self._api_workers_spin.setRange(1, 8)
+        self._api_workers_spin.setValue(3)
+        form_layout.addRow("API równolegle", self._api_workers_spin)
+
+        self._accept_threshold = QtWidgets.QDoubleSpinBox()
+        self._accept_threshold.setRange(0.5, 0.95)
+        self._accept_threshold.setSingleStep(0.05)
+        self._accept_threshold.setValue(0.6)
+        form_layout.addRow("Próg akceptacji", self._accept_threshold)
+
+        widget_action = QtWidgets.QWidgetAction(self._options_menu)
+        widget_action.setDefaultWidget(form_widget)
+        self._options_menu.addAction(widget_action)
+
+    def _selected_providers(self) -> list[str]:
+        providers = [name for name, action in self._provider_actions.items() if action.isChecked()]
+        if not providers and "local" in self._provider_actions:
+            self._provider_actions["local"].setChecked(True)
+            providers.append("local")
+        return providers
+
+    def _append_track_report_to_log(self, state: TrackAnalysisState) -> None:
+        changed = _changed_fields(state.track, state.proposed_track)
+        self._log_view.appendPlainText(f"  zmienione pola: {', '.join(changed) if changed else 'brak'}")
+        if state.metadata_report is not None:
+            self._log_view.appendPlainText(f"  źródła: {state.metadata_report.summary}")
+        if state.ai_result is not None:
+            self._log_view.appendPlainText(
+                f"  AI: bpm={state.ai_result.bpm} key={state.ai_result.key} "
+                f"genre={state.ai_result.genre} mood={state.ai_result.mood} energy={state.ai_result.energy} "
+                f"conf={float(state.ai_result.confidence or 0.0):.0%}"
+            )
 
     def _analyze(self) -> None:
         self._start_pipeline()
@@ -922,7 +916,7 @@ class _PipelineWorker(QtCore.QRunnable):
         self.method = method
         self.do_audio = do_audio
         self.audio_duration_s = max(15, int(audio_duration_s))
-        self.max_workers = max(1, min(4, int(max_workers)))
+        self.max_workers = max(1, min(16, int(max_workers)))
         self.accept_threshold = max(0.5, min(0.95, float(accept_threshold)))
         self.signals = _WorkerSignals()
         self._stop = False

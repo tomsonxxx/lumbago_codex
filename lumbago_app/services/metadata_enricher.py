@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from datetime import datetime
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import hashlib
 import html
 import json
@@ -415,10 +416,12 @@ class AutoMetadataFiller:
         musicbrainz_app: str | None,
         validation_policy: str | None = None,
         cache_ttl_days: int = 30,
+        source_workers: int = 6,
     ):
         self.musicbrainz_app = musicbrainz_app
         self.validation_policy = validation_policy or "balanced"
         self.cache_ttl_days = cache_ttl_days
+        self.source_workers = max(1, min(12, int(source_workers)))
         self._library_snapshot: list[Track] | None = None
 
     def fill_missing(self, track: Track, method: str) -> Track | None:
@@ -604,8 +607,24 @@ class AutoMetadataFiller:
             return
 
         hits: list[tuple[str, dict[str, str], str, int]] = []
-        for idx, portal in enumerate(_PORTAL_SOURCES):
-            candidate, result_count, query_used = _search_public_portal_candidate(track, portal.key, queries)
+        scanned: list[tuple[PortalSource, dict[str, str] | None, int, str]] = []
+
+        max_workers = min(self.source_workers, len(_PORTAL_SOURCES))
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            future_map = {
+                pool.submit(_search_public_portal_candidate, track, portal.key, queries): portal
+                for portal in _PORTAL_SOURCES
+            }
+            for future in as_completed(future_map):
+                portal = future_map[future]
+                try:
+                    candidate, result_count, query_used = future.result()
+                except Exception:
+                    candidate, result_count, query_used = None, 0, "blad wyszukiwania"
+                scanned.append((portal, candidate, result_count, query_used))
+
+        scanned.sort(key=lambda item: item[0].priority)
+        for portal, candidate, result_count, query_used in scanned:
             if candidate is not None:
                 hits.append((portal.key, candidate, query_used, result_count))
             report.sources.append(
@@ -617,18 +636,6 @@ class AutoMetadataFiller:
                     detail=f"Wyniki: {result_count}; zapytanie: {query_used}",
                 )
             )
-            if _has_strong_portal_consensus(hits):
-                for remaining in _PORTAL_SOURCES[idx + 1 :]:
-                    report.sources.append(
-                        SourceProbe(
-                            remaining.key,
-                            remaining.label,
-                            "miss",
-                            fields=[],
-                            detail="Pominieto (wczesny konsensus)",
-                        )
-                    )
-                break
 
         if not hits:
             report.sources.append(
