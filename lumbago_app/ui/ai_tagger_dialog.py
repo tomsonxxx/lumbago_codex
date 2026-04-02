@@ -88,7 +88,7 @@ def _has_value(value: Any) -> bool:
         return False
     if isinstance(value, str):
         normalized = value.strip().lower()
-        return bool(normalized) and normalized not in {"-", "—", "unknown", "n/a", "none", "null"}
+        return bool(normalized) and normalized not in {"-", "—", "\\", "/", "unknown", "n/a", "none", "null", "brak"}
     return True
 
 
