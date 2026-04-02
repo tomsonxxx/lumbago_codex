@@ -68,6 +68,17 @@ LOCAL_SOURCE_LABELS = {
     "jiosaavn": "JioSaavn",
     "musicbrainz_portal": "MusicBrainz (portal)",
     "discogs_portal": "Discogs (portal)",
+    "portal_search_apple_music": "Apple Music",
+    "portal_search_deezer": "Deezer",
+    "portal_search_bandcamp": "Bandcamp",
+    "portal_search_beatport": "Beatport",
+    "portal_search_tidal": "Tidal",
+    "portal_search_amazon_music": "Amazon Music",
+    "portal_search_lastfm": "Last.fm",
+    "portal_search_traxsource": "Traxsource",
+    "portal_search_junodownload": "Juno Download",
+    "portal_search_audiomack": "Audiomack",
+    "portal_consensus": "Głosowanie portali",
 }
 
 
@@ -182,17 +193,6 @@ class MetadataEnricher:
             return None
 
 
-def _select_recording_id(payload: dict[str, Any]) -> str | None:
-    results = payload.get("results", [])
-    if not results:
-        return None
-    best = results[0]
-    recordings = best.get("recordings", [])
-    if not recordings:
-        return None
-    recording = recordings[0]
-    return recording.get("id")
-
 
 def _apply_musicbrainz_metadata(track: Track, payload: dict[str, Any]) -> str | None:
     _set_if_missing(track, "title", payload.get("title"))
@@ -268,6 +268,95 @@ def _build_text_query(track: Track) -> str | None:
     if title:
         return f'recording:"{title}"'
     return None
+
+
+_TITLE_NOISE_RE = re.compile(
+    r"\s*[\(\[][^)\]]{0,40}(official|video|remaster|remix|4k|hd|lyric|audio|visualizer)[^)\]]*[\)\]]",
+    re.IGNORECASE,
+)
+
+_PORTAL_QUERY_MAX = 90
+
+
+def _clean_title(title: str) -> str:
+    """Usuwa typowe suffixsy (Official Video, Remastered 2024 itp.) z tytułu."""
+    cleaned = _TITLE_NOISE_RE.sub("", title).strip()
+    return cleaned or title
+
+
+def _build_portal_queries(track: Track) -> list[str]:
+    """Generuje 1-3 zdeduplikowane zapytania dla portali muzycznych.
+
+    Zapytania mają maksymalnie 90 znaków i są posortowane od najbardziej
+    szczegółowego do ogólnego.
+    """
+    artist = _search_query_value(track.artist) or ""
+    raw_title = _search_query_value(track.title) or ""
+    clean_title = _clean_title(raw_title)
+
+    candidates: list[str] = []
+    if artist and raw_title:
+        candidates.append(f"{artist} {raw_title}")
+    if clean_title and clean_title != raw_title and artist:
+        candidates.append(f"{artist} {clean_title}")
+    if artist and not raw_title:
+        candidates.append(artist)
+    elif raw_title and not artist:
+        candidates.append(raw_title[:_PORTAL_QUERY_MAX])
+
+    # Usuń duplikaty i skróć do 90 znaków
+    seen: list[str] = []
+    for q in candidates:
+        q = q[:_PORTAL_QUERY_MAX].strip()
+        if q and q not in seen:
+            seen.append(q)
+        if len(seen) >= 3:
+            break
+    return seen or [((artist + " " + raw_title).strip() or raw_title)[:_PORTAL_QUERY_MAX]]
+
+
+def _build_portal_consensus(
+    track: Track,
+    hits: list[tuple[str, dict[str, Any], str, float]],
+) -> tuple[dict[str, Any] | None, str]:
+    """Wybiera najlepszego kandydata z wyników portali metodą głosowania.
+
+    Args:
+        track: Oryginalna ścieżka (do walidacji).
+        hits: Lista krotek (source_key, candidate_dict, query, score).
+
+    Returns:
+        (najlepszy_kandydat_lub_None, opis_głosowania)
+    """
+    if not hits:
+        return None, "Brak wyników z portali"
+
+    def _norm_key(c: dict[str, Any]) -> tuple[str, str]:
+        return (_normalize(c.get("artist")), _normalize(c.get("title")))
+
+    groups: dict[tuple[str, str], list[tuple[str, dict[str, Any], float]]] = {}
+    for source_key, candidate, _query, score in hits:
+        k = _norm_key(candidate)
+        if k not in groups:
+            groups[k] = []
+        groups[k].append((source_key, candidate, score))
+
+    if not groups:
+        return None, "Brak kandydatów po normalizacji"
+
+    # Klucz sortowania: liczba portali (głosów), suma score
+    def sort_key(k: tuple[str, str]) -> tuple[int, float]:
+        g = groups[k]
+        return (len(g), sum(s for _, _, s in g))
+
+    winner_key = max(groups, key=sort_key)
+    winner_group = groups[winner_key]
+    # Wybierz kandydata z najwyższym score
+    best_candidate = max(winner_group, key=lambda x: x[2])[1]
+    votes = len(winner_group)
+    sources = [s for s, _, _ in winner_group]
+    detail = f"Glosowanie: {votes}/{len(hits)} portali zgodnych ({', '.join(sources)})"
+    return best_candidate, detail
 
 
 def _select_musicbrainz_recording(payload: dict[str, Any] | None) -> dict[str, Any] | None:

@@ -125,8 +125,32 @@ def _changed_fields(original: Track, proposed: Track) -> list[str]:
 
 def _field_confidence(state: TrackAnalysisState, field_name: str) -> float:
     if field_name in AI_FIELDS and state.ai_result is not None:
-        return float(state.ai_result.confidence or 0.0)
+        conf = state.ai_result.confidence
+        if conf is None:
+            # Brak pewności — użyj 0.75 gdy AI faktycznie zwróciło wartość pola
+            ai_value = getattr(state.ai_result, field_name, None)
+            return 0.75 if ai_value is not None else 0.0
+        return float(conf)
     return 1.0 if field_name in _changed_fields(state.track, state.proposed_track) else 0.0
+
+
+def _default_accept_fields(state: TrackAnalysisState, threshold: float = 0.5) -> set[str]:
+    """Zwraca zbiór pól które powinny być auto-zaakceptowane.
+
+    Reguły:
+    - Pola zmienione przez metadata_report (wiarygodne źródła zewnętrzne) — zawsze.
+    - Pola AI z wystarczającą pewnością (>= threshold) — jeśli faktycznie zmienione.
+    """
+    accepted: set[str] = set()
+    if state.metadata_report is not None:
+        for f in state.metadata_report.changed_fields:
+            if f in FIELDS:
+                accepted.add(f)
+    changed = set(_changed_fields(state.track, state.proposed_track))
+    for f in AI_FIELDS:
+        if f in changed and _field_confidence(state, f) >= threshold:
+            accepted.add(f)
+    return accepted
 
 
 class TrackQueueModel(QtCore.QAbstractListModel):
