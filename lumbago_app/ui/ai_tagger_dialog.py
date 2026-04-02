@@ -29,6 +29,7 @@ FIELDS = [
     "comment", "lyrics", "isrc", "publisher", "grouping", "copyright", "remixer",
 ]
 AI_FIELDS = {"genre", "bpm", "key", "mood", "energy"}
+AUDIO_DERIVED_FIELDS = {"bpm", "key", "energy", "mood"}
 FIELD_LABELS = {
     "title": "Tytuł",
     "artist": "Artysta",
@@ -124,9 +125,33 @@ def _changed_fields(original: Track, proposed: Track) -> list[str]:
 
 
 def _field_confidence(state: TrackAnalysisState, field_name: str) -> float:
-    if field_name in AI_FIELDS and state.ai_result is not None:
-        return float(state.ai_result.confidence or 0.0)
-    return 1.0 if field_name in _changed_fields(state.track, state.proposed_track) else 0.0
+    if field_name not in _changed_fields(state.track, state.proposed_track):
+        return 0.0
+    if field_name in AI_FIELDS:
+        ai_value = getattr(state.ai_result, field_name, None) if state.ai_result is not None else None
+        if _has_value(ai_value):
+            confidence = float(state.ai_result.confidence or 0.0)
+            if confidence > 0:
+                return confidence
+            return 0.75
+        if field_name in AUDIO_DERIVED_FIELDS and state.audio_result is not None:
+            return 0.7
+    if state.metadata_report is not None and field_name in state.metadata_report.changed_fields:
+        return 1.0
+    return 1.0
+
+
+def _default_accept_fields(state: TrackAnalysisState) -> set[str]:
+    accepted: set[str] = set()
+    changed = set(_changed_fields(state.track, state.proposed_track))
+    if state.metadata_report is not None:
+        accepted.update(field for field in state.metadata_report.changed_fields if field in changed)
+    for field_name in changed:
+        if field_name in AI_FIELDS and _field_confidence(state, field_name) >= 0.6:
+            accepted.add(field_name)
+        elif field_name in AUDIO_DERIVED_FIELDS and state.audio_result is not None:
+            accepted.add(field_name)
+    return accepted
 
 
 class TrackQueueModel(QtCore.QAbstractListModel):
@@ -810,11 +835,9 @@ class _PipelineWorker(QtCore.QRunnable):
                 if self.tagger is not None:
                     state.ai_result = self.tagger.analyze(working)
                     _merge_analysis_into_track(working, state.ai_result)
-                    if float(state.ai_result.confidence or 0.0) >= 0.6:
-                        for field_name in AI_FIELDS:
-                            if _format_value(field_name, getattr(state.track, field_name, None)) != _format_value(field_name, getattr(working, field_name, None)):
-                                state.decisions[field_name] = True
                 state.proposed_track = working
+                for field_name in _default_accept_fields(state):
+                    state.decisions[field_name] = True
                 state.status = TrackStatus.DONE
             except Exception as exc:
                 state.status = TrackStatus.ERROR

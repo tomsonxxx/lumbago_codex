@@ -57,6 +57,9 @@ class CloudAiTagger:
             payload = _safe_json(text)
             if not isinstance(payload, dict):
                 return AnalysisResult(description="Cloud AI returned non-JSON response", confidence=0.0)
+            confidence = _to_float(payload.get("confidence"))
+            if confidence is None:
+                confidence = _infer_confidence(payload)
             return AnalysisResult(
                 bpm=_to_float(payload.get("bpm")),
                 key=_to_str(payload.get("key")),
@@ -64,7 +67,7 @@ class CloudAiTagger:
                 energy=_to_float(payload.get("energy")),
                 genre=_to_str(payload.get("genre")),
                 description=_to_str(payload.get("description")),
-                confidence=_to_float(payload.get("confidence")),
+                confidence=confidence,
             )
         except Exception as exc:
             return AnalysisResult(description=f"Cloud AI error: {exc}", confidence=0.0)
@@ -232,6 +235,24 @@ def _to_str(value: Any) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _infer_confidence(payload: dict[str, Any]) -> float | None:
+    populated = 0
+    for field_name in ("bpm", "key", "mood", "energy", "genre"):
+        value = payload.get(field_name)
+        if value is None:
+            continue
+        if isinstance(value, str) and not value.strip():
+            continue
+        populated += 1
+    if populated == 0:
+        return None
+    if populated >= 4:
+        return 0.85
+    if populated >= 2:
+        return 0.75
+    return 0.65
 
 
 # ---------------------------------------------------------------------------
