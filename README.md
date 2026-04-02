@@ -29,6 +29,29 @@ Opcjonalne klucze API (ustawienia w UI lub `.env`):
 - `DEEPSEEK_API_KEY`
 - `OPENAI_API_KEY`
 
+
+## Praca z Codex i repozytorium
+
+Aby połączyć Codex z tym repozytorium w sesji CLI:
+
+1. Otwórz katalog projektu jako bieżący katalog roboczy (`/workspace/lumbago_codex`).
+2. Sprawdź gałąź roboczą i stan plików:
+   ```bash
+   git status --short --branch
+   ```
+3. Wykonuj zmiany lokalnie, a następnie zatwierdzaj je commitem:
+   ```bash
+   git add <pliki>
+   git commit -m "Opis zmiany"
+   ```
+4. (Opcjonalnie) dodaj zdalne repozytorium i wypchnij branch:
+   ```bash
+   git remote add origin <url_repo>
+   git push -u origin <branch>
+   ```
+
+To wystarcza, żeby Codex pracował bezpośrednio na historii Git tego projektu.
+
 ## Zakres MVP
 - Library Browser: lista/siatka, filtry, wyszukiwanie.
 - Import i skan folderów z metadanymi (Mutagen).
