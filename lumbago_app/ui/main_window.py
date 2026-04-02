@@ -537,6 +537,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.detail_loudness = QtWidgets.QLineEdit()
         self.detail_loudness.setReadOnly(True)
         self.detail_loudness.setToolTip("Zintegrowana głośność (LUFS)")
+        self.detail_energy = QtWidgets.QLineEdit()
+        self.detail_energy.setReadOnly(True)
+        self.detail_energy.setToolTip("Energia (0.0–1.0)")
+        self.detail_mood = QtWidgets.QLineEdit()
+        self.detail_mood.setReadOnly(True)
+        self.detail_mood.setToolTip("Nastrój (AI)")
         form.addRow("Tytuł", self.detail_title)
         form.addRow("Artysta", self.detail_artist)
         form.addRow("Album", self.detail_album)
@@ -545,6 +551,8 @@ class MainWindow(QtWidgets.QMainWindow):
         form.addRow("BPM", self.detail_bpm)
         form.addRow("Tonacja", self.detail_key)
         form.addRow("LUFS", self.detail_loudness)
+        form.addRow("Energia", self.detail_energy)
+        form.addRow("Nastrój", self.detail_mood)
         layout.addLayout(form)
 
         self.save_btn = AnimatedButton("Zapisz zmiany")
@@ -1059,9 +1067,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.detail_album.setText(track.album or "")
         self.detail_year.setText(track.year or "")
         self.detail_genre.setText(track.genre or "")
-        self.detail_bpm.setText(str(track.bpm or ""))
+        self.detail_bpm.setText(str(track.bpm) if track.bpm is not None else "")
         self.detail_key.setText(track.key or "")
-        self.detail_loudness.setText(str(track.loudness_lufs or ""))
+        self.detail_loudness.setText(str(track.loudness_lufs) if track.loudness_lufs is not None else "")
+        self.detail_energy.setText(str(track.energy) if track.energy is not None else "")
+        self.detail_mood.setText(track.mood or "")
         self._cue_a = track.cue_in_ms
         self._cue_b = track.cue_out_ms
         self._selected_track = track
