@@ -31,6 +31,20 @@ class AnalysisResult:
     genre: str | None = None
     description: str | None = None
     confidence: float | None = None
+    title: str | None = None
+    artist: str | None = None
+    album: str | None = None
+    albumartist: str | None = None
+    year: str | None = None
+    tracknumber: str | None = None
+    discnumber: str | None = None
+    composer: str | None = None
+    isrc: str | None = None
+    publisher: str | None = None
+    grouping: str | None = None
+    copyright: str | None = None
+    remixer: str | None = None
+    comment: str | None = None
 
 
 @dataclass
