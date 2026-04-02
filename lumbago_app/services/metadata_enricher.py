@@ -11,14 +11,13 @@ import re
 from typing import Any
 from copy import deepcopy
 
-from lumbago_app.services.metadata_providers import DiscogsProvider, MusicBrainzProvider
+from lumbago_app.services.metadata_providers import MusicBrainzProvider
 from lumbago_app.data.repository import get_metadata_cache, set_metadata_cache, list_tracks
 
 import requests
 
 from lumbago_app.core.models import Track
 from lumbago_app.core.config import cache_dir
-from lumbago_app.services.recognizer import AcoustIdRecognizer
 from lumbago_app.core.audio import extract_metadata, read_tags
 
 
@@ -55,10 +54,8 @@ LOCAL_SOURCE_LABELS = {
     "folder_json": "Plik folder.json / metadata.json",
     "cue_sheet": "Plik CUE",
     "local_library": "Biblioteka lokalna",
-    "acoustid": "AcoustID",
     "musicbrainz_search": "MusicBrainz Search",
     "musicbrainz_recording": "MusicBrainz Recording",
-    "discogs_search": "Discogs Search",
     "cover_art_archive": "Cover Art Archive",
     "portal_search_youtube": "YouTube Search",
     "portal_search_soundcloud": "SoundCloud Search",
@@ -77,7 +74,7 @@ LOCAL_SOURCE_LABELS = {
 }
 METHOD_CATALOG = {
     "offline": "Offline — pliki i baza lokalna",
-    "online": "Online — AcoustID, MusicBrainz, Discogs",
+    "online": "Online — MusicBrainz + publiczne portale",
     "mix": "Mix — wszystkie dostępne źródła",
 }
 
@@ -112,9 +109,7 @@ SOURCE_WEIGHTS: dict[str, float] = {
     "folder_json": 0.90,
     "cue_sheet": 0.82,
     "local_library": 0.86,
-    "acoustid": 0.98,
     "musicbrainz_search": 0.94,
-    "discogs_search": 0.90,
     "portal_search_spotify": 0.88,
     "portal_search_apple_music": 0.86,
     "portal_search_deezer": 0.84,
@@ -134,44 +129,16 @@ SOURCE_WEIGHTS: dict[str, float] = {
 class MetadataEnricher:
     def __init__(
         self,
-        acoustid_key: str | None,
         musicbrainz_app: str | None,
         validation_policy: str | None = None,
         cache_ttl_days: int = 30,
     ):
-        self.recognizer = AcoustIdRecognizer(acoustid_key)
         self.musicbrainz_app = musicbrainz_app or "LumbagoMusicAI"
         self.validation_policy = validation_policy or "balanced"
         self.cache_ttl_seconds = max(0, cache_ttl_days) * 24 * 3600
 
     def enrich_track(self, track: Track) -> Track | None:
-        result = self.recognizer.recognize(Path(track.path))
-        metadata = None
-        if result:
-            recording_id = _select_recording_id(
-                result,
-                preferred_title=track.title,
-                preferred_artist=track.artist,
-            )
-            if recording_id:
-                metadata = self._fetch_musicbrainz_recording(recording_id)
-
-        # Fallback: text recognition when fingerprint fails or returns weak matches.
-        if not metadata:
-            fallback = self.enrich_from_musicbrainz_search(track)
-            return fallback
-
-        candidate_title = metadata.get("title")
-        candidate_artist = _first_artist(metadata)
-        if not _validate_candidate(track, candidate_title, candidate_artist, policy=self.validation_policy):
-            fallback = self.enrich_from_musicbrainz_search(track)
-            return fallback
-        release_id = _apply_musicbrainz_metadata(track, metadata)
-        if release_id:
-            cover_path = _fetch_cover_art(release_id, track.path)
-            if cover_path:
-                track.artwork_path = str(cover_path)
-        return track
+        return self.enrich_from_musicbrainz_search(track)
 
     def enrich_from_musicbrainz_search(self, track: Track) -> Track | None:
         query = _build_text_query(track)
@@ -195,33 +162,6 @@ class MetadataEnricher:
         isrcs = candidate.get("isrcs", [])
         if isrcs and isinstance(isrcs, list):
             track.isrc = track.isrc or isrcs[0]
-        return track
-
-    def enrich_from_discogs_search(self, track: Track, token: str | None) -> Track | None:
-        if not token:
-            return None
-        query = _build_text_query(track)
-        if not query:
-            return None
-        provider = DiscogsProvider(token)
-        cache_key = f"discogs:search:{query}"
-        data = get_metadata_cache(cache_key, self.cache_ttl_seconds) or provider.search_release(query)
-        if data:
-            set_metadata_cache(cache_key, data, source="discogs")
-        candidate = _select_discogs_release(data)
-        if not candidate:
-            return None
-        if not _validate_candidate(
-            track, candidate.get("title"), candidate.get("artist"), policy=self.validation_policy
-        ):
-            return None
-        track.title = track.title or candidate.get("title")
-        track.artist = track.artist or candidate.get("artist")
-        track.genre = track.genre or candidate.get("genre")
-        track.album = track.album or candidate.get("album")
-        track.publisher = track.publisher or candidate.get("label")
-        track.year = track.year or candidate.get("year")
-        track.copyright = track.copyright or candidate.get("label")
         return track
 
     def _fetch_musicbrainz_recording(self, recording_id: str) -> dict[str, Any] | None:
@@ -529,15 +469,11 @@ def _validate_candidate(
 class AutoMetadataFiller:
     def __init__(
         self,
-        acoustid_key: str | None,
         musicbrainz_app: str | None,
-        discogs_token: str | None,
         validation_policy: str | None = None,
         cache_ttl_days: int = 30,
     ):
-        self.acoustid_key = acoustid_key
         self.musicbrainz_app = musicbrainz_app
-        self.discogs_token = discogs_token
         self.validation_policy = validation_policy or "balanced"
         self.cache_ttl_days = cache_ttl_days
         self._library_snapshot: list[Track] | None = None
@@ -548,7 +484,6 @@ class AutoMetadataFiller:
 
     def fill_missing_with_report(self, track: Track, method: str) -> MetadataFillReport:
         enricher = MetadataEnricher(
-            self.acoustid_key,
             self.musicbrainz_app,
             validation_policy=self.validation_policy,
             cache_ttl_days=self.cache_ttl_days,
@@ -561,7 +496,7 @@ class AutoMetadataFiller:
             "auto": "mix", "local": "offline",
             "file_tags": "offline", "filename": "offline", "sidecar": "offline",
             "folder_json": "offline", "cue": "offline", "library": "offline",
-            "acoustid": "online", "musicbrainz": "online", "discogs": "online",
+            "musicbrainz": "online",
             "text_search": "online", "online_hybrid": "mix",
         }
         resolved = legacy_map.get(method, method)
@@ -570,11 +505,11 @@ class AutoMetadataFiller:
             self._run_local_sources(track, report)
             self._run_local_library_source(track, report)
         elif resolved == "online":
-            self._run_online_pipeline(enricher, track, report, include_acoustid=True)
+            self._run_online_pipeline(enricher, track, report)
         elif resolved == "mix":
             self._run_local_sources(track, report)
             self._run_local_library_source(track, report)
-            self._run_online_pipeline(enricher, track, report, include_acoustid=True)
+            self._run_online_pipeline(enricher, track, report)
             self._run_portal_search_sources(track, report)
         else:
             report.sources.append(SourceProbe(method, method, "miss", detail="Nieznana metoda"))

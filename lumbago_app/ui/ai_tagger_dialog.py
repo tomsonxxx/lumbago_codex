@@ -1,8 +1,9 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import math
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from copy import deepcopy
 from dataclasses import dataclass, field
 from enum import Enum
@@ -12,6 +13,7 @@ from typing import Any
 from PyQt6 import QtCore, QtGui, QtWidgets
 
 from lumbago_app.core.config import load_settings
+from lumbago_app.core.analysis_cache import load_analysis_cache, save_analysis_cache
 from lumbago_app.core.models import AnalysisResult, Track
 from lumbago_app.core.services import enrich_track_with_analysis
 from lumbago_app.core.audio import write_tags
@@ -31,7 +33,7 @@ FIELDS = [
 AI_FIELDS = {"genre", "bpm", "key", "mood", "energy"}
 AUDIO_DERIVED_FIELDS = {"bpm", "key", "energy", "mood"}
 FIELD_LABELS = {
-    "title": "Tytuł",
+    "title": "TytuĹ‚",
     "artist": "Artysta",
     "album": "Album",
     "albumartist": "Artysta albumu",
@@ -43,7 +45,7 @@ FIELD_LABELS = {
     "bpm": "BPM",
     "key": "Tonacja",
     "rating": "Ocena",
-    "mood": "Nastrój",
+    "mood": "NastrĂłj",
     "energy": "Energia",
     "comment": "Komentarz",
     "lyrics": "Tekst",
@@ -54,6 +56,35 @@ FIELD_LABELS = {
     "remixer": "Remikser",
 }
 METHOD_ORDER = ["offline", "online", "mix"]
+PROFILE_PRESETS: dict[str, dict[str, Any]] = {
+    "Szybki": {
+        "audio": True,
+        "ai": True,
+        "meta": False,
+        "method": "offline",
+        "audio_duration": 30,
+        "workers": 2,
+        "accept_threshold": 0.7,
+    },
+    "Zbalansowany": {
+        "audio": True,
+        "ai": True,
+        "meta": True,
+        "method": "mix",
+        "audio_duration": 45,
+        "workers": 2,
+        "accept_threshold": 0.6,
+    },
+    "Dokladny": {
+        "audio": True,
+        "ai": True,
+        "meta": True,
+        "method": "online",
+        "audio_duration": 120,
+        "workers": 1,
+        "accept_threshold": 0.55,
+    },
+}
 
 
 class TrackStatus(Enum):
@@ -65,11 +96,11 @@ class TrackStatus(Enum):
 
 
 STATUS_ICON: dict[TrackStatus, tuple[str, str]] = {
-    TrackStatus.QUEUED: ("○", "#888888"),
-    TrackStatus.RUNNING: ("⟳", "#FFD700"),
-    TrackStatus.DONE: ("✓", "#00E676"),
-    TrackStatus.ERROR: ("✗", "#FF5252"),
-    TrackStatus.SKIPPED: ("–", "#888888"),
+    TrackStatus.QUEUED: ("â—‹", "#888888"),
+    TrackStatus.RUNNING: ("âźł", "#FFD700"),
+    TrackStatus.DONE: ("âś“", "#00E676"),
+    TrackStatus.ERROR: ("âś—", "#FF5252"),
+    TrackStatus.SKIPPED: ("â€“", "#888888"),
 }
 
 
@@ -90,13 +121,13 @@ def _has_value(value: Any) -> bool:
         return False
     if isinstance(value, str):
         normalized = value.strip().lower()
-        return bool(normalized) and normalized not in {"-", "—", "unknown", "n/a", "none", "null"}
+        return bool(normalized) and normalized not in {"-", "â€”", "unknown", "n/a", "none", "null"}
     return True
 
 
 def _format_value(field_name: str, value: Any) -> str:
     if not _has_value(value):
-        return "—"
+        return "â€”"
     if field_name == "energy":
         return f"{float(value):.2f}"
     if field_name == "bpm":
@@ -223,6 +254,7 @@ class FieldComparisonWidget(QtWidgets.QWidget):
         super().__init__(parent)
         self._state: TrackAnalysisState | None = None
         self._rows: dict[str, dict[str, Any]] = {}
+        self._show_changed_only = False
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -232,7 +264,7 @@ class FieldComparisonWidget(QtWidgets.QWidget):
         header = QtWidgets.QWidget()
         header_layout = QtWidgets.QHBoxLayout(header)
         header_layout.setContentsMargins(6, 3, 6, 3)
-        for text, stretch in [("Pole", 1), ("Obecne", 2), ("Propozycja", 2), ("Pewność", 2), ("", 1)]:
+        for text, stretch in [("Pole", 1), ("Obecne", 2), ("Propozycja", 2), ("PewnoĹ›Ä‡", 2), ("", 1)]:
             label = QtWidgets.QLabel(f"<b>{text}</b>")
             label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
             header_layout.addWidget(label, stretch)
@@ -244,19 +276,19 @@ class FieldComparisonWidget(QtWidgets.QWidget):
             row_layout.setSpacing(8)
             label_field = QtWidgets.QLabel(FIELD_LABELS[field_name])
             label_field.setFixedWidth(72)
-            label_current = QtWidgets.QLabel("—")
+            label_current = QtWidgets.QLabel("â€”")
             label_current.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-            label_proposed = QtWidgets.QLabel("—")
+            label_proposed = QtWidgets.QLabel("â€”")
             label_proposed.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
             confidence = ConfidenceBar()
             accept = QtWidgets.QPushButton("Tak")
             accept.setCheckable(True)
             accept.setFixedSize(42, 26)
-            accept.setToolTip("Akceptuj zmianę dla tego pola")
+            accept.setToolTip("Akceptuj zmianÄ™ dla tego pola")
             reject = QtWidgets.QPushButton("Nie")
             reject.setCheckable(True)
             reject.setFixedSize(42, 26)
-            reject.setToolTip("Odrzuć zmianę dla tego pola")
+            reject.setToolTip("OdrzuÄ‡ zmianÄ™ dla tego pola")
 
             def _bind(name: str, yes: QtWidgets.QPushButton, no: QtWidgets.QPushButton):
                 def _on_yes():
@@ -299,7 +331,7 @@ class FieldComparisonWidget(QtWidgets.QWidget):
         self._state = state
         for field_name, row in self._rows.items():
             if state is None:
-                current = proposed = "—"
+                current = proposed = "â€”"
                 changed = False
                 confidence = 0.0
                 decision = None
@@ -316,12 +348,17 @@ class FieldComparisonWidget(QtWidgets.QWidget):
             row["current"].setToolTip(current)
             row["proposed"].setToolTip(proposed)
             row["conf"].set_value(confidence)
+            row["row_widget"].setVisible(changed or not self._show_changed_only)
             row["row_widget"].setEnabled(changed)
             row["accept"].setEnabled(changed)
             row["reject"].setEnabled(changed)
             row["accept"].setChecked(decision is True)
             row["reject"].setChecked(decision is False)
             row["proposed"].setStyleSheet("color: #00E676; font-weight: bold;" if changed else "")
+
+    def set_show_changed_only(self, enabled: bool) -> None:
+        self._show_changed_only = bool(enabled)
+        self.load_state(self._state)
 
     def accept_all_confident(self, threshold: float = 0.6) -> None:
         if self._state is None:
@@ -359,37 +396,37 @@ class AudioInfoPanel(QtWidgets.QWidget):
             bar.setTextVisible(False)
             return bar
 
-        self._tempo = QtWidgets.QLabel("—")
+        self._tempo = QtWidgets.QLabel("â€”")
         self._brightness = _bar()
         self._roughness = _bar()
-        self._spectral = QtWidgets.QLabel("—")
-        self._mfcc = QtWidgets.QLabel("—")
+        self._spectral = QtWidgets.QLabel("â€”")
+        self._mfcc = QtWidgets.QLabel("â€”")
         self._mfcc.setWordWrap(True)
         layout.addRow("Tempo:", self._tempo)
-        layout.addRow("Jasność:", self._brightness)
-        layout.addRow("Szorstkość:", self._roughness)
+        layout.addRow("JasnoĹ›Ä‡:", self._brightness)
+        layout.addRow("SzorstkoĹ›Ä‡:", self._roughness)
         layout.addRow("Centroid spektralny:", self._spectral)
         layout.addRow("MFCC top-5:", self._mfcc)
 
     def load_result(self, result: Any) -> None:
         if result is None:
-            self._tempo.setText("—")
+            self._tempo.setText("â€”")
             self._brightness.setValue(0)
             self._roughness.setValue(0)
-            self._spectral.setText("—")
-            self._mfcc.setText("—")
+            self._spectral.setText("â€”")
+            self._mfcc.setText("â€”")
             return
         tempo = _safe_tempo(result)
-        self._tempo.setText(f"{tempo:.1f} BPM" if tempo is not None else "—")
+        self._tempo.setText(f"{tempo:.1f} BPM" if tempo is not None else "â€”")
         self._brightness.setValue(int((getattr(result, "brightness", 0.0) or 0.0) * 100))
         self._roughness.setValue(int((getattr(result, "roughness", 0.0) or 0.0) * 100))
         spectral = getattr(result, "spectral_centroid", None)
-        self._spectral.setText(f"{float(spectral):.0f} Hz" if spectral else "—")
+        self._spectral.setText(f"{float(spectral):.0f} Hz" if spectral else "â€”")
         try:
             mfcc = json.loads(getattr(result, "mfcc_json", "") or "[]")
         except Exception:
             mfcc = []
-        self._mfcc.setText(str([round(float(value), 2) for value in mfcc[:5]]) if mfcc else "—")
+        self._mfcc.setText(str([round(float(value), 2) for value in mfcc[:5]]) if mfcc else "â€”")
 
 
 class MetadataSourcesPanel(QtWidgets.QWidget):
@@ -397,11 +434,11 @@ class MetadataSourcesPanel(QtWidgets.QWidget):
         super().__init__(parent)
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        self._summary = QtWidgets.QLabel("Brak danych o źródłach.")
+        self._summary = QtWidgets.QLabel("Brak danych o ĹşrĂłdĹ‚ach.")
         self._summary.setWordWrap(True)
         layout.addWidget(self._summary)
         self._table = QtWidgets.QTableWidget(0, 4)
-        self._table.setHorizontalHeaderLabels(["Źródło", "Status", "Pola", "Szczegóły"])
+        self._table.setHorizontalHeaderLabels(["ĹąrĂłdĹ‚o", "Status", "Pola", "SzczegĂłĹ‚y"])
         self._table.verticalHeader().setVisible(False)
         self._table.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
         self._table.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.SingleSelection)
@@ -415,7 +452,7 @@ class MetadataSourcesPanel(QtWidgets.QWidget):
     def load_report(self, report: MetadataFillReport | None) -> None:
         self._table.setRowCount(0)
         if report is None:
-            self._summary.setText("Brak raportu źródeł dla zaznaczonego utworu.")
+            self._summary.setText("Brak raportu ĹşrĂłdeĹ‚ dla zaznaczonego utworu.")
             return
         self._summary.setText(f"Metoda: {report.method}. {report.summary}")
         for source in report.sources:
@@ -423,8 +460,8 @@ class MetadataSourcesPanel(QtWidgets.QWidget):
             self._table.insertRow(row)
             self._table.setItem(row, 0, QtWidgets.QTableWidgetItem(source.label))
             self._table.setItem(row, 1, QtWidgets.QTableWidgetItem(source.status))
-            self._table.setItem(row, 2, QtWidgets.QTableWidgetItem(", ".join(source.fields) if source.fields else "—"))
-            self._table.setItem(row, 3, QtWidgets.QTableWidgetItem(source.detail or "—"))
+            self._table.setItem(row, 2, QtWidgets.QTableWidgetItem(", ".join(source.fields) if source.fields else "â€”"))
+            self._table.setItem(row, 3, QtWidgets.QTableWidgetItem(source.detail or "â€”"))
 
 
 class AiTaggerDialog(QtWidgets.QDialog):
@@ -465,17 +502,25 @@ class AiTaggerDialog(QtWidgets.QDialog):
         layout = QtWidgets.QHBoxLayout(toolbar)
         layout.setContentsMargins(10, 6, 10, 6)
         layout.setSpacing(10)
+        self._profile_combo = QtWidgets.QComboBox()
+        self._profile_combo.addItems(list(PROFILE_PRESETS.keys()))
+        default_profile = "Szybki" if len(self._tracks) >= 300 else "Zbalansowany"
+        self._profile_combo.setCurrentText(default_profile)
+        self._profile_combo.currentTextChanged.connect(self._apply_profile)
+        layout.addWidget(QtWidgets.QLabel("Profil:"))
+        layout.addWidget(self._profile_combo)
+        layout.addWidget(_vsep())
         layout.addWidget(QtWidgets.QLabel("<b>Pipeline:</b>"))
 
         self._chk_audio = QtWidgets.QCheckBox("Analiza audio")
         self._chk_audio.setChecked(True)
-        self._chk_audio.setToolTip("Wylicza tempo, energię i tonację z pliku audio.")
+        self._chk_audio.setToolTip("Wylicza tempo, energiÄ™ i tonacjÄ™ z pliku audio.")
         self._chk_ai = QtWidgets.QCheckBox("Autotagowanie AI")
         self._chk_ai.setChecked(True)
-        self._chk_ai.setToolTip("Uzupełnia pola AI na podstawie bieżących metadanych i analizy audio.")
-        self._chk_meta = QtWidgets.QCheckBox("Metadane zewnętrzne")
+        self._chk_ai.setToolTip("UzupeĹ‚nia pola AI na podstawie bieĹĽÄ…cych metadanych i analizy audio.")
+        self._chk_meta = QtWidgets.QCheckBox("Metadane zewnÄ™trzne")
         self._chk_meta.setChecked(self._auto_fetch_default)
-        self._chk_meta.setToolTip("Łączy metody lokalne i online, np. tagi pliku, AcoustID, MusicBrainz i Discogs.")
+        self._chk_meta.setToolTip("ĹÄ…czy metody lokalne i online, np. tagi pliku, AcoustID, MusicBrainz i Discogs.")
         if not self._allow_auto_fetch:
             self._chk_meta.setChecked(False)
             self._chk_meta.setEnabled(False)
@@ -505,6 +550,23 @@ class AiTaggerDialog(QtWidgets.QDialog):
                 self._method_combo.setCurrentIndex(index)
         self._method_combo.setMinimumWidth(220)
         layout.addWidget(self._method_combo)
+        layout.addWidget(QtWidgets.QLabel("Audio (s):"))
+        self._audio_duration = QtWidgets.QSpinBox()
+        self._audio_duration.setRange(15, 180)
+        self._audio_duration.setSingleStep(15)
+        self._audio_duration.setValue(45)
+        layout.addWidget(self._audio_duration)
+        layout.addWidget(QtWidgets.QLabel("Watki:"))
+        self._workers_spin = QtWidgets.QSpinBox()
+        self._workers_spin.setRange(1, 4)
+        self._workers_spin.setValue(2)
+        layout.addWidget(self._workers_spin)
+        layout.addWidget(QtWidgets.QLabel("Prog auto-akceptacji:"))
+        self._accept_threshold = QtWidgets.QDoubleSpinBox()
+        self._accept_threshold.setRange(0.5, 0.95)
+        self._accept_threshold.setSingleStep(0.05)
+        self._accept_threshold.setValue(0.6)
+        layout.addWidget(self._accept_threshold)
         layout.addStretch()
 
         self._run_btn = QtWidgets.QPushButton("Start analizy")
@@ -516,6 +578,7 @@ class AiTaggerDialog(QtWidgets.QDialog):
         self._stop_btn.clicked.connect(self._stop_pipeline)
         layout.addWidget(self._run_btn)
         layout.addWidget(self._stop_btn)
+        self._apply_profile(self._profile_combo.currentText())
         return toolbar
 
     def _build_main_area(self) -> QtWidgets.QWidget:
@@ -523,7 +586,7 @@ class AiTaggerDialog(QtWidgets.QDialog):
         left = QtWidgets.QWidget()
         left_layout = QtWidgets.QVBoxLayout(left)
         left_layout.setContentsMargins(0, 0, 4, 0)
-        left_layout.addWidget(QtWidgets.QLabel(f"<b>Kolejka</b> ({len(self._tracks)} utworów)"))
+        left_layout.addWidget(QtWidgets.QLabel(f"<b>Kolejka</b> ({len(self._tracks)} utworĂłw)"))
         self._queue_list = QtWidgets.QListView()
         self._queue_list.setModel(self._queue_model)
         self._queue_list.selectionModel().currentChanged.connect(self._on_queue_selection)
@@ -533,7 +596,7 @@ class AiTaggerDialog(QtWidgets.QDialog):
         right = QtWidgets.QWidget()
         right_layout = QtWidgets.QVBoxLayout(right)
         right_layout.setContentsMargins(4, 0, 0, 0)
-        self._detail_title = QtWidgets.QLabel("Wybierz utwór z kolejki")
+        self._detail_title = QtWidgets.QLabel("Wybierz utwĂłr z kolejki")
         self._detail_title.setObjectName("DialogTitle")
         right_layout.addWidget(self._detail_title)
         self._tabs = QtWidgets.QTabWidget()
@@ -543,22 +606,31 @@ class AiTaggerDialog(QtWidgets.QDialog):
         self._sources_panel = MetadataSourcesPanel()
         self._log_view = QtWidgets.QPlainTextEdit()
         self._log_view.setReadOnly(True)
-        self._log_view.setPlaceholderText("Tutaj pojawi się log przetwarzania.")
+        self._log_view.setPlaceholderText("Tutaj pojawi siÄ™ log przetwarzania.")
         self._log_view.setFont(QtGui.QFont("Consolas", 9))
         self._tabs.addTab(self._field_comparison, "Propozycje")
         self._tabs.addTab(self._audio_panel, "Analiza audio")
-        self._tabs.addTab(self._sources_panel, "Źródła")
+        self._tabs.addTab(self._sources_panel, "ĹąrĂłdĹ‚a")
         self._tabs.addTab(self._log_view, "Log")
         right_layout.addWidget(self._tabs, 1)
         buttons = QtWidgets.QHBoxLayout()
         self._btn_accept_confident = QtWidgets.QPushButton("Akceptuj pewne pola")
-        self._btn_accept_confident.clicked.connect(lambda: self._field_comparison.accept_all_confident(0.6))
-        self._btn_reject_track = QtWidgets.QPushButton("Odrzuć pola utworu")
+        self._btn_accept_confident.clicked.connect(
+            lambda: self._field_comparison.accept_all_confident(float(self._accept_threshold.value()))
+        )
+        self._btn_reject_track = QtWidgets.QPushButton("OdrzuÄ‡ pola utworu")
         self._btn_reject_track.clicked.connect(self._field_comparison.reject_all)
+        self._show_changed_only_chk = QtWidgets.QCheckBox("Tylko zmienione pola")
+        self._show_changed_only_chk.setChecked(True)
+        self._show_changed_only_chk.toggled.connect(self._field_comparison.set_show_changed_only)
         buttons.addWidget(self._btn_accept_confident)
         buttons.addWidget(self._btn_reject_track)
+        buttons.addWidget(self._show_changed_only_chk)
         buttons.addStretch()
         right_layout.addLayout(buttons)
+        QtGui.QShortcut(QtGui.QKeySequence("Ctrl+Shift+A"), self, activated=lambda: self._field_comparison.accept_all_confident(float(self._accept_threshold.value())))
+        QtGui.QShortcut(QtGui.QKeySequence("Ctrl+Shift+R"), self, activated=self._field_comparison.reject_all)
+        QtGui.QShortcut(QtGui.QKeySequence("Ctrl+Shift+F"), self, activated=lambda: self._show_changed_only_chk.setChecked(not self._show_changed_only_chk.isChecked()))
         splitter.addWidget(right)
         splitter.setSizes([320, 780])
         return splitter
@@ -578,7 +650,7 @@ class AiTaggerDialog(QtWidgets.QDialog):
         self._accept_all_btn = QtWidgets.QPushButton("Akceptuj wszystko")
         self._accept_all_btn.setEnabled(False)
         self._accept_all_btn.clicked.connect(self._accept_all_tracks)
-        self._reject_all_btn = QtWidgets.QPushButton("Odrzuć wszystko")
+        self._reject_all_btn = QtWidgets.QPushButton("OdrzuÄ‡ wszystko")
         self._reject_all_btn.setEnabled(False)
         self._reject_all_btn.clicked.connect(self._reject_all_tracks)
         self._apply_btn = QtWidgets.QPushButton("Zastosuj zaakceptowane")
@@ -605,6 +677,21 @@ class AiTaggerDialog(QtWidgets.QDialog):
         self._audio_panel.load_result(state.audio_result)
         self._sources_panel.load_report(state.metadata_report)
 
+    def _apply_profile(self, profile_name: str) -> None:
+        preset = PROFILE_PRESETS.get(profile_name)
+        if not preset:
+            return
+        self._chk_audio.setChecked(bool(preset["audio"]))
+        self._chk_ai.setChecked(bool(preset["ai"]))
+        if self._allow_auto_fetch:
+            self._chk_meta.setChecked(bool(preset["meta"]))
+        method_idx = self._method_combo.findData(preset["method"])
+        if method_idx >= 0:
+            self._method_combo.setCurrentIndex(method_idx)
+        self._audio_duration.setValue(int(preset["audio_duration"]))
+        self._workers_spin.setValue(int(preset["workers"]))
+        self._accept_threshold.setValue(float(preset["accept_threshold"]))
+
     def _start_pipeline(self) -> None:
         settings = load_settings()
         provider = self._provider_combo.currentText()
@@ -618,7 +705,14 @@ class AiTaggerDialog(QtWidgets.QDialog):
                 if not api_key:
                     QtWidgets.QMessageBox.warning(self, "Brak klucza API", f"Ustaw klucz API dla providera '{provider}' w ustawieniach.")
                     return
-                tagger = CloudAiTagger(provider, api_key, base_url=base_url, model=model)
+                tagger = CloudAiTagger(
+                    provider,
+                    api_key,
+                    base_url=base_url,
+                    model=model,
+                    timeout=20 if self._profile_combo.currentText() != "Szybki" else 12,
+                    retries=1,
+                )
         auto_filler = None
         if self._chk_meta.isChecked():
             auto_filler = AutoMetadataFiller(
@@ -645,7 +739,16 @@ class AiTaggerDialog(QtWidgets.QDialog):
         self._run_btn.setEnabled(False)
         self._stop_btn.setEnabled(True)
         self._status_lbl.setText("Uruchamianie analizy...")
-        self._worker = _PipelineWorker(self._states, tagger, auto_filler, method, self._chk_audio.isChecked())
+        self._worker = _PipelineWorker(
+            self._states,
+            tagger,
+            auto_filler,
+            method,
+            self._chk_audio.isChecked(),
+            audio_duration_s=int(self._audio_duration.value()),
+            max_workers=int(self._workers_spin.value()),
+            accept_threshold=float(self._accept_threshold.value()),
+        )
         self._worker.signals.track_started.connect(self._on_track_started)
         self._worker.signals.track_done.connect(self._on_track_done)
         self._worker.signals.finished.connect(self._on_finished)
@@ -662,13 +765,14 @@ class AiTaggerDialog(QtWidgets.QDialog):
         state.status = TrackStatus.RUNNING
         self._queue_model.refresh_row(row)
         name = Path(state.track.path).name
-        self._status_lbl.setText(f"Analizuję: {name}")
+        self._status_lbl.setText(f"AnalizujÄ™: {name}")
         self._log_view.appendPlainText(f"> {name}")
 
     def _on_track_done(self, row: int) -> None:
         state = self._states[row]
         self._queue_model.refresh_row(row)
-        self._progress_bar.setValue(row + 1)
+        finished = sum(1 for item in self._states if item.status in {TrackStatus.DONE, TrackStatus.ERROR, TrackStatus.SKIPPED})
+        self._progress_bar.setValue(finished)
         if self._queue_list.currentIndex().isValid() and self._queue_list.currentIndex().row() == row:
             self._field_comparison.load_state(state)
             self._audio_panel.load_result(state.audio_result)
@@ -677,7 +781,7 @@ class AiTaggerDialog(QtWidgets.QDialog):
             changed = _changed_fields(state.track, state.proposed_track)
             self._log_view.appendPlainText(f"  zmienione pola: {', '.join(changed) if changed else 'brak'}")
             if state.metadata_report is not None:
-                self._log_view.appendPlainText(f"  źródła: {state.metadata_report.summary}")
+                self._log_view.appendPlainText(f"  ĹşrĂłdĹ‚a: {state.metadata_report.summary}")
             if state.ai_result is not None:
                 self._log_view.appendPlainText(
                     f"  AI: bpm={state.ai_result.bpm} key={state.ai_result.key} "
@@ -685,15 +789,36 @@ class AiTaggerDialog(QtWidgets.QDialog):
                     f"conf={float(state.ai_result.confidence or 0.0):.0%}"
                 )
         elif state.status == TrackStatus.ERROR:
-            self._log_view.appendPlainText(f"  błąd: {state.error_msg}")
+            self._log_view.appendPlainText(f"  bĹ‚Ä…d: {state.error_msg}")
 
     def _on_finished(self) -> None:
         self._run_btn.setEnabled(True)
         self._stop_btn.setEnabled(False)
         done = sum(1 for state in self._states if state.status == TrackStatus.DONE)
         errors = sum(1 for state in self._states if state.status == TrackStatus.ERROR)
-        self._status_lbl.setText(f"Gotowe: {done} OK, {errors} błędów")
-        self._log_view.appendPlainText(f"\n-- Zakończono: {done}/{len(self._states)} --")
+        self._status_lbl.setText(f"Gotowe: {done} OK, {errors} bĹ‚Ä™dĂłw")
+        self._log_view.appendPlainText(f"\n-- ZakoĹ„czono: {done}/{len(self._states)} --")
+        total_changed = 0
+        metadata_fields = 0
+        ai_fields = 0
+        audio_fields = 0
+        for state in self._states:
+            changed = set(_changed_fields(state.track, state.proposed_track))
+            total_changed += len(changed)
+            metadata_changed = set(state.metadata_report.changed_fields) if state.metadata_report else set()
+            metadata_fields += len(changed & metadata_changed)
+            ai_from_result = set()
+            if state.ai_result is not None:
+                for field_name in AI_FIELDS:
+                    if _has_value(getattr(state.ai_result, field_name, None)):
+                        ai_from_result.add(field_name)
+            ai_fields += len(changed & ai_from_result)
+            audio_fields += len(changed & (AUDIO_DERIVED_FIELDS - ai_from_result))
+        if total_changed > 0:
+            self._log_view.appendPlainText(
+                f"  Podsumowanie zmian: metadata={metadata_fields} ({metadata_fields/total_changed:.0%}), "
+                f"AI={ai_fields} ({ai_fields/total_changed:.0%}), audio={audio_fields} ({audio_fields/total_changed:.0%})"
+            )
         self._accept_all_btn.setEnabled(done > 0)
         self._reject_all_btn.setEnabled(done > 0)
         self._update_apply_btn()
@@ -725,6 +850,7 @@ class AiTaggerDialog(QtWidgets.QDialog):
     def _apply_accepted(self) -> None:
         source = f"ai:{self._provider_combo.currentText()}"
         changed_tracks: list[Track] = []
+        pending_file_writes: list[tuple[str, dict[str, str]]] = []
         write_errors: list[str] = []
         for state in self._states:
             db_tags: list[str] = []
@@ -741,16 +867,26 @@ class AiTaggerDialog(QtWidgets.QDialog):
                 file_tags[field_name] = str(new_value) if new_value is not None else ""
             if db_tags:
                 replace_track_tags(state.track.path, db_tags, source=source, confidence=state.ai_result.confidence if state.ai_result else None)
-                try:
-                    write_tags(Path(state.track.path), file_tags)
-                except Exception as exc:
-                    write_errors.append(f"{Path(state.track.path).name}: {exc}")
+                pending_file_writes.append((state.track.path, file_tags))
                 changed_tracks.append(state.track)
         if changed_tracks:
             update_tracks(changed_tracks)
-            msg = f"Zapisano zmiany dla {len(changed_tracks)} utworów (baza + pliki audio)."
+            if pending_file_writes:
+                max_workers = max(1, min(4, int(self._workers_spin.value())))
+                with ThreadPoolExecutor(max_workers=max_workers) as pool:
+                    future_map = {
+                        pool.submit(write_tags, Path(track_path), tags): track_path
+                        for track_path, tags in pending_file_writes
+                    }
+                    for future in as_completed(future_map):
+                        track_path = future_map[future]
+                        try:
+                            future.result()
+                        except Exception as exc:
+                            write_errors.append(f"{Path(track_path).name}: {exc}")
+            msg = f"Zapisano zmiany dla {len(changed_tracks)} utworĂłw (baza + pliki audio)."
             if write_errors:
-                msg += f"\nBłędy zapisu tagów: {len(write_errors)}"
+                msg += f"\nBĹ‚Ä™dy zapisu tagĂłw: {len(write_errors)}"
                 for err in write_errors[:5]:
                     msg += f"\n  {err}"
             self._status_lbl.setText(msg)
@@ -769,13 +905,27 @@ class _WorkerSignals(QtCore.QObject):
 
 
 class _PipelineWorker(QtCore.QRunnable):
-    def __init__(self, states: list[TrackAnalysisState], tagger, auto_filler, method: str, do_audio: bool):
+    def __init__(
+        self,
+        states: list[TrackAnalysisState],
+        tagger,
+        auto_filler,
+        method: str,
+        do_audio: bool,
+        *,
+        audio_duration_s: int = 45,
+        max_workers: int = 1,
+        accept_threshold: float = 0.6,
+    ):
         super().__init__()
         self.states = states
         self.tagger = tagger
         self.auto_filler = auto_filler
         self.method = method
         self.do_audio = do_audio
+        self.audio_duration_s = max(15, int(audio_duration_s))
+        self.max_workers = max(1, min(4, int(max_workers)))
+        self.accept_threshold = max(0.5, min(0.95, float(accept_threshold)))
         self.signals = _WorkerSignals()
         self._stop = False
 
@@ -783,80 +933,177 @@ class _PipelineWorker(QtCore.QRunnable):
         self._stop = True
 
     def run(self) -> None:
-        extractor = None
-        if self.do_audio:
-            try:
-                from lumbago_app.services.audio_features import AudioFeatureExtractor
-
-                extractor = AudioFeatureExtractor()
-            except Exception:
-                extractor = None
-        for idx, state in enumerate(self.states):
-            if self._stop:
-                state.status = TrackStatus.SKIPPED
+        if self.max_workers <= 1:
+            for idx, _ in enumerate(self.states):
+                if self._stop:
+                    self.states[idx].status = TrackStatus.SKIPPED
+                    self.signals.track_done.emit(idx)
+                    continue
+                self.signals.track_started.emit(idx)
+                self._process_track(idx)
                 self.signals.track_done.emit(idx)
-                continue
+            self.signals.finished.emit()
+            return
+
+        pending_indexes = [idx for idx, _ in enumerate(self.states)]
+        for idx in pending_indexes:
             self.signals.track_started.emit(idx)
-            try:
-                working = deepcopy(state.track)
-                path_obj = Path(working.path)
-                state.decisions.clear()
-                state.metadata_report = None
-                state.ai_result = None
-                state.audio_result = None
-                state.error_msg = ""
-                if self.auto_filler is not None:
-                    state.metadata_report = self.auto_filler.fill_missing_with_report(working, self.method)
-                ai_input = deepcopy(working)
-                if extractor is not None:
-                    needs_audio_features = working.bpm is None or working.energy is None
-                    try:
-                        if needs_audio_features:
-                            state.audio_result = extractor.extract(path_obj)
-                    except Exception:
-                        state.audio_result = None
-                    detected_key = None
-                    if not working.key:
-                        detected_key = detect_key(path_obj)
-                    enrich_track_with_analysis(
-                        working,
-                        detected_bpm=_safe_tempo(state.audio_result),
-                        detected_key=detected_key,
-                        detected_energy=_audio_energy(state.audio_result),
-                    )
-                    if state.audio_result is not None:
-                        try:
-                            from lumbago_app.core.models import AudioFeatures
-                            from lumbago_app.data.repository import upsert_audio_features
-                            af = AudioFeatures(
-                                track_id=0,
-                                mfcc_json=getattr(state.audio_result, "mfcc_json", "[]") or "[]",
-                                tempo=getattr(state.audio_result, "tempo", None),
-                                spectral_centroid=getattr(state.audio_result, "spectral_centroid", None),
-                                spectral_rolloff=getattr(state.audio_result, "spectral_rolloff", None),
-                                brightness=getattr(state.audio_result, "brightness", None),
-                                roughness=getattr(state.audio_result, "roughness", None),
-                                zero_crossing_rate=getattr(state.audio_result, "zero_crossing_rate", None),
-                                chroma_json=getattr(state.audio_result, "chroma_json", None),
-                                danceability=getattr(state.audio_result, "danceability", None),
-                                valence=getattr(state.audio_result, "valence", None),
-                            )
-                            upsert_audio_features(working.path, af)
-                        except Exception:
-                            pass
-                if self.tagger is not None:
-                    state.ai_result = self.tagger.analyze(ai_input)
-                    _merge_analysis_into_track(working, state.ai_result)
-                state.proposed_track = working
-                for field_name in _default_accept_fields(state):
-                    state.decisions[field_name] = True
-                state.status = TrackStatus.DONE
-            except Exception as exc:
-                state.status = TrackStatus.ERROR
-                state.error_msg = str(exc)
-                state.proposed_track = deepcopy(state.track)
-            self.signals.track_done.emit(idx)
+        with ThreadPoolExecutor(max_workers=self.max_workers) as pool:
+            future_map = {pool.submit(self._process_track, idx): idx for idx in pending_indexes}
+            for future in as_completed(future_map):
+                idx = future_map[future]
+                try:
+                    future.result()
+                except Exception as exc:
+                    state = self.states[idx]
+                    state.status = TrackStatus.ERROR
+                    state.error_msg = str(exc)
+                    state.proposed_track = deepcopy(state.track)
+                self.signals.track_done.emit(idx)
         self.signals.finished.emit()
+
+    def _process_track(self, idx: int) -> None:
+        state = self.states[idx]
+        try:
+            working = deepcopy(state.track)
+            path_obj = Path(working.path)
+            state.decisions.clear()
+            state.metadata_report = None
+            state.ai_result = None
+            state.audio_result = None
+            state.error_msg = ""
+            if self.auto_filler is not None:
+                state.metadata_report = self.auto_filler.fill_missing_with_report(working, self.method)
+            ai_input = deepcopy(working)
+            if self.do_audio:
+                state.audio_result = self._load_or_extract_audio(path_obj, working)
+                detected_key = None if working.key else self._load_or_detect_key(path_obj)
+                enrich_track_with_analysis(
+                    working,
+                    detected_bpm=_safe_tempo(state.audio_result),
+                    detected_key=detected_key,
+                    detected_energy=_audio_energy(state.audio_result),
+                )
+                self._persist_audio_features(working.path, state.audio_result)
+            if self.tagger is not None:
+                state.ai_result = self.tagger.analyze(ai_input)
+                _merge_analysis_into_track(working, state.ai_result)
+            state.proposed_track = working
+            for field_name in _default_accept_fields(state):
+                if _field_confidence(state, field_name) >= self.accept_threshold:
+                    state.decisions[field_name] = True
+            state.status = TrackStatus.DONE
+        except Exception as exc:
+            state.status = TrackStatus.ERROR
+            state.error_msg = str(exc)
+            state.proposed_track = deepcopy(state.track)
+
+    def _load_or_extract_audio(self, path_obj: Path, working: Track):
+        needs_audio_features = working.bpm is None or working.energy is None
+        if not needs_audio_features:
+            return None
+        payload = load_analysis_cache(path_obj) or {}
+        sig = self._audio_signature(path_obj)
+        if (
+            payload.get("signature") == sig
+            and payload.get("audio_duration_s") == self.audio_duration_s
+            and isinstance(payload.get("audio_result"), dict)
+        ):
+            return self._audio_result_from_cache(path_obj, payload.get("audio_result", {}))
+
+        try:
+            from lumbago_app.services.audio_features import AudioFeatureExtractor
+
+            extractor = AudioFeatureExtractor()
+            result = extractor.extract(path_obj, duration_s=self.audio_duration_s)
+            save_analysis_cache(
+                path_obj,
+                {
+                    "signature": sig,
+                    "audio_duration_s": self.audio_duration_s,
+                    "audio_result": self._audio_result_to_cache(result),
+                },
+            )
+            return result
+        except Exception:
+            return None
+
+    def _load_or_detect_key(self, path_obj: Path) -> str | None:
+        payload = load_analysis_cache(path_obj) or {}
+        sig = self._audio_signature(path_obj)
+        if payload.get("signature") == sig and _has_value(payload.get("detected_key")):
+            return str(payload.get("detected_key"))
+        detected = detect_key(path_obj)
+        merged = dict(payload)
+        merged["signature"] = sig
+        merged["detected_key"] = detected
+        save_analysis_cache(path_obj, merged)
+        return detected
+
+    def _persist_audio_features(self, track_path: str, audio_result: Any) -> None:
+        if audio_result is None:
+            return
+        try:
+            from lumbago_app.core.models import AudioFeatures
+            from lumbago_app.data.repository import upsert_audio_features
+
+            af = AudioFeatures(
+                track_id=0,
+                mfcc_json=getattr(audio_result, "mfcc_json", "[]") or "[]",
+                tempo=getattr(audio_result, "tempo", None),
+                spectral_centroid=getattr(audio_result, "spectral_centroid", None),
+                spectral_rolloff=getattr(audio_result, "spectral_rolloff", None),
+                brightness=getattr(audio_result, "brightness", None),
+                roughness=getattr(audio_result, "roughness", None),
+                zero_crossing_rate=getattr(audio_result, "zero_crossing_rate", None),
+                chroma_json=getattr(audio_result, "chroma_json", None),
+                danceability=getattr(audio_result, "danceability", None),
+                valence=getattr(audio_result, "valence", None),
+            )
+            upsert_audio_features(track_path, af)
+        except Exception:
+            return
+
+    @staticmethod
+    def _audio_signature(path_obj: Path) -> str:
+        try:
+            stat = path_obj.stat()
+            return f"{path_obj}:{stat.st_size}:{int(stat.st_mtime)}"
+        except Exception:
+            return str(path_obj)
+
+    @staticmethod
+    def _audio_result_to_cache(result: Any) -> dict[str, Any]:
+        return {
+            "tempo": getattr(result, "tempo", None),
+            "mfcc_json": getattr(result, "mfcc_json", "[]"),
+            "spectral_centroid": getattr(result, "spectral_centroid", None),
+            "spectral_rolloff": getattr(result, "spectral_rolloff", None),
+            "brightness": getattr(result, "brightness", None),
+            "roughness": getattr(result, "roughness", None),
+            "waveform_blob": (
+                getattr(result, "waveform_blob", b"").hex()
+                if isinstance(getattr(result, "waveform_blob", None), (bytes, bytearray))
+                else ""
+            ),
+        }
+
+    @staticmethod
+    def _audio_result_from_cache(path_obj: Path, payload: dict[str, Any]):
+        class _CachedAudioResult:
+            pass
+
+        cached = _CachedAudioResult()
+        cached.path = path_obj
+        cached.tempo = payload.get("tempo")
+        cached.mfcc_json = payload.get("mfcc_json") or "[]"
+        cached.spectral_centroid = payload.get("spectral_centroid")
+        cached.spectral_rolloff = payload.get("spectral_rolloff")
+        cached.brightness = payload.get("brightness")
+        cached.roughness = payload.get("roughness")
+        waveform_hex = payload.get("waveform_blob") or ""
+        cached.waveform_blob = bytes.fromhex(waveform_hex) if isinstance(waveform_hex, str) and waveform_hex else b""
+        return cached
 
 
 def _vsep() -> QtWidgets.QFrame:
@@ -887,4 +1134,5 @@ def _is_valid_key(value: str) -> bool:
     if re.match(r"^(1[0-2]|[1-9])[AB]$", value, re.IGNORECASE):
         return True
     return bool(re.match(r"^[A-G](#|b)?m?$", value, re.IGNORECASE))
+
 

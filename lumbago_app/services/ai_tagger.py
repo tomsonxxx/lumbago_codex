@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import queue
+import time
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -24,12 +25,14 @@ class CloudAiTagger:
         base_url: str | None = None,
         model: str | None = None,
         timeout: int = 25,
+        retries: int = 1,
     ):
         self.provider = provider
         self.api_key = api_key
         self.base_url = base_url
         self.model = model
         self.timeout = timeout
+        self.retries = max(0, retries)
 
     def analyze(self, track: Track) -> AnalysisResult:
         if not self.provider or not self.api_key:
@@ -47,30 +50,37 @@ class CloudAiTagger:
         if not missing:
             return AnalysisResult(description="No missing fields", confidence=1.0)
         prompt = _build_prompt(track, missing)
-        try:
-            if self.provider == "gemini":
-                text = _call_gemini_generate_content(base_url, self.api_key, model, prompt, self.timeout)
-            else:
-                text = _call_openai_compatible_chat(
-                    base_url, self.api_key, model, prompt, self.timeout
+        last_exc: Exception | None = None
+        for attempt in range(self.retries + 1):
+            try:
+                if self.provider == "gemini":
+                    text = _call_gemini_generate_content(base_url, self.api_key, model, prompt, self.timeout)
+                else:
+                    text = _call_openai_compatible_chat(
+                        base_url, self.api_key, model, prompt, self.timeout
+                    )
+                payload = _safe_json(text)
+                if not isinstance(payload, dict):
+                    return AnalysisResult(description="Cloud AI returned non-JSON response", confidence=0.0)
+                cleaned = _normalize_payload(payload)
+                confidence = _to_float(cleaned.get("confidence"))
+                if confidence is None:
+                    confidence = _infer_confidence(cleaned)
+                return AnalysisResult(
+                    bpm=_to_float(cleaned.get("bpm")),
+                    key=_to_str(cleaned.get("key")),
+                    mood=_to_str(cleaned.get("mood")),
+                    energy=_to_float(cleaned.get("energy")),
+                    genre=_to_str(cleaned.get("genre")),
+                    description=_to_str(cleaned.get("description")),
+                    confidence=confidence,
                 )
-            payload = _safe_json(text)
-            if not isinstance(payload, dict):
-                return AnalysisResult(description="Cloud AI returned non-JSON response", confidence=0.0)
-            confidence = _to_float(payload.get("confidence"))
-            if confidence is None:
-                confidence = _infer_confidence(payload)
-            return AnalysisResult(
-                bpm=_to_float(payload.get("bpm")),
-                key=_to_str(payload.get("key")),
-                mood=_to_str(payload.get("mood")),
-                energy=_to_float(payload.get("energy")),
-                genre=_to_str(payload.get("genre")),
-                description=_to_str(payload.get("description")),
-                confidence=confidence,
-            )
-        except Exception as exc:
-            return AnalysisResult(description=f"Cloud AI error: {exc}", confidence=0.0)
+            except Exception as exc:
+                last_exc = exc
+                if attempt >= self.retries or not _is_retryable_exception(exc):
+                    break
+                time.sleep(0.3 * (attempt + 1))
+        return AnalysisResult(description=f"Cloud AI error: {last_exc}", confidence=0.0)
 
 
 def _missing_fields(track: Track) -> list[str]:
@@ -261,6 +271,24 @@ def _infer_confidence(payload: dict[str, Any]) -> float | None:
     if populated >= 2:
         return 0.75
     return 0.65
+
+
+def _normalize_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    allowed = {"bpm", "key", "mood", "energy", "genre", "description", "confidence"}
+    return {key: value for key, value in payload.items() if key in allowed}
+
+
+def _is_retryable_exception(exc: Exception) -> bool:
+    if isinstance(exc, requests.Timeout):
+        return True
+    if isinstance(exc, requests.ConnectionError):
+        return True
+    if isinstance(exc, requests.HTTPError):
+        response = getattr(exc, "response", None)
+        if response is None:
+            return True
+        return response.status_code >= 500
+    return False
 
 
 # ---------------------------------------------------------------------------

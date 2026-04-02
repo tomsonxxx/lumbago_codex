@@ -23,6 +23,8 @@ def _merge_analysis_into_track(track: Track, result: AnalysisResult) -> Track:
             continue
         if isinstance(incoming, str) and _is_unknown(incoming):
             continue
+        if field == "genre" and isinstance(incoming, str):
+            incoming = _normalize_genre(incoming)
         setattr(track, field, incoming)
 
     for field in ("bpm", "energy"):
@@ -31,6 +33,13 @@ def _merge_analysis_into_track(track: Track, result: AnalysisResult) -> Track:
             setattr(track, field, incoming)
 
     return track
+
+
+def _normalize_genre(value: str) -> str:
+    cleaned = " ".join(value.strip().split())
+    if not cleaned:
+        return value
+    return cleaned.title()
 
 
 def _harmonize_batch_results(

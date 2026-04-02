@@ -20,6 +20,7 @@ class ImportOptions:
     folder: Path
     recursive: bool
     extensions: set[str]
+    deep_audio_scan: bool
 
 
 class ScanWizardSignals(QtCore.QObject):
@@ -43,12 +44,14 @@ class ScanWizardWorker(QtCore.QRunnable):
         self._stop = True
 
     def run(self):
-        try:
-            from lumbago_app.services.audio_features import AudioFeatureExtractor
+        extractor = None
+        if self.options.deep_audio_scan:
+            try:
+                from lumbago_app.services.audio_features import AudioFeatureExtractor
 
-            extractor = AudioFeatureExtractor()
-        except Exception:
-            extractor = None
+                extractor = AudioFeatureExtractor()
+            except Exception:
+                extractor = None
 
         files = list(
             iter_audio_files(
@@ -241,6 +244,9 @@ class ImportWizard(QtWidgets.QDialog):
         self.batch_size.setValue(200)
         layout.addWidget(QtWidgets.QLabel("Batch commit (ile plików na zapis)"))
         layout.addWidget(self.batch_size)
+        self.deep_audio_scan = QtWidgets.QCheckBox("Dokladna analiza audio podczas skanu (wolniej)")
+        self.deep_audio_scan.setChecked(False)
+        layout.addWidget(self.deep_audio_scan)
         layout.addStretch(1)
         return page
 
@@ -308,6 +314,7 @@ class ImportWizard(QtWidgets.QDialog):
             folder=Path(folder),
             recursive=self.recursive_check.isChecked(),
             extensions=extensions,
+            deep_audio_scan=self.deep_audio_scan.isChecked(),
         )
 
     def _next(self):
