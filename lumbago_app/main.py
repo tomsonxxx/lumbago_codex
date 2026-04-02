@@ -10,7 +10,6 @@ sys.coinit_flags = 2
 from dotenv import load_dotenv
 from PyQt6 import QtCore, QtGui, QtWidgets
 
-from lumbago_app.ui.main_window import MainWindow
 from lumbago_app.ui.theme import apply_theme
 from lumbago_app.ui.widgets import apply_window_fade
 from lumbago_app.core.config import app_data_dir
@@ -32,6 +31,8 @@ def main() -> int:
             apply_window_fade(window)
             window.show()
         else:
+            from lumbago_app.ui.main_window import MainWindow
+
             window = MainWindow()
             apply_window_fade(window)
             window.show()
