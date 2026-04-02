@@ -6,7 +6,13 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
-from PyQt6 import QtCore, QtGui, QtWidgets, QtMultimedia
+from PyQt6 import QtCore, QtGui, QtWidgets
+try:
+    from PyQt6 import QtMultimedia
+    _HAS_MULTIMEDIA = True
+except ImportError:
+    QtMultimedia = None  # type: ignore[assignment]
+    _HAS_MULTIMEDIA = False
 
 if TYPE_CHECKING:
     from lumbago_app.core.models import Track, CuePoint
@@ -224,10 +230,14 @@ class PlayerWidget(QtWidgets.QFrame):
         super().__init__(parent)
         self.setProperty("player", True)
         self.setMinimumHeight(200)
-        self._player = QtMultimedia.QMediaPlayer(self)
-        self._audio_output = QtMultimedia.QAudioOutput(self)
-        self._player.setAudioOutput(self._audio_output)
-        self._audio_output.setVolume(0.8)
+        if _HAS_MULTIMEDIA:
+            self._player = QtMultimedia.QMediaPlayer(self)
+            self._audio_output = QtMultimedia.QAudioOutput(self)
+            self._player.setAudioOutput(self._audio_output)
+            self._audio_output.setVolume(0.8)
+        else:
+            self._player = None
+            self._audio_output = None
         self._current_track = None
         self._cue_points: dict[int, object] = {}
         self._loop_a_ms: int = -1
@@ -287,15 +297,17 @@ class PlayerWidget(QtWidgets.QFrame):
         return btn
 
     def _connect_signals(self):
-        self._player.playbackStateChanged.connect(self._on_state_changed)
-        self._player.mediaStatusChanged.connect(self._on_media_status)
-        self._player.errorOccurred.connect(lambda e, m: logger.error("Player: %s %s", e, m))
+        if _HAS_MULTIMEDIA and self._player is not None:
+            self._player.playbackStateChanged.connect(self._on_state_changed)
+            self._player.mediaStatusChanged.connect(self._on_media_status)
+            self._player.errorOccurred.connect(lambda e, m: logger.error("Player: %s %s", e, m))
         self.btn_play.clicked.connect(self.toggle_play)
         self.btn_stop.clicked.connect(self.stop)
         self.btn_loop_a.clicked.connect(self._set_loop_a)
         self.btn_loop_b.clicked.connect(self._set_loop_b)
         self.btn_loop_clear.clicked.connect(self._clear_loop)
-        self.slider_vol.valueChanged.connect(lambda v: self._audio_output.setVolume(v / 100.0))
+        if _HAS_MULTIMEDIA and self._audio_output is not None:
+            self.slider_vol.valueChanged.connect(lambda v: self._audio_output.setVolume(v / 100.0))
         self.waveform.seek_requested.connect(self.seek)
         self.waveform.cue_set_at.connect(self._on_cue_set_at)
         for pad in self._hotcue_pads:
@@ -318,29 +330,39 @@ class PlayerWidget(QtWidgets.QFrame):
         self._refresh_pads()
         self.waveform.set_cue_points(list(self._cue_points.values()))
         p = Path(track.path)
-        if p.exists():
+        if p.exists() and self._player is not None:
             self._player.setSource(QtCore.QUrl.fromLocalFile(str(p)))
         self._loop_a_ms = -1
         self._loop_b_ms = -1
         self.waveform.clear_loop()
 
-    def play(self): self._player.play(); self._playhead_timer.start()
-    def pause(self): self._player.pause(); self._playhead_timer.stop()
+    def play(self):
+        if self._player is not None: self._player.play()
+        self._playhead_timer.start()
+    def pause(self):
+        if self._player is not None: self._player.pause()
+        self._playhead_timer.stop()
     def toggle_play(self):
+        if self._player is None:
+            return
         PS = QtMultimedia.QMediaPlayer.PlaybackState
         if self._player.playbackState() == PS.PlayingState:
             self.pause()
         else:
             self.play()
     def stop(self):
-        self._player.stop(); self._playhead_timer.stop()
+        if self._player is not None: self._player.stop()
+        self._playhead_timer.stop()
         self.waveform.set_playhead(0); self._update_time_label(0)
     def seek(self, t: int):
-        self._player.setPosition(t); self.waveform.set_playhead(t); self._update_time_label(t)
-    def set_volume(self, v: float): self._audio_output.setVolume(max(0.0, min(1.0, v)))
+        if self._player is not None: self._player.setPosition(t)
+        self.waveform.set_playhead(t); self._update_time_label(t)
+    def set_volume(self, v: float):
+        if self._audio_output is not None:
+            self._audio_output.setVolume(max(0.0, min(1.0, v)))
 
     def _update_playhead(self):
-        pos = self._player.position()
+        pos = self._player.position() if self._player is not None else 0
         self.waveform.set_playhead(pos)
         self._update_time_label(pos)
         self.playback_position_changed.emit(pos)
@@ -348,7 +370,7 @@ class PlayerWidget(QtWidgets.QFrame):
             self.seek(self._loop_a_ms)
 
     def _update_time_label(self, pos_ms: int):
-        dur = self._player.duration() or 0
+        dur = (self._player.duration() if self._player is not None else 0) or 0
         def fmt(s): return f"{s//60}:{s%60:02d}"
         self.lbl_time.setText(f"{fmt(pos_ms//1000)} / {fmt(dur//1000)}")
 
@@ -356,8 +378,12 @@ class PlayerWidget(QtWidgets.QFrame):
         for pad in self._hotcue_pads:
             pad.set_cue(self._cue_points.get(pad.index))
 
-    def _set_loop_a(self): self._loop_a_ms = self._player.position(); self._update_loop_overlay()
-    def _set_loop_b(self): self._loop_b_ms = self._player.position(); self._update_loop_overlay()
+    def _set_loop_a(self):
+        self._loop_a_ms = self._player.position() if self._player is not None else 0
+        self._update_loop_overlay()
+    def _set_loop_b(self):
+        self._loop_b_ms = self._player.position() if self._player is not None else 0
+        self._update_loop_overlay()
     def _clear_loop(self): self._loop_a_ms = -1; self._loop_b_ms = -1; self.waveform.clear_loop()
     def _update_loop_overlay(self):
         if self._loop_a_ms >= 0 and self._loop_b_ms > self._loop_a_ms:
@@ -368,7 +394,8 @@ class PlayerWidget(QtWidgets.QFrame):
         if cue:
             self.seek(cue.time_ms)
 
-    def _on_cue_set_requested(self, idx: int): self._set_cue_at(idx, self._player.position())
+    def _on_cue_set_requested(self, idx: int):
+        self._set_cue_at(idx, self._player.position() if self._player is not None else 0)
     def _on_cue_set_at(self, idx: int, t: int): self._set_cue_at(idx, t)
 
     def _set_cue_at(self, idx: int, t: int):
@@ -385,6 +412,8 @@ class PlayerWidget(QtWidgets.QFrame):
         self.waveform.set_cue_points(list(self._cue_points.values()))
 
     def _on_state_changed(self, state):
+        if not _HAS_MULTIMEDIA:
+            return
         PS = QtMultimedia.QMediaPlayer.PlaybackState
         if state == PS.PlayingState:
             self.btn_play.setText("⏸"); self._playhead_timer.start()
@@ -394,5 +423,7 @@ class PlayerWidget(QtWidgets.QFrame):
                 self._playhead_timer.stop()
 
     def _on_media_status(self, status):
+        if not _HAS_MULTIMEDIA:
+            return
         if status == QtMultimedia.QMediaPlayer.MediaStatus.EndOfMedia:
             self._playhead_timer.stop(); self.track_ended.emit()
