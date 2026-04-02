@@ -74,16 +74,24 @@ class CloudAiTagger:
 
 
 def _missing_fields(track: Track) -> list[str]:
+    def _is_missing(value: Any) -> bool:
+        if value is None:
+            return True
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            return normalized in {"", "-", "—", "unknown", "n/a", "none", "null"}
+        return False
+
     missing = []
-    if track.bpm is None:
+    if _is_missing(track.bpm):
         missing.append("bpm")
-    if not track.key:
+    if _is_missing(track.key):
         missing.append("key")
-    if not track.mood:
+    if _is_missing(track.mood):
         missing.append("mood")
-    if track.energy is None:
+    if _is_missing(track.energy):
         missing.append("energy")
-    if not track.genre:
+    if _is_missing(track.genre):
         missing.append("genre")
     return missing
 
@@ -311,6 +319,9 @@ if _QT_AVAILABLE:
             self._running = True
             is_cloud = isinstance(tagger, CloudAiTagger)
             confidence = self.CONFIDENCE_CLOUD if is_cloud else self.CONFIDENCE_LOCAL
+            from lumbago_app.data.repository import list_tracks
+
+            track_by_path = {track.path: track for track in list_tracks()}
             while self._running:
                 try:
                     item = self._queue.get_nowait()
@@ -318,12 +329,10 @@ if _QT_AVAILABLE:
                     break
                 path = item.track_path
                 try:
-                    from lumbago_app.data.repository import list_tracks
-                    tracks = [t for t in list_tracks() if t.path == path]
-                    if not tracks:
+                    track = track_by_path.get(path)
+                    if not track:
                         self.track_done.emit(path)
                         continue
-                    track = tracks[0]
                     result = tagger.analyze(track)
                     fields: dict[str, Any] = {
                         "bpm": str(result.bpm) if result.bpm is not None else None,

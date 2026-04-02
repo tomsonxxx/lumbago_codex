@@ -799,21 +799,29 @@ class _PipelineWorker(QtCore.QRunnable):
             self.signals.track_started.emit(idx)
             try:
                 working = deepcopy(state.track)
+                path_obj = Path(working.path)
                 state.decisions.clear()
                 state.metadata_report = None
                 state.ai_result = None
                 state.audio_result = None
                 state.error_msg = ""
+                if self.auto_filler is not None:
+                    state.metadata_report = self.auto_filler.fill_missing_with_report(working, self.method)
+                ai_input = deepcopy(working)
                 if extractor is not None:
+                    needs_audio_features = working.bpm is None or working.energy is None
                     try:
-                        state.audio_result = extractor.extract(Path(working.path))
+                        if needs_audio_features:
+                            state.audio_result = extractor.extract(path_obj)
                     except Exception:
                         state.audio_result = None
-                    detected_key = detect_key(Path(working.path))
+                    detected_key = None
+                    if not working.key:
+                        detected_key = detect_key(path_obj)
                     enrich_track_with_analysis(
                         working,
                         detected_bpm=_safe_tempo(state.audio_result),
-                        detected_key=detected_key if detected_key and not working.key else None,
+                        detected_key=detected_key,
                         detected_energy=_audio_energy(state.audio_result),
                     )
                     if state.audio_result is not None:
@@ -836,10 +844,8 @@ class _PipelineWorker(QtCore.QRunnable):
                             upsert_audio_features(working.path, af)
                         except Exception:
                             pass
-                if self.auto_filler is not None:
-                    state.metadata_report = self.auto_filler.fill_missing_with_report(working, self.method)
                 if self.tagger is not None:
-                    state.ai_result = self.tagger.analyze(working)
+                    state.ai_result = self.tagger.analyze(ai_input)
                     _merge_analysis_into_track(working, state.ai_result)
                 state.proposed_track = working
                 for field_name in _default_accept_fields(state):

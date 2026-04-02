@@ -540,6 +540,7 @@ class AutoMetadataFiller:
         self.discogs_token = discogs_token
         self.validation_policy = validation_policy or "balanced"
         self.cache_ttl_days = cache_ttl_days
+        self._library_snapshot: list[Track] | None = None
 
     def fill_missing(self, track: Track, method: str) -> Track | None:
         report = self.fill_missing_with_report(track, method)
@@ -673,7 +674,7 @@ class AutoMetadataFiller:
             report.sources.append(SourceProbe("local_library", LOCAL_SOURCE_LABELS["local_library"], "miss", detail="Brak klucza wyszukiwania"))
             return
         match = None
-        for candidate in list_tracks():
+        for candidate in self._list_library_tracks():
             if candidate.path == track.path:
                 continue
             if target_title and _normalize(candidate.title) != target_title:
@@ -691,6 +692,11 @@ class AutoMetadataFiller:
             "isrc", "publisher", "grouping", "copyright", "remixer",
         })
         report.sources.append(SourceProbe("local_library", LOCAL_SOURCE_LABELS["local_library"], "hit" if fields else "miss", fields=fields, detail=Path(match.path).name))
+
+    def _list_library_tracks(self) -> list[Track]:
+        if self._library_snapshot is None:
+            self._library_snapshot = list_tracks()
+        return self._library_snapshot
 
     def _run_online_pipeline(
         self,

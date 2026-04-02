@@ -69,9 +69,10 @@ class ScanWizardWorker(QtCore.QRunnable):
                 track = extract_metadata(path)
                 detected_bpm = None
                 detected_energy = None
-                if extractor is not None:
+                needs_audio_features = track.bpm is None or track.energy is None
+                if extractor is not None and needs_audio_features:
                     try:
-                        audio_result = extractor.extract(path)
+                        audio_result = extractor.extract(path, duration_s=45)
                         detected_bpm = audio_result.tempo
                         energy_parts = [
                             value
@@ -84,7 +85,8 @@ class ScanWizardWorker(QtCore.QRunnable):
                         errors.append({"path": str(path), "stage": "audio", "error": str(exc)})
                 detected_key = None
                 try:
-                    detected_key = detect_key(path) if not track.key else track.key
+                    if not track.key:
+                        detected_key = detect_key(path)
                 except Exception as exc:
                     errors.append({"path": str(path), "stage": "key", "error": str(exc)})
                 enrich_track_with_analysis(
