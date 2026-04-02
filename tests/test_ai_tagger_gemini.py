@@ -50,3 +50,33 @@ def test_gemini_default_base_url_and_model(monkeypatch):
     assert result.genre == "house"
     assert result.confidence == 0.8
 
+
+def test_cloud_tagger_infers_confidence_when_response_omits_it(monkeypatch):
+    def _fake_post(url, headers=None, json=None, timeout=None):
+        return _FakeResponse(
+            {
+                "choices": [
+                    {
+                        "message": {
+                            "content": '{"genre":"house","bpm":128,"key":"8A"}'
+                        }
+                    }
+                ]
+            }
+        )
+
+    monkeypatch.setattr("requests.post", _fake_post)
+    tagger = CloudAiTagger(
+        provider="grok",
+        api_key="secret-key",
+        base_url="https://example.test/v1",
+        model="demo-model",
+    )
+    track = Track(path="x.mp3", title="Track", artist="Artist")
+
+    result = tagger.analyze(track)
+
+    assert result.genre == "house"
+    assert result.bpm == 128.0
+    assert result.key == "8A"
+    assert result.confidence == 0.75

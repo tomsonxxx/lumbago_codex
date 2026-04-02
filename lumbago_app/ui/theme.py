@@ -28,10 +28,10 @@ QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QTextEdit, QPlainTextEdit {
     selection-background-color: #1e3f5a;
 }
 QLineEdit#SearchInput {
-    background-color: #101623;
-    border: 1px solid #2b3a55;
+    background-color: rgba(16, 22, 35, 235);
+    border: 1px solid #33507a;
     border-radius: 18px;
-    padding: 8px 14px;
+    padding: 9px 14px;
 }
 QLineEdit#FilterInput, QDoubleSpinBox#FilterSpin, QComboBox#ViewToggle {
     background-color: #101623;
@@ -133,13 +133,13 @@ QFrame#Card {
     border-radius: 16px;
 }
 QFrame#HeaderBar {
-    background-color: #121826;
-    border: 1px solid #243048;
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #121826, stop:1 #0f1f33);
+    border: 1px solid #2a4465;
     border-radius: 16px;
 }
 QFrame#Toolbar {
-    background-color: #121826;
-    border: 1px solid #243048;
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #121826, stop:1 #0f1f33);
+    border: 1px solid #2a4465;
     border-radius: 16px;
 }
 QFrame#Card {
@@ -360,12 +360,12 @@ QGroupBox::title {
 }
 
 QFrame#Sidebar {
-    background-color: rgba(15, 19, 34, 230);
-    border-right: 1px solid #22324a;
+    background-color: rgba(12, 18, 31, 238);
+    border-right: 1px solid #2a4465;
 }
 QFrame#DetailPanel {
-    background-color: rgba(15, 19, 34, 230);
-    border-left: 1px solid #22324a;
+    background-color: rgba(12, 18, 31, 238);
+    border-left: 1px solid #2a4465;
 }
 QFrame#PlayerDock {
     background-color: rgba(15, 19, 34, 230);

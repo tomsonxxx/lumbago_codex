@@ -91,6 +91,7 @@ class TrackFilterProxy(QtCore.QSortFilterProxyModel):
     def __init__(self):
         super().__init__()
         self.search_text = ""
+        self.search_category = "all"
         self.bpm_min = None
         self.bpm_max = None
         self.key = ""
@@ -100,14 +101,35 @@ class TrackFilterProxy(QtCore.QSortFilterProxyModel):
         model = self.sourceModel()
         if model is None:
             return True
-        title = model.index(source_row, 0, source_parent).data() or ""
-        artist = model.index(source_row, 1, source_parent).data() or ""
-        album = model.index(source_row, 2, source_parent).data() or ""
-        genre = model.index(source_row, 3, source_parent).data() or ""
-        bpm_text = model.index(source_row, 4, source_parent).data() or ""
-        key = model.index(source_row, 5, source_parent).data() or ""
 
-        search_blob = f"{title} {artist} {album}".lower()
+        track = None
+        if hasattr(model, "track_at"):
+            try:
+                track = model.track_at(source_row)
+            except Exception:
+                track = None
+
+        if track is not None:
+            search_blob = self._build_search_blob(track)
+            genre = str(track.genre or "")
+            key = str(track.key or "")
+            bpm = track.bpm
+        else:
+            title = model.index(source_row, 0, source_parent).data() or ""
+            artist = model.index(source_row, 1, source_parent).data() or ""
+            album = model.index(source_row, 2, source_parent).data() or ""
+            genre = model.index(source_row, 5, source_parent).data() or ""
+            bpm_text = model.index(source_row, 9, source_parent).data() or ""
+            key = model.index(source_row, 10, source_parent).data() or ""
+            search_blob = f"{title} {artist} {album}".lower()
+            if bpm_text:
+                try:
+                    bpm = float(bpm_text)
+                except ValueError:
+                    bpm = None
+            else:
+                bpm = None
+
         if self.search_text and self.search_text not in search_blob:
             return False
 
@@ -117,20 +139,39 @@ class TrackFilterProxy(QtCore.QSortFilterProxyModel):
         if self.key and self.key.lower() not in key.lower():
             return False
 
-        if bpm_text:
-            try:
-                bpm = float(bpm_text)
-            except ValueError:
-                bpm = None
-        else:
-            bpm = None
-
         if self.bpm_min is not None and bpm is not None and bpm < self.bpm_min:
             return False
         if self.bpm_max is not None and bpm is not None and bpm > self.bpm_max:
             return False
 
         return True
+
+    def _build_search_blob(self, track: Track) -> str:
+        field_values: dict[str, str] = {
+            "title": str(track.title or ""),
+            "artist": str(track.artist or ""),
+            "album": str(track.album or ""),
+            "albumartist": str(track.albumartist or ""),
+            "genre": str(track.genre or ""),
+            "date": str(track.year or ""),
+            "tracknumber": str(track.tracknumber or ""),
+            "discnumber": str(track.discnumber or ""),
+            "composer": str(track.composer or ""),
+            "bpm": str(track.bpm or ""),
+            "key": str(track.key or ""),
+            "rating": str(track.rating or ""),
+            "comment": str(track.comment or ""),
+            "lyrics": str(track.lyrics or ""),
+            "isrc": str(track.isrc or ""),
+            "publisher": str(track.publisher or ""),
+            "grouping": str(track.grouping or ""),
+            "copyright": str(track.copyright or ""),
+            "remixer": str(track.remixer or ""),
+            "mood": str(track.mood or ""),
+        }
+        if self.search_category and self.search_category != "all":
+            return field_values.get(self.search_category, "").lower()
+        return " ".join(field_values.values()).lower()
 
 
 class ScanWorkerSignals(QtCore.QObject):
@@ -453,15 +494,54 @@ class MainWindow(QtWidgets.QMainWindow):
     def _build_header(self) -> QtWidgets.QFrame:
         frame = QtWidgets.QFrame()
         frame.setObjectName("HeaderBar")
-        row = QtWidgets.QHBoxLayout(frame)
-        row.setContentsMargins(12, 12, 12, 12)
-        header_label = QtWidgets.QLabel("Przeglądarka biblioteki")
+        layout = QtWidgets.QVBoxLayout(frame)
+        layout.setContentsMargins(12, 10, 12, 10)
+        layout.setSpacing(8)
+
+        title_row = QtWidgets.QHBoxLayout()
+        header_label = QtWidgets.QLabel("Przegladarka biblioteki")
         header_label.setObjectName("SectionTitle")
-        row.addWidget(header_label)
+        title_row.addWidget(header_label)
+        subtitle = QtWidgets.QLabel("Smart Search + priorytet metadanych")
+        subtitle.setObjectName("DialogHint")
+        title_row.addWidget(subtitle)
+        title_row.addStretch(1)
+        layout.addLayout(title_row)
+
+        row = QtWidgets.QHBoxLayout()
+        row.setSpacing(8)
+
+        self.search_category = QtWidgets.QComboBox()
+        self.search_category.setObjectName("ViewToggle")
+        self.search_category.addItems(
+            [
+                "Wszystkie pola",
+                "Album Artist",
+                "Genre",
+                "Date",
+                "Track Number",
+                "Disc Number",
+                "Composer",
+                "BPM",
+                "Key",
+                "Rating",
+                "Comment",
+                "Lyrics",
+                "ISRC",
+                "Publisher",
+                "Grouping",
+                "Copyright",
+                "Remixer",
+                "Mood",
+            ]
+        )
+        self.search_category.setToolTip("Wybierz kategorie wyszukiwania")
+        self.search_category.currentIndexChanged.connect(self._apply_filters)
+        row.addWidget(self.search_category)
 
         self.search_input = QtWidgets.QLineEdit()
         self.search_input.setObjectName("SearchInput")
-        self.search_input.setPlaceholderText("Szukaj: tytuł / artysta / album")
+        self.search_input.setPlaceholderText("Szukaj metadanych...")
         self.search_input.setToolTip("Wpisz frazę, aby filtrować listę")
         self.search_input.textChanged.connect(self._apply_filters)
         row.addWidget(self.search_input, 1)
@@ -496,12 +576,18 @@ class MainWindow(QtWidgets.QMainWindow):
         self.genre_input.textChanged.connect(self._apply_filters)
         row.addWidget(self.genre_input)
 
+        clear_btn = AnimatedButton("Wyczysc")
+        clear_btn.setToolTip("Wyczysc wszystkie filtry")
+        clear_btn.clicked.connect(self._clear_filters)
+        row.addWidget(clear_btn)
+
         self.view_toggle = QtWidgets.QComboBox()
         self.view_toggle.setObjectName("ViewToggle")
         self.view_toggle.addItems(["Lista", "Siatka", "DJ Crate"])
         self.view_toggle.setToolTip("Przełącz widok listy/siatki")
         self.view_toggle.currentIndexChanged.connect(self._on_view_toggle)
         row.addWidget(self.view_toggle)
+        layout.addLayout(row)
         return frame
 
     def _build_detail_panel(self) -> QtWidgets.QFrame:
@@ -711,12 +797,43 @@ class MainWindow(QtWidgets.QMainWindow):
         self.table_model.update_tracks(list_playlist_tracks(playlist.playlist_id))
 
     def _apply_filters(self):
+        category_map = {
+            "Wszystkie pola": "all",
+            "Album Artist": "albumartist",
+            "Genre": "genre",
+            "Date": "date",
+            "Track Number": "tracknumber",
+            "Disc Number": "discnumber",
+            "Composer": "composer",
+            "BPM": "bpm",
+            "Key": "key",
+            "Rating": "rating",
+            "Comment": "comment",
+            "Lyrics": "lyrics",
+            "ISRC": "isrc",
+            "Publisher": "publisher",
+            "Grouping": "grouping",
+            "Copyright": "copyright",
+            "Remixer": "remixer",
+            "Mood": "mood",
+        }
         self.filter_proxy.search_text = self.search_input.text().strip().lower()
+        self.filter_proxy.search_category = category_map.get(self.search_category.currentText(), "all")
         self.filter_proxy.bpm_min = self.bpm_min.value() or None
         self.filter_proxy.bpm_max = self.bpm_max.value() or None
         self.filter_proxy.key = self.key_input.text().strip()
         self.filter_proxy.genre = self.genre_input.text().strip()
         self.filter_proxy.invalidateFilter()
+
+    def _clear_filters(self):
+        self.search_input.clear()
+        self.bpm_min.setValue(0)
+        self.bpm_max.setValue(0)
+        self.key_input.clear()
+        self.genre_input.clear()
+        if hasattr(self, "search_category"):
+            self.search_category.setCurrentIndex(0)
+        self._apply_filters()
 
     def _on_view_toggle(self, index: int):
         self.view_stack.setCurrentIndex(index)
@@ -762,10 +879,19 @@ class MainWindow(QtWidgets.QMainWindow):
             f"Title: {track.title or ''}",
             f"Artist: {track.artist or ''}",
             f"Album: {track.album or ''}",
+            f"AlbumArtist: {track.albumartist or ''}",
             f"Year: {track.year or ''}",
             f"Genre: {track.genre or ''}",
+            f"Track: {track.tracknumber or ''}",
+            f"Disc: {track.discnumber or ''}",
+            f"Composer: {track.composer or ''}",
             f"BPM: {track.bpm or ''}",
             f"Key: {track.key or ''}",
+            f"Rating: {track.rating or ''}",
+            f"Mood: {track.mood or ''}",
+            f"ISRC: {track.isrc or ''}",
+            f"Publisher: {track.publisher or ''}",
+            f"Remixer: {track.remixer or ''}",
             f"LUFS: {track.loudness_lufs or ''}",
             f"Cue A: {track.cue_in_ms or ''}",
             f"Cue B: {track.cue_out_ms or ''}",
@@ -788,9 +914,18 @@ class MainWindow(QtWidgets.QMainWindow):
             f"Title: {track.title or ''}",
             f"Artist: {track.artist or ''}",
             f"Album: {track.album or ''}",
+            f"AlbumArtist: {track.albumartist or ''}",
             f"Genre: {track.genre or ''}",
+            f"Track: {track.tracknumber or ''}",
+            f"Disc: {track.discnumber or ''}",
+            f"Composer: {track.composer or ''}",
             f"BPM: {track.bpm or ''}",
             f"Key: {track.key or ''}",
+            f"Rating: {track.rating or ''}",
+            f"Mood: {track.mood or ''}",
+            f"ISRC: {track.isrc or ''}",
+            f"Publisher: {track.publisher or ''}",
+            f"Remixer: {track.remixer or ''}",
             f"LUFS: {track.loudness_lufs or ''}",
             f"Cue A: {track.cue_in_ms or ''}",
             f"Cue B: {track.cue_out_ms or ''}",
@@ -1444,12 +1579,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self._show_message("Zaznacz co najmniej jeden utwór.")
             return
         settings = load_settings()
-        if not settings.acoustid_api_key:
-            self._show_message("Brak klucza AcoustID. Uzupełnij go w Ustawieniach.")
-            return
         self._recognition_worker = RecognitionBatchWorker(
             tracks,
-            settings.acoustid_api_key,
             settings.musicbrainz_app_name,
             settings.validation_policy,
             settings.metadata_cache_ttl_days,
@@ -1560,9 +1691,12 @@ class MainWindow(QtWidgets.QMainWindow):
         detail = [
             f"Title: {track.title or ''}",
             f"Artist: {track.artist or ''}",
+            f"AlbumArtist: {track.albumartist or ''}",
             f"BPM: {track.bpm or ''}",
             f"Key: {track.key or ''}",
             f"Genre: {track.genre or ''}",
+            f"Mood: {track.mood or ''}",
+            f"ISRC: {track.isrc or ''}",
             f"Duration: {track.duration or ''}",
             f"Path: {track.path}",
         ]

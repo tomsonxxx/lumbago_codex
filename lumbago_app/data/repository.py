@@ -75,16 +75,28 @@ def _copy_track_to_orm(track: Track, orm: TrackOrm) -> None:
 
 
 def upsert_tracks(tracks: Iterable[Track]) -> None:
+    track_list = list(tracks)
+    if not track_list:
+        return
     Session = get_session_factory()
     with Session() as session:
-        for track in tracks:
-            existing = session.scalar(select(TrackOrm).where(TrackOrm.path == track.path))
+        existing_by_path: dict[str, TrackOrm] = {}
+        paths = [track.path for track in track_list if track.path]
+        if paths:
+            existing_rows = session.scalars(
+                select(TrackOrm).where(TrackOrm.path.in_(paths))
+            ).all()
+            existing_by_path = {row.path: row for row in existing_rows}
+
+        for track in track_list:
+            existing = existing_by_path.get(track.path)
             if existing:
                 _copy_track_to_orm(track, existing)
             else:
                 orm = TrackOrm(path=track.path)
                 _copy_track_to_orm(track, orm)
                 session.add(orm)
+                existing_by_path[track.path] = orm
         session.commit()
 
 
