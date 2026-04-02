@@ -1,18 +1,79 @@
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from pathlib import Path
 from datetime import datetime
 import hashlib
 from typing import Any
+from copy import deepcopy
 
 from lumbago_app.services.metadata_providers import DiscogsProvider, MusicBrainzProvider
-from lumbago_app.data.repository import get_metadata_cache, set_metadata_cache
+from lumbago_app.data.repository import get_metadata_cache, set_metadata_cache, list_tracks
 
 import requests
 
 from lumbago_app.core.models import Track
 from lumbago_app.core.config import cache_dir
 from lumbago_app.services.recognizer import AcoustIdRecognizer
+from lumbago_app.core.audio import extract_metadata, read_tags
+
+
+@dataclass
+class SourceProbe:
+    key: str
+    label: str
+    status: str
+    fields: list[str] = field(default_factory=list)
+    detail: str = ""
+
+
+@dataclass
+class MetadataFillReport:
+    method: str
+    changed_fields: list[str] = field(default_factory=list)
+    sources: list[SourceProbe] = field(default_factory=list)
+
+    @property
+    def summary(self) -> str:
+        if self.changed_fields:
+            return f"Zmiany: {', '.join(self.changed_fields)}"
+        successful = [source.label for source in self.sources if source.status == "hit"]
+        if successful:
+            return f"Źródła bez zmian: {', '.join(successful)}"
+        return "Brak nowych danych"
+
+
+LOCAL_SOURCE_LABELS = {
+    "file_tags": "Tagi pliku",
+    "filename_pattern": "Wzorzec nazwy pliku",
+    "folder_structure": "Struktura katalogów",
+    "sidecar_json": "Plik sidecar JSON",
+    "folder_json": "Plik folder.json / metadata.json",
+    "cue_sheet": "Plik CUE",
+    "local_library": "Biblioteka lokalna",
+    "acoustid": "AcoustID",
+    "musicbrainz_search": "MusicBrainz Search",
+    "musicbrainz_recording": "MusicBrainz Recording",
+    "discogs_search": "Discogs Search",
+    "cover_art_archive": "Cover Art Archive",
+}
+
+
+METHOD_CATALOG = {
+    "auto": "Auto (lokalne + online)",
+    "local": "Lokalne źródła",
+    "file_tags": "Tagi pliku",
+    "filename": "Nazwa pliku i foldery",
+    "sidecar": "Sidecar JSON",
+    "folder_json": "folder.json / metadata.json",
+    "cue": "Plik CUE",
+    "library": "Biblioteka lokalna",
+    "acoustid": "AcoustID + MusicBrainz",
+    "musicbrainz": "MusicBrainz",
+    "discogs": "Discogs",
+    "text_search": "MusicBrainz + Discogs (tekst)",
+    "online_hybrid": "Online Hybrid",
+}
 
 
 class MetadataEnricher:
@@ -316,33 +377,224 @@ class AutoMetadataFiller:
         self.cache_ttl_days = cache_ttl_days
 
     def fill_missing(self, track: Track, method: str) -> Track | None:
+        report = self.fill_missing_with_report(track, method)
+        return track if report.changed_fields else None
+
+    def fill_missing_with_report(self, track: Track, method: str) -> MetadataFillReport:
         enricher = MetadataEnricher(
             self.acoustid_key,
             self.musicbrainz_app,
             validation_policy=self.validation_policy,
             cache_ttl_days=self.cache_ttl_days,
         )
-        if method == "auto":
-            return self._auto_pipeline(enricher, track)
-        if method == "acoustid":
-            return enricher.enrich_track(track)
-        if method == "musicbrainz":
-            return enricher.enrich_from_musicbrainz_search(track)
-        if method == "discogs":
-            return enricher.enrich_from_discogs_search(track, self.discogs_token)
-        return None
+        before = deepcopy(track)
+        report = MetadataFillReport(method=method)
 
-    def _auto_pipeline(self, enricher: MetadataEnricher, track: Track) -> Track | None:
-        # Priorytety: AcoustID -> MusicBrainz -> Discogs
-        if self.acoustid_key:
-            enriched = enricher.enrich_track(track)
-            if enriched:
-                return enriched
+        if method == "auto":
+            self._run_local_sources(track, report)
+            self._run_local_library_source(track, report)
+            self._run_online_pipeline(enricher, track, report, include_acoustid=True)
+        elif method == "local":
+            self._run_local_sources(track, report)
+            self._run_local_library_source(track, report)
+        elif method == "file_tags":
+            self._run_file_tag_source(track, report)
+        elif method == "filename":
+            self._run_filename_folder_sources(track, report)
+        elif method == "sidecar":
+            self._run_sidecar_source(track, report)
+        elif method == "folder_json":
+            self._run_folder_json_source(track, report)
+        elif method == "cue":
+            self._run_cue_source(track, report)
+        elif method == "library":
+            self._run_local_library_source(track, report)
+        elif method == "acoustid":
+            self._run_online_pipeline(enricher, track, report, include_acoustid=True, only="acoustid")
+        elif method == "musicbrainz":
+            self._run_online_pipeline(enricher, track, report, include_acoustid=False, only="musicbrainz")
+        elif method == "discogs":
+            self._run_online_pipeline(enricher, track, report, include_acoustid=False, only="discogs")
+        elif method == "text_search":
+            self._run_online_pipeline(enricher, track, report, include_acoustid=False)
+        elif method == "online_hybrid":
+            self._run_online_pipeline(enricher, track, report, include_acoustid=True)
+        else:
+            report.sources.append(SourceProbe(method, method, "miss", detail="Nieznana metoda"))
+
+        report.changed_fields = _collect_changed_fields(before, track)
+        return report
+
+    def _run_local_sources(self, track: Track, report: MetadataFillReport) -> None:
+        self._run_file_tag_source(track, report)
+        self._run_sidecar_source(track, report)
+        self._run_folder_json_source(track, report)
+        self._run_cue_source(track, report)
+        self._run_filename_folder_sources(track, report)
+
+    def _run_file_tag_source(self, track: Track, report: MetadataFillReport) -> None:
+        try:
+            tags = read_tags(Path(track.path))
+        except Exception as exc:
+            report.sources.append(SourceProbe("file_tags", LOCAL_SOURCE_LABELS["file_tags"], "error", detail=str(exc)))
+            return
+        fields = _apply_mapping(track, tags, {"title": "title", "artist": "artist", "album": "album", "year": "year", "genre": "genre", "key": "key", "bpm": "bpm", "mood": "mood", "energy": "energy"})
+        report.sources.append(SourceProbe("file_tags", LOCAL_SOURCE_LABELS["file_tags"], "hit" if fields else "miss", fields=fields, detail=f"{len(tags)} tagów odczytanych" if tags else "Brak tagów audio"))
+
+    def _run_filename_folder_sources(self, track: Track, report: MetadataFillReport) -> None:
+        before = deepcopy(track)
+        refreshed = extract_metadata(Path(track.path))
+        filename_fields = _collect_changed_fields(before, refreshed, allowed={"title", "artist"})
+        for field_name in ("title", "artist"):
+            value = getattr(refreshed, field_name)
+            if value and not getattr(track, field_name):
+                setattr(track, field_name, value)
+
+        folder_before = deepcopy(track)
+        for field_name in ("album", "artist"):
+            value = getattr(refreshed, field_name)
+            if value and not getattr(track, field_name):
+                setattr(track, field_name, value)
+        folder_fields = _collect_changed_fields(folder_before, track, allowed={"album", "artist"})
+
+        report.sources.append(SourceProbe("filename_pattern", LOCAL_SOURCE_LABELS["filename_pattern"], "hit" if filename_fields else "miss", fields=filename_fields))
+        report.sources.append(SourceProbe("folder_structure", LOCAL_SOURCE_LABELS["folder_structure"], "hit" if folder_fields else "miss", fields=folder_fields))
+
+    def _run_sidecar_source(self, track: Track, report: MetadataFillReport) -> None:
+        path = Path(track.path).with_suffix(".json")
+        if not path.exists():
+            report.sources.append(SourceProbe("sidecar_json", LOCAL_SOURCE_LABELS["sidecar_json"], "miss", detail="Brak pliku"))
+            return
+        refreshed = extract_metadata(Path(track.path))
+        fields = _copy_missing_fields(track, refreshed, {"title", "artist", "album", "genre", "key", "mood", "energy", "bpm"})
+        report.sources.append(SourceProbe("sidecar_json", LOCAL_SOURCE_LABELS["sidecar_json"], "hit" if fields else "miss", fields=fields, detail=str(path.name)))
+
+    def _run_folder_json_source(self, track: Track, report: MetadataFillReport) -> None:
+        folder = Path(track.path).parent
+        json_path = next((folder / name for name in ("folder.json", "metadata.json") if (folder / name).exists()), None)
+        if json_path is None:
+            report.sources.append(SourceProbe("folder_json", LOCAL_SOURCE_LABELS["folder_json"], "miss", detail="Brak pliku"))
+            return
+        refreshed = extract_metadata(Path(track.path))
+        fields = _copy_missing_fields(track, refreshed, {"album", "artist", "genre", "key", "mood", "energy", "bpm"})
+        report.sources.append(SourceProbe("folder_json", LOCAL_SOURCE_LABELS["folder_json"], "hit" if fields else "miss", fields=fields, detail=str(json_path.name)))
+
+    def _run_cue_source(self, track: Track, report: MetadataFillReport) -> None:
+        file_path = Path(track.path)
+        cue_path = file_path.with_suffix(".cue")
+        if not cue_path.exists():
+            album_cue = file_path.parent / "album.cue"
+            cue_path = album_cue if album_cue.exists() else None
+        if cue_path is None:
+            report.sources.append(SourceProbe("cue_sheet", LOCAL_SOURCE_LABELS["cue_sheet"], "miss", detail="Brak pliku"))
+            return
+        refreshed = extract_metadata(file_path)
+        fields = _copy_missing_fields(track, refreshed, {"title", "artist", "album"})
+        report.sources.append(SourceProbe("cue_sheet", LOCAL_SOURCE_LABELS["cue_sheet"], "hit" if fields else "miss", fields=fields, detail=cue_path.name))
+
+    def _run_local_library_source(self, track: Track, report: MetadataFillReport) -> None:
+        target_title = _normalize(track.title)
+        target_artist = _normalize(track.artist)
+        if not target_title and not target_artist:
+            report.sources.append(SourceProbe("local_library", LOCAL_SOURCE_LABELS["local_library"], "miss", detail="Brak klucza wyszukiwania"))
+            return
+        match = None
+        for candidate in list_tracks():
+            if candidate.path == track.path:
+                continue
+            if target_title and _normalize(candidate.title) != target_title:
+                continue
+            if target_artist and _normalize(candidate.artist) != target_artist:
+                continue
+            match = candidate
+            break
+        if match is None:
+            report.sources.append(SourceProbe("local_library", LOCAL_SOURCE_LABELS["local_library"], "miss", detail="Brak dopasowania"))
+            return
+        fields = _copy_missing_fields(track, match, {"album", "genre", "year", "bpm", "key", "mood", "energy"})
+        report.sources.append(SourceProbe("local_library", LOCAL_SOURCE_LABELS["local_library"], "hit" if fields else "miss", fields=fields, detail=Path(match.path).name))
+
+    def _run_online_pipeline(
+        self,
+        enricher: MetadataEnricher,
+        track: Track,
+        report: MetadataFillReport,
+        *,
+        include_acoustid: bool,
+        only: str | None = None,
+    ) -> None:
+        if include_acoustid and (only in {None, "acoustid"}):
+            self._run_acoustid_source(enricher, track, report)
+            if only == "acoustid":
+                return
+        if only in {None, "musicbrainz"}:
+            self._run_musicbrainz_source(enricher, track, report)
+            if only == "musicbrainz":
+                return
+        if only in {None, "discogs"}:
+            self._run_discogs_source(enricher, track, report)
+
+    def _run_acoustid_source(self, enricher: MetadataEnricher, track: Track, report: MetadataFillReport) -> None:
+        before = deepcopy(track)
+        enriched = enricher.enrich_track(track)
+        fields = _collect_changed_fields(before, track)
+        report.sources.append(SourceProbe("acoustid", LOCAL_SOURCE_LABELS["acoustid"], "hit" if enriched and fields else "miss", fields=fields))
+        if track.artwork_path and before.artwork_path != track.artwork_path:
+            report.sources.append(SourceProbe("cover_art_archive", LOCAL_SOURCE_LABELS["cover_art_archive"], "hit", fields=["artwork_path"], detail=track.artwork_path))
+
+    def _run_musicbrainz_source(self, enricher: MetadataEnricher, track: Track, report: MetadataFillReport) -> None:
+        before = deepcopy(track)
         enriched = enricher.enrich_from_musicbrainz_search(track)
-        if enriched:
-            return enriched
-        if self.discogs_token:
-            enriched = enricher.enrich_from_discogs_search(track, self.discogs_token)
-            if enriched:
-                return enriched
-        return None
+        fields = _collect_changed_fields(before, track)
+        report.sources.append(SourceProbe("musicbrainz_search", LOCAL_SOURCE_LABELS["musicbrainz_search"], "hit" if enriched and fields else "miss", fields=fields))
+
+    def _run_discogs_source(self, enricher: MetadataEnricher, track: Track, report: MetadataFillReport) -> None:
+        before = deepcopy(track)
+        enriched = enricher.enrich_from_discogs_search(track, self.discogs_token)
+        fields = _collect_changed_fields(before, track)
+        report.sources.append(SourceProbe("discogs_search", LOCAL_SOURCE_LABELS["discogs_search"], "hit" if enriched and fields else "miss", fields=fields))
+
+
+def available_metadata_methods() -> dict[str, str]:
+    return dict(METHOD_CATALOG)
+
+
+def _copy_missing_fields(target: Track, source: Track, allowed: set[str]) -> list[str]:
+    changed: list[str] = []
+    for field_name in allowed:
+        source_value = getattr(source, field_name, None)
+        target_value = getattr(target, field_name, None)
+        if _has_value(source_value) and not _has_value(target_value):
+            setattr(target, field_name, source_value)
+            changed.append(field_name)
+    return sorted(changed)
+
+
+def _apply_mapping(target: Track, payload: dict[str, Any], field_map: dict[str, str]) -> list[str]:
+    changed: list[str] = []
+    for source_key, field_name in field_map.items():
+        value = payload.get(source_key)
+        if not _has_value(value):
+            continue
+        if _has_value(getattr(target, field_name, None)):
+            continue
+        setattr(target, field_name, value)
+        changed.append(field_name)
+    return sorted(changed)
+
+
+def _has_value(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    return True
+
+
+def _collect_changed_fields(before: Track, after: Track, allowed: set[str] | None = None) -> list[str]:
+    fields = allowed or {"title", "artist", "album", "year", "genre", "bpm", "key", "mood", "energy", "artwork_path"}
+    changed: list[str] = []
+    for field_name in fields:
+        if getattr(before, field_name, None) != getattr(after, field_name, None):
+            changed.append(field_name)
+    return sorted(changed)

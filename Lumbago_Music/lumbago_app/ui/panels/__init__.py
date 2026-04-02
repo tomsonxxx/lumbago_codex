@@ -1,1 +1,0 @@
-"""Moduł paneli UI."""

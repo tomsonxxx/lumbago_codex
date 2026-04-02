@@ -1,1 +1,0 @@
-"""Moduł dialogów UI."""

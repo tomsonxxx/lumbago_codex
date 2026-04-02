@@ -1,1 +1,0 @@
-"""Moduł widgetów UI."""

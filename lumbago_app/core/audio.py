@@ -68,6 +68,20 @@ def extract_metadata(path: Path) -> Track:
         or tag_value("TYER")
     )
     track.genre = tag_value("TCON") or tag_value("genre")
+    track.bpm = _parse_float_tag(
+        tag_value("TBPM")
+        or tag_value("bpm")
+        or tag_value("BPM")
+        or tag_value("tempo")
+    )
+    track.key = (
+        tag_value("TKEY")
+        or tag_value("initialkey")
+        or tag_value("key")
+        or tag_value("INITIALKEY")
+    )
+    track.mood = tag_value("mood") or tag_value("MOOD")
+    track.energy = _parse_float_tag(tag_value("energy") or tag_value("ENERGY"))
     apply_local_metadata(track, path)
     return track
 
@@ -285,6 +299,15 @@ def _fill_if_empty(track: Track, field: str, value) -> None:
         if current:
             return
         setattr(track, field, value)
+
+
+def _parse_float_tag(value: str | None) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(str(value).replace(",", "."))
+    except ValueError:
+        return None
 
 
 def file_hash(path: Path) -> str:
