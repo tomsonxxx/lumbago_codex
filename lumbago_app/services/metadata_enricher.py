@@ -5,6 +5,7 @@ from pathlib import Path
 from datetime import datetime
 import hashlib
 import html
+import json
 import re
 from typing import Any
 from copy import deepcopy
@@ -592,8 +593,8 @@ class AutoMetadataFiller:
         report.sources.append(SourceProbe("discogs_search", LOCAL_SOURCE_LABELS["discogs_search"], "hit" if enriched and fields else "miss", fields=fields))
 
     def _run_portal_search_sources(self, track: Track, report: MetadataFillReport) -> None:
-        query = _build_portal_query(track)
-        if not query:
+        queries = _build_portal_queries(track)
+        if not queries:
             for portal_key, portal_name in _PORTAL_SOURCES:
                 report.sources.append(
                     SourceProbe(portal_key, portal_name, "miss", detail="Brak klucza wyszukiwania")
@@ -601,7 +602,7 @@ class AutoMetadataFiller:
             return
         for portal_key, portal_name in _PORTAL_SOURCES:
             before = deepcopy(track)
-            candidate, result_count = _search_public_portal_candidate(track, portal_key, query)
+            candidate, result_count, query_used = _search_public_portal_candidate(track, portal_key, queries)
             if candidate is not None:
                 _apply_portal_candidate(track, candidate)
             fields = _collect_changed_fields(before, track)
@@ -611,7 +612,7 @@ class AutoMetadataFiller:
                     portal_name,
                     "hit" if fields else "miss",
                     fields=fields,
-                    detail=f"Wyniki: {result_count}",
+                    detail=f"Wyniki: {result_count}; zapytanie: {query_used}",
                 )
             )
 
@@ -696,52 +697,153 @@ _PORTAL_SUFFIX_CLEAN = [
 
 _RESULT_TITLE_RE = re.compile(r'<a[^>]*class="[^"]*result__a[^"]*"[^>]*>(.*?)</a>', re.IGNORECASE | re.DOTALL)
 _TAG_RE = re.compile(r"<[^>]+>")
+_MARKDOWN_HEADING_LINK_RE = re.compile(r"##\s+\[(?P<title>[^\]]+)\]\((?P<url>https?://[^)]+)\)")
+_MARKDOWN_INLINE_LINK_RE = re.compile(r"\[(?P<label>[^\]]+)\]\((?P<url>https?://[^)]+)\)")
+_PORTAL_DOMAINS = {
+    "portal_search_youtube": "youtube.com/watch",
+    "portal_search_soundcloud": "soundcloud.com/",
+    "portal_search_spotify": "open.spotify.com/track/",
+}
 
 
-def _build_portal_query(track: Track) -> str:
-    parts = []
-    if track.artist:
-        parts.append(str(track.artist).strip())
-    if track.title:
-        parts.append(str(track.title).strip())
-    if not parts:
-        stem = Path(track.path).stem.replace("_", " ").replace(".", " ").strip()
-        if stem:
-            parts.append(stem)
-    return " ".join(part for part in parts if part).strip()
+def _build_portal_queries(track: Track) -> list[str]:
+    queries: list[str] = []
+    artist = _sanitize_search_text(track.artist)
+    title = _sanitize_search_text(track.title)
+    stem = _sanitize_search_text(Path(track.path).stem.replace("_", " ").replace(".", " "))
+
+    if artist and title:
+        queries.append(f"{artist} {title}".strip())
+    if title:
+        queries.append(title)
+    if stem:
+        queries.append(stem)
+
+    # Preserve order and deduplicate.
+    unique: list[str] = []
+    for query in queries:
+        normalized = " ".join(query.split()).strip()
+        if not normalized:
+            continue
+        if normalized in unique:
+            continue
+        unique.append(normalized)
+    return unique
+
+
+def _sanitize_search_text(value: str | None) -> str:
+    if not value:
+        return ""
+    text = str(value)
+    text = re.sub(r"\[[^\]]*\]", " ", text)
+    text = re.sub(r"\((official|lyric|audio|video|hq|hd|4k)[^)]*\)", " ", text, flags=re.IGNORECASE)
+    text = re.sub(r"\s+", " ", text)
+    return text.strip(" -_")
 
 
 def _search_public_portal_candidate(
-    track: Track, portal_key: str, query: str
-) -> tuple[dict[str, str] | None, int]:
+    track: Track, portal_key: str, queries: list[str]
+) -> tuple[dict[str, str] | None, int, str]:
+    if not queries:
+        return None, 0, "—"
+
+    if portal_key == "portal_search_youtube":
+        for query in queries:
+            youtube_candidate = _search_youtube_direct_candidate(track, query)
+            if youtube_candidate is not None:
+                return youtube_candidate, 1, query
+
     site_query = _PORTAL_SITE_QUERY.get(portal_key)
     if not site_query:
-        return None, 0
-    search_query = f"{site_query} {query}"
-    try:
-        response = requests.get(
-            "https://duckduckgo.com/html/",
-            params={"q": search_query},
-            headers={"User-Agent": "LumbagoMusicAI/0.1"},
-            timeout=12,
-        )
-        response.raise_for_status()
-    except Exception:
-        return None, 0
+        return None, 0, "—"
 
-    titles = _extract_result_titles(response.text)
-    for title in titles:
-        candidate = _parse_portal_candidate_from_title(title, portal_key)
-        if candidate is None:
+    best_count = 0
+    best_query = queries[0]
+    for query in queries:
+        search_query = f"{site_query} {query}"
+        markdown_text = _fetch_portal_search_markdown(search_query)
+        titles = _extract_result_titles_from_markdown(markdown_text, portal_key)
+        best_count = max(best_count, len(titles))
+        if titles:
+            best_query = query
+        for title in titles:
+            candidate = _parse_portal_candidate_from_title(title, portal_key)
+            if candidate is None:
+                continue
+            if _validate_candidate(
+                track,
+                candidate.get("title"),
+                candidate.get("artist"),
+                policy="lenient",
+            ):
+                return candidate, len(titles), query
+
+        # Legacy fallback parser for classic DDG HTML, kept as a backup path.
+        try:
+            response = requests.get(
+                "https://duckduckgo.com/html/",
+                params={"q": search_query},
+                headers={"User-Agent": "LumbagoMusicAI/0.1"},
+                timeout=12,
+            )
+            response.raise_for_status()
+            html_titles = _extract_result_titles(response.text)
+        except Exception:
+            html_titles = []
+        best_count = max(best_count, len(html_titles))
+        for title in html_titles:
+            candidate = _parse_portal_candidate_from_title(title, portal_key)
+            if candidate is None:
+                continue
+            if _validate_candidate(
+                track,
+                candidate.get("title"),
+                candidate.get("artist"),
+                policy="lenient",
+            ):
+                return candidate, len(html_titles), query
+    return None, best_count, best_query
+
+
+def _fetch_portal_search_markdown(search_query: str) -> str:
+    encoded = requests.utils.quote(search_query, safe="")
+    url = f"https://r.jina.ai/http://duckduckgo.com/?q={encoded}"
+    try:
+        response = requests.get(url, headers={"User-Agent": "LumbagoMusicAI/0.1"}, timeout=15)
+        response.raise_for_status()
+        return response.text
+    except Exception:
+        return ""
+
+
+def _extract_result_titles_from_markdown(markdown_text: str, portal_key: str) -> list[str]:
+    if not markdown_text:
+        return []
+    domain_hint = _PORTAL_DOMAINS.get(portal_key, "")
+    if not domain_hint:
+        return []
+
+    titles: list[str] = []
+    for match in _MARKDOWN_HEADING_LINK_RE.finditer(markdown_text):
+        url = match.group("url").strip().lower()
+        title = match.group("title").strip()
+        if domain_hint not in url:
             continue
-        if _validate_candidate(
-            track,
-            candidate.get("title"),
-            candidate.get("artist"),
-            policy="lenient",
-        ):
-            return candidate, len(titles)
-    return None, len(titles)
+        if title:
+            titles.append(title)
+
+    if titles:
+        return titles
+
+    # Fallback: inline links without heading marker.
+    for match in _MARKDOWN_INLINE_LINK_RE.finditer(markdown_text):
+        url = match.group("url").strip().lower()
+        label = match.group("label").strip()
+        if domain_hint not in url:
+            continue
+        if label and "http" not in label.lower():
+            titles.append(label)
+    return titles
 
 
 def _extract_result_titles(html_text: str) -> list[str]:
@@ -786,7 +888,128 @@ def _cleanup_portal_title(value: str) -> str:
 
 
 def _apply_portal_candidate(track: Track, candidate: dict[str, str]) -> None:
-    if candidate.get("title") and not _has_value(track.title):
-        track.title = candidate["title"]
+    candidate_title = candidate.get("title")
+    if candidate_title and not _has_value(track.title):
+        track.title = candidate_title
+    elif candidate_title and _has_value(track.title) and _should_replace_noisy_title(str(track.title), candidate_title):
+        track.title = candidate_title
+
     if candidate.get("artist") and not _has_value(track.artist):
         track.artist = candidate["artist"]
+    if candidate.get("artist") and not _has_value(track.albumartist):
+        track.albumartist = candidate["artist"]
+
+    remixer = _extract_remixer_name(candidate_title) or _extract_remixer_name(track.title)
+    if remixer and not _has_value(track.remixer):
+        track.remixer = remixer
+
+
+def _search_youtube_direct_candidate(track: Track, query: str) -> dict[str, str] | None:
+    try:
+        response = requests.get(
+            "https://www.youtube.com/results",
+            params={"search_query": query},
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"},
+            timeout=15,
+        )
+        response.raise_for_status()
+    except Exception:
+        return None
+
+    payload = _extract_youtube_initial_data(response.text)
+    if payload is None:
+        return None
+
+    for node in _walk_nodes(payload):
+        if not isinstance(node, dict) or "videoRenderer" not in node:
+            continue
+        video = node.get("videoRenderer") or {}
+        title = _youtube_text(video.get("title"))
+        artist = _youtube_text(video.get("ownerText")) or _youtube_text(video.get("longBylineText"))
+        if not title:
+            continue
+        candidate = _parse_portal_candidate_from_title(title, "portal_search_youtube") or {"title": title}
+        if artist and not candidate.get("artist"):
+            candidate["artist"] = artist
+        if _validate_candidate(
+            track,
+            candidate.get("title"),
+            candidate.get("artist"),
+            policy="lenient",
+        ):
+            return candidate
+    return None
+
+
+def _extract_youtube_initial_data(page_html: str) -> dict[str, Any] | None:
+    match = re.search(r"var ytInitialData = (\{.*?\});</script>", page_html, re.DOTALL)
+    if not match:
+        return None
+    raw = match.group(1)
+    try:
+        return json.loads(raw)
+    except Exception:
+        return None
+
+
+def _walk_nodes(value: Any):
+    if isinstance(value, dict):
+        yield value
+        for nested in value.values():
+            yield from _walk_nodes(nested)
+    elif isinstance(value, list):
+        for item in value:
+            yield from _walk_nodes(item)
+
+
+def _youtube_text(value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, dict):
+        if "simpleText" in value and isinstance(value["simpleText"], str):
+            return value["simpleText"]
+        runs = value.get("runs")
+        if isinstance(runs, list):
+            parts = [str(item.get("text", "")).strip() for item in runs if isinstance(item, dict)]
+            text = "".join(parts).strip()
+            return text or None
+    return None
+
+
+def _should_replace_noisy_title(current_title: str, candidate_title: str) -> bool:
+    current = current_title.strip()
+    candidate = candidate_title.strip()
+    if not current or not candidate:
+        return False
+    if current == candidate:
+        return False
+    if not _looks_like_video_noise(current):
+        return False
+    if len(candidate) >= len(current):
+        return False
+    return True
+
+
+def _looks_like_video_noise(title: str) -> bool:
+    lowered = title.lower()
+    markers = [
+        "[official video]",
+        "(official video)",
+        "[lyric video]",
+        "(lyric video)",
+        "[audio]",
+        "(audio)",
+        "[4k",
+        "official music video",
+    ]
+    return any(marker in lowered for marker in markers)
+
+
+def _extract_remixer_name(title: str | None) -> str | None:
+    if not title:
+        return None
+    match = re.search(r"\((?P<name>[^()]{2,60}?)\s+remix\)", title, re.IGNORECASE)
+    if not match:
+        return None
+    raw = match.group("name").strip(" -_/")
+    return raw or None
