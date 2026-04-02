@@ -43,6 +43,7 @@ class SettingsDialog(QtWidgets.QDialog):
         form = QtWidgets.QFormLayout()
 
         self.musicbrainz_app = QtWidgets.QLineEdit()
+        self.discogs_token = QtWidgets.QLineEdit()
         self.cloud_provider = QtWidgets.QComboBox()
         self.cloud_provider.addItems(["", "openai", "gemini", "grok", "deepseek"])
         self.cloud_api_key = QtWidgets.QLineEdit()
@@ -69,6 +70,7 @@ class SettingsDialog(QtWidgets.QDialog):
         self.metadata_cache_ttl.setSuffix(" dni")
 
         for field in [
+            self.discogs_token,
             self.cloud_api_key,
             self.gemini_api_key,
             self.grok_api_key,
@@ -78,6 +80,7 @@ class SettingsDialog(QtWidgets.QDialog):
             field.setEchoMode(QtWidgets.QLineEdit.EchoMode.Password)
 
         form.addRow("Nazwa aplikacji MusicBrainz", self.musicbrainz_app)
+        form.addRow("Token Discogs", self.discogs_token)
         form.addRow("Dostawca AI (chmura)", self.cloud_provider)
         form.addRow("Klucz AI (chmura)", self.cloud_api_key)
         form.addRow("Klucz Gemini API", self.gemini_api_key)
@@ -101,6 +104,8 @@ class SettingsDialog(QtWidgets.QDialog):
         test_row = QtWidgets.QGridLayout()
         self.test_musicbrainz_btn = QtWidgets.QPushButton("Test MusicBrainz")
         self.test_musicbrainz_btn.clicked.connect(self._test_musicbrainz)
+        self.test_discogs_btn = QtWidgets.QPushButton("Test Discogs")
+        self.test_discogs_btn.clicked.connect(self._test_discogs)
         self.test_cloud_btn = QtWidgets.QPushButton("Test Cloud (provider)")
         self.test_cloud_btn.clicked.connect(self._test_cloud_provider)
         self.test_gemini_btn = QtWidgets.QPushButton("Test Gemini")
@@ -112,7 +117,8 @@ class SettingsDialog(QtWidgets.QDialog):
         self.test_deepseek_btn = QtWidgets.QPushButton("Test DeepSeek")
         self.test_deepseek_btn.clicked.connect(self._test_deepseek)
         test_row.addWidget(self.test_musicbrainz_btn, 0, 0)
-        test_row.addWidget(self.test_cloud_btn, 0, 1)
+        test_row.addWidget(self.test_discogs_btn, 0, 1)
+        test_row.addWidget(self.test_cloud_btn, 0, 2)
         test_row.addWidget(self.test_gemini_btn, 1, 0)
         test_row.addWidget(self.test_openai_btn, 1, 1)
         test_row.addWidget(self.test_grok_btn, 1, 2)
@@ -132,6 +138,7 @@ class SettingsDialog(QtWidgets.QDialog):
     def _load(self):
         settings = load_settings()
         self.musicbrainz_app.setText(settings.musicbrainz_app_name or "")
+        self.discogs_token.setText(settings.discogs_token or "")
         self.cloud_provider.setCurrentText(settings.cloud_ai_provider or "")
         self.cloud_api_key.setText(settings.cloud_ai_api_key or "")
         self.gemini_api_key.setText(settings.gemini_api_key or "")
@@ -153,7 +160,9 @@ class SettingsDialog(QtWidgets.QDialog):
     def _save(self):
         save_settings(
             {
+                "ACOUSTID_API_KEY": "",
                 "MUSICBRAINZ_APP_NAME": self.musicbrainz_app.text().strip(),
+                "DISCOGS_TOKEN": self.discogs_token.text().strip(),
                 "CLOUD_AI_PROVIDER": self.cloud_provider.currentText().strip(),
                 "CLOUD_AI_API_KEY": self.cloud_api_key.text().strip(),
                 "GEMINI_API_KEY": self.gemini_api_key.text().strip(),
@@ -197,6 +206,19 @@ class SettingsDialog(QtWidgets.QDialog):
             self._show_test_result("MusicBrainz", False, f"HTTP {response.status_code}")
         except Exception as exc:
             self._show_test_result("MusicBrainz", False, str(exc))
+
+    def _test_discogs(self) -> None:
+        token = self.discogs_token.text().strip()
+        if not token:
+            self._show_test_result("Discogs", False, "Brak tokenu.")
+            return
+        url = "https://api.discogs.com/database/search"
+        headers = {
+            "Authorization": f"Discogs token={token}",
+            "User-Agent": "LumbagoMusicAI/1.0",
+        }
+        params = {"q": "test", "type": "release", "per_page": "1"}
+        self._test_http_get("Discogs", url, headers=headers, params=params)
 
     def _test_cloud_provider(self) -> None:
         provider = self.cloud_provider.currentText().strip()
@@ -323,6 +345,7 @@ class ApiKeyCheckDialog(QtWidgets.QDialog):
         self._grid.setSpacing(6)
         services = [
             ("MusicBrainz", "musicbrainz"),
+            ("Discogs", "discogs"),
             ("Gemini", "gemini"),
             ("OpenAI", "openai"),
             ("Grok", "grok"),
@@ -377,6 +400,14 @@ class ApiKeyCheckDialog(QtWidgets.QDialog):
         QtWidgets.QApplication.processEvents()
         self._test_musicbrainz(settings.musicbrainz_app_name or "LumbagoMusicAI")
 
+        # Discogs
+        if settings.discogs_token:
+            self._set_pending("discogs")
+            QtWidgets.QApplication.processEvents()
+            self._test_discogs(settings.discogs_token)
+        else:
+            self._set_skipped("discogs")
+
         # Cloud providers
         provider_configs = {
             "gemini": (settings.gemini_api_key, settings.gemini_base_url or "https://generativelanguage.googleapis.com/v1beta"),
@@ -411,6 +442,21 @@ class ApiKeyCheckDialog(QtWidgets.QDialog):
                 self._set_status("musicbrainz", False, f"HTTP {resp.status_code}")
         except Exception as exc:
             self._set_status("musicbrainz", False, str(exc))
+
+    def _test_discogs(self, token: str) -> None:
+        try:
+            resp = requests.get(
+                "https://api.discogs.com/database/search",
+                headers={"Authorization": f"Discogs token={token}", "User-Agent": "LumbagoMusicAI/1.0"},
+                params={"q": "test", "type": "release", "per_page": "1"},
+                timeout=12,
+            )
+            if resp.status_code == 200:
+                self._set_status("discogs", True, "Autoryzacja i wyszukiwanie działają")
+            else:
+                self._set_status("discogs", False, self._extract_http_error(resp))
+        except Exception as exc:
+            self._set_status("discogs", False, str(exc))
 
     def _test_gemini_api(self, api_key: str, base_url: str) -> None:
         try:

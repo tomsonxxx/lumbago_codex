@@ -1,7 +1,12 @@
 from pathlib import Path
 
 from lumbago_app.core.audio import extract_metadata
-from lumbago_app.services.metadata_enricher import LOCAL_SOURCE_LABELS, available_metadata_methods
+from lumbago_app.services.metadata_enricher import (
+    LOCAL_SOURCE_LABELS,
+    MetadataEnricher,
+    _build_text_query,
+    available_metadata_methods,
+)
 
 
 class _FakeInfo:
@@ -31,8 +36,8 @@ class _FakeAudio:
 
 def test_available_metadata_methods_exposes_extended_catalog():
     methods = available_metadata_methods()
-    assert len(methods) == 3
-    assert {"offline", "online", "mix"} == set(methods)
+    assert len(methods) >= 4
+    assert {"offline", "online", "mix", "hybrid_web"} <= set(methods)
 
 
 def test_metadata_sources_catalog_exposes_many_sources():
