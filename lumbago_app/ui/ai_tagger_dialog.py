@@ -520,7 +520,7 @@ class AiTaggerDialog(QtWidgets.QDialog):
         self._chk_ai.setToolTip("UzupeĹ‚nia pola AI na podstawie bieĹĽÄ…cych metadanych i analizy audio.")
         self._chk_meta = QtWidgets.QCheckBox("Metadane zewnÄ™trzne")
         self._chk_meta.setChecked(self._auto_fetch_default)
-        self._chk_meta.setToolTip("ĹÄ…czy metody lokalne i online, np. tagi pliku, AcoustID, MusicBrainz i Discogs.")
+        self._chk_meta.setToolTip("Laczy metody lokalne i online, np. tagi pliku, MusicBrainz i publiczne portale.")
         if not self._allow_auto_fetch:
             self._chk_meta.setChecked(False)
             self._chk_meta.setEnabled(False)
@@ -716,9 +716,7 @@ class AiTaggerDialog(QtWidgets.QDialog):
         auto_filler = None
         if self._chk_meta.isChecked():
             auto_filler = AutoMetadataFiller(
-                settings.acoustid_api_key,
                 settings.musicbrainz_app_name,
-                settings.discogs_token,
                 settings.validation_policy,
                 settings.metadata_cache_ttl_days,
             )

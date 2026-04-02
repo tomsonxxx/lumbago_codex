@@ -1579,12 +1579,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self._show_message("Zaznacz co najmniej jeden utwór.")
             return
         settings = load_settings()
-        if not settings.acoustid_api_key:
-            self._show_message("Brak klucza AcoustID. Uzupełnij go w Ustawieniach.")
-            return
         self._recognition_worker = RecognitionBatchWorker(
             tracks,
-            settings.acoustid_api_key,
             settings.musicbrainz_app_name,
             settings.validation_policy,
             settings.metadata_cache_ttl_days,

@@ -182,35 +182,6 @@ class MetadataEnricher:
             return None
 
 
-def _select_recording_id(
-    payload: dict[str, Any],
-    preferred_title: str | None = None,
-    preferred_artist: str | None = None,
-) -> str | None:
-    results = payload.get("results", [])
-    if not results:
-        return None
-    best_id: str | None = None
-    best_score = -1.0
-    for result in results:
-        acoustid_score = float(result.get("score") or 0.0)
-        for recording in result.get("recordings", []) or []:
-            if not isinstance(recording, dict):
-                continue
-            rid = recording.get("id")
-            if not rid:
-                continue
-            title = recording.get("title")
-            artist = _first_artist(recording)
-            match_score = _token_similarity(_normalize(title), _normalize(preferred_title))
-            artist_score = _token_similarity(_normalize(artist), _normalize(preferred_artist))
-            combined = (acoustid_score * 0.6) + (match_score * 0.25) + (artist_score * 0.15)
-            if combined > best_score:
-                best_score = combined
-                best_id = rid
-    return best_id
-
-
 def _apply_musicbrainz_metadata(track: Track, payload: dict[str, Any]) -> str | None:
     track.title = track.title or payload.get("title")
     artists = payload.get("artist-credit", [])
@@ -333,34 +304,6 @@ def _first_artist(recording: dict[str, Any]) -> str | None:
     if isinstance(first, dict):
         return first.get("name")
     return str(first)
-
-
-def _select_discogs_release(payload: dict[str, Any] | None) -> dict[str, Any] | None:
-    if not payload:
-        return None
-    results = payload.get("results", [])
-    if not results:
-        return None
-    result = results[0]
-    title = result.get("title")
-    if not title:
-        return None
-    artist = None
-    album = None
-    if " - " in title:
-        artist, album = [p.strip() for p in title.split(" - ", 1)]
-        if album and _is_compilation_album(album):
-            album = None
-    labels = result.get("label", [])
-    label = labels[0] if labels else None
-    return {
-        "title": album or title,
-        "artist": artist,
-        "genre": (result.get("genre") or [None])[0],
-        "album": album,
-        "label": label,
-        "year": result.get("year"),
-    }
 
 
 def _is_compilation_album(name: str) -> bool:
@@ -638,40 +581,18 @@ class AutoMetadataFiller:
         enricher: MetadataEnricher,
         track: Track,
         report: MetadataFillReport,
-        *,
-        include_acoustid: bool,
         only: str | None = None,
     ) -> None:
-        if include_acoustid and (only in {None, "acoustid"}):
-            self._run_acoustid_source(enricher, track, report)
-            if only == "acoustid":
-                return
         if only in {None, "musicbrainz"}:
             self._run_musicbrainz_source(enricher, track, report)
             if only == "musicbrainz":
                 return
-        if only in {None, "discogs"}:
-            self._run_discogs_source(enricher, track, report)
-
-    def _run_acoustid_source(self, enricher: MetadataEnricher, track: Track, report: MetadataFillReport) -> None:
-        before = deepcopy(track)
-        enriched = enricher.enrich_track(track)
-        fields = _collect_changed_fields(before, track)
-        report.sources.append(SourceProbe("acoustid", LOCAL_SOURCE_LABELS["acoustid"], "hit" if enriched and fields else "miss", fields=fields))
-        if track.artwork_path and before.artwork_path != track.artwork_path:
-            report.sources.append(SourceProbe("cover_art_archive", LOCAL_SOURCE_LABELS["cover_art_archive"], "hit", fields=["artwork_path"], detail=track.artwork_path))
 
     def _run_musicbrainz_source(self, enricher: MetadataEnricher, track: Track, report: MetadataFillReport) -> None:
         before = deepcopy(track)
         enriched = enricher.enrich_from_musicbrainz_search(track)
         fields = _collect_changed_fields(before, track)
         report.sources.append(SourceProbe("musicbrainz_search", LOCAL_SOURCE_LABELS["musicbrainz_search"], "hit" if enriched and fields else "miss", fields=fields))
-
-    def _run_discogs_source(self, enricher: MetadataEnricher, track: Track, report: MetadataFillReport) -> None:
-        before = deepcopy(track)
-        enriched = enricher.enrich_from_discogs_search(track, self.discogs_token)
-        fields = _collect_changed_fields(before, track)
-        report.sources.append(SourceProbe("discogs_search", LOCAL_SOURCE_LABELS["discogs_search"], "hit" if enriched and fields else "miss", fields=fields))
 
     def _run_portal_search_sources(self, track: Track, report: MetadataFillReport) -> None:
         queries = _build_portal_queries(track)

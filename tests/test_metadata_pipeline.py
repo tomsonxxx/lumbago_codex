@@ -37,7 +37,7 @@ def test_available_metadata_methods_exposes_extended_catalog():
 
 def test_metadata_sources_catalog_exposes_many_sources():
     assert len(LOCAL_SOURCE_LABELS) >= 10
-    assert {"file_tags", "filename_pattern", "folder_structure", "sidecar_json", "folder_json", "cue_sheet", "local_library", "acoustid", "musicbrainz_search", "discogs_search"} <= set(LOCAL_SOURCE_LABELS)
+    assert {"file_tags", "filename_pattern", "folder_structure", "sidecar_json", "folder_json", "cue_sheet", "local_library", "musicbrainz_search"} <= set(LOCAL_SOURCE_LABELS)
 
 
 def test_extract_metadata_reads_extended_tags(monkeypatch, tmp_path: Path):
