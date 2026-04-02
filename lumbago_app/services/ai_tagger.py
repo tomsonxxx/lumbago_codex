@@ -74,13 +74,13 @@ class CloudAiTagger:
 
 def _missing_fields(track: Track) -> list[str]:
     missing = []
-    if not track.bpm:
+    if track.bpm is None:
         missing.append("bpm")
     if not track.key:
         missing.append("key")
     if not track.mood:
         missing.append("mood")
-    if not track.energy:
+    if track.energy is None:
         missing.append("energy")
     if not track.genre:
         missing.append("genre")
@@ -307,14 +307,14 @@ if _QT_AVAILABLE:
                     track = tracks[0]
                     result = tagger.analyze(track)
                     fields: dict[str, Any] = {
-                        "bpm": str(result.bpm) if result.bpm else None,
+                        "bpm": str(result.bpm) if result.bpm is not None else None,
                         "key": result.key,
                         "genre": result.genre,
                         "mood": result.mood,
                         "energy": str(result.energy) if result.energy is not None else None,
                     }
                     for fname, fval in fields.items():
-                        if fval:
+                        if fval is not None and fval != "":
                             self.track_progress.emit(path, fname, fval, confidence)
                 except Exception:
                     pass
