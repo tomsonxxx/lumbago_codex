@@ -31,4 +31,3 @@ htmlcov/
 *.swp
 .venv311_new/
 web/node_modules/
-web/package-lock.json
