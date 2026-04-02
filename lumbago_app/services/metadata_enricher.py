@@ -279,6 +279,63 @@ def _select_musicbrainz_recording(payload: dict[str, Any] | None) -> dict[str, A
     return recordings[0]
 
 
+def _select_recording_id(
+    payload: dict[str, Any] | None,
+    preferred_title: str | None = None,
+    preferred_artist: str | None = None,
+) -> str | None:
+    if not payload:
+        return None
+    results = payload.get("results", [])
+    if not results:
+        return None
+
+    preferred_title_norm = _normalize(preferred_title)
+    preferred_artist_norm = _normalize(preferred_artist)
+    best_id: str | None = None
+    best_score = -1.0
+
+    for result in results:
+        if not isinstance(result, dict):
+            continue
+        result_score = float(result.get("score", 0.0) or 0.0)
+        for recording in result.get("recordings", []) or []:
+            if not isinstance(recording, dict):
+                continue
+            recording_id = recording.get("id")
+            if not recording_id:
+                continue
+            title = _normalize(recording.get("title"))
+            artist = _normalize(_first_artist(recording))
+
+            similarity = 0.0
+            if preferred_title_norm:
+                similarity += _token_similarity(preferred_title_norm, title)
+            if preferred_artist_norm:
+                similarity += _token_similarity(preferred_artist_norm, artist)
+            if preferred_title_norm and preferred_artist_norm:
+                similarity /= 2.0
+
+            score = (similarity * 0.75) + (result_score * 0.25)
+            if score > best_score:
+                best_score = score
+                best_id = str(recording_id)
+
+    if best_id:
+        return best_id
+
+    first = results[0] if isinstance(results[0], dict) else None
+    if not first:
+        return None
+    recordings = first.get("recordings", [])
+    if not recordings:
+        return None
+    first_recording = recordings[0] if isinstance(recordings[0], dict) else None
+    if not first_recording:
+        return None
+    return first_recording.get("id")
+
+
 def _first_artist(recording: dict[str, Any]) -> str | None:
     artists = recording.get("artist-credit", []) or recording.get("artists", [])
     if not artists:
