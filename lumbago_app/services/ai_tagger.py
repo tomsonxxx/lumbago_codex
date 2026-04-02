@@ -78,6 +78,20 @@ class CloudAiTagger:
                     genre=_to_str(cleaned.get("genre")),
                     description=_to_str(cleaned.get("description")),
                     confidence=confidence,
+                    title=_to_str(cleaned.get("title")),
+                    artist=_to_str(cleaned.get("artist")),
+                    album=_to_str(cleaned.get("album")),
+                    albumartist=_to_str(cleaned.get("albumartist")),
+                    year=_to_str(cleaned.get("year")),
+                    tracknumber=_to_str(cleaned.get("tracknumber")),
+                    discnumber=_to_str(cleaned.get("discnumber")),
+                    composer=_to_str(cleaned.get("composer")),
+                    isrc=_to_str(cleaned.get("isrc")),
+                    publisher=_to_str(cleaned.get("publisher")),
+                    grouping=_to_str(cleaned.get("grouping")),
+                    copyright=_to_str(cleaned.get("copyright")),
+                    remixer=_to_str(cleaned.get("remixer")),
+                    comment=_to_str(cleaned.get("comment")),
                 )
             except Exception as exc:
                 last_exc = exc
@@ -118,15 +132,17 @@ class MultiAiTagger:
         return merged
 
 
+_FLOAT_AI_FIELDS = {"bpm", "energy"}
+
+
 def _merge_results(results: list[tuple[str, AnalysisResult]]) -> AnalysisResult:
     if not results:
         return AnalysisResult(description="No AI results", confidence=0.0)
 
-    field_names = ("bpm", "key", "mood", "energy", "genre")
     winners: dict[str, Any] = {}
     winner_confidences: list[float] = []
 
-    for field_name in field_names:
+    for field_name in _ALL_AI_FIELDS:
         best_value = None
         best_score = -1.0
         for _provider, result in results:
@@ -153,6 +169,20 @@ def _merge_results(results: list[tuple[str, AnalysisResult]]) -> AnalysisResult:
         mood=_to_str(winners.get("mood")),
         energy=_to_float(winners.get("energy")),
         genre=_to_str(winners.get("genre")),
+        title=_to_str(winners.get("title")),
+        artist=_to_str(winners.get("artist")),
+        album=_to_str(winners.get("album")),
+        albumartist=_to_str(winners.get("albumartist")),
+        year=_to_str(winners.get("year")),
+        tracknumber=_to_str(winners.get("tracknumber")),
+        discnumber=_to_str(winners.get("discnumber")),
+        composer=_to_str(winners.get("composer")),
+        isrc=_to_str(winners.get("isrc")),
+        publisher=_to_str(winners.get("publisher")),
+        grouping=_to_str(winners.get("grouping")),
+        copyright=_to_str(winners.get("copyright")),
+        remixer=_to_str(winners.get("remixer")),
+        comment=_to_str(winners.get("comment")),
         description=f"Merged from providers ({providers_info})",
         confidence=merged_conf,
     )
@@ -166,43 +196,73 @@ def _has_nonempty_value(value: Any) -> bool:
     return True
 
 
+_MISSING_SENTINEL = {"", "-", "—", "unknown", "n/a", "none", "null"}
+
+_ALL_AI_FIELDS: list[str] = [
+    "title", "artist", "album", "albumartist", "year",
+    "tracknumber", "discnumber", "composer",
+    "genre", "bpm", "key", "mood", "energy",
+    "isrc", "publisher", "grouping", "copyright", "remixer", "comment",
+]
+
+
 def _missing_fields(track: Track) -> list[str]:
     def _is_missing(value: Any) -> bool:
         if value is None:
             return True
         if isinstance(value, str):
-            normalized = value.strip().lower()
-            return normalized in {"", "-", "—", "unknown", "n/a", "none", "null"}
+            return value.strip().lower() in _MISSING_SENTINEL
+        if isinstance(value, (int, float)):
+            return False
         return False
 
-    missing = []
-    if _is_missing(track.bpm):
-        missing.append("bpm")
-    if _is_missing(track.key):
-        missing.append("key")
-    if _is_missing(track.mood):
-        missing.append("mood")
-    if _is_missing(track.energy):
-        missing.append("energy")
-    if _is_missing(track.genre):
-        missing.append("genre")
-    return missing
+    return [f for f in _ALL_AI_FIELDS if _is_missing(getattr(track, f, None))]
+
+
+_FIELD_LABELS: dict[str, str] = {
+    "title": "Tytul",
+    "artist": "Artysta",
+    "album": "Album",
+    "albumartist": "Artysta albumu",
+    "year": "Rok",
+    "tracknumber": "Numer utworu",
+    "discnumber": "Numer plyty",
+    "composer": "Kompozytor",
+    "genre": "Gatunek",
+    "bpm": "BPM",
+    "key": "Tonacja",
+    "mood": "Nastroj",
+    "energy": "Energia (0.0-1.0)",
+    "isrc": "ISRC",
+    "publisher": "Wytwórnia",
+    "grouping": "Grupowanie",
+    "copyright": "Copyright",
+    "remixer": "Remikser",
+    "comment": "Komentarz",
+}
 
 
 def _build_prompt(track: Track, missing: list[str]) -> str:
+    known_lines = []
+    for field in _ALL_AI_FIELDS:
+        if field in missing:
+            continue
+        value = getattr(track, field, None)
+        if value is None:
+            continue
+        label = _FIELD_LABELS.get(field, field)
+        known_lines.append(f"{label}: {value}")
+
+    known_section = "\n".join(known_lines) if known_lines else "(brak danych)"
+    missing_list = ", ".join(missing)
     return (
-        "Zwroc JSON tylko dla pol: "
-        + ", ".join(missing)
-        + ". Wartosci puste ustaw na null. "
-        "Dane wejsciowe:\n"
-        f"Tytul: {track.title or ''}\n"
-        f"Artysta: {track.artist or ''}\n"
-        f"Album: {track.album or ''}\n"
-        f"Gatunek: {track.genre or ''}\n"
-        f"BPM: {track.bpm or ''}\n"
-        f"Tonacja: {track.key or ''}\n"
-        f"Nastroj: {track.mood or ''}\n"
-        f"Energia: {track.energy or ''}\n"
+        "Jestes ekspertem metadanych muzycznych. Na podstawie ponizszych danych uzupelnij brakujace pola.\n"
+        "Zwroc TYLKO poprawny JSON z dokladnie tymi polami: "
+        + missing_list
+        + ".\n"
+        "Jesli danego pola nie mozna ustalic, uzyj null. Nie dodawaj zadnych komentarzy poza JSON.\n\n"
+        "Znane dane utworu:\n"
+        + known_section
     )
 
 
@@ -340,7 +400,7 @@ def _to_str(value: Any) -> str | None:
 
 def _infer_confidence(payload: dict[str, Any]) -> float | None:
     populated = 0
-    for field_name in ("bpm", "key", "mood", "energy", "genre"):
+    for field_name in _ALL_AI_FIELDS:
         value = payload.get(field_name)
         if value is None:
             continue
@@ -349,15 +409,15 @@ def _infer_confidence(payload: dict[str, Any]) -> float | None:
         populated += 1
     if populated == 0:
         return None
-    if populated >= 4:
+    if populated >= 6:
         return 0.85
-    if populated >= 2:
+    if populated >= 3:
         return 0.75
     return 0.65
 
 
 def _normalize_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    allowed = {"bpm", "key", "mood", "energy", "genre", "description", "confidence"}
+    allowed = set(_ALL_AI_FIELDS) | {"description", "confidence"}
     return {key: value for key, value in payload.items() if key in allowed}
 
 
@@ -445,15 +505,12 @@ if _QT_AVAILABLE:
                         self.track_done.emit(path)
                         continue
                     result = tagger.analyze(track)
-                    fields: dict[str, Any] = {
-                        "bpm": str(result.bpm) if result.bpm is not None else None,
-                        "key": result.key,
-                        "genre": result.genre,
-                        "mood": result.mood,
-                        "energy": str(result.energy) if result.energy is not None else None,
-                    }
-                    for fname, fval in fields.items():
-                        if fval is not None and fval != "":
+                    for fname in _ALL_AI_FIELDS:
+                        raw = getattr(result, fname, None)
+                        if raw is None:
+                            continue
+                        fval = str(raw) if not isinstance(raw, str) else raw
+                        if fval.strip():
                             self.track_progress.emit(path, fname, fval, confidence)
                 except Exception:
                     pass

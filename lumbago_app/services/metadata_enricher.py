@@ -157,12 +157,13 @@ class MetadataEnricher:
             track, candidate.get("title"), _first_artist(candidate), policy=self.validation_policy
         ):
             return None
-        track.title = track.title or candidate.get("title")
-        track.artist = track.artist or _first_artist(candidate)
-        # Extract ISRC from search results
-        isrcs = candidate.get("isrcs", [])
-        if isrcs and isinstance(isrcs, list):
-            track.isrc = track.isrc or isrcs[0]
+        _apply_musicbrainz_metadata(track, candidate)
+        # Fetch detailed recording to fill remaining fields (composer, tracknumber, etc.)
+        recording_id = candidate.get("id")
+        if recording_id:
+            detailed = self._fetch_musicbrainz_recording(recording_id)
+            if detailed:
+                _apply_musicbrainz_metadata(track, detailed)
         return track
 
     def _fetch_musicbrainz_recording(self, recording_id: str) -> dict[str, Any] | None:
