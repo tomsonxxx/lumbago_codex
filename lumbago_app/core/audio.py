@@ -61,6 +61,7 @@ def extract_metadata(path: Path) -> Track:
     track.title = tag_value("TIT2") or tag_value("title")
     track.artist = tag_value("TPE1") or tag_value("artist")
     track.album = tag_value("TALB") or tag_value("album")
+    track.albumartist = tag_value("TPE2") or tag_value("albumartist") or tag_value("album artist")
     track.year = (
         tag_value("TDRC")
         or tag_value("date")
@@ -68,6 +69,9 @@ def extract_metadata(path: Path) -> Track:
         or tag_value("TYER")
     )
     track.genre = tag_value("TCON") or tag_value("genre")
+    track.tracknumber = tag_value("TRCK") or tag_value("tracknumber")
+    track.discnumber = tag_value("TPOS") or tag_value("discnumber")
+    track.composer = tag_value("TCOM") or tag_value("composer")
     track.bpm = _parse_float_tag(
         tag_value("TBPM")
         or tag_value("bpm")
@@ -82,6 +86,13 @@ def extract_metadata(path: Path) -> Track:
     )
     track.mood = tag_value("mood") or tag_value("MOOD")
     track.energy = _parse_float_tag(tag_value("energy") or tag_value("ENERGY"))
+    track.comment = tag_value("COMM") or tag_value("comment") or tag_value("COMM::eng")
+    track.lyrics = tag_value("USLT") or tag_value("lyrics") or tag_value("USLT::eng")
+    track.isrc = tag_value("TSRC") or tag_value("isrc")
+    track.publisher = tag_value("TPUB") or tag_value("organization") or tag_value("label")
+    track.grouping = tag_value("TIT1") or tag_value("grouping") or tag_value("contentgroup")
+    track.copyright = tag_value("TCOP") or tag_value("copyright")
+    track.remixer = tag_value("TPE4") or tag_value("remixer")
     apply_local_metadata(track, path)
     return track
 
@@ -90,16 +101,28 @@ def read_tags(path: Path) -> dict[str, str]:
     audio = MutagenFile(path, easy=True)
     if audio is None or audio.tags is None:
         return {}
+    _normalize_map = {
+        "date": "year", "year": "year",
+        "initialkey": "key",
+        "albumartist": "albumartist", "album artist": "albumartist",
+        "tracknumber": "tracknumber",
+        "discnumber": "discnumber",
+        "composer": "composer",
+        "comment": "comment",
+        "lyrics": "lyrics",
+        "isrc": "isrc",
+        "organization": "publisher", "label": "publisher",
+        "grouping": "grouping", "contentgroup": "grouping",
+        "copyright": "copyright",
+        "remixer": "remixer",
+    }
     tags = {}
     for key, value in audio.tags.items():
-        if key in {"date", "year"}:
-            key = "year"
-        if key == "initialkey":
-            key = "key"
+        normalized = _normalize_map.get(key, key)
         if isinstance(value, list):
-            tags[key] = ", ".join(str(v) for v in value)
+            tags[normalized] = ", ".join(str(v) for v in value)
         else:
-            tags[key] = str(value)
+            tags[normalized] = str(value)
     return tags
 
 
@@ -113,7 +136,11 @@ def write_tags(path: Path, tags: dict[str, str]) -> None:
         except ID3NoHeaderError:
             ID3().save(path)
         audio = MutagenFile(path, easy=True)
-    key_map = {"key": "initialkey", "year": "date"}
+    key_map = {
+        "key": "initialkey", "year": "date",
+        "albumartist": "albumartist", "publisher": "organization",
+        "grouping": "contentgroup",
+    }
     for key, value in tags.items():
         target_key = key_map.get(key, key)
         if value is None or value == "":

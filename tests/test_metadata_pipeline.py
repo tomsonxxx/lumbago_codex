@@ -30,8 +30,8 @@ class _FakeAudio:
 
 def test_available_metadata_methods_exposes_extended_catalog():
     methods = available_metadata_methods()
-    assert len(methods) >= 5
-    assert {"auto", "local", "file_tags", "filename", "sidecar", "folder_json", "cue", "library", "acoustid", "musicbrainz", "discogs", "text_search", "online_hybrid"} <= set(methods)
+    assert len(methods) == 3
+    assert {"offline", "online", "mix"} == set(methods)
 
 
 def test_metadata_sources_catalog_exposes_many_sources():

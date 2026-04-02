@@ -53,7 +53,7 @@ from lumbago_app.ui.playlist_dialog import PlaylistEditorDialog
 from lumbago_app.ui.playlist_order_dialog import PlaylistOrderDialog
 from lumbago_app.ui.recognition_queue import RecognitionBatchWorker
 from lumbago_app.ui.renamer_dialog import RenamerDialog
-from lumbago_app.ui.settings_dialog import SettingsDialog
+from lumbago_app.ui.settings_dialog import ApiKeyCheckDialog, SettingsDialog
 from lumbago_app.ui.tag_compare_dialog import TagCompareDialog
 from lumbago_app.ui.widgets import AnimatedButton
 from lumbago_app.ui.xml_converter_dialog import XmlConverterDialog
@@ -1254,7 +1254,7 @@ class MainWindow(QtWidgets.QMainWindow):
             tracks,
             self,
             auto_fetch=True,
-            auto_method="acoustid",
+            auto_method="mix",
             allow_auto_fetch=True,
         )
         if dialog.exec():
@@ -1497,6 +1497,10 @@ class MainWindow(QtWidgets.QMainWindow):
         if dialog.exec():
             self._load_settings()
 
+    def _open_api_key_check(self):
+        dialog = ApiKeyCheckDialog(self)
+        dialog.exec()
+
     def _open_health_report(self):
         tracks = getattr(self, "_all_tracks", None) or list_tracks()
         dialog = HealthReportDashboard(tracks, self)
@@ -1650,6 +1654,8 @@ class MainWindow(QtWidgets.QMainWindow):
         tools.addAction("Konwerter XML", self._open_xml_converter)
         tools.addAction("Eksport playlisty → VirtualDJ XML", self._export_playlist_virtualdj)
         tools.addAction("Ustawienia", self._open_settings)
+        tools.addSeparator()
+        tools.addAction("Sprawdź klucze API", self._open_api_key_check)
 
         help_menu = menu.addMenu("Pomoc")
         help_menu.addAction("Instrukcja użytkownika", self._open_user_guide)

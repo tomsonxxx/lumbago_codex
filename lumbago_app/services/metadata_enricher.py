@@ -60,19 +60,9 @@ LOCAL_SOURCE_LABELS = {
 
 
 METHOD_CATALOG = {
-    "auto": "Auto (lokalne + online)",
-    "local": "Lokalne źródła",
-    "file_tags": "Tagi pliku",
-    "filename": "Nazwa pliku i foldery",
-    "sidecar": "Sidecar JSON",
-    "folder_json": "folder.json / metadata.json",
-    "cue": "Plik CUE",
-    "library": "Biblioteka lokalna",
-    "acoustid": "AcoustID + MusicBrainz",
-    "musicbrainz": "MusicBrainz",
-    "discogs": "Discogs",
-    "text_search": "MusicBrainz + Discogs (tekst)",
-    "online_hybrid": "Online Hybrid",
+    "offline": "Offline — pliki i baza lokalna",
+    "online": "Online — AcoustID, MusicBrainz, Discogs",
+    "mix": "Mix — wszystkie dostępne źródła",
 }
 
 
@@ -128,6 +118,10 @@ class MetadataEnricher:
             return None
         track.title = track.title or candidate.get("title")
         track.artist = track.artist or _first_artist(candidate)
+        # Extract ISRC from search results
+        isrcs = candidate.get("isrcs", [])
+        if isrcs and isinstance(isrcs, list):
+            track.isrc = track.isrc or isrcs[0]
         return track
 
     def enrich_from_discogs_search(self, track: Track, token: str | None) -> Track | None:
@@ -152,6 +146,9 @@ class MetadataEnricher:
         track.artist = track.artist or candidate.get("artist")
         track.genre = track.genre or candidate.get("genre")
         track.album = track.album or candidate.get("album")
+        track.publisher = track.publisher or candidate.get("label")
+        track.year = track.year or candidate.get("year")
+        track.copyright = track.copyright or candidate.get("label")
         return track
 
     def _fetch_musicbrainz_recording(self, recording_id: str) -> dict[str, Any] | None:
@@ -160,7 +157,7 @@ class MetadataEnricher:
         if cached:
             return cached
         url = f"https://musicbrainz.org/ws/2/recording/{recording_id}"
-        params = {"fmt": "json", "inc": "artists+releases+tags"}
+        params = {"fmt": "json", "inc": "artists+releases+tags+isrcs+media"}
         headers = {"User-Agent": f"{self.musicbrainz_app}/0.1 (local)"}
         try:
             resp = requests.get(url, params=params, headers=headers, timeout=15)
@@ -191,17 +188,39 @@ def _apply_musicbrainz_metadata(track: Track, payload: dict[str, Any]) -> str | 
         names = [artist.get("name") for artist in artists if isinstance(artist, dict)]
         if names:
             track.artist = track.artist or ", ".join(names)
+    # ISRC
+    isrcs = payload.get("isrcs", [])
+    if isrcs and isinstance(isrcs, list):
+        track.isrc = track.isrc or isrcs[0]
     releases = payload.get("releases", [])
     release_id = None
     if releases:
-        album_candidate = releases[0].get("title")
+        release = releases[0]
+        album_candidate = release.get("title")
         if album_candidate and not _is_compilation_album(album_candidate):
             track.album = track.album or album_candidate
-            release_id = releases[0].get("id")
-            release_date = releases[0].get("date")
+            release_id = release.get("id")
+            release_date = release.get("date")
             release_year = _parse_year(release_date)
             if release_year and _is_valid_year(release_year):
                 track.year = track.year or str(release_year)
+        # Track number from release media
+        media = release.get("media", [])
+        if media:
+            for medium in media:
+                for mb_track in medium.get("tracks", medium.get("track-list", [])):
+                    if mb_track.get("id") == payload.get("id") or mb_track.get("title") == payload.get("title"):
+                        track.tracknumber = track.tracknumber or mb_track.get("number")
+                        position = medium.get("position")
+                        if position:
+                            track.discnumber = track.discnumber or str(position)
+                        break
+        # Album artist from release artist-credit
+        release_artists = release.get("artist-credit", [])
+        if release_artists:
+            ra_names = [a.get("name") for a in release_artists if isinstance(a, dict)]
+            if ra_names:
+                track.albumartist = track.albumartist or ", ".join(ra_names)
     tags = payload.get("tags", [])
     if tags:
         top = max(tags, key=lambda item: item.get("count", 0))
@@ -271,11 +290,15 @@ def _select_discogs_release(payload: dict[str, Any] | None) -> dict[str, Any] | 
         artist, album = [p.strip() for p in title.split(" - ", 1)]
         if album and _is_compilation_album(album):
             album = None
+    labels = result.get("label", [])
+    label = labels[0] if labels else None
     return {
         "title": album or title,
         "artist": artist,
         "genre": (result.get("genre") or [None])[0],
         "album": album,
+        "label": label,
+        "year": result.get("year"),
     }
 
 
@@ -390,34 +413,24 @@ class AutoMetadataFiller:
         before = deepcopy(track)
         report = MetadataFillReport(method=method)
 
-        if method == "auto":
+        # Legacy method aliases → map to new 3 methods
+        legacy_map = {
+            "auto": "mix", "local": "offline",
+            "file_tags": "offline", "filename": "offline", "sidecar": "offline",
+            "folder_json": "offline", "cue": "offline", "library": "offline",
+            "acoustid": "online", "musicbrainz": "online", "discogs": "online",
+            "text_search": "online", "online_hybrid": "mix",
+        }
+        resolved = legacy_map.get(method, method)
+
+        if resolved == "offline":
             self._run_local_sources(track, report)
             self._run_local_library_source(track, report)
+        elif resolved == "online":
             self._run_online_pipeline(enricher, track, report, include_acoustid=True)
-        elif method == "local":
+        elif resolved == "mix":
             self._run_local_sources(track, report)
             self._run_local_library_source(track, report)
-        elif method == "file_tags":
-            self._run_file_tag_source(track, report)
-        elif method == "filename":
-            self._run_filename_folder_sources(track, report)
-        elif method == "sidecar":
-            self._run_sidecar_source(track, report)
-        elif method == "folder_json":
-            self._run_folder_json_source(track, report)
-        elif method == "cue":
-            self._run_cue_source(track, report)
-        elif method == "library":
-            self._run_local_library_source(track, report)
-        elif method == "acoustid":
-            self._run_online_pipeline(enricher, track, report, include_acoustid=True, only="acoustid")
-        elif method == "musicbrainz":
-            self._run_online_pipeline(enricher, track, report, include_acoustid=False, only="musicbrainz")
-        elif method == "discogs":
-            self._run_online_pipeline(enricher, track, report, include_acoustid=False, only="discogs")
-        elif method == "text_search":
-            self._run_online_pipeline(enricher, track, report, include_acoustid=False)
-        elif method == "online_hybrid":
             self._run_online_pipeline(enricher, track, report, include_acoustid=True)
         else:
             report.sources.append(SourceProbe(method, method, "miss", detail="Nieznana metoda"))
@@ -438,7 +451,16 @@ class AutoMetadataFiller:
         except Exception as exc:
             report.sources.append(SourceProbe("file_tags", LOCAL_SOURCE_LABELS["file_tags"], "error", detail=str(exc)))
             return
-        fields = _apply_mapping(track, tags, {"title": "title", "artist": "artist", "album": "album", "year": "year", "genre": "genre", "key": "key", "bpm": "bpm", "mood": "mood", "energy": "energy"})
+        fields = _apply_mapping(track, tags, {
+            "title": "title", "artist": "artist", "album": "album",
+            "albumartist": "albumartist", "year": "year", "genre": "genre",
+            "tracknumber": "tracknumber", "discnumber": "discnumber",
+            "composer": "composer", "key": "key", "bpm": "bpm",
+            "mood": "mood", "energy": "energy",
+            "comment": "comment", "lyrics": "lyrics", "isrc": "isrc",
+            "publisher": "publisher", "grouping": "grouping",
+            "copyright": "copyright", "remixer": "remixer",
+        })
         report.sources.append(SourceProbe("file_tags", LOCAL_SOURCE_LABELS["file_tags"], "hit" if fields else "miss", fields=fields, detail=f"{len(tags)} tagów odczytanych" if tags else "Brak tagów audio"))
 
     def _run_filename_folder_sources(self, track: Track, report: MetadataFillReport) -> None:
@@ -466,7 +488,10 @@ class AutoMetadataFiller:
             report.sources.append(SourceProbe("sidecar_json", LOCAL_SOURCE_LABELS["sidecar_json"], "miss", detail="Brak pliku"))
             return
         refreshed = extract_metadata(Path(track.path))
-        fields = _copy_missing_fields(track, refreshed, {"title", "artist", "album", "genre", "key", "mood", "energy", "bpm"})
+        fields = _copy_missing_fields(track, refreshed, {
+            "title", "artist", "album", "albumartist", "genre", "key", "mood", "energy", "bpm",
+            "tracknumber", "discnumber", "composer", "comment", "isrc", "publisher", "grouping", "copyright", "remixer",
+        })
         report.sources.append(SourceProbe("sidecar_json", LOCAL_SOURCE_LABELS["sidecar_json"], "hit" if fields else "miss", fields=fields, detail=str(path.name)))
 
     def _run_folder_json_source(self, track: Track, report: MetadataFillReport) -> None:
@@ -476,7 +501,10 @@ class AutoMetadataFiller:
             report.sources.append(SourceProbe("folder_json", LOCAL_SOURCE_LABELS["folder_json"], "miss", detail="Brak pliku"))
             return
         refreshed = extract_metadata(Path(track.path))
-        fields = _copy_missing_fields(track, refreshed, {"album", "artist", "genre", "key", "mood", "energy", "bpm"})
+        fields = _copy_missing_fields(track, refreshed, {
+            "album", "albumartist", "artist", "genre", "key", "mood", "energy", "bpm",
+            "composer", "publisher", "grouping", "copyright",
+        })
         report.sources.append(SourceProbe("folder_json", LOCAL_SOURCE_LABELS["folder_json"], "hit" if fields else "miss", fields=fields, detail=str(json_path.name)))
 
     def _run_cue_source(self, track: Track, report: MetadataFillReport) -> None:
@@ -511,7 +539,10 @@ class AutoMetadataFiller:
         if match is None:
             report.sources.append(SourceProbe("local_library", LOCAL_SOURCE_LABELS["local_library"], "miss", detail="Brak dopasowania"))
             return
-        fields = _copy_missing_fields(track, match, {"album", "genre", "year", "bpm", "key", "mood", "energy"})
+        fields = _copy_missing_fields(track, match, {
+            "album", "albumartist", "genre", "year", "bpm", "key", "mood", "energy",
+            "tracknumber", "discnumber", "composer", "comment", "isrc", "publisher", "grouping", "copyright", "remixer",
+        })
         report.sources.append(SourceProbe("local_library", LOCAL_SOURCE_LABELS["local_library"], "hit" if fields else "miss", fields=fields, detail=Path(match.path).name))
 
     def _run_online_pipeline(
@@ -591,8 +622,17 @@ def _has_value(value: Any) -> bool:
     return True
 
 
+_ALL_METADATA_FIELDS = {
+    "title", "artist", "album", "albumartist", "year", "genre",
+    "tracknumber", "discnumber", "composer",
+    "bpm", "key", "mood", "energy",
+    "comment", "lyrics", "isrc", "publisher", "grouping", "copyright", "remixer",
+    "artwork_path",
+}
+
+
 def _collect_changed_fields(before: Track, after: Track, allowed: set[str] | None = None) -> list[str]:
-    fields = allowed or {"title", "artist", "album", "year", "genre", "bpm", "key", "mood", "energy", "artwork_path"}
+    fields = allowed or _ALL_METADATA_FIELDS
     changed: list[str] = []
     for field_name in fields:
         if getattr(before, field_name, None) != getattr(after, field_name, None):

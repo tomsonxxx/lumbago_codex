@@ -14,6 +14,7 @@ from PyQt6 import QtCore, QtGui, QtWidgets
 from lumbago_app.core.config import load_settings
 from lumbago_app.core.models import AnalysisResult, Track
 from lumbago_app.core.services import enrich_track_with_analysis
+from lumbago_app.core.audio import write_tags
 from lumbago_app.data.repository import replace_track_tags, update_tracks
 from lumbago_app.services.ai_tagger import CloudAiTagger, LocalAiTagger
 from lumbago_app.services.ai_tagger_merge import _merge_analysis_into_track
@@ -21,20 +22,36 @@ from lumbago_app.services.key_detection import detect_key
 from lumbago_app.services.metadata_enricher import AutoMetadataFiller, MetadataFillReport, available_metadata_methods
 from lumbago_app.ui.widgets import apply_dialog_fade
 
-FIELDS = ["title", "artist", "album", "year", "genre", "bpm", "key", "mood", "energy"]
+FIELDS = [
+    "title", "artist", "album", "albumartist", "year", "genre",
+    "tracknumber", "discnumber", "composer",
+    "bpm", "key", "mood", "energy",
+    "comment", "lyrics", "isrc", "publisher", "grouping", "copyright", "remixer",
+]
 AI_FIELDS = {"genre", "bpm", "key", "mood", "energy"}
 FIELD_LABELS = {
     "title": "Tytuł",
     "artist": "Artysta",
     "album": "Album",
+    "albumartist": "Artysta albumu",
     "year": "Rok",
     "genre": "Gatunek",
+    "tracknumber": "Nr utworu",
+    "discnumber": "Nr dysku",
+    "composer": "Kompozytor",
     "bpm": "BPM",
     "key": "Tonacja",
     "mood": "Nastrój",
     "energy": "Energia",
+    "comment": "Komentarz",
+    "lyrics": "Tekst",
+    "isrc": "ISRC",
+    "publisher": "Wydawca",
+    "grouping": "Grupa",
+    "copyright": "Prawa autorskie",
+    "remixer": "Remikser",
 }
-METHOD_ORDER = ["auto", "local", "file_tags", "filename", "sidecar", "folder_json", "cue", "library", "acoustid", "musicbrainz", "discogs", "text_search", "online_hybrid"]
+METHOD_ORDER = ["offline", "online", "mix"]
 
 
 class TrackStatus(Enum):
@@ -566,11 +583,10 @@ class AiTaggerDialog(QtWidgets.QDialog):
             if provider == "local":
                 tagger = LocalAiTagger()
             else:
-                api_key = settings.cloud_ai_api_key or settings.gemini_api_key or settings.openai_api_key or settings.grok_api_key or settings.deepseek_api_key
+                api_key, base_url, model = _resolve_provider_config(provider, settings)
                 if not api_key:
-                    QtWidgets.QMessageBox.warning(self, "Brak klucza API", "Ustaw klucz API dla wybranego providera w ustawieniach.")
+                    QtWidgets.QMessageBox.warning(self, "Brak klucza API", f"Ustaw klucz API dla providera '{provider}' w ustawieniach.")
                     return
-                base_url, model = _provider_settings(provider, settings)
                 tagger = CloudAiTagger(provider, api_key, base_url=base_url, model=model)
         auto_filler = None
         if self._chk_meta.isChecked():
@@ -678,8 +694,10 @@ class AiTaggerDialog(QtWidgets.QDialog):
     def _apply_accepted(self) -> None:
         source = f"ai:{self._provider_combo.currentText()}"
         changed_tracks: list[Track] = []
+        write_errors: list[str] = []
         for state in self._states:
-            tags: list[str] = []
+            db_tags: list[str] = []
+            file_tags: dict[str, str] = {}
             for field_name in FIELDS:
                 if state.decisions.get(field_name) is not True:
                     continue
@@ -688,13 +706,23 @@ class AiTaggerDialog(QtWidgets.QDialog):
                 if _format_value(field_name, old_value) == _format_value(field_name, new_value):
                     continue
                 setattr(state.track, field_name, new_value)
-                tags.append(f"{field_name}:{new_value}")
-            if tags:
-                replace_track_tags(state.track.path, tags, source=source, confidence=state.ai_result.confidence if state.ai_result else None)
+                db_tags.append(f"{field_name}:{new_value}")
+                file_tags[field_name] = str(new_value) if new_value is not None else ""
+            if db_tags:
+                replace_track_tags(state.track.path, db_tags, source=source, confidence=state.ai_result.confidence if state.ai_result else None)
+                try:
+                    write_tags(Path(state.track.path), file_tags)
+                except Exception as exc:
+                    write_errors.append(f"{Path(state.track.path).name}: {exc}")
                 changed_tracks.append(state.track)
         if changed_tracks:
             update_tracks(changed_tracks)
-            self._status_lbl.setText(f"Zapisano zmiany dla {len(changed_tracks)} utworów.")
+            msg = f"Zapisano zmiany dla {len(changed_tracks)} utworów (baza + pliki audio)."
+            if write_errors:
+                msg += f"\nBłędy zapisu tagów: {len(write_errors)}"
+                for err in write_errors[:5]:
+                    msg += f"\n  {err}"
+            self._status_lbl.setText(msg)
             self.accept()
         else:
             self._status_lbl.setText("Brak zaakceptowanych zmian do zapisania.")
@@ -757,6 +785,26 @@ class _PipelineWorker(QtCore.QRunnable):
                         detected_key=detected_key if detected_key and not working.key else None,
                         detected_energy=_audio_energy(state.audio_result),
                     )
+                    if state.audio_result is not None:
+                        try:
+                            from lumbago_app.core.models import AudioFeatures
+                            from lumbago_app.data.repository import upsert_audio_features
+                            af = AudioFeatures(
+                                track_id=0,
+                                mfcc_json=getattr(state.audio_result, "mfcc_json", "[]") or "[]",
+                                tempo=getattr(state.audio_result, "tempo", None),
+                                spectral_centroid=getattr(state.audio_result, "spectral_centroid", None),
+                                spectral_rolloff=getattr(state.audio_result, "spectral_rolloff", None),
+                                brightness=getattr(state.audio_result, "brightness", None),
+                                roughness=getattr(state.audio_result, "roughness", None),
+                                zero_crossing_rate=getattr(state.audio_result, "zero_crossing_rate", None),
+                                chroma_json=getattr(state.audio_result, "chroma_json", None),
+                                danceability=getattr(state.audio_result, "danceability", None),
+                                valence=getattr(state.audio_result, "valence", None),
+                            )
+                            upsert_audio_features(working.path, af)
+                        except Exception:
+                            pass
                 if self.auto_filler is not None:
                     state.metadata_report = self.auto_filler.fill_missing_with_report(working, self.method)
                 if self.tagger is not None:
@@ -783,16 +831,21 @@ def _vsep() -> QtWidgets.QFrame:
     return separator
 
 
-def _provider_settings(provider: str, settings) -> tuple[str | None, str | None]:
+def _resolve_provider_config(provider: str, settings) -> tuple[str | None, str | None, str | None]:
+    """Return (api_key, base_url, model) resolved specifically for the selected provider."""
     if provider == "gemini":
-        return settings.gemini_base_url, settings.gemini_model
+        key = settings.gemini_api_key or settings.cloud_ai_api_key
+        return key, settings.gemini_base_url, settings.gemini_model
     if provider == "openai":
-        return settings.openai_base_url, settings.openai_model
+        key = settings.openai_api_key or settings.cloud_ai_api_key
+        return key, settings.openai_base_url, settings.openai_model
     if provider == "grok":
-        return settings.grok_base_url, settings.grok_model
+        key = settings.grok_api_key or settings.cloud_ai_api_key
+        return key, settings.grok_base_url, settings.grok_model
     if provider == "deepseek":
-        return settings.deepseek_base_url, settings.deepseek_model
-    return None, None
+        key = settings.deepseek_api_key or settings.cloud_ai_api_key
+        return key, settings.deepseek_base_url, settings.deepseek_model
+    return None, None, None
 
 
 def _is_valid_key(value: str) -> bool:

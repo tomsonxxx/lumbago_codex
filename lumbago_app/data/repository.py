@@ -8,7 +8,9 @@ from sqlalchemy import delete, select, update, text
 
 from lumbago_app.core.models import Playlist, Track
 from lumbago_app.data.db import get_session_factory, get_engine
+from lumbago_app.core.models import AudioFeatures
 from lumbago_app.data.schema import (
+    AudioFeaturesOrm,
     Base,
     ChangeLogOrm,
     MetadataCacheOrm,
@@ -35,6 +37,17 @@ def _ensure_track_columns(engine) -> None:
         "loudness_lufs": "REAL",
         "cue_in_ms": "INTEGER",
         "cue_out_ms": "INTEGER",
+        "albumartist": "TEXT",
+        "tracknumber": "TEXT",
+        "discnumber": "TEXT",
+        "composer": "TEXT",
+        "comment": "TEXT",
+        "lyrics": "TEXT",
+        "isrc": "TEXT",
+        "publisher": "TEXT",
+        "grouping": "TEXT",
+        "copyright": "TEXT",
+        "remixer": "TEXT",
     }
     with engine.connect() as conn:
         rows = conn.execute(text("PRAGMA table_info(tracks)")).fetchall()
@@ -46,99 +59,55 @@ def _ensure_track_columns(engine) -> None:
         conn.commit()
 
 
+_TRACK_META_FIELDS = [
+    "title", "artist", "album", "albumartist", "year", "genre",
+    "tracknumber", "discnumber", "composer", "bpm", "key",
+    "loudness_lufs", "duration", "file_size", "file_mtime", "file_hash",
+    "format", "bitrate", "sample_rate", "energy", "mood",
+    "comment", "lyrics", "isrc", "publisher", "grouping", "copyright", "remixer",
+    "cue_in_ms", "cue_out_ms", "artwork_path", "fingerprint",
+]
+
+
+def _copy_track_to_orm(track: Track, orm: TrackOrm) -> None:
+    for field in _TRACK_META_FIELDS:
+        setattr(orm, field, getattr(track, field, None))
+
+
 def upsert_tracks(tracks: Iterable[Track]) -> None:
     Session = get_session_factory()
     with Session() as session:
         for track in tracks:
             existing = session.scalar(select(TrackOrm).where(TrackOrm.path == track.path))
             if existing:
-                existing.title = track.title
-                existing.artist = track.artist
-                existing.album = track.album
-                existing.year = track.year
-                existing.genre = track.genre
-                existing.bpm = track.bpm
-                existing.key = track.key
-                existing.loudness_lufs = track.loudness_lufs
-                existing.duration = track.duration
-                existing.file_size = track.file_size
-                existing.file_mtime = track.file_mtime
-                existing.file_hash = track.file_hash
-                existing.format = track.format
-                existing.bitrate = track.bitrate
-                existing.sample_rate = track.sample_rate
-                existing.energy = track.energy
-                existing.mood = track.mood
-                existing.cue_in_ms = track.cue_in_ms
-                existing.cue_out_ms = track.cue_out_ms
-                existing.artwork_path = track.artwork_path
-                existing.fingerprint = track.fingerprint
+                _copy_track_to_orm(track, existing)
             else:
-                session.add(
-                    TrackOrm(
-                        path=track.path,
-                        title=track.title,
-                        artist=track.artist,
-                        album=track.album,
-                        year=track.year,
-                        genre=track.genre,
-                        bpm=track.bpm,
-                        key=track.key,
-                        loudness_lufs=track.loudness_lufs,
-                        duration=track.duration,
-                        file_size=track.file_size,
-                        file_mtime=track.file_mtime,
-                        file_hash=track.file_hash,
-                        format=track.format,
-                        bitrate=track.bitrate,
-                        sample_rate=track.sample_rate,
-                        energy=track.energy,
-                        mood=track.mood,
-                        cue_in_ms=track.cue_in_ms,
-                        cue_out_ms=track.cue_out_ms,
-                        artwork_path=track.artwork_path,
-                        fingerprint=track.fingerprint,
-                    )
-                )
+                orm = TrackOrm(path=track.path)
+                _copy_track_to_orm(track, orm)
+                session.add(orm)
         session.commit()
+
+
+_TRACK_READ_FIELDS = _TRACK_META_FIELDS + [
+    "play_count", "rating", "waveform_path", "date_added", "date_modified",
+]
+
+
+def _orm_to_track(row: TrackOrm) -> Track:
+    kwargs = {"path": row.path}
+    for field in _TRACK_READ_FIELDS:
+        kwargs[field] = getattr(row, field, None)
+    # Ensure int defaults
+    kwargs["play_count"] = kwargs.get("play_count") or 0
+    kwargs["rating"] = kwargs.get("rating") or 0
+    return Track(**kwargs)
 
 
 def list_tracks() -> list[Track]:
     Session = get_session_factory()
     with Session() as session:
         rows = session.scalars(select(TrackOrm).order_by(TrackOrm.id)).all()
-        return [
-            Track(
-                path=row.path,
-                title=row.title,
-                artist=row.artist,
-                album=row.album,
-                year=row.year,
-                genre=row.genre,
-                bpm=row.bpm,
-                key=row.key,
-                loudness_lufs=row.loudness_lufs,
-                duration=row.duration,
-                file_size=row.file_size,
-                file_mtime=row.file_mtime,
-                file_hash=row.file_hash,
-                format=row.format,
-                bitrate=row.bitrate,
-                sample_rate=row.sample_rate,
-                play_count=row.play_count,
-                rating=row.rating,
-                energy=row.energy,
-                mood=row.mood,
-                cue_in_ms=row.cue_in_ms,
-                cue_out_ms=row.cue_out_ms,
-                fingerprint=row.fingerprint,
-                waveform_path=row.waveform_path,
-                artwork_path=row.artwork_path,
-                date_added=row.date_added,
-                date_modified=row.date_modified,
-            )
-            for row in rows
-        ]
+        return [_orm_to_track(row) for row in rows]
 
 
 def update_track(track: Track) -> None:
@@ -147,23 +116,8 @@ def update_track(track: Track) -> None:
         existing = session.scalar(select(TrackOrm).where(TrackOrm.path == track.path))
         if not existing:
             return
-        existing.title = track.title
-        existing.artist = track.artist
-        existing.album = track.album
-        existing.year = track.year
-        existing.genre = track.genre
-        existing.bpm = track.bpm
-        existing.key = track.key
-        existing.loudness_lufs = track.loudness_lufs
+        _copy_track_to_orm(track, existing)
         existing.rating = track.rating
-        existing.energy = track.energy
-        existing.mood = track.mood
-        existing.cue_in_ms = track.cue_in_ms
-        existing.cue_out_ms = track.cue_out_ms
-        existing.artwork_path = track.artwork_path
-        existing.file_hash = track.file_hash
-        existing.file_mtime = track.file_mtime
-        existing.fingerprint = track.fingerprint
         session.commit()
 
 
@@ -174,23 +128,8 @@ def update_tracks(tracks: Iterable[Track]) -> None:
             existing = session.scalar(select(TrackOrm).where(TrackOrm.path == track.path))
             if not existing:
                 continue
-            existing.title = track.title
-            existing.artist = track.artist
-            existing.album = track.album
-            existing.year = track.year
-            existing.genre = track.genre
-            existing.bpm = track.bpm
-            existing.key = track.key
-            existing.loudness_lufs = track.loudness_lufs
+            _copy_track_to_orm(track, existing)
             existing.rating = track.rating
-            existing.energy = track.energy
-            existing.mood = track.mood
-            existing.cue_in_ms = track.cue_in_ms
-            existing.cue_out_ms = track.cue_out_ms
-            existing.artwork_path = track.artwork_path
-            existing.file_hash = track.file_hash
-            existing.file_mtime = track.file_mtime
-            existing.fingerprint = track.fingerprint
         session.commit()
 
 
@@ -459,38 +398,7 @@ def list_playlist_tracks(playlist_id: int) -> list[Track]:
             .where(PlaylistTrackOrm.playlist_id == playlist_id)
             .order_by(PlaylistTrackOrm.position, PlaylistTrackOrm.track_id)
         ).all()
-        return [
-            Track(
-                path=row[0].path,
-                title=row[0].title,
-                artist=row[0].artist,
-                album=row[0].album,
-                year=row[0].year,
-                genre=row[0].genre,
-                bpm=row[0].bpm,
-                key=row[0].key,
-                loudness_lufs=row[0].loudness_lufs,
-                duration=row[0].duration,
-                file_size=row[0].file_size,
-                file_mtime=row[0].file_mtime,
-                file_hash=row[0].file_hash,
-                format=row[0].format,
-                bitrate=row[0].bitrate,
-                sample_rate=row[0].sample_rate,
-                play_count=row[0].play_count,
-                rating=row[0].rating,
-                energy=row[0].energy,
-                mood=row[0].mood,
-                cue_in_ms=row[0].cue_in_ms,
-                cue_out_ms=row[0].cue_out_ms,
-                fingerprint=row[0].fingerprint,
-                waveform_path=row[0].waveform_path,
-                artwork_path=row[0].artwork_path,
-                date_added=row[0].date_added,
-                date_modified=row[0].date_modified,
-            )
-            for row in rows
-        ]
+        return [_orm_to_track(row[0]) for row in rows]
 
 
 def set_playlist_track_order(playlist_id: int, ordered_paths: list[str]) -> None:
@@ -540,6 +448,43 @@ def add_track_to_playlist(playlist_name: str, track_path: str) -> None:
                     playlist_id=playlist.id,
                     track_id=track.id,
                     position=next_pos,
+                )
+            )
+        session.commit()
+
+
+def upsert_audio_features(track_path: str, features: AudioFeatures) -> None:
+    Session = get_session_factory()
+    with Session() as session:
+        track = session.scalar(select(TrackOrm).where(TrackOrm.path == track_path))
+        if not track:
+            return
+        existing = session.get(AudioFeaturesOrm, track.id)
+        if existing:
+            existing.mfcc_json = features.mfcc_json
+            existing.tempo = features.tempo
+            existing.spectral_centroid = features.spectral_centroid
+            existing.spectral_rolloff = features.spectral_rolloff
+            existing.brightness = features.brightness
+            existing.roughness = features.roughness
+            existing.zero_crossing_rate = features.zero_crossing_rate
+            existing.chroma_json = features.chroma_json
+            existing.danceability = features.danceability
+            existing.valence = features.valence
+        else:
+            session.add(
+                AudioFeaturesOrm(
+                    id=track.id,
+                    mfcc_json=features.mfcc_json,
+                    tempo=features.tempo,
+                    spectral_centroid=features.spectral_centroid,
+                    spectral_rolloff=features.spectral_rolloff,
+                    brightness=features.brightness,
+                    roughness=features.roughness,
+                    zero_crossing_rate=features.zero_crossing_rate,
+                    chroma_json=features.chroma_json,
+                    danceability=features.danceability,
+                    valence=features.valence,
                 )
             )
         session.commit()

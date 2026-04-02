@@ -333,4 +333,227 @@ class SettingsDialog(QtWidgets.QDialog):
             self._show_test_result(title, False, str(exc))
 
 
+class ApiKeyCheckDialog(QtWidgets.QDialog):
+    """Standalone dialog that validates all configured API keys at once."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Sprawdzanie kluczy API")
+        self.setMinimumWidth(560)
+        apply_dialog_fade(self)
+        self._results: dict[str, QtWidgets.QLabel] = {}
+        self._build_ui()
+
+    def _build_ui(self) -> None:
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(10)
+
+        card = QtWidgets.QFrame()
+        card.setObjectName("DialogCard")
+        card_layout = QtWidgets.QVBoxLayout(card)
+        card_layout.setContentsMargins(16, 14, 16, 16)
+        card_layout.setSpacing(8)
+        layout.addWidget(card)
+
+        title_row = QtWidgets.QHBoxLayout()
+        title_icon = QtWidgets.QLabel()
+        title_icon.setPixmap(dialog_icon_pixmap(18))
+        title_icon.setFixedSize(20, 20)
+        title = QtWidgets.QLabel("Sprawdzanie kluczy API")
+        title.setObjectName("DialogTitle")
+        title_row.addWidget(title_icon)
+        title_row.addWidget(title)
+        title_row.addStretch(1)
+        card_layout.addLayout(title_row)
+
+        desc = QtWidgets.QLabel("Kliknij <b>Testuj wszystko</b> aby zweryfikować poprawność wszystkich skonfigurowanych kluczy API.")
+        desc.setWordWrap(True)
+        card_layout.addWidget(desc)
+
+        self._grid = QtWidgets.QGridLayout()
+        self._grid.setSpacing(6)
+        services = [
+            ("AcoustID", "acoustid"),
+            ("MusicBrainz", "musicbrainz"),
+            ("Discogs", "discogs"),
+            ("Gemini", "gemini"),
+            ("OpenAI", "openai"),
+            ("Grok", "grok"),
+            ("DeepSeek", "deepseek"),
+        ]
+        for row, (label, key) in enumerate(services):
+            name_lbl = QtWidgets.QLabel(f"<b>{label}</b>")
+            status_lbl = QtWidgets.QLabel("—")
+            status_lbl.setMinimumWidth(350)
+            self._results[key] = status_lbl
+            self._grid.addWidget(name_lbl, row, 0)
+            self._grid.addWidget(status_lbl, row, 1)
+        card_layout.addLayout(self._grid)
+
+        btn_row = QtWidgets.QHBoxLayout()
+        self._test_all_btn = QtWidgets.QPushButton("Testuj wszystko")
+        self._test_all_btn.setObjectName("PrimaryBtn")
+        self._test_all_btn.clicked.connect(self._run_all_tests)
+        close_btn = QtWidgets.QPushButton("Zamknij")
+        close_btn.clicked.connect(self.accept)
+        btn_row.addWidget(self._test_all_btn)
+        btn_row.addStretch(1)
+        btn_row.addWidget(close_btn)
+        card_layout.addLayout(btn_row)
+
+    def _set_status(self, key: str, ok: bool, detail: str) -> None:
+        label = self._results.get(key)
+        if label is None:
+            return
+        if ok:
+            label.setText(f'<span style="color:#00E676;">OK</span> — {detail}')
+        else:
+            label.setText(f'<span style="color:#FF5252;">BŁĄD</span> — {detail}')
+
+    def _set_pending(self, key: str) -> None:
+        label = self._results.get(key)
+        if label is not None:
+            label.setText('<span style="color:#FFD700;">Testowanie...</span>')
+
+    def _set_skipped(self, key: str) -> None:
+        label = self._results.get(key)
+        if label is not None:
+            label.setText('<span style="color:#888;">Brak klucza — pominięto</span>')
+
+    def _run_all_tests(self) -> None:
+        self._test_all_btn.setEnabled(False)
+        settings = load_settings()
+        QtWidgets.QApplication.processEvents()
+
+        # AcoustID
+        if settings.acoustid_api_key:
+            self._set_pending("acoustid")
+            QtWidgets.QApplication.processEvents()
+            self._test_acoustid(settings.acoustid_api_key)
+        else:
+            self._set_skipped("acoustid")
+
+        # MusicBrainz
+        self._set_pending("musicbrainz")
+        QtWidgets.QApplication.processEvents()
+        self._test_musicbrainz(settings.musicbrainz_app_name or "LumbagoMusicAI")
+
+        # Discogs
+        if settings.discogs_token:
+            self._set_pending("discogs")
+            QtWidgets.QApplication.processEvents()
+            self._test_discogs(settings.discogs_token)
+        else:
+            self._set_skipped("discogs")
+
+        # Cloud providers
+        provider_configs = {
+            "gemini": (settings.gemini_api_key, settings.gemini_base_url or "https://generativelanguage.googleapis.com/v1beta"),
+            "openai": (settings.openai_api_key, settings.openai_base_url or "https://api.openai.com/v1"),
+            "grok": (settings.grok_api_key, settings.grok_base_url or "https://api.x.ai/v1"),
+            "deepseek": (settings.deepseek_api_key, settings.deepseek_base_url or "https://api.deepseek.com/v1"),
+        }
+        for provider, (api_key, base_url) in provider_configs.items():
+            if not api_key:
+                self._set_skipped(provider)
+                continue
+            self._set_pending(provider)
+            QtWidgets.QApplication.processEvents()
+            if provider == "gemini":
+                self._test_gemini_api(api_key, base_url)
+            else:
+                self._test_openai_like(provider, api_key, base_url)
+
+        self._test_all_btn.setEnabled(True)
+
+    def _test_acoustid(self, api_key: str) -> None:
+        try:
+            resp = requests.get(
+                "https://api.acoustid.org/v2/lookup",
+                params={"client": api_key, "meta": "recordings", "duration": "1", "fingerprint": "test"},
+                timeout=12,
+            )
+            data = resp.json() if "application/json" in resp.headers.get("content-type", "") else {}
+            status = data.get("status")
+            if resp.status_code == 200 and status in {"ok", "error"}:
+                self._set_status("acoustid", True, f"HTTP {resp.status_code}, status={status}")
+            else:
+                self._set_status("acoustid", False, f"HTTP {resp.status_code}")
+        except Exception as exc:
+            self._set_status("acoustid", False, str(exc))
+
+    def _test_musicbrainz(self, app_name: str) -> None:
+        try:
+            resp = requests.get(
+                "https://musicbrainz.org/ws/2/recording",
+                headers={"User-Agent": f"{app_name}/1.0"},
+                params={"query": "recording:test", "fmt": "json", "limit": "1"},
+                timeout=12,
+            )
+            if resp.status_code == 200:
+                self._set_status("musicbrainz", True, "Zapytanie działa poprawnie")
+            else:
+                self._set_status("musicbrainz", False, f"HTTP {resp.status_code}")
+        except Exception as exc:
+            self._set_status("musicbrainz", False, str(exc))
+
+    def _test_discogs(self, token: str) -> None:
+        try:
+            resp = requests.get(
+                "https://api.discogs.com/database/search",
+                headers={"Authorization": f"Discogs token={token}", "User-Agent": "LumbagoMusicAI/1.0"},
+                params={"q": "test", "type": "release", "per_page": "1"},
+                timeout=12,
+            )
+            if resp.status_code == 200:
+                self._set_status("discogs", True, "Autoryzacja i wyszukiwanie działają")
+            else:
+                self._set_status("discogs", False, self._extract_http_error(resp))
+        except Exception as exc:
+            self._set_status("discogs", False, str(exc))
+
+    def _test_gemini_api(self, api_key: str, base_url: str) -> None:
+        try:
+            resp = requests.get(
+                f"{base_url.rstrip('/')}/models",
+                headers={"x-goog-api-key": api_key},
+                timeout=12,
+            )
+            if resp.status_code == 200:
+                self._set_status("gemini", True, "Połączenie i autoryzacja działają")
+            else:
+                self._set_status("gemini", False, self._extract_http_error(resp))
+        except Exception as exc:
+            self._set_status("gemini", False, str(exc))
+
+    def _test_openai_like(self, provider: str, api_key: str, base_url: str) -> None:
+        try:
+            resp = requests.get(
+                f"{base_url.rstrip('/')}/models",
+                headers={"Authorization": f"Bearer {api_key}"},
+                timeout=12,
+            )
+            if resp.status_code == 200:
+                self._set_status(provider, True, "Połączenie i autoryzacja działają")
+            else:
+                self._set_status(provider, False, self._extract_http_error(resp))
+        except Exception as exc:
+            self._set_status(provider, False, str(exc))
+
+    @staticmethod
+    def _extract_http_error(resp: requests.Response) -> str:
+        detail = f"HTTP {resp.status_code}"
+        try:
+            payload = resp.json()
+            error = payload.get("error")
+            if isinstance(error, dict):
+                msg = str(error.get("message", "")).strip()
+                if msg:
+                    detail = f"{detail}: {msg}"
+            elif isinstance(error, str) and error:
+                detail = f"{detail}: {error}"
+        except Exception:
+            pass
+        return detail
 

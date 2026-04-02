@@ -48,9 +48,7 @@ class CloudAiTagger:
             return AnalysisResult(description="No missing fields", confidence=1.0)
         prompt = _build_prompt(track, missing)
         try:
-            if self.provider == "openai":
-                text = _call_openai_responses(base_url, self.api_key, model, prompt, self.timeout)
-            elif self.provider == "gemini":
+            if self.provider == "gemini":
                 text = _call_gemini_generate_content(base_url, self.api_key, model, prompt, self.timeout)
             else:
                 text = _call_openai_compatible_chat(
