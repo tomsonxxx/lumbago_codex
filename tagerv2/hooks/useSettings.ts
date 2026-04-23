@@ -24,11 +24,9 @@ export const useSettings = () => {
   // Theme
   const [theme, setTheme] = useState<'light' | 'dark'>(() => (localStorage.getItem('theme') as 'light' | 'dark') || 'dark');
   
-  // API Keys
-  const [apiKeys, setApiKeys] = useState<ApiKeys>(() => {
-    const saved = sessionStorage.getItem('apiKeys');
-    return saved ? JSON.parse(saved) : { grok: '', openai: '' };
-  });
+  // API keys are kept in memory only — never written to any browser storage
+  // to avoid persisting credentials in cleartext.
+  const [apiKeys, setApiKeys] = useState<ApiKeys>({ grok: '', openai: '' });
 
   // AI Provider
   const [aiProvider, setAiProvider] = useState<AIProvider>(() => (localStorage.getItem('aiProvider') as AIProvider) || 'gemini');
@@ -48,13 +46,10 @@ export const useSettings = () => {
   }, [theme]);
 
   useEffect(() => {
-    // API keys are kept in sessionStorage (cleared when the tab closes) rather
-    // than localStorage to avoid persisting credentials across sessions.
-    sessionStorage.setItem('apiKeys', JSON.stringify(apiKeys));
     localStorage.setItem('aiProvider', aiProvider);
     localStorage.setItem('renamePattern', renamePattern);
     localStorage.setItem('analysisSettings', JSON.stringify(analysisSettings));
-  }, [apiKeys, aiProvider, renamePattern, analysisSettings]);
+  }, [aiProvider, renamePattern, analysisSettings]);
 
   return {
     theme,
