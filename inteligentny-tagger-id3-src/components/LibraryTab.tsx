@@ -16,7 +16,7 @@ interface LibraryTabProps {
   directoryHandle: any | null;
   isRestored: boolean;
   onToggleSelectAll: () => void;
-  onBatchAnalyze: (files: AudioFile[]) => void;
+  onBatchAnalyze: () => void;
   onBatchAnalyzeAll: () => void;
   onDownloadOrSave: () => void;
   onBatchEdit: () => void;
@@ -26,6 +26,7 @@ interface LibraryTabProps {
   onDeleteItem: (id: string | 'selected' | 'all') => void;
   onClearAll: () => void;
   onProcessFile: (file: AudioFile) => void;
+  onRetryFile: (fileId: string) => void;
   onSelectionChange: (fileId: string, isSelected: boolean) => void;
   onTabChange: (tabId: string) => void;
 }
@@ -142,7 +143,7 @@ const LibraryTab: React.FC<LibraryTabProps> = (props) => {
         isSaving={props.isSaving}
         allSelected={props.allFilesSelected}
         onToggleSelectAll={props.onToggleSelectAll}
-        onAnalyze={() => props.onBatchAnalyze(props.selectedFiles)}
+        onAnalyze={props.onBatchAnalyze}
         onAnalyzeAll={props.onBatchAnalyzeAll}
         onDownloadOrSave={props.onDownloadOrSave}
         onEdit={props.onBatchEdit}
@@ -199,6 +200,7 @@ const LibraryTab: React.FC<LibraryTabProps> = (props) => {
                   onEdit={(f) => props.onSingleItemEdit(f.id)}
                   onDelete={props.onDeleteItem}
                   onSelectionChange={props.onSelectionChange}
+                  onRetry={props.onRetryFile}
                 />
               ))}
             </div>

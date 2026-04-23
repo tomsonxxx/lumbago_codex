@@ -1,6 +1,5 @@
-
-import { GoogleGenAI, Type, GenerateContentResponse } from "@google/genai";
-import { AudioFile, ID3Tags } from '../types';
+import { GoogleGenAI, Type } from '@google/genai';
+import { ID3Tags } from '../types';
 
 export type AIProvider = 'gemini' | 'grok' | 'openai';
 
@@ -9,313 +8,231 @@ export interface ApiKeys {
   openai: string;
 }
 
-const getSystemInstruction = () => {
-  return `You are an expert music archivist with access to a vast database of music information, equivalent to searching across major portals like MusicBrainz, Discogs, AllMusic, Spotify, and Apple Music.
-Your task is to identify the song from the provided filename and any existing tags, and then provide the most accurate and complete ID3 tag information possible.
-
-RULES FOR MERGING AND ACCURACY:
-- Analyze the filename and existing tags to identify the track.
-- Existing tags provided in the input are hints. If they seem correct, preserve them. If they seem wrong or missing, correct/fill them.
-- If you cannot confidently determine a piece of information, return null or omit the field. DO NOT return empty strings ("") or generic placeholders like "Unknown Artist" if the user provided specific data.
-- VERY IMPORTANT: Prioritize the original studio album the song was first released on. Avoid 'Greatest Hits' compilations, singles, or re-releases unless it's the only available source.
-
-TAGS TO FIND:
-- title, artist, album, release year (4 digits), genre.
-- track number, disc number (e.g., '1/2').
-- album artist, composer, original artist (for covers).
-- copyright info, encoded by.
-- mood (e.g., energetic, melancholic), comments (brief facts).
-- albumCoverUrl (high-quality image URL).
-- Infer technical specs if possible: bitrate (kbps), sampleRate (Hz).
-
-The response must be in JSON format.`;
-};
-
-const singleFileResponseSchema = {
-    type: Type.OBJECT,
-    properties: {
-        artist: { type: Type.STRING, description: "The name of the main artist or band for the track." },
-        title: { type: Type.STRING, description: "The official title of the song." },
-        album: { type: Type.STRING, description: "The name of the original studio album." },
-        year: { type: Type.STRING, description: "The 4-digit release year of the original album or song." },
-        genre: { type: Type.STRING, description: "The primary genre of the music." },
-        trackNumber: { type: Type.STRING, description: "The track number, possibly including the total count (e.g., '01' or '1/12')." },
-        albumArtist: { type: Type.STRING, description: "The primary artist for the entire album, if different from the track artist." },
-        composer: { type: Type.STRING, description: "The composer(s) of the music." },
-        copyright: { type: Type.STRING, description: "Copyright information for the track." },
-        encodedBy: { type: Type.STRING, description: "The person or company that encoded the file." },
-        originalArtist: { type: Type.STRING, description: "The original artist(s) if the track is a cover." },
-        discNumber: { type: Type.STRING, description: "The disc number, possibly including the total count (e.g., '1' or '1/2')." },
-        albumCoverUrl: { type: Type.STRING, description: "A direct URL to a high-quality album cover image." },
-        mood: { type: Type.STRING, description: "The overall mood or feeling of the song." },
-        comments: { type: Type.STRING, description: "Brief interesting facts or description about the song." },
-        bitrate: { type: Type.NUMBER, description: "The typical bitrate in kbps for the release (e.g., 320)." },
-        sampleRate: { type: Type.NUMBER, description: "The typical sample rate in Hz for the release (e.g., 44100)." },
-    },
-};
-
-const batchFileResponseSchema = {
-    type: Type.ARRAY,
-    description: "An array of objects, each containing the tags for a single song from the input list.",
-    items: {
-        type: Type.OBJECT,
-        properties: {
-            originalFilename: { type: Type.STRING, description: "The original filename provided in the prompt, used for mapping the results back." },
-            ...singleFileResponseSchema.properties
-        },
-        required: ["originalFilename"],
-    }
-};
-
-const callGeminiWithRetry = async (
-    apiCall: () => Promise<GenerateContentResponse>,
-    maxRetries = 3
-): Promise<GenerateContentResponse> => {
-    let lastError: Error | null = null;
-    for (let i = 0; i < maxRetries; i++) {
-        try {
-            return await apiCall();
-        } catch (error) {
-            lastError = error as Error;
-            console.warn(`Błąd wywołania API Gemini (próba ${i + 1}/${maxRetries}):`, lastError.message);
-            if (i < maxRetries - 1) {
-                // Exponential backoff
-                const delay = Math.pow(2, i) * 1000;
-                console.log(`Ponawiam próbę za ${delay}ms...`);
-                await new Promise(resolve => setTimeout(resolve, delay));
-            }
-        }
-    }
-    throw lastError || new Error("Nie udało się wykonać zapytania do API po wielokrotnych próbach.");
-};
-
-// Helper to determine if a new value should overwrite an old one
-const shouldOverwrite = (newValue: any, oldValue: any): boolean => {
-    // If new value is empty/null/undefined, keep the old one
-    if (newValue === null || newValue === undefined || newValue === '') return false;
-    
-    // If new value is a string, check for generic placeholders that are worse than existing data
-    if (typeof newValue === 'string') {
-        const lowerNew = newValue.toLowerCase();
-        // If AI returns "Unknown", but we have a real value, keep the real value
-        if ((lowerNew.includes('unknown') || lowerNew.includes('undefined')) && oldValue && oldValue.length > 0) {
-            return false;
-        }
-    }
-    
-    // Otherwise, assume the new AI value is better or we didn't have an old value
-    return true;
-};
-
-
-export const fetchTagsForFile = async (
-  fileName: string,
-  originalTags: ID3Tags,
-  provider: AIProvider,
-  apiKeys: ApiKeys
-): Promise<ID3Tags> => {
-  if (provider === 'gemini') {
-    if (!process.env.API_KEY) {
-      throw new Error("Klucz API Gemini nie jest skonfigurowany w zmiennych środowiskowych (API_KEY).");
-    }
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    
-    const prompt = `Identify this song and provide its tags. Filename: "${fileName}". Existing tags: ${JSON.stringify(originalTags)}.`;
-    
-    try {
-        const response = await callGeminiWithRetry(() => 
-            ai.models.generateContent({
-                model: "gemini-2.5-flash",
-                contents: prompt,
-                config: {
-                    systemInstruction: getSystemInstruction(),
-                    responseMimeType: "application/json",
-                    responseSchema: singleFileResponseSchema,
-                },
-            })
-        );
-
-        const text = response.text.trim();
-        let parsedResponse: Partial<ID3Tags>;
-
-        try {
-            parsedResponse = JSON.parse(text);
-        } catch (e) {
-            console.error("Nie udało się sparsować JSON z Gemini:", text);
-            throw new Error("Otrzymano nieprawidłowy format JSON z AI.");
-        }
-
-        // Intelligent Merge Logic
-        const mergedTags: ID3Tags = { ...originalTags };
-        
-        Object.keys(parsedResponse).forEach((key) => {
-            const typedKey = key as keyof ID3Tags;
-            const newValue = parsedResponse[typedKey];
-            const oldValue = originalTags[typedKey];
-
-            if (shouldOverwrite(newValue, oldValue)) {
-                // We need to cast to any here because TypeScript struggles with the dynamic key assignment 
-                // on the interface types, even though we checked keys.
-                (mergedTags as any)[typedKey] = newValue;
-            }
-        });
-
-        return mergedTags;
-
-    } catch (error) {
-        console.error("Błąd podczas pobierania tagów z Gemini API:", error);
-        if (error instanceof Error) {
-           throw new Error(`Błąd Gemini API: ${error.message}`);
-        }
-        throw new Error("Wystąpił nieznany błąd z Gemini API.");
-    }
-  }
-  
-  // Handle other providers (placeholder)
-  if (provider === 'grok') {
-    if (!apiKeys.grok) {
-      throw new Error("Klucz API dla Grok nie został podany w ustawieniach.");
-    }
-    // Placeholder for actual Grok API call
-    console.warn(`Dostawca Grok nie jest jeszcze zaimplementowany. Użycie klucza API zostało pominięte.`);
-    return originalTags;
-  }
-
-  if (provider === 'openai') {
-    if (!apiKeys.openai) {
-      throw new Error("Klucz API dla OpenAI nie został podany w ustawieniach.");
-    }
-    // Placeholder for actual OpenAI API call
-    console.warn(`Dostawca OpenAI nie jest jeszcze zaimplementowany. Użycie klucza API zostało pominięte.`);
-    return originalTags;
-  }
-  
-  // Fallback for an unknown provider
-  console.warn(`Nieznany dostawca ${provider}. Zwracam oryginalne tagi.`);
-  return originalTags;
-};
-
-export interface BatchResult extends ID3Tags {
-    originalFilename: string;
+export interface ProviderAnalysisResult {
+  provider: AIProvider;
+  model: string;
+  tags: Partial<ID3Tags>;
+  confidence: number;
+  error?: string;
 }
 
-export const fetchTagsForBatch = async (
-    files: AudioFile[],
-    provider: AIProvider,
-    apiKeys: ApiKeys
-): Promise<BatchResult[]> => {
-    if (provider === 'gemini') {
-        if (!process.env.API_KEY) {
-            throw new Error("Klucz API Gemini nie jest skonfigurowany w zmiennych środowiskowych (API_KEY).");
-        }
-        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+const PROVIDER_MODELS: Record<AIProvider, string> = {
+  gemini: 'gemini-2.5-flash',
+  openai: 'gpt-4.1-mini',
+  grok: 'grok-2-latest',
+};
 
-        const fileList = files.map(f => JSON.stringify({ filename: f.file.name, existingTags: f.originalTags })).join(',\n');
-        const prompt = `You are a music archivist. I have a batch of audio files that may be from the same album or artist. Please identify each track based on its filename and existing tags, and provide its full ID3 tags. Pay close attention to filenames that suggest they are from the same album or artist (e.g., sequential track numbers like '01-song.mp3', '02-another.mp3'). For these related files, ensure the 'artist', 'album', and 'albumArtist' tags are identical to maintain consistency. Here is the list of files:\n\n[${fileList}]\n\nReturn your response as a valid JSON array. Each object in the array must correspond to one of the input files and contain the 'originalFilename' I provided, along with all the identified tags from the schema.`;
+const SYSTEM_PROMPT = `You are a meticulous DJ metadata expert.
+Return ONLY JSON with best effort metadata for an audio track.
+You must infer fields: title, artist, album, year, genre, bpm, key, trackNumber, discNumber, albumArtist, composer, comments, mood.
+Return confidence 0..1 (global) and optional fieldConfidence object with 0..1 per field.
+Do not include markdown fences.`;
 
-        try {
-            const response = await callGeminiWithRetry(() =>
-                ai.models.generateContent({
-                    model: "gemini-2.5-flash",
-                    contents: prompt,
-                    config: {
-                        systemInstruction: getSystemInstruction(),
-                        responseMimeType: "application/json",
-                        responseSchema: batchFileResponseSchema,
-                    },
-                })
-            );
-            
-            const text = response.text.trim();
-            let parsedResponse: any[];
-            try {
-                parsedResponse = JSON.parse(text);
-            } catch (e) {
-                console.error("Failed to parse JSON from Gemini batch response:", text, e);
-                throw new Error("Otrzymano nieprawidłowy format JSON z AI.");
-            }
-            
-            if (!Array.isArray(parsedResponse)) {
-                 console.error("Batch AI response is not a valid JSON array.", parsedResponse);
-                 throw new Error("Odpowiedź AI nie jest w formacie tablicy JSON.");
-            }
-            
-            // Validate the response to ensure it matches what we requested.
-            const validatedResults: BatchResult[] = [];
-            const requestedFilenames = new Set(files.map(f => f.file.name));
-            const processedFilenames = new Set<string>();
-            
-            // Map files for easier lookup to perform merge
-            const filesMap = new Map(files.map(f => [f.file.name, f]));
-        
-            for (const item of parsedResponse) {
-                try {
-                    if (typeof item !== 'object' || item === null) {
-                        continue;
-                    }
-                    if (!item.originalFilename || !requestedFilenames.has(item.originalFilename)) {
-                        continue;
-                    }
-                    if (processedFilenames.has(item.originalFilename)) {
-                        continue;
-                    }
-                    
-                    // Perform Smart Merge for Batch Items too
-                    const originalFile = filesMap.get(item.originalFilename);
-                    const originalTags = originalFile ? originalFile.originalTags : {};
-                    
-                    const mergedItem: any = { originalFilename: item.originalFilename };
-                    
-                    // Merge standard fields
-                    const allKeys = new Set([...Object.keys(item), ...Object.keys(originalTags)]);
-                    allKeys.forEach(key => {
-                        if (key === 'originalFilename') return;
-                        const newVal = item[key];
-                        const oldVal = (originalTags as any)[key];
-                        
-                        if (shouldOverwrite(newVal, oldVal)) {
-                            mergedItem[key] = newVal;
-                        } else {
-                             mergedItem[key] = oldVal;
-                        }
-                    });
+const RESPONSE_SCHEMA = {
+  type: Type.OBJECT,
+  properties: {
+    title: { type: Type.STRING },
+    artist: { type: Type.STRING },
+    album: { type: Type.STRING },
+    year: { type: Type.STRING },
+    genre: { type: Type.STRING },
+    bpm: { type: Type.NUMBER },
+    key: { type: Type.STRING },
+    trackNumber: { type: Type.STRING },
+    discNumber: { type: Type.STRING },
+    albumArtist: { type: Type.STRING },
+    composer: { type: Type.STRING },
+    comments: { type: Type.STRING },
+    mood: { type: Type.STRING },
+    confidence: { type: Type.NUMBER },
+    fieldConfidence: { type: Type.OBJECT },
+  },
+};
 
-                    validatedResults.push(mergedItem as BatchResult);
-                    processedFilenames.add(item.originalFilename);
-                } catch (e) {
-                    console.error("Error processing a single item in batch response. Skipping.", { item, error: e });
-                }
-            }
-        
-            if(validatedResults.length < files.length) {
-                console.warn(`Batch response contained ${validatedResults.length} valid items, but ${files.length} files were requested. Some files may not be updated.`);
-            }
-            
-            return validatedResults;
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-        } catch (error) {
-            console.error("Błąd podczas pobierania tagów wsadowo z Gemini API:", error);
-            if (error instanceof Error) {
-               throw new Error(`Błąd wsadowy Gemini API: ${error.message}`);
-            }
-            throw new Error("Wystąpił nieznany błąd wsadowy z Gemini API.");
-        }
+const parseJsonSafe = (payload: string): Record<string, any> => {
+  const trimmed = payload.trim().replace(/^```json/i, '').replace(/^```/, '').replace(/```$/, '');
+  return JSON.parse(trimmed);
+};
+
+const normalizeTags = (raw: Record<string, any>): Partial<ID3Tags> => {
+  const out: Partial<ID3Tags> = {};
+  const keys: (keyof ID3Tags)[] = [
+    'title',
+    'artist',
+    'album',
+    'year',
+    'genre',
+    'trackNumber',
+    'discNumber',
+    'albumArtist',
+    'composer',
+    'comments',
+    'mood',
+    'bpm',
+    'key',
+    'albumCoverUrl',
+  ];
+
+  for (const key of keys) {
+    const value = raw[key as string];
+    if (value === null || value === undefined || value === '') {
+      continue;
     }
-
-    // Handle other providers for batch mode
-    if (provider === 'grok') {
-        if (!apiKeys.grok) {
-          throw new Error("Klucz API dla Grok nie został podany w ustawieniach.");
-        }
-        throw new Error("Tryb wsadowy nie jest zaimplementowany dla dostawcy Grok.");
+    if (key === 'bpm') {
+      const bpm = Number(value);
+      if (Number.isFinite(bpm) && bpm >= 40 && bpm <= 260) {
+        out.bpm = Number(bpm.toFixed(1));
+      }
+      continue;
     }
-
-    if (provider === 'openai') {
-        if (!apiKeys.openai) {
-          throw new Error("Klucz API dla OpenAI nie został podany w ustawieniach.");
-        }
-        throw new Error("Tryb wsadowy nie jest zaimplementowany dla dostawcy OpenAI.");
+    if (key === 'year') {
+      const year = String(value).match(/\d{4}/)?.[0];
+      if (year) {
+        out.year = year;
+      }
+      continue;
     }
+    if (key === 'key') {
+      const normalizedKey = String(value).trim();
+      if (/^(1[0-2]|[1-9])[AB]$/i.test(normalizedKey) || /^[A-G](#|b)?m?$/i.test(normalizedKey)) {
+        out.key = normalizedKey;
+      }
+      continue;
+    }
+    (out as any)[key] = String(value).trim();
+  }
+  return out;
+};
 
-    throw new Error(`Nieznany dostawca ${provider} nie jest obsługiwany w trybie wsadowym.`);
+const callGemini = async (prompt: string): Promise<{ payload: Record<string, any>; model: string }> => {
+  if (!process.env.API_KEY) {
+    throw new Error('Brak API_KEY dla Gemini.');
+  }
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  let lastError: unknown;
+  for (let i = 0; i < 3; i++) {
+    try {
+      const response = await ai.models.generateContent({
+        model: PROVIDER_MODELS.gemini,
+        contents: prompt,
+        config: {
+          systemInstruction: SYSTEM_PROMPT,
+          responseMimeType: 'application/json',
+          responseSchema: RESPONSE_SCHEMA,
+        },
+      });
+      return { payload: parseJsonSafe(response.text), model: PROVIDER_MODELS.gemini };
+    } catch (error) {
+      lastError = error;
+      await sleep(500 * (i + 1));
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error('Gemini failed');
+};
+
+const callChatCompletions = async (
+  provider: 'openai' | 'grok',
+  apiKey: string,
+  prompt: string
+): Promise<{ payload: Record<string, any>; model: string }> => {
+  const endpoint = provider === 'openai' ? 'https://api.openai.com/v1/chat/completions' : 'https://api.x.ai/v1/chat/completions';
+  const model = PROVIDER_MODELS[provider];
+  let lastError: unknown;
+
+  for (let i = 0; i < 2; i++) {
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model,
+          temperature: 0.2,
+          response_format: { type: 'json_object' },
+          messages: [
+            { role: 'system', content: SYSTEM_PROMPT },
+            { role: 'user', content: prompt },
+          ],
+        }),
+      });
+      if (!response.ok) {
+        throw new Error(`${provider} HTTP ${response.status}`);
+      }
+      const data = await response.json();
+      const content = data?.choices?.[0]?.message?.content ?? '{}';
+      return { payload: parseJsonSafe(content), model };
+    } catch (error) {
+      lastError = error;
+      await sleep(500 * (i + 1));
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error(`${provider} failed`);
+};
+
+export const analyzeWithProviders = async (
+  prompt: string,
+  apiKeys: ApiKeys
+): Promise<ProviderAnalysisResult[]> => {
+  const tasks: Promise<ProviderAnalysisResult>[] = [];
+
+  tasks.push(
+    callGemini(prompt)
+      .then(({ payload, model }) => ({
+        provider: 'gemini' as const,
+        model,
+        tags: normalizeTags(payload),
+        confidence: Math.max(0, Math.min(1, Number(payload.confidence ?? 0.72))),
+      }))
+      .catch((error: unknown) => ({
+        provider: 'gemini' as const,
+        model: PROVIDER_MODELS.gemini,
+        tags: {},
+        confidence: 0,
+        error: error instanceof Error ? error.message : 'Gemini error',
+      }))
+  );
+
+  if (apiKeys.openai) {
+    tasks.push(
+      callChatCompletions('openai', apiKeys.openai, prompt)
+        .then(({ payload, model }) => ({
+          provider: 'openai' as const,
+          model,
+          tags: normalizeTags(payload),
+          confidence: Math.max(0, Math.min(1, Number(payload.confidence ?? 0.68))),
+        }))
+        .catch((error: unknown) => ({
+          provider: 'openai' as const,
+          model: PROVIDER_MODELS.openai,
+          tags: {},
+          confidence: 0,
+          error: error instanceof Error ? error.message : 'OpenAI error',
+        }))
+    );
+  }
+
+  if (apiKeys.grok) {
+    tasks.push(
+      callChatCompletions('grok', apiKeys.grok, prompt)
+        .then(({ payload, model }) => ({
+          provider: 'grok' as const,
+          model,
+          tags: normalizeTags(payload),
+          confidence: Math.max(0, Math.min(1, Number(payload.confidence ?? 0.65))),
+        }))
+        .catch((error: unknown) => ({
+          provider: 'grok' as const,
+          model: PROVIDER_MODELS.grok,
+          tags: {},
+          confidence: 0,
+          error: error instanceof Error ? error.message : 'Grok error',
+        }))
+    );
+  }
+
+  return Promise.all(tasks);
 };

@@ -23,8 +23,11 @@ const MainToolbar: React.FC<MainToolbarProps> = ({ onTabChange, onDirectorySelec
       <button className={buttonStyle} onClick={() => onTabChange('scan')}>
         Import / Skan
       </button>
+      <button className={buttonStyle} onClick={() => onTabChange('dashboard')}>
+        Dashboard
+      </button>
       <button className={buttonStyle} onClick={() => onTabChange('tagger')}>
-        Smart Tagger AI
+        SMART AI Skan
       </button>
       <button className={buttonStyle} onClick={() => onTabChange('converter')}>
         Konwerter XML

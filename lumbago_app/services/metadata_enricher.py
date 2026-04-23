@@ -130,7 +130,7 @@ SOURCE_WEIGHTS: dict[str, float] = {
 class MetadataEnricher:
     def __init__(
         self,
-        musicbrainz_app: str | None,
+        musicbrainz_app: str | None = None,
         validation_policy: str | None = None,
         cache_ttl_days: int = 30,
     ):

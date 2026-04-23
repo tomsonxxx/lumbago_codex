@@ -28,6 +28,59 @@ export interface ID3Tags {
   key?: string;
 }
 
+export interface SourceProbeResult {
+  source: 'google' | 'beatport' | 'traxsource' | 'discogs' | 'juno';
+  status: 'hit' | 'miss' | 'error';
+  query: string;
+  detail?: string;
+  url?: string;
+}
+
+export interface TagFieldConfidence {
+  field: keyof ID3Tags;
+  confidence: number;
+  byProvider: Record<string, number>;
+}
+
+export interface DataOrigin {
+  timestamp: string;
+  providers: string[];
+  modelVersions: Record<string, string>;
+  sources: SourceProbeResult[];
+  fieldConfidence: TagFieldConfidence[];
+}
+
+export interface PipelineError {
+  code:
+    | 'PIPELINE_UNEXPECTED'
+    | 'LOCAL_PARSE_FAILED'
+    | 'SOURCE_PROBE_FAILED'
+    | 'AI_PROVIDER_FAILED'
+    | 'CONSENSUS_FAILED'
+    | 'WRITE_FAILED';
+  message: string;
+  step: 1 | 2 | 3 | 4 | 5 | 6;
+  retriable: boolean;
+  details?: string;
+}
+
+export interface TaggingDecision {
+  proposedTags: ID3Tags;
+  acceptedFields: (keyof ID3Tags)[];
+  rejectedFields: (keyof ID3Tags)[];
+  provenance: DataOrigin;
+}
+
+export interface SmartTagRun {
+  runId: string;
+  startedAt: string;
+  finishedAt?: string;
+  status: 'PROCESSING' | 'SUCCESS' | 'ERROR';
+  attempts: number;
+  decision?: TaggingDecision;
+  error?: PipelineError;
+}
+
 export interface AudioFile {
   id: string;
   file: File;
@@ -40,6 +93,8 @@ export interface AudioFile {
   dateAdded: number;
   handle?: any; // FileSystemFileHandle for direct saving
   webkitRelativePath?: string; // The relative path of the file within the directory
+  smartTagRun?: SmartTagRun;
+  retryCount?: number;
 }
 
 export type GroupKey = 'artist' | 'album' | 'none';

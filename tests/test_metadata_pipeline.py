@@ -1,7 +1,11 @@
 from pathlib import Path
 
 from lumbago_app.core.audio import extract_metadata
-from lumbago_app.services.metadata_enricher import LOCAL_SOURCE_LABELS, available_metadata_methods
+from lumbago_app.services.metadata_enricher import (
+    LOCAL_SOURCE_LABELS,
+    MetadataEnricher,
+    available_metadata_methods,
+)
 
 
 class _FakeInfo:
@@ -74,3 +78,8 @@ def test_copy_missing_fields_treats_placeholders_as_empty():
     assert target.title == "Fixed Title"
     assert target.artist == "Fixed Artist"
     assert target.album == "Fixed Album"
+
+
+def test_metadata_enricher_allows_legacy_init_without_musicbrainz_app():
+    enricher = MetadataEnricher()
+    assert enricher.musicbrainz_app == "LumbagoMusicAI"

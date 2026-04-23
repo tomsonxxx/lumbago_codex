@@ -39,7 +39,7 @@ const statusDetailsMap: Record<ProcessingState, { icon: React.ReactNode; text: s
       </svg>
     ),
     text: 'Sukces',
-    color: 'text-green-500',
+    color: 'text-emerald-400',
   },
   [ProcessingState.ERROR]: {
     icon: (
@@ -48,7 +48,7 @@ const statusDetailsMap: Record<ProcessingState, { icon: React.ReactNode; text: s
       </svg>
     ),
     text: 'Błąd',
-    color: 'text-red-500',
+    color: 'text-fuchsia-400',
   },
 };
 
