@@ -18,7 +18,7 @@ from lumbago_app.core.models import AnalysisResult, Track
 from lumbago_app.core.services import enrich_track_with_analysis
 from lumbago_app.core.audio import write_tags
 from lumbago_app.data.repository import replace_track_tags, update_tracks
-from lumbago_app.services.ai_tagger import CloudAiTagger, LocalAiTagger, MultiAiTagger
+from lumbago_app.services.ai_tagger import CloudAiTagger, MultiAiTagger
 from lumbago_app.services.ai_tagger_merge import _merge_analysis_into_track
 from lumbago_app.services.key_detection import detect_key
 from lumbago_app.services.metadata_enricher import AutoMetadataFiller, MetadataFillReport
@@ -633,9 +633,6 @@ class AiTaggerDialog(QtWidgets.QDialog):
                 return
             taggers: list[Any] = []
             for provider in selected_providers:
-                if provider == "local":
-                    taggers.append(LocalAiTagger())
-                    continue
                 api_key, base_url, model = _resolve_provider_config(provider, settings)
                 if not api_key:
                     QtWidgets.QMessageBox.warning(self, "Brak klucza API", f"Ustaw klucz API dla providera '{provider}' w ustawieniach.")
@@ -820,14 +817,13 @@ class AiTaggerDialog(QtWidgets.QDialog):
         providers_menu = self._options_menu.addMenu("API AI")
         self._provider_actions: dict[str, QtGui.QAction] = {}
         settings = load_settings()
-        default_provider = settings.cloud_ai_provider or "local"
-        for provider in ["local", "openai", "gemini", "grok", "deepseek"]:
+        default_provider = settings.cloud_ai_provider or "openai"
+        for provider in ["openai", "gemini", "grok", "deepseek"]:
             action = providers_menu.addAction(provider)
             action.setCheckable(True)
             action.setChecked(provider == default_provider)
             self._provider_actions[provider] = action
         if self._force_cloud:
-            self._provider_actions["local"].setChecked(False)
             self._provider_actions["openai"].setChecked(True)
 
         self._options_menu.addSeparator()
@@ -869,9 +865,9 @@ class AiTaggerDialog(QtWidgets.QDialog):
 
     def _selected_providers(self) -> list[str]:
         providers = [name for name, action in self._provider_actions.items() if action.isChecked()]
-        if not providers and "local" in self._provider_actions:
-            self._provider_actions["local"].setChecked(True)
-            providers.append("local")
+        if not providers and "openai" in self._provider_actions:
+            self._provider_actions["openai"].setChecked(True)
+            providers.append("openai")
         return providers
 
     def _append_track_report_to_log(self, state: TrackAnalysisState) -> None:

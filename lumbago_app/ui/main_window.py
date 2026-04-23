@@ -4,6 +4,8 @@ from pathlib import Path
 import json
 from datetime import datetime
 import os
+import re
+from copy import deepcopy
 
 from PyQt6 import QtCore, QtGui, QtWidgets
 
@@ -20,8 +22,9 @@ from lumbago_app.core.analysis_cache import save_analysis_cache
 from lumbago_app.core.backup import perform_backup
 from lumbago_app.core.config import cache_dir, load_settings
 from lumbago_app.core.models import Track
-from lumbago_app.core.services import heuristic_analysis
+from lumbago_app.core.services import enrich_track_with_analysis, heuristic_analysis
 from lumbago_app.core.waveform import generate_waveform
+from lumbago_app.services.autotag_rewrite import UnifiedAutoTagger
 from lumbago_app.services.beatgrid import auto_cue_points, compute_beatgrid
 from lumbago_app.services.key_detection import detect_key
 from lumbago_app.services.loudness import analyze_loudness, normalize_loudness
@@ -36,6 +39,7 @@ from lumbago_app.data.repository import (
     list_playlists,
     list_playlists_full,
     list_tracks,
+    replace_track_tags,
     reset_library,
     set_playlist_track_order,
     update_playlist,
@@ -43,7 +47,6 @@ from lumbago_app.data.repository import (
     update_track,
     upsert_tracks,
 )
-from lumbago_app.ui.ai_tagger_dialog import AiTaggerDialog
 from lumbago_app.ui.bulk_edit_dialog import BulkEditDialog
 from lumbago_app.ui.change_history_dialog import ChangeHistoryDialog
 from lumbago_app.ui.duplicates_dialog import DuplicatesDialog
@@ -85,6 +88,97 @@ def _normalized_path(output_dir: Path, source: Path) -> Path:
         if not candidate.exists():
             return candidate
         idx += 1
+
+
+def _has_value(value) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        return bool(normalized) and normalized not in {"-", "—", "unknown", "n/a", "none", "null", "brak"}
+    return True
+
+
+_AUTOTAG_FIELDS = [
+    "title",
+    "artist",
+    "album",
+    "albumartist",
+    "year",
+    "genre",
+    "tracknumber",
+    "discnumber",
+    "composer",
+    "bpm",
+    "key",
+    "rating",
+    "mood",
+    "energy",
+    "comment",
+    "lyrics",
+    "isrc",
+    "publisher",
+    "grouping",
+    "copyright",
+    "remixer",
+]
+
+
+def _merge_missing_from_source(target: Track, source: Track) -> None:
+    for field_name in _AUTOTAG_FIELDS:
+        incoming = getattr(source, field_name, None)
+        current = getattr(target, field_name, None)
+        if _has_value(incoming) and not _has_value(current):
+            setattr(target, field_name, incoming)
+
+
+def _is_valid_key(value: str | None) -> bool:
+    if not value:
+        return False
+    if re.match(r"^(1[0-2]|[1-9])[AB]$", value, re.IGNORECASE):
+        return True
+    return bool(re.match(r"^[A-G](#|b)?m?$", value, re.IGNORECASE))
+
+
+def _validate_track_metadata(track: Track) -> None:
+    if _has_value(track.year):
+        digits = "".join(ch for ch in str(track.year) if ch.isdigit())
+        if len(digits) >= 4:
+            year_value = int(digits[:4])
+            current_year = datetime.now().year
+            track.year = str(year_value) if 1900 <= year_value <= current_year + 1 else None
+        else:
+            track.year = None
+    if track.bpm is not None:
+        try:
+            bpm = float(track.bpm)
+            track.bpm = bpm if 40.0 <= bpm <= 260.0 else None
+        except Exception:
+            track.bpm = None
+    if track.energy is not None:
+        try:
+            track.energy = max(0.0, min(1.0, float(track.energy)))
+        except Exception:
+            track.energy = None
+    if _has_value(track.key):
+        key = str(track.key).strip()
+        track.key = key if _is_valid_key(key) else None
+
+
+def _changed_fields(before: Track, after: Track) -> list[str]:
+    changed: list[str] = []
+    for field_name in _AUTOTAG_FIELDS:
+        if getattr(before, field_name, None) != getattr(after, field_name, None):
+            changed.append(field_name)
+    return changed
+
+
+def _track_to_tag_dict(track: Track, fields: list[str]) -> dict[str, str]:
+    payload: dict[str, str] = {}
+    for field_name in fields:
+        value = getattr(track, field_name, None)
+        payload[field_name] = "" if value is None else str(value)
+    return payload
 
 
 class TrackFilterProxy(QtCore.QSortFilterProxyModel):
@@ -304,6 +398,126 @@ class NormalizeWorker(QtCore.QRunnable):
         self.signals.finished.emit(created, errors)
 
 
+class AutoTagWorkerSignals(QtCore.QObject):
+    progress = QtCore.pyqtSignal(int, int, str)
+    finished = QtCore.pyqtSignal(int, int, int)
+
+
+class AutoTagWorker(QtCore.QRunnable):
+    def __init__(self, tracks: list[Track], settings):
+        super().__init__()
+        self.tracks = tracks
+        self.settings = settings
+        self.signals = AutoTagWorkerSignals()
+        self._stop_requested = False
+
+    def stop(self) -> None:
+        self._stop_requested = True
+
+    def run(self) -> None:
+        updated = 0
+        errors = 0
+        processed = 0
+        total = len(self.tracks)
+
+        autotagger = UnifiedAutoTagger(self.settings)
+
+        for track in self.tracks:
+            if self._stop_requested:
+                break
+            try:
+                before = deepcopy(track)
+                self._run_single_track(track, autotagger)
+                changed_fields = _changed_fields(before, track)
+                sync_fields = self._fields_requiring_file_sync(track)
+                fields_to_write = sorted(set(changed_fields) | set(sync_fields))
+                if fields_to_write:
+                    if changed_fields:
+                        update_track(track)
+                    write_tags(Path(track.path), _track_to_tag_dict(track, fields_to_write))
+                    replace_track_tags(
+                        track.path,
+                        [f"{name}:{getattr(track, name, None)}" for name in fields_to_write],
+                        source="autotag:file_sync",
+                        confidence=None,
+                    )
+                    updated += 1
+            except Exception:
+                errors += 1
+            processed += 1
+            self.signals.progress.emit(processed, total, Path(track.path).name)
+
+        self.signals.finished.emit(processed, updated, errors)
+
+    def _run_single_track(
+        self,
+        track: Track,
+        autotagger: UnifiedAutoTagger,
+    ) -> None:
+        refreshed = extract_metadata(Path(track.path))
+        _merge_missing_from_source(track, refreshed)
+        enriched = autotagger.enrich_track(track)
+        autotagger.apply_best_match(track, enriched)
+
+        detected_key = None if _has_value(track.key) else detect_key(Path(track.path))
+        detected_bpm = None
+        detected_energy = None
+        if track.bpm is None or track.energy is None:
+            try:
+                from lumbago_app.services.audio_features import AudioFeatureExtractor
+
+                audio_result = AudioFeatureExtractor().extract(Path(track.path), duration_s=45)
+                detected_bpm = getattr(audio_result, "tempo", None)
+                brightness = getattr(audio_result, "brightness", None)
+                roughness = getattr(audio_result, "roughness", None)
+                numeric_parts = [
+                    value
+                    for value in (brightness, roughness)
+                    if isinstance(value, (int, float))
+                ]
+                if numeric_parts:
+                    detected_energy = float(sum(numeric_parts) / len(numeric_parts))
+            except Exception:
+                detected_bpm = None
+                detected_energy = None
+
+        enrich_track_with_analysis(
+            track,
+            detected_bpm=detected_bpm,
+            detected_key=detected_key,
+            detected_energy=detected_energy,
+        )
+
+        _validate_track_metadata(track)
+
+    def _fields_requiring_file_sync(self, track: Track) -> list[str]:
+        try:
+            file_tags = read_tags(Path(track.path))
+        except Exception:
+            return []
+        sync: list[str] = []
+        for field_name in _AUTOTAG_FIELDS:
+            current = getattr(track, field_name, None)
+            if not _has_value(current):
+                continue
+            file_value = file_tags.get(field_name)
+            if not _has_value(file_value):
+                sync.append(field_name)
+                continue
+            if field_name in {"bpm", "energy"}:
+                try:
+                    left = float(current)
+                    right = float(str(file_value).replace(",", "."))
+                    if abs(left - right) > 0.11:
+                        sync.append(field_name)
+                except Exception:
+                    sync.append(field_name)
+                continue
+            if str(current).strip() != str(file_value).strip():
+                sync.append(field_name)
+        return sync
+
+
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
@@ -434,8 +648,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.btn_recognition.clicked.connect(self._run_recognition_queue)
         layout.addWidget(self.btn_recognition)
 
-        self.btn_ai = AnimatedButton("Tagger AI (lokalny)")
-        self.btn_ai.setToolTip("Analizuj i uzupełnij tagi dla zaznaczonych utworów")
+        self.btn_ai = AnimatedButton("Autotagowanie (natychmiast)")
+        self.btn_ai.setToolTip("Jednym kliknięciem: analiza + pobranie + walidacja + zapis tagów")
         self.btn_ai.clicked.connect(self._run_ai_tagger)
         layout.addWidget(self.btn_ai)
 
@@ -1376,39 +1590,32 @@ class MainWindow(QtWidgets.QMainWindow):
         if not tracks:
             self._show_message("Zaznacz co najmniej jeden utwór.")
             return
-        dialog = AiTaggerDialog(tracks, self)
-        if dialog.exec():
-            self._load_tracks()
-
-    def _run_auto_tagger(self):
-        tracks = self._selected_tracks()
-        if not tracks:
-            self._show_message("Zaznacz co najmniej jeden utwór.")
-            return
-        dialog = AiTaggerDialog(
-            tracks,
-            self,
-            auto_fetch=True,
-            auto_method="mix",
-            allow_auto_fetch=True,
+        settings = load_settings()
+        self._autotag_worker = AutoTagWorker(tracks, settings)
+        progress = QtWidgets.QProgressDialog(
+            "Autotagowanie: analiza, pobieranie i zapis...", "Anuluj", 0, len(tracks), self
         )
-        if dialog.exec():
-            self._load_tracks()
+        progress.setWindowTitle("Autotagowanie")
+        progress.setMinimumDuration(0)
+        progress.setValue(0)
 
-    def _run_auto_tagger_cloud(self):
-        tracks = self._selected_tracks()
-        if not tracks:
-            self._show_message("Zaznacz co najmniej jeden utwór.")
-            return
-        dialog = AiTaggerDialog(
-            tracks,
-            self,
-            auto_fetch=False,
-            allow_auto_fetch=False,
-            force_cloud=True,
-        )
-        if dialog.exec():
+        def on_progress(current: int, total: int, name: str):
+            progress.setMaximum(total)
+            progress.setValue(current)
+            self.status.showMessage(f"Autotag {current}/{total}: {name}")
+            if progress.wasCanceled():
+                self._autotag_worker.stop()
+
+        def on_finished(processed: int, updated: int, errors: int):
+            progress.close()
             self._load_tracks()
+            self.status.showMessage(
+                f"Autotagowanie zakończone. Przetworzono: {processed}, zapisano: {updated}, błędy: {errors}"
+            )
+
+        self._autotag_worker.signals.progress.connect(on_progress)
+        self._autotag_worker.signals.finished.connect(on_finished)
+        self.thread_pool.start(self._autotag_worker)
 
     def _apply_local_metadata_selected(self):
         tracks = self._selected_tracks()
@@ -1748,8 +1955,7 @@ class MainWindow(QtWidgets.QMainWindow):
         QtGui.QShortcut(QtGui.QKeySequence("Ctrl+D"), self, activated=self._open_duplicates)
         QtGui.QShortcut(QtGui.QKeySequence("Ctrl+R"), self, activated=self._open_renamer)
         QtGui.QShortcut(QtGui.QKeySequence("Ctrl+E"), self, activated=self._open_xml_converter)
-        QtGui.QShortcut(QtGui.QKeySequence("Ctrl+T"), self, activated=self._run_auto_tagger)
-        QtGui.QShortcut(QtGui.QKeySequence("Ctrl+Shift+T"), self, activated=self._run_auto_tagger_cloud)
+        QtGui.QShortcut(QtGui.QKeySequence("Ctrl+T"), self, activated=self._run_ai_tagger)
 
     def _apply_icons(self):
         icons_dir = Path(__file__).resolve().parent / "assets" / "icons"
@@ -1776,8 +1982,7 @@ class MainWindow(QtWidgets.QMainWindow):
         tools.addAction("Importuj / Skanuj", self._open_import_wizard)
         tools.addAction("Import XML", self._open_xml_import)
         tools.addAction("Zeruj bibliotekę", self._reset_library)
-        tools.addAction("AutoTagowanie (wyszukiwanie)", self._run_auto_tagger)
-        tools.addAction("AutoTagowanie (API)", self._run_auto_tagger_cloud)
+        tools.addAction("Autotagowanie (natychmiast)", self._run_ai_tagger)
         tools.addAction("Analiza loudness (LUFS)", self._run_loudness_analysis)
         tools.addAction("Normalizuj do -14 LUFS (nowy plik)", self._run_loudness_normalize)
         tools.addAction("Auto‑cue (intro/outro)", self._auto_cue_selected)
@@ -1931,18 +2136,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.compare_btn.clicked.connect(self._compare_tags)
         row.addWidget(self.compare_btn)
 
-        self.auto_tag_btn = AnimatedButton("AutoTag (wyszukiwanie)")
+        self.auto_tag_btn = AnimatedButton("Autotagowanie")
         self.auto_tag_btn.setObjectName("AutoTagSearch")
-        self.auto_tag_btn.setToolTip("Uruchom AI + uzupełnianie braków przez wyszukiwanie")
-        self.auto_tag_btn.clicked.connect(self._run_auto_tagger)
+        self.auto_tag_btn.setToolTip("Pełna analiza + pobranie + walidacja + zapis tagów")
+        self.auto_tag_btn.clicked.connect(self._run_ai_tagger)
         self.auto_tag_btn.enable_pulse()
         row.addWidget(self.auto_tag_btn)
-
-        self.auto_tag_cloud_btn = AnimatedButton("AutoTag (API)")
-        self.auto_tag_cloud_btn.setObjectName("AutoTagApi")
-        self.auto_tag_cloud_btn.setToolTip("Tagowanie wyłącznie przez API (OpenAI/Grok/DeepSeek/Gemini)")
-        self.auto_tag_cloud_btn.clicked.connect(self._run_auto_tagger_cloud)
-        row.addWidget(self.auto_tag_cloud_btn)
         return frame
 
 

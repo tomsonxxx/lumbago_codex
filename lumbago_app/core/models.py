@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 
 
 @dataclass
@@ -153,3 +153,49 @@ class WatchFolder:
     path: str
     active: bool = True
     folder_id: int | None = None
+
+
+@dataclass
+class ProviderConfigContract:
+    provider: str
+    api_key: str
+    base_url: str
+    model: str
+    priority: int = 100
+    enabled: bool = True
+
+
+@dataclass
+class ProviderResultContract:
+    provider: str
+    values: dict[str, Any] = field(default_factory=dict)
+    field_confidence: dict[str, float] = field(default_factory=dict)
+    overall_confidence: float = 0.0
+    error: str | None = None
+
+
+@dataclass
+class FieldDecisionContract:
+    field: str
+    old_value: Any = None
+    new_value: Any = None
+    winner_provider: str = ""
+    confidence: float = 0.0
+    accepted: bool = False
+    reason: str = ""
+
+
+@dataclass
+class AnalysisEnvelopeContract:
+    track_path: str
+    provider_results: list[ProviderResultContract] = field(default_factory=list)
+    decisions: list[FieldDecisionContract] = field(default_factory=list)
+    provider_chain: str = ""
+    confidence: float = 0.0
+
+
+@dataclass
+class MergePolicyContract:
+    mode: str = "aggressive"
+    default_threshold: float = 0.62
+    thresholds: dict[str, float] = field(default_factory=dict)
