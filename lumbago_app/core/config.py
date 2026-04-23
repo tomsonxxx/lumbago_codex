@@ -92,6 +92,14 @@ def load_settings() -> Settings:
     except Exception:
         payload = {}
     auto = _discover_windows_keys()
+    cloud_provider = _first_value(
+        payload.get("CLOUD_AI_PROVIDER"),
+        os.getenv("CLOUD_AI_PROVIDER"),
+        auto.get("CLOUD_AI_PROVIDER"),
+    )
+    if (cloud_provider or "").strip().lower() == "local":
+        cloud_provider = "openai"
+
     return Settings(
         db_path=data_dir / "lumbago.db",
         cache_path=cache_dir(),
@@ -111,11 +119,7 @@ def load_settings() -> Settings:
             os.getenv("DISCOGS_TOKEN"),
             auto.get("DISCOGS_TOKEN"),
         ),
-        cloud_ai_provider=_first_value(
-            payload.get("CLOUD_AI_PROVIDER"),
-            os.getenv("CLOUD_AI_PROVIDER"),
-            auto.get("CLOUD_AI_PROVIDER"),
-        ),
+        cloud_ai_provider=cloud_provider,
         cloud_ai_api_key=_first_value(
             payload.get("CLOUD_AI_API_KEY"),
             payload.get("GEMINI_API_KEY"),

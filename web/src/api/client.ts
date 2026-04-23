@@ -1,7 +1,10 @@
 import type {
+  AnalysisApplyResult,
+  AnalysisJob,
   DuplicateAnalysisResult,
   ImportCommitResult,
   ImportPreviewResult,
+  ProviderConfig,
   Track,
 } from "../types";
 
@@ -49,5 +52,36 @@ export async function analyzeDuplicates(
   return request<DuplicateAnalysisResult>("/duplicates/analyze", {
     method: "POST",
     body: JSON.stringify({ mode }),
+  });
+}
+
+export async function getAiProviders(): Promise<ProviderConfig[]> {
+  const payload = await request<{ providers: ProviderConfig[] }>("/ai/providers");
+  return payload.providers;
+}
+
+export async function updateAiProviders(providers: ProviderConfig[]): Promise<ProviderConfig[]> {
+  const payload = await request<{ providers: ProviderConfig[] }>("/ai/providers", {
+    method: "PUT",
+    body: JSON.stringify({ providers }),
+  });
+  return payload.providers;
+}
+
+export async function createAnalysisJob(trackIds: number[]): Promise<{ job_id: string; status: string }> {
+  return request<{ job_id: string; status: string }>("/analysis/jobs", {
+    method: "POST",
+    body: JSON.stringify({ track_ids: trackIds, policy: "aggressive" }),
+  });
+}
+
+export async function getAnalysisJob(jobId: string): Promise<AnalysisJob> {
+  return request<AnalysisJob>(`/analysis/jobs/${jobId}`);
+}
+
+export async function applyAnalysisJob(jobId: string): Promise<AnalysisApplyResult> {
+  return request<AnalysisApplyResult>(`/analysis/jobs/${jobId}/apply`, {
+    method: "POST",
+    body: JSON.stringify({ overrides: {}, source_prefix: "ai" }),
   });
 }

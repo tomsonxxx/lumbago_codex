@@ -1,0 +1,112 @@
+
+<!DOCTYPE html>
+<html lang="pl" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Lumbago Music AI</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Biblioteka do odczytu tagów ID3 -->
+    <script src="https://cdn.jsdelivr.net/npm/jsmediatags@3.9.7/dist/jsmediatags.min.js"></script>
+    <!-- Biblioteka do zapisu tagów ID3 (dla MP3) - Zaktualizowana do browser-id3-writer (jsdelivr) -->
+    <script src="https://cdn.jsdelivr.net/npm/browser-id3-writer@4.4.0/dist/browser-id3-writer.min.js"></script>
+    <!-- Biblioteka do zapisu tagów MP4 (dla M4A) -->
+    <script src="https://cdn.jsdelivr.net/npm/mp4-tag-writer/dist/mp4-tag-writer.min.js"></script>
+    <!-- Biblioteka do tworzenia archiwów ZIP -->
+    <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+    <!-- Biblioteka do generowania unikalnych ID -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/uuid/8.3.2/uuid.min.js"></script>
+    <!-- Biblioteka do zapisu plików -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+  <script type="importmap">
+{
+  "imports": {
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.24.0",
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "react": "https://aistudiocdn.com/react@^19.2.0",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/"
+  }
+}
+</script>
+<script>
+    // Konfiguracja Tailwind CSS dla trybu ciemnego
+    tailwind.config = {
+      darkMode: 'class',
+    }
+  </script>
+<style>
+  body {
+    background-color: #0a0e27;
+    color: #e6f7ff;
+    font-family: 'Segoe UI', Tahoma, Verdana, sans-serif;
+  }
+  
+  @keyframes fade-in {
+    from { opacity: 0; transform: translateY(-10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .animate-fade-in {
+    animation: fade-in 0.3s ease-out forwards;
+  }
+  
+  @keyframes fade-out {
+    from { opacity: 1; max-height: 100px; transform: scaleY(1); }
+    to { opacity: 0; max-height: 0; padding-top: 0; padding-bottom: 0; margin: 0; transform: scaleY(0); }
+  }
+  .animate-fade-out {
+    animation: fade-out 0.3s ease-out forwards;
+    transform-origin: top;
+    overflow: hidden;
+  }
+  
+  @keyframes flash-success {
+    0% { background-color: rgba(34, 197, 94, 0.2); }
+    100% { background-color: transparent; }
+  }
+  .animate-flash-success {
+    animation: flash-success 0.7s ease-out;
+  }
+
+  @keyframes flash-error {
+    0% { background-color: rgba(248, 113, 113, 0.2); }
+    100% { background-color: transparent; }
+  }
+  .animate-flash-error {
+    animation: flash-error 0.7s ease-out;
+  }
+  
+  /* Animacja tła dla przetwarzania */
+  @keyframes gradient-loading {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+  .animate-gradient-loading {
+    background-size: 200% 200%;
+    animation: gradient-loading 2s ease infinite;
+  }
+  
+  .btn-spinner {
+    display: inline-block;
+    width: 1.25em;
+    height: 1.25em;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    border-radius: 50%;
+    animation: spin 0.75s linear infinite;
+    margin-right: 0.5rem;
+  }
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+</style>
+<link rel="stylesheet" href="/index.css">
+</head>
+  <body class="bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white transition-colors duration-300">
+    <div id="root"></div>
+    <script type="module" src="./index.tsx"></script>
+  <script type="module" src="/index.tsx"></script>
+</body>
+</html>
