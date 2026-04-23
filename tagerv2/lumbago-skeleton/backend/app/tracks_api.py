@@ -32,10 +32,11 @@ def list_tracks(q: Optional[str]=Query(None), bpm_min: Optional[int]=None, bpm_m
         params['key'] = key
     if missing_metadata:
         base_sql += " AND (metadata IS NULL OR metadata = '')"
-    # sort + limit
-    if sort not in ('created_at','title','bpm'):
-        sort = 'created_at'
-    base_sql += f' ORDER BY {sort} LIMIT :limit OFFSET :skip'
+    # sort + limit — use an explicit allowlist dict so no user value ever
+    # reaches the SQL string via string interpolation
+    _ALLOWED_SORT = {'created_at': 'created_at', 'title': 'title', 'bpm': 'bpm'}
+    safe_sort = _ALLOWED_SORT.get(sort, 'created_at')
+    base_sql += f' ORDER BY {safe_sort} LIMIT :limit OFFSET :skip'
     params['limit'] = limit
     params['skip'] = skip
     try:
@@ -44,5 +45,5 @@ def list_tracks(q: Optional[str]=Query(None), bpm_min: Optional[int]=None, bpm_m
         for r in rows:
             out.append({'id': r[0], 'title': r[1], 'artist': r[2], 'bpm': r[3], 'key': r[4], 'duration': r[5], 'metadata': r[6]})
         return out
-    except Exception as e:
-        return {'error': str(e)}
+    except Exception:
+        return {'error': 'An internal error occurred. Please try again.'}
