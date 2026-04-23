@@ -41,6 +41,7 @@ class AnalysisResult:
     composer: str | None = None
     isrc: str | None = None
     publisher: str | None = None
+    lyrics: str | None = None
     grouping: str | None = None
     copyright: str | None = None
     remixer: str | None = None

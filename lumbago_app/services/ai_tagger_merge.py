@@ -23,7 +23,7 @@ _AI_ANALYSIS_FLOAT_FIELDS = ("bpm", "energy")
 _META_FILL_FIELDS = (
     "title", "artist", "album", "albumartist", "year",
     "tracknumber", "discnumber", "composer",
-    "isrc", "publisher", "grouping", "copyright", "remixer", "comment",
+    "isrc", "publisher", "lyrics", "grouping", "copyright", "remixer", "comment",
 )
 
 

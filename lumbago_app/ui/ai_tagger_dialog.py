@@ -18,17 +18,18 @@ from lumbago_app.core.models import AnalysisResult, Track
 from lumbago_app.core.services import enrich_track_with_analysis
 from lumbago_app.core.audio import write_tags
 from lumbago_app.data.repository import replace_track_tags, update_tracks
-from lumbago_app.services.ai_tagger import CloudAiTagger, LocalAiTagger, MultiAiTagger
+from lumbago_app.services.ai_tagger import CloudAiTagger, LocalAiTagger, MultiAiTagger, preflight_provider
 from lumbago_app.services.ai_tagger_merge import _merge_analysis_into_track
 from lumbago_app.services.key_detection import detect_key
 from lumbago_app.services.metadata_enricher import AutoMetadataFiller, MetadataFillReport
 from lumbago_app.ui.widgets import apply_dialog_fade
 
 FIELDS = [
-    "title", "artist", "album", "albumartist", "year", "genre",
-    "tracknumber", "discnumber", "composer",
-    "bpm", "key", "rating", "mood", "energy",
-    "comment", "lyrics", "isrc", "publisher", "grouping", "copyright", "remixer",
+    "title", "bpm", "key", "artist", "album", "genre", "year", "composer",
+    "comment", "lyrics", "publisher",
+    "albumartist", "tracknumber", "discnumber",
+    "rating", "mood", "energy",
+    "isrc", "grouping", "copyright", "remixer",
 ]
 AI_FIELDS = {"genre", "bpm", "key", "mood", "energy"}
 AUDIO_DERIVED_FIELDS = {"bpm", "key", "energy", "mood"}
@@ -640,6 +641,14 @@ class AiTaggerDialog(QtWidgets.QDialog):
                 if not api_key:
                     QtWidgets.QMessageBox.warning(self, "Brak klucza API", f"Ustaw klucz API dla providera '{provider}' w ustawieniach.")
                     return
+                ok, detail = preflight_provider(provider, api_key, base_url, timeout=8)
+                if not ok:
+                    QtWidgets.QMessageBox.warning(
+                        self,
+                        "Błąd API",
+                        f"Provider '{provider}' nie przeszedł testu połączenia.\nSzczegóły: {detail}",
+                    )
+                    return
                 taggers.append(
                     CloudAiTagger(
                         provider,
@@ -674,13 +683,19 @@ class AiTaggerDialog(QtWidgets.QDialog):
         self._run_btn.setEnabled(False)
         self._stop_btn.setEnabled(True)
         self._status_lbl.setText("Uruchamianie analizy...")
+        audio_duration = int(self._audio_duration.value())
+        if len(self._states) >= 250 and audio_duration > 30:
+            audio_duration = 30
+            self._log_view.appendPlainText(
+                "  optymalizacja: skrócono czas analizy audio do 30s dla dużej paczki plików"
+            )
         self._worker = _PipelineWorker(
             self._states,
             tagger,
             auto_filler,
             method,
             self._action_audio.isChecked(),
-            audio_duration_s=int(self._audio_duration.value()),
+            audio_duration_s=audio_duration,
             max_workers=int(self._workers_spin.value()),
             accept_threshold=float(self._accept_threshold.value()),
         )
@@ -978,7 +993,10 @@ class _PipelineWorker(QtCore.QRunnable):
                 )
                 self._persist_audio_features(working.path, state.audio_result)
             if self.tagger is not None:
-                state.ai_result = self.tagger.analyze(ai_input)
+                state.ai_result = self._load_cached_ai_result(path_obj)
+                if state.ai_result is None:
+                    state.ai_result = self.tagger.analyze(ai_input)
+                    self._save_cached_ai_result(path_obj, state.ai_result)
                 _merge_analysis_into_track(working, state.ai_result)
             state.proposed_track = working
             for field_name in _default_accept_fields(state):

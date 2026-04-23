@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import queue
@@ -19,6 +19,9 @@ class LocalAiTagger:
     def analyze(self, track: Track) -> AnalysisResult:
         return heuristic_analysis(track)
 
+    def cache_key(self) -> str:
+        return "local"
+
 
 class CloudAiTagger:
     def __init__(
@@ -37,16 +40,16 @@ class CloudAiTagger:
         self.model = model
         self.timeout = timeout
         self.retries = max(0, retries)
+        self._resolved_base_url, self._resolved_model = _resolve_runtime_config(
+            self.provider,
+            self.base_url,
+            self.model,
+        )
 
     def analyze(self, track: Track) -> AnalysisResult:
         if not self.provider or not self.api_key:
             return AnalysisResult(description="Cloud AI not configured", confidence=0.0)
-        if self.provider == "gemini":
-            base_url = self.base_url or "https://generativelanguage.googleapis.com/v1beta"
-            model = self.model or "gemini-2.5-flash"
-        else:
-            base_url = self.base_url
-            model = self.model
+        base_url, model = self._resolved_base_url, self._resolved_model
         if not base_url or not model:
             return AnalysisResult(description="Cloud AI missing base URL or model", confidence=0.0)
 
@@ -88,6 +91,7 @@ class CloudAiTagger:
                     composer=_to_str(cleaned.get("composer")),
                     isrc=_to_str(cleaned.get("isrc")),
                     publisher=_to_str(cleaned.get("publisher")),
+                    lyrics=_to_str(cleaned.get("lyrics")),
                     grouping=_to_str(cleaned.get("grouping")),
                     copyright=_to_str(cleaned.get("copyright")),
                     remixer=_to_str(cleaned.get("remixer")),
@@ -99,6 +103,10 @@ class CloudAiTagger:
                     break
                 time.sleep(0.3 * (attempt + 1))
         return AnalysisResult(description=f"Cloud AI error: {last_exc}", confidence=0.0)
+
+    def cache_key(self) -> str:
+        base_url, model = self._resolved_base_url, self._resolved_model
+        return f"{self.provider_name}|{base_url or ''}|{model or ''}"
 
 
 class MultiAiTagger:
@@ -130,6 +138,16 @@ class MultiAiTagger:
 
         merged = _merge_results(results)
         return merged
+
+    def cache_key(self) -> str:
+        keys: list[str] = []
+        for tagger in self.taggers:
+            cache_fn = getattr(tagger, "cache_key", None)
+            if callable(cache_fn):
+                keys.append(str(cache_fn()))
+            else:
+                keys.append(getattr(tagger, "provider_name", tagger.__class__.__name__))
+        return "multi:" + "|".join(sorted(keys))
 
 
 _FLOAT_AI_FIELDS = {"bpm", "energy"}
@@ -179,6 +197,7 @@ def _merge_results(results: list[tuple[str, AnalysisResult]]) -> AnalysisResult:
         composer=_to_str(winners.get("composer")),
         isrc=_to_str(winners.get("isrc")),
         publisher=_to_str(winners.get("publisher")),
+        lyrics=_to_str(winners.get("lyrics")),
         grouping=_to_str(winners.get("grouping")),
         copyright=_to_str(winners.get("copyright")),
         remixer=_to_str(winners.get("remixer")),
@@ -196,13 +215,20 @@ def _has_nonempty_value(value: Any) -> bool:
     return True
 
 
-_MISSING_SENTINEL = {"", "-", "—", "unknown", "n/a", "none", "null"}
+_MISSING_SENTINEL = {"", "-", "â€”", "unknown", "n/a", "none", "null"}
 
 _ALL_AI_FIELDS: list[str] = [
-    "title", "artist", "album", "albumartist", "year",
-    "tracknumber", "discnumber", "composer",
-    "genre", "bpm", "key", "mood", "energy",
-    "isrc", "publisher", "grouping", "copyright", "remixer", "comment",
+    "title",
+    "bpm",
+    "key",
+    "artist",
+    "album",
+    "genre",
+    "year",
+    "composer",
+    "comment",
+    "lyrics",
+    "publisher",
 ]
 
 
@@ -221,24 +247,16 @@ def _missing_fields(track: Track) -> list[str]:
 
 _FIELD_LABELS: dict[str, str] = {
     "title": "Tytul",
-    "artist": "Artysta",
-    "album": "Album",
-    "albumartist": "Artysta albumu",
-    "year": "Rok",
-    "tracknumber": "Numer utworu",
-    "discnumber": "Numer plyty",
-    "composer": "Kompozytor",
-    "genre": "Gatunek",
     "bpm": "BPM",
     "key": "Tonacja",
-    "mood": "Nastroj",
-    "energy": "Energia (0.0-1.0)",
-    "isrc": "ISRC",
-    "publisher": "Wytwórnia",
-    "grouping": "Grupowanie",
-    "copyright": "Copyright",
-    "remixer": "Remikser",
+    "artist": "Artysta",
+    "album": "Album",
+    "genre": "Gatunek",
+    "year": "Rok",
+    "composer": "Kompozytor",
     "comment": "Komentarz",
+    "lyrics": "Tekst",
+    "publisher": "Wydawca",
 }
 
 
@@ -421,6 +439,53 @@ def _normalize_payload(payload: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in payload.items() if key in allowed}
 
 
+def _resolve_runtime_config(
+    provider: str | None,
+    base_url: str | None,
+    model: str | None,
+) -> tuple[str | None, str | None]:
+    if provider == "gemini":
+        return base_url or "https://generativelanguage.googleapis.com/v1beta", model or "gemini-2.5-flash"
+    return base_url, model
+
+
+def preflight_provider(
+    provider: str,
+    api_key: str,
+    base_url: str | None,
+    *,
+    timeout: int = 8,
+) -> tuple[bool, str]:
+    resolved_base_url, _ = _resolve_runtime_config(provider, base_url, None)
+    if not resolved_base_url:
+        return False, "Brak base URL"
+    if provider == "gemini":
+        url = f"{resolved_base_url.rstrip('/')}/models"
+        headers = {"x-goog-api-key": api_key}
+    else:
+        url = f"{resolved_base_url.rstrip('/')}/models"
+        headers = {"Authorization": f"Bearer {api_key}"}
+    try:
+        resp = requests.get(url, headers=headers, timeout=timeout)
+        if resp.status_code == 200:
+            return True, "OK"
+        detail = f"HTTP {resp.status_code}"
+        try:
+            payload = resp.json()
+            error = payload.get("error")
+            if isinstance(error, dict):
+                msg = str(error.get("message", "")).strip()
+                if msg:
+                    detail = f"{detail}: {msg}"
+            elif isinstance(error, str) and error.strip():
+                detail = f"{detail}: {error.strip()}"
+        except Exception:
+            pass
+        return False, detail
+    except Exception as exc:
+        return False, str(exc)
+
+
 def _is_retryable_exception(exc: Exception) -> bool:
     if isinstance(exc, requests.Timeout):
         return True
@@ -465,7 +530,7 @@ if _QT_AVAILABLE:
     class BatchAiQueueWorker(QtCore.QObject):
         """Queue-based AI tagger that processes tracks in priority order.
 
-        Confidence thresholds: Cloud AI → 0.85, Local AI → 0.60.
+        Confidence thresholds: Cloud AI â†’ 0.85, Local AI â†’ 0.60.
         """
 
         CONFIDENCE_CLOUD = 0.85
@@ -518,3 +583,5 @@ if _QT_AVAILABLE:
                 QtCore.QCoreApplication.processEvents()
             self.batch_done.emit()
             self._running = False
+
+
