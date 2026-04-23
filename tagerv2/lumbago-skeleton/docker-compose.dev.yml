@@ -1,0 +1,43 @@
+version: '3.8'
+services:
+  redis:
+    image: redis:7
+    ports: ['6379:6379']
+  db:
+    image: postgres:13
+    environment:
+      POSTGRES_DB: lumbago
+      POSTGRES_USER: lumbago
+      POSTGRES_PASSWORD: changeme
+    ports: ['5432:5432']
+  backend:
+    build: ./backend
+    command: uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --reload
+    volumes:
+      - ./backend:/app
+    environment:
+      - DATABASE_URL=postgresql://lumbago:changeme@db:5432/lumbago
+      - CELERY_BROKER_URL=redis://redis:6379/0
+    ports:
+      - '8000:8000'
+    depends_on:
+      - redis
+      - db
+  worker:
+    build: ./backend
+    command: celery -A backend.app.celery_app.celery worker --loglevel=info -Q ai
+    volumes:
+      - ./backend:/app
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+    depends_on:
+      - redis
+      - backend
+  frontend:
+    build: ./frontend
+    volumes:
+      - ./frontend:/app
+    ports:
+      - '5173:80'
+    depends_on:
+      - backend
