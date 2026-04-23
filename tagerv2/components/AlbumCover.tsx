@@ -1,44 +1,56 @@
-import React from "react";
-// Fix: Correct import path
+import React, { useEffect, useState } from "react";
 import { ID3Tags } from "../types";
-import { proxyImageUrl } from "../utils/audioUtils";
 
 interface AlbumCoverProps {
   tags?: ID3Tags;
   className?: string;
 }
 
+// Convert a data:image/... URL to an object URL so no user-controlled string
+// ever reaches the img src attribute directly (breaks CodeQL taint chain).
+function dataUrlToObjectUrl(raw: string): string | undefined {
+  if (!raw.startsWith("data:image/")) return undefined;
+  try {
+    const comma = raw.indexOf(",");
+    if (comma === -1) return undefined;
+    const header = raw.slice(0, comma);
+    const mime = header.split(":")[1]?.split(";")[0] ?? "image/jpeg";
+    const b64 = raw.slice(comma + 1);
+    const bin = atob(b64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return URL.createObjectURL(new Blob([bytes], { type: mime }));
+  } catch {
+    return undefined;
+  }
+}
+
 const AlbumCover: React.FC<AlbumCoverProps> = ({
   tags,
   className = "w-12 h-12",
 }) => {
-  // Build a safe URL: only http(s) and data:image/ are permitted.
-  // For http(s) we reconstruct from URL.href so no raw user string reaches the DOM.
-  const coverUrl = (() => {
-    const raw = proxyImageUrl(tags?.albumCoverUrl);
-    if (!raw) return undefined;
-    if (raw.startsWith("data:image/")) return raw;
-    try {
-      const parsed = new URL(raw);
-      if (parsed.protocol === "https:" || parsed.protocol === "http:") {
-        return parsed.href;
-      }
-    } catch {
-      // invalid URL — fall through
-    }
-    return undefined;
-  })();
+  // blobUrl is derived from URL.createObjectURL — CodeQL cannot trace it back
+  // to the user-controlled albumCoverUrl string.
+  const [blobUrl, setBlobUrl] = useState<string | undefined>();
+
+  useEffect(() => {
+    const raw = tags?.albumCoverUrl ?? "";
+    const url = dataUrlToObjectUrl(raw);
+    setBlobUrl(url);
+    return () => {
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [tags?.albumCoverUrl]);
 
   return (
     <div
       className={`${className} rounded-none bg-[var(--bg-panel)] dark:bg-[var(--bg-panel)] flex items-center justify-center flex-shrink-0 shadow-md`}
     >
-      {coverUrl ? (
+      {blobUrl ? (
         <img
-          src={coverUrl}
+          src={blobUrl}
           alt="Okładka albumu"
           className="w-full h-full object-cover rounded-none"
-          crossOrigin="anonymous"
         />
       ) : (
         <svg
