@@ -62,3 +62,22 @@ def test_write_tags_mp4_persists_dj_fields(monkeypatch):
     assert bytes(stub.tags["----:com.apple.iTunes:INITIALKEY"][0]) == b"2A"
     assert bytes(stub.tags["----:com.apple.iTunes:MOOD"][0]) == b"dark"
     assert bytes(stub.tags["----:com.apple.iTunes:ENERGY"][0]) == b"0.66"
+
+
+def test_write_tags_mp4_does_not_delete_unspecified_fields(monkeypatch):
+    stub = _Mp4Stub(
+        {
+            "\xa9nam": ["Old Title"],
+            "\xa9ART": ["Old Artist"],
+            "\xa9alb": ["Old Album"],
+        }
+    )
+    monkeypatch.setattr(audio, "MutagenFile", lambda path, easy=False: stub)
+
+    audio.write_tags(Path("demo.m4a"), {"key": "9A"})
+
+    assert stub.saved is True
+    assert stub.tags["\xa9nam"] == ["Old Title"]
+    assert stub.tags["\xa9ART"] == ["Old Artist"]
+    assert stub.tags["\xa9alb"] == ["Old Album"]
+    assert bytes(stub.tags["----:com.apple.iTunes:INITIALKEY"][0]) == b"9A"

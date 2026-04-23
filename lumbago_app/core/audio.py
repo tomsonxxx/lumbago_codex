@@ -494,6 +494,8 @@ def _write_mp4_tags(path: Path, tags: dict[str, str]) -> None:
         "copyright": "cprt",
     }
     for field_name, atom in standard_map.items():
+        if field_name not in tags:
+            continue
         value = tags.get(field_name)
         if value is None or value == "":
             if atom in audio.tags:
@@ -502,6 +504,8 @@ def _write_mp4_tags(path: Path, tags: dict[str, str]) -> None:
         audio.tags[atom] = [str(value)]
 
     for field_name, atom in {"tracknumber": "trkn", "discnumber": "disk"}.items():
+        if field_name not in tags:
+            continue
         value = tags.get(field_name)
         if value is None or value == "":
             if atom in audio.tags:
@@ -511,15 +515,16 @@ def _write_mp4_tags(path: Path, tags: dict[str, str]) -> None:
         if parsed is not None:
             audio.tags[atom] = [(parsed, 0)]
 
-    bpm_value = tags.get("bpm")
-    if bpm_value is None or bpm_value == "":
-        if "tmpo" in audio.tags:
-            del audio.tags["tmpo"]
-    else:
-        try:
-            audio.tags["tmpo"] = [int(round(float(str(bpm_value).replace(",", "."))))]
-        except (TypeError, ValueError):
-            pass
+    if "bpm" in tags:
+        bpm_value = tags.get("bpm")
+        if bpm_value is None or bpm_value == "":
+            if "tmpo" in audio.tags:
+                del audio.tags["tmpo"]
+        else:
+            try:
+                audio.tags["tmpo"] = [int(round(float(str(bpm_value).replace(",", "."))))]
+            except (TypeError, ValueError):
+                pass
 
     for field_name, freeform_key in {
         "key": "INITIALKEY",
@@ -530,6 +535,8 @@ def _write_mp4_tags(path: Path, tags: dict[str, str]) -> None:
         "remixer": "REMIXER",
         "rating": "RATING",
     }.items():
+        if field_name not in tags:
+            continue
         atom = f"{_MP4_FREEFORM_PREFIX}{freeform_key}"
         value = tags.get(field_name)
         if value is None or value == "":

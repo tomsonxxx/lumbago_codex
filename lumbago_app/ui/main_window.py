@@ -24,12 +24,10 @@ from lumbago_app.core.config import cache_dir, load_settings
 from lumbago_app.core.models import Track
 from lumbago_app.core.services import enrich_track_with_analysis, heuristic_analysis
 from lumbago_app.core.waveform import generate_waveform
-from lumbago_app.services.ai_tagger import CloudAiTagger, MultiAiTagger
-from lumbago_app.services.ai_tagger_merge import _merge_analysis_into_track
+from lumbago_app.services.autotag_rewrite import UnifiedAutoTagger
 from lumbago_app.services.beatgrid import auto_cue_points, compute_beatgrid
 from lumbago_app.services.key_detection import detect_key
 from lumbago_app.services.loudness import analyze_loudness, normalize_loudness
-from lumbago_app.services.metadata_enricher import AutoMetadataFiller
 from lumbago_app.services.xml_converter import XmlTrack, export_virtualdj_xml
 from lumbago_app.data.repository import (
     add_track_to_playlist,
@@ -90,43 +88,6 @@ def _normalized_path(output_dir: Path, source: Path) -> Path:
         if not candidate.exists():
             return candidate
         idx += 1
-
-
-def _resolve_provider_config(provider: str, settings) -> tuple[str | None, str | None, str | None]:
-    if provider == "gemini":
-        return (
-            settings.gemini_api_key or settings.cloud_ai_api_key,
-            settings.gemini_base_url,
-            settings.gemini_model,
-        )
-    if provider == "openai":
-        return (
-            settings.openai_api_key or settings.cloud_ai_api_key,
-            settings.openai_base_url,
-            settings.openai_model,
-        )
-    if provider == "grok":
-        return (
-            settings.grok_api_key or settings.cloud_ai_api_key,
-            settings.grok_base_url,
-            settings.grok_model,
-        )
-    if provider == "deepseek":
-        return (
-            settings.deepseek_api_key or settings.cloud_ai_api_key,
-            settings.deepseek_base_url,
-            settings.deepseek_model,
-        )
-    return None, None, None
-
-
-def _available_ai_providers(settings) -> list[str]:
-    providers: list[str] = []
-    for provider in ("openai", "gemini", "grok", "deepseek"):
-        api_key, _base_url, _model = _resolve_provider_config(provider, settings)
-        if api_key:
-            providers.append(provider)
-    return providers
 
 
 def _has_value(value) -> bool:
@@ -459,20 +420,14 @@ class AutoTagWorker(QtCore.QRunnable):
         processed = 0
         total = len(self.tracks)
 
-        auto_filler = AutoMetadataFiller(
-            self.settings.musicbrainz_app_name,
-            self.settings.validation_policy,
-            self.settings.metadata_cache_ttl_days,
-            source_workers=8,
-        )
-        ai_tagger = self._build_multi_ai_tagger()
+        autotagger = UnifiedAutoTagger(self.settings)
 
         for track in self.tracks:
             if self._stop_requested:
                 break
             try:
                 before = deepcopy(track)
-                self._run_single_track(track, auto_filler, ai_tagger)
+                self._run_single_track(track, autotagger)
                 changed_fields = _changed_fields(before, track)
                 sync_fields = self._fields_requiring_file_sync(track)
                 fields_to_write = sorted(set(changed_fields) | set(sync_fields))
@@ -497,14 +452,12 @@ class AutoTagWorker(QtCore.QRunnable):
     def _run_single_track(
         self,
         track: Track,
-        auto_filler: AutoMetadataFiller,
-        ai_tagger: MultiAiTagger | None,
+        autotagger: UnifiedAutoTagger,
     ) -> None:
         refreshed = extract_metadata(Path(track.path))
         _merge_missing_from_source(track, refreshed)
-
-        # Always use unified, richest path: local + online + public portals consensus.
-        auto_filler.fill_missing_with_report(track, "mix")
+        enriched = autotagger.enrich_track(track)
+        autotagger.apply_best_match(track, enriched)
 
         detected_key = None if _has_value(track.key) else detect_key(Path(track.path))
         detected_bpm = None
@@ -535,36 +488,7 @@ class AutoTagWorker(QtCore.QRunnable):
             detected_energy=detected_energy,
         )
 
-        if ai_tagger is not None:
-            ai_result = ai_tagger.analyze(deepcopy(track))
-            _merge_analysis_into_track(track, ai_result)
-
         _validate_track_metadata(track)
-
-    def _build_multi_ai_tagger(self) -> MultiAiTagger | None:
-        providers = _available_ai_providers(self.settings)
-        if not providers:
-            return None
-
-        taggers: list[CloudAiTagger] = []
-        for provider in providers:
-            api_key, base_url, model = _resolve_provider_config(provider, self.settings)
-            if not api_key:
-                continue
-            taggers.append(
-                CloudAiTagger(
-                    provider,
-                    api_key,
-                    base_url=base_url,
-                    model=model,
-                    timeout=20,
-                    retries=1,
-                )
-            )
-
-        if not taggers:
-            return None
-        return MultiAiTagger(taggers, max_workers=min(4, len(taggers)))
 
     def _fields_requiring_file_sync(self, track: Track) -> list[str]:
         try:
