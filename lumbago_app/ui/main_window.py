@@ -474,13 +474,16 @@ class AutoTagWorker(QtCore.QRunnable):
                 before = deepcopy(track)
                 self._run_single_track(track, auto_filler, ai_tagger)
                 changed_fields = _changed_fields(before, track)
-                if changed_fields:
-                    update_track(track)
-                    write_tags(Path(track.path), _track_to_tag_dict(track, changed_fields))
+                sync_fields = self._fields_requiring_file_sync(track)
+                fields_to_write = sorted(set(changed_fields) | set(sync_fields))
+                if fields_to_write:
+                    if changed_fields:
+                        update_track(track)
+                    write_tags(Path(track.path), _track_to_tag_dict(track, fields_to_write))
                     replace_track_tags(
                         track.path,
-                        [f"{name}:{getattr(track, name, None)}" for name in changed_fields],
-                        source="autotag:instant",
+                        [f"{name}:{getattr(track, name, None)}" for name in fields_to_write],
+                        source="autotag:file_sync",
                         confidence=None,
                     )
                     updated += 1
@@ -562,6 +565,33 @@ class AutoTagWorker(QtCore.QRunnable):
         if not taggers:
             return None
         return MultiAiTagger(taggers, max_workers=min(4, len(taggers)))
+
+    def _fields_requiring_file_sync(self, track: Track) -> list[str]:
+        try:
+            file_tags = read_tags(Path(track.path))
+        except Exception:
+            return []
+        sync: list[str] = []
+        for field_name in _AUTOTAG_FIELDS:
+            current = getattr(track, field_name, None)
+            if not _has_value(current):
+                continue
+            file_value = file_tags.get(field_name)
+            if not _has_value(file_value):
+                sync.append(field_name)
+                continue
+            if field_name in {"bpm", "energy"}:
+                try:
+                    left = float(current)
+                    right = float(str(file_value).replace(",", "."))
+                    if abs(left - right) > 0.11:
+                        sync.append(field_name)
+                except Exception:
+                    sync.append(field_name)
+                continue
+            if str(current).strip() != str(file_value).strip():
+                sync.append(field_name)
+        return sync
 
 
 class MainWindow(QtWidgets.QMainWindow):

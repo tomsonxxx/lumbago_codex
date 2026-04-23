@@ -7,14 +7,16 @@ from typing import Iterable
 
 from mutagen import File as MutagenFile
 import re
-from mutagen.easyid3 import EasyID3
 from mutagen.id3 import ID3, ID3NoHeaderError
+from mutagen.mp4 import MP4FreeForm
 
 from lumbago_app.core.models import Track
 from lumbago_app.core.config import load_settings
 
 
 AUDIO_EXTENSIONS = {".mp3", ".flac", ".m4a", ".mp4", ".wav", ".ogg", ".aac", ".aiff"}
+_MP4_EXTENSIONS = {".m4a", ".mp4"}
+_MP4_FREEFORM_PREFIX = "----:com.apple.iTunes:"
 
 
 def iter_audio_files(
@@ -34,7 +36,7 @@ def iter_audio_files(
 
 
 def extract_metadata(path: Path) -> Track:
-    audio = MutagenFile(path)
+    audio = _open_mutagen(path)
     size = path.stat().st_size
     mtime = path.stat().st_mtime
     track = Track(path=str(path), file_size=size, file_mtime=mtime)
@@ -98,12 +100,42 @@ def extract_metadata(path: Path) -> Track:
     track.grouping = tag_value("TIT1") or tag_value("grouping") or tag_value("contentgroup")
     track.copyright = tag_value("TCOP") or tag_value("copyright")
     track.remixer = tag_value("TPE4") or tag_value("remixer")
+    # MP4/M4A uses a different tagging scheme; normalize through read_tags to fill gaps.
+    canonical_tags = read_tags(path)
+    if canonical_tags:
+        _fill_if_empty(track, "title", canonical_tags.get("title"))
+        _fill_if_empty(track, "artist", canonical_tags.get("artist"))
+        _fill_if_empty(track, "album", canonical_tags.get("album"))
+        _fill_if_empty(track, "albumartist", canonical_tags.get("albumartist"))
+        _fill_if_empty(track, "year", canonical_tags.get("year"))
+        _fill_if_empty(track, "genre", canonical_tags.get("genre"))
+        _fill_if_empty(track, "tracknumber", canonical_tags.get("tracknumber"))
+        _fill_if_empty(track, "discnumber", canonical_tags.get("discnumber"))
+        _fill_if_empty(track, "composer", canonical_tags.get("composer"))
+        if track.bpm is None:
+            track.bpm = _parse_float_tag(canonical_tags.get("bpm"))
+        _fill_if_empty(track, "key", canonical_tags.get("key"))
+        if not track.rating:
+            track.rating = _parse_rating_tag(canonical_tags.get("rating")) or 0
+        _fill_if_empty(track, "mood", canonical_tags.get("mood"))
+        if track.energy is None:
+            track.energy = _parse_float_tag(canonical_tags.get("energy"))
+        _fill_if_empty(track, "comment", canonical_tags.get("comment"))
+        _fill_if_empty(track, "lyrics", canonical_tags.get("lyrics"))
+        _fill_if_empty(track, "isrc", canonical_tags.get("isrc"))
+        _fill_if_empty(track, "publisher", canonical_tags.get("publisher"))
+        _fill_if_empty(track, "grouping", canonical_tags.get("grouping"))
+        _fill_if_empty(track, "copyright", canonical_tags.get("copyright"))
+        _fill_if_empty(track, "remixer", canonical_tags.get("remixer"))
     apply_local_metadata(track, path)
     return track
 
 
 def read_tags(path: Path) -> dict[str, str]:
-    audio = MutagenFile(path, easy=True)
+    if path.suffix.lower() in _MP4_EXTENSIONS:
+        return _read_mp4_tags(path)
+
+    audio = _open_mutagen(path, easy=True)
     if audio is None or audio.tags is None:
         return {}
     _normalize_map = {
@@ -133,7 +165,11 @@ def read_tags(path: Path) -> dict[str, str]:
 
 
 def write_tags(path: Path, tags: dict[str, str]) -> None:
-    audio = MutagenFile(path, easy=True)
+    if path.suffix.lower() in _MP4_EXTENSIONS:
+        _write_mp4_tags(path, tags)
+        return
+
+    audio = _open_mutagen(path, easy=True)
     if audio is None:
         return
     if audio.tags is None:
@@ -141,7 +177,7 @@ def write_tags(path: Path, tags: dict[str, str]) -> None:
             ID3(path).save()
         except ID3NoHeaderError:
             ID3().save(path)
-        audio = MutagenFile(path, easy=True)
+        audio = _open_mutagen(path, easy=True)
     key_map = {
         "key": "initialkey", "year": "date",
         "albumartist": "albumartist", "publisher": "organization",
@@ -161,7 +197,7 @@ def write_tags(path: Path, tags: dict[str, str]) -> None:
 
 
 def clear_tags(path: Path) -> None:
-    audio = MutagenFile(path, easy=True)
+    audio = _open_mutagen(path, easy=True)
     if audio is None or audio.tags is None:
         return
     audio.tags.clear()
@@ -383,3 +419,182 @@ def file_hash(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             hasher.update(chunk)
     return hasher.hexdigest()
+
+
+def _read_mp4_tags(path: Path) -> dict[str, str]:
+    audio = _open_mutagen(path)
+    if audio is None or audio.tags is None:
+        return {}
+    tags = audio.tags
+    out: dict[str, str] = {}
+
+    standard_map = {
+        "title": "\xa9nam",
+        "artist": "\xa9ART",
+        "album": "\xa9alb",
+        "albumartist": "aART",
+        "year": "\xa9day",
+        "genre": "\xa9gen",
+        "composer": "\xa9wrt",
+        "comment": "\xa9cmt",
+        "lyrics": "\xa9lyr",
+        "grouping": "\xa9grp",
+        "copyright": "cprt",
+    }
+    for field_name, atom in standard_map.items():
+        value = _mp4_first_text(tags.get(atom))
+        if value is not None:
+            out[field_name] = value
+
+    tracknumber = _mp4_index_value(tags.get("trkn"))
+    if tracknumber is not None:
+        out["tracknumber"] = tracknumber
+    discnumber = _mp4_index_value(tags.get("disk"))
+    if discnumber is not None:
+        out["discnumber"] = discnumber
+
+    bpm = _mp4_first_text(tags.get("tmpo"))
+    if bpm is not None:
+        out["bpm"] = bpm
+
+    for field_name, freeform_key in {
+        "key": "INITIALKEY",
+        "mood": "MOOD",
+        "energy": "ENERGY",
+        "isrc": "ISRC",
+        "publisher": "PUBLISHER",
+        "remixer": "REMIXER",
+        "rating": "RATING",
+    }.items():
+        value = _mp4_first_text(tags.get(f"{_MP4_FREEFORM_PREFIX}{freeform_key}"))
+        if value is not None:
+            out[field_name] = value
+
+    return out
+
+
+def _write_mp4_tags(path: Path, tags: dict[str, str]) -> None:
+    audio = _open_mutagen(path)
+    if audio is None:
+        return
+    if audio.tags is None:
+        return
+
+    standard_map = {
+        "title": "\xa9nam",
+        "artist": "\xa9ART",
+        "album": "\xa9alb",
+        "albumartist": "aART",
+        "year": "\xa9day",
+        "genre": "\xa9gen",
+        "composer": "\xa9wrt",
+        "comment": "\xa9cmt",
+        "lyrics": "\xa9lyr",
+        "grouping": "\xa9grp",
+        "copyright": "cprt",
+    }
+    for field_name, atom in standard_map.items():
+        value = tags.get(field_name)
+        if value is None or value == "":
+            if atom in audio.tags:
+                del audio.tags[atom]
+            continue
+        audio.tags[atom] = [str(value)]
+
+    for field_name, atom in {"tracknumber": "trkn", "discnumber": "disk"}.items():
+        value = tags.get(field_name)
+        if value is None or value == "":
+            if atom in audio.tags:
+                del audio.tags[atom]
+            continue
+        parsed = _parse_index_tag(value)
+        if parsed is not None:
+            audio.tags[atom] = [(parsed, 0)]
+
+    bpm_value = tags.get("bpm")
+    if bpm_value is None or bpm_value == "":
+        if "tmpo" in audio.tags:
+            del audio.tags["tmpo"]
+    else:
+        try:
+            audio.tags["tmpo"] = [int(round(float(str(bpm_value).replace(",", "."))))]
+        except (TypeError, ValueError):
+            pass
+
+    for field_name, freeform_key in {
+        "key": "INITIALKEY",
+        "mood": "MOOD",
+        "energy": "ENERGY",
+        "isrc": "ISRC",
+        "publisher": "PUBLISHER",
+        "remixer": "REMIXER",
+        "rating": "RATING",
+    }.items():
+        atom = f"{_MP4_FREEFORM_PREFIX}{freeform_key}"
+        value = tags.get(field_name)
+        if value is None or value == "":
+            if atom in audio.tags:
+                del audio.tags[atom]
+            continue
+        audio.tags[atom] = [_mp4_encode_text(str(value))]
+
+    audio.save()
+
+
+def _mp4_encode_text(value: str) -> MP4FreeForm:
+    return MP4FreeForm(value.encode("utf-8"), dataformat=1)
+
+
+def _mp4_first_text(value) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, list):
+        if not value:
+            return None
+        value = value[0]
+    if isinstance(value, tuple):
+        if not value:
+            return None
+        value = value[0]
+    if isinstance(value, bytes):
+        try:
+            return value.decode("utf-8", errors="ignore").strip() or None
+        except Exception:
+            return None
+    text = str(value).strip()
+    return text or None
+
+
+def _mp4_index_value(value) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, list) and value:
+        first = value[0]
+        if isinstance(first, tuple) and first:
+            return str(first[0])
+    return _mp4_first_text(value)
+
+
+def _parse_index_tag(value) -> int | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    match = re.search(r"\d+", text)
+    if not match:
+        return None
+    try:
+        return int(match.group(0))
+    except ValueError:
+        return None
+
+
+def _open_mutagen(path: Path, easy: bool = False):
+    if easy:
+        try:
+            return MutagenFile(path, easy=True)
+        except TypeError:
+            # Test stubs may not accept keyword arguments.
+            return MutagenFile(path)
+    return MutagenFile(path)
