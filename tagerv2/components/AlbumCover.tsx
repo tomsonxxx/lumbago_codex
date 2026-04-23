@@ -12,15 +12,22 @@ const AlbumCover: React.FC<AlbumCoverProps> = ({
   tags,
   className = "w-12 h-12",
 }) => {
-  const rawUrl = proxyImageUrl(tags?.albumCoverUrl);
-  // Only allow http(s) and data:image URLs to prevent unexpected schemes in img src
-  const coverUrl =
-    rawUrl &&
-    (rawUrl.startsWith("https://") ||
-      rawUrl.startsWith("http://") ||
-      rawUrl.startsWith("data:image/"))
-      ? rawUrl
-      : undefined;
+  // Build a safe URL: only http(s) and data:image/ are permitted.
+  // For http(s) we reconstruct from URL.href so no raw user string reaches the DOM.
+  const coverUrl = (() => {
+    const raw = proxyImageUrl(tags?.albumCoverUrl);
+    if (!raw) return undefined;
+    if (raw.startsWith("data:image/")) return raw;
+    try {
+      const parsed = new URL(raw);
+      if (parsed.protocol === "https:" || parsed.protocol === "http:") {
+        return parsed.href;
+      }
+    } catch {
+      // invalid URL — fall through
+    }
+    return undefined;
+  })();
 
   return (
     <div
