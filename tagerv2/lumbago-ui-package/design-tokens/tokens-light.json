@@ -1,0 +1,11 @@
+{
+  "color": {
+    "bg": { "primary": "#FFFFFF", "secondary": "#F1F5F9", "tertiary": "#E2E8F0" },
+    "text": { "primary": "#0F172A", "secondary": "#64748B", "accent": "#4F46E5" },
+    "accent": { "primary": "#4F46E5", "secondary": "#DB2777", "success": "#059669", "warning": "#D97706", "error": "#DC2626" },
+    "border": { "default": "#CBD5E1", "active": "#4F46E5" }
+  },
+  "spacing": { "xs": "4px", "s": "8px", "m": "16px", "l": "24px", "xl": "32px" },
+  "radius": { "s": "4px", "m": "8px", "l": "12px", "full": "9999px" },
+  "blur": { "default": "12px", "heavy": "24px" }
+}
