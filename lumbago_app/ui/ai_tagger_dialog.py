@@ -1251,6 +1251,8 @@ class _PipelineWorker(QtCore.QRunnable):
             return None
 
     def _save_cached_ai_result(self, path_obj: Path, result: AnalysisResult) -> None:
+        if not result.confidence:
+            return
         try:
             payload = load_analysis_cache(path_obj) or {}
             payload["ai_signature"] = self._audio_signature(path_obj)
