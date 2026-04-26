@@ -177,9 +177,14 @@ def _merge_results(results: list[tuple[str, AnalysisResult]]) -> AnalysisResult:
         if best_score > 0:
             winner_confidences.append(best_score)
 
-    providers_info = ", ".join(
-        f"{provider}:{float(result.confidence or 0.0):.2f}" for provider, result in results
-    )
+    provider_parts = []
+    for provider, result in results:
+        conf = float(result.confidence or 0.0)
+        part = f"{provider}:{conf:.2f}"
+        if conf == 0.0 and result.description:
+            part += f"({result.description})"
+        provider_parts.append(part)
+    providers_info = ", ".join(provider_parts)
     merged_conf = sum(winner_confidences) / len(winner_confidences) if winner_confidences else 0.0
     return AnalysisResult(
         bpm=_to_float(winners.get("bpm")),
@@ -325,7 +330,11 @@ def _call_openai_compatible_chat(
         "temperature": 0.2,
     }
     resp = requests.post(url, headers=headers, json=payload, timeout=timeout)
-    resp.raise_for_status()
+    if not resp.ok:
+        raise requests.HTTPError(
+            f"{resp.status_code} {resp.reason} — {resp.text[:300]}",
+            response=resp,
+        )
     data = resp.json()
     return _extract_text_from_chat_completions(data)
 

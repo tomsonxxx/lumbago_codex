@@ -895,11 +895,14 @@ class AiTaggerDialog(QtWidgets.QDialog):
         if state.metadata_report is not None:
             self._log_view.appendPlainText(f"  źródła: {state.metadata_report.summary}")
         if state.ai_result is not None:
-            self._log_view.appendPlainText(
+            ai_line = (
                 f"  AI: bpm={state.ai_result.bpm} key={state.ai_result.key} "
                 f"genre={state.ai_result.genre} mood={state.ai_result.mood} energy={state.ai_result.energy} "
                 f"conf={float(state.ai_result.confidence or 0.0):.0%}"
             )
+            if state.ai_result.description:
+                ai_line += f" [{state.ai_result.description}]"
+            self._log_view.appendPlainText(ai_line)
 
     def _analyze(self) -> None:
         self._start_pipeline()
@@ -1073,6 +1076,42 @@ class _PipelineWorker(QtCore.QRunnable):
             upsert_audio_features(track_path, af)
         except Exception:
             return
+
+    def _load_cached_ai_result(self, path_obj: Path) -> AnalysisResult | None:
+        payload = load_analysis_cache(path_obj) or {}
+        sig = self._audio_signature(path_obj)
+        if payload.get("ai_signature") != sig:
+            return None
+        ai_data = payload.get("ai_result")
+        if not isinstance(ai_data, dict):
+            return None
+        fields = {
+            f: ai_data.get(f)
+            for f in (
+                "bpm", "key", "mood", "energy", "genre", "description", "confidence",
+                "title", "artist", "album", "albumartist", "year", "tracknumber",
+                "discnumber", "composer", "isrc", "publisher", "lyrics", "grouping", "copyright",
+            )
+        }
+        result = AnalysisResult(**fields)
+        if not (result.confidence or 0.0):
+            return None
+        return result
+
+    def _save_cached_ai_result(self, path_obj: Path, result: AnalysisResult) -> None:
+        if result is None or not (result.confidence or 0.0):
+            return
+        payload = load_analysis_cache(path_obj) or {}
+        payload["ai_signature"] = self._audio_signature(path_obj)
+        payload["ai_result"] = {
+            f: getattr(result, f, None)
+            for f in (
+                "bpm", "key", "mood", "energy", "genre", "description", "confidence",
+                "title", "artist", "album", "albumartist", "year", "tracknumber",
+                "discnumber", "composer", "isrc", "publisher", "lyrics", "grouping", "copyright",
+            )
+        }
+        save_analysis_cache(path_obj, payload)
 
     @staticmethod
     def _audio_signature(path_obj: Path) -> str:
