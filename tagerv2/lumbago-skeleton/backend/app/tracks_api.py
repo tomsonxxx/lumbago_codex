@@ -16,7 +16,7 @@ def list_tracks(q: Optional[str]=Query(None), bpm_min: Optional[int]=None, bpm_m
                 key: Optional[str]=None, missing_metadata: Optional[bool]=False,
                 skip: int=0, limit: int=100, sort: str='created_at', db=Depends(get_db)):
     # Basic SQL generation for flexibility (sqlite and pg compatible simple filters)
-    base_sql = 'SELECT id, title, artist, bpm, key, duration, metadata FROM tracks WHERE 1=1'
+    base_sql = 'SELECT id, title, artist, bpm, key, duration FROM tracks WHERE 1=1'
     params = {}
     if q:
         base_sql += " AND (title LIKE :q OR artist LIKE :q)"
@@ -31,7 +31,7 @@ def list_tracks(q: Optional[str]=Query(None), bpm_min: Optional[int]=None, bpm_m
         base_sql += ' AND key = :key'
         params['key'] = key
     if missing_metadata:
-        base_sql += " AND (metadata IS NULL OR metadata = '')"
+        base_sql += " AND (title IS NULL OR artist IS NULL)"
     # sort + limit — use an explicit allowlist dict so no user value ever
     # reaches the SQL string via string interpolation
     _ALLOWED_SORT = {'created_at': 'created_at', 'title': 'title', 'bpm': 'bpm'}
@@ -43,7 +43,7 @@ def list_tracks(q: Optional[str]=Query(None), bpm_min: Optional[int]=None, bpm_m
         rows = db.execute(text(base_sql), params).fetchall()
         out = []
         for r in rows:
-            out.append({'id': r[0], 'title': r[1], 'artist': r[2], 'bpm': r[3], 'key': r[4], 'duration': r[5], 'metadata': r[6]})
+            out.append({'id': r[0], 'title': r[1], 'artist': r[2], 'bpm': r[3], 'key': r[4], 'duration': r[5]})
         return out
     except Exception:
         return {'error': 'An internal error occurred. Please try again.'}

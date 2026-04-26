@@ -6,17 +6,21 @@ from .models_sql import Track
 from sqlalchemy.orm import Session
 import os
 
+from .auth import router as auth_router
+from .auth_full import router as auth_router_full
+from .playlists import router as playlists_router
+from .duplicates_api import router as duplicates_router
+from .tracks_api import router as tracks_router
+from .waveform_api import router as waveform_router
+from .library_api import router as library_router
+
 app = FastAPI(title="Lumbago Music AI - Backend (skeleton)")
 app.include_router(auth_router)
 app.include_router(auth_router_full)
 app.include_router(playlists_router)
-from .duplicates_api import router as duplicates_router
 app.include_router(duplicates_router)
-from .tracks_api import router as tracks_router
 app.include_router(tracks_router)
-from .waveform_api import router as waveform_router
 app.include_router(waveform_router)
-from .library_api import router as library_router
 app.include_router(library_router)
 
 # initialize sqlite for dev
