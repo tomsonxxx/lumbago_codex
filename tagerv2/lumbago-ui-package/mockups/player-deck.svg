@@ -1,0 +1,22 @@
+<svg width="1440" height="200" viewBox="0 0 1440 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+<rect width="1440" height="200" fill="#020617"/>
+<!-- Waveform -->
+<rect x="0" y="0" width="1440" height="120" fill="#0F172A"/>
+<path d="M0 60 Q 100 20 200 60 T 400 60 T 600 60 T 800 60 T 1000 60 T 1200 60 T 1440 60" stroke="url(#paint0_linear)" stroke-width="2" fill="none"/>
+<defs>
+<linearGradient id="paint0_linear" x1="0" y1="60" x2="1440" y2="60" gradientUnits="userSpaceOnUse">
+<stop stop-color="#6366F1"/>
+<stop offset="1" stop-color="#EC4899"/>
+</linearGradient>
+</defs>
+<!-- Controls -->
+<circle cx="720" cy="160" r="30" fill="#6366F1"/> <!-- Play -->
+<path d="M715 150 L730 160 L715 170 Z" fill="white"/>
+<circle cx="640" cy="160" r="20" fill="#334155"/> <!-- Prev -->
+<circle cx="800" cy="160" r="20" fill="#334155"/> <!-- Next -->
+<!-- Hot Cues -->
+<rect x="100" y="140" width="40" height="40" rx="4" fill="#EF4444"/>
+<rect x="150" y="140" width="40" height="40" rx="4" fill="#F59E0B"/>
+<rect x="200" y="140" width="40" height="40" rx="4" fill="#10B981"/>
+<rect x="250" y="140" width="40" height="40" rx="4" fill="#3B82F6"/>
+</svg>

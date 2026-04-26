@@ -1,0 +1,37 @@
+version: '3.8'
+services:
+  redis:
+    image: redis:7
+    ports:
+      - '6379:6379'
+  backend:
+    build: ./backend
+    image: lumbago/backend:latest
+    ports:
+      - '8000:8000'
+    volumes:
+      - ./backend:/app/backend
+    environment:
+      - DATABASE_URL=sqlite:///./lumbago.db
+      - CELERY_BROKER=redis://redis:6379/0
+      - CELERY_BACKEND=redis://redis:6379/1
+    depends_on:
+      - redis
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.worker
+    image: lumbago/worker:latest
+    environment:
+      - CELERY_BROKER=redis://redis:6379/0
+      - CELERY_BACKEND=redis://redis:6379/1
+    depends_on:
+      - backend
+      - redis
+  frontend:
+    build: ./frontend
+    image: lumbago/frontend:latest
+    ports:
+      - '5173:80'
+    depends_on:
+      - backend
