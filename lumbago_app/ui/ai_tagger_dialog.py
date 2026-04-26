@@ -1230,10 +1230,19 @@ class _PipelineWorker(QtCore.QRunnable):
         cached.waveform_blob = bytes.fromhex(waveform_hex) if isinstance(waveform_hex, str) and waveform_hex else b""
         return cached
 
+    def _ai_tagger_key(self) -> str | None:
+        fn = getattr(self.tagger, "cache_key", None)
+        return fn() if callable(fn) else None
+
     def _load_cached_ai_result(self, path_obj: Path) -> AnalysisResult | None:
         payload = load_analysis_cache(path_obj) or {}
         ai_data = payload.get("ai_result")
         if not isinstance(ai_data, dict):
+            return None
+        if payload.get("ai_signature") != self._audio_signature(path_obj):
+            return None
+        tagger_key = self._ai_tagger_key()
+        if tagger_key is not None and payload.get("ai_tagger_key") != tagger_key:
             return None
         try:
             known = set(AnalysisResult.__dataclass_fields__)
@@ -1244,6 +1253,10 @@ class _PipelineWorker(QtCore.QRunnable):
     def _save_cached_ai_result(self, path_obj: Path, result: AnalysisResult) -> None:
         try:
             payload = load_analysis_cache(path_obj) or {}
+            payload["ai_signature"] = self._audio_signature(path_obj)
+            tagger_key = self._ai_tagger_key()
+            if tagger_key is not None:
+                payload["ai_tagger_key"] = tagger_key
             payload["ai_result"] = {f: getattr(result, f) for f in result.__dataclass_fields__}
             save_analysis_cache(path_obj, payload)
         except Exception:
