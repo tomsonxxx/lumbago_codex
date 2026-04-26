@@ -151,10 +151,31 @@ const dataURLToArrayBuffer = (dataURL: string) => {
 
 // Helper function to proxy image URLs to avoid CORS issues
 export const proxyImageUrl = (url: string | undefined): string | undefined => {
-    if (!url || url.startsWith('data:')) {
-        return url;
+    if (!url) {
+        return undefined;
     }
-    return `https://corsproxy.io/?${encodeURIComponent(url)}`;
+
+    const trimmedUrl = url.trim();
+
+    // Allow only base64-encoded image data URLs.
+    // Reject any other data URL formats.
+    const safeDataImageUrlPattern = /^data:image\/[a-zA-Z0-9.+-]+;base64,[a-zA-Z0-9+/=\s]+$/;
+    if (safeDataImageUrlPattern.test(trimmedUrl)) {
+        return trimmedUrl;
+    }
+
+    // Allow only absolute http(s) URLs and proxy them.
+    try {
+        const parsed = new URL(trimmedUrl);
+        if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+            return `https://corsproxy.io/?${encodeURIComponent(parsed.toString())}`;
+        }
+    } catch {
+        // Invalid URL - fall through and reject.
+    }
+
+    // Reject unsupported or malformed URLs.
+    return undefined;
 };
 
 
