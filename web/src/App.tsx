@@ -63,7 +63,9 @@ export function App() {
         <ul>
           {tracks.map((t) => (
             <li key={t.id}>
-              {t.artist} - {t.title} [{t.key ?? "-"}]
+              {t.title ?? "-"} | {t.bpm ?? "-"} | {t.key ?? "-"} | {t.artist ?? "-"} | {t.album ?? "-"} |{" "}
+              {t.genre ?? "-"} | {t.year ?? "-"} | {t.composer ?? "-"} | {t.comment ?? "-"} | {t.lyrics ?? "-"} |{" "}
+              {t.publisher ?? "-"}
             </li>
           ))}
         </ul>

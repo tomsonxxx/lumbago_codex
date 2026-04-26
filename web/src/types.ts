@@ -6,6 +6,10 @@ export type Track = {
   album?: string;
   year?: string;
   genre?: string;
+  composer?: string;
+  comment?: string;
+  lyrics?: string;
+  publisher?: string;
   key?: string;
   bpm?: number;
   duration?: number;

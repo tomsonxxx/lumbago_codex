@@ -136,6 +136,22 @@ def _has_value(value: Any) -> bool:
     return True
 
 
+def _to_str(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _to_float(value: Any) -> float | None:
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _format_value(field_name: str, value: Any) -> str:
     if not _has_value(value):
         return "â€”"
@@ -1049,6 +1065,67 @@ class _PipelineWorker(QtCore.QRunnable):
         merged["detected_key"] = detected
         save_analysis_cache(path_obj, merged)
         return detected
+
+    def _load_cached_ai_result(self, path_obj: Path) -> AnalysisResult | None:
+        if self.tagger is None:
+            return None
+        payload = load_analysis_cache(path_obj) or {}
+        sig = self._audio_signature(path_obj)
+        if payload.get("signature") != sig:
+            return None
+        ai_results = payload.get("ai_results")
+        if not isinstance(ai_results, dict):
+            return None
+        cache_key = self._ai_cache_key()
+        cached = ai_results.get(cache_key)
+        if not isinstance(cached, dict):
+            return None
+        return AnalysisResult(
+            title=_to_str(cached.get("title")),
+            bpm=_to_float(cached.get("bpm")),
+            key=_to_str(cached.get("key")),
+            artist=_to_str(cached.get("artist")),
+            album=_to_str(cached.get("album")),
+            genre=_to_str(cached.get("genre")),
+            year=_to_str(cached.get("year")),
+            composer=_to_str(cached.get("composer")),
+            comment=_to_str(cached.get("comment")),
+            lyrics=_to_str(cached.get("lyrics")),
+            publisher=_to_str(cached.get("publisher")),
+            description=_to_str(cached.get("description")),
+            confidence=_to_float(cached.get("confidence")),
+        )
+
+    def _save_cached_ai_result(self, path_obj: Path, result: AnalysisResult) -> None:
+        payload = load_analysis_cache(path_obj) or {}
+        sig = self._audio_signature(path_obj)
+        ai_results = payload.get("ai_results")
+        if not isinstance(ai_results, dict):
+            ai_results = {}
+        ai_results[self._ai_cache_key()] = {
+            "title": result.title,
+            "bpm": result.bpm,
+            "key": result.key,
+            "artist": result.artist,
+            "album": result.album,
+            "genre": result.genre,
+            "year": result.year,
+            "composer": result.composer,
+            "comment": result.comment,
+            "lyrics": result.lyrics,
+            "publisher": result.publisher,
+            "description": result.description,
+            "confidence": result.confidence,
+        }
+        payload["signature"] = sig
+        payload["ai_results"] = ai_results
+        save_analysis_cache(path_obj, payload)
+
+    def _ai_cache_key(self) -> str:
+        cache_fn = getattr(self.tagger, "cache_key", None)
+        if callable(cache_fn):
+            return str(cache_fn())
+        return getattr(self.tagger, "provider_name", "ai")
 
     def _persist_audio_features(self, track_path: str, audio_result: Any) -> None:
         if audio_result is None:
