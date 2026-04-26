@@ -911,14 +911,13 @@ class AiTaggerDialog(QtWidgets.QDialog):
         if state.metadata_report is not None:
             self._log_view.appendPlainText(f"  źródła: {state.metadata_report.summary}")
         if state.ai_result is not None:
-            ai_line = (
+            desc = state.ai_result.description or ""
+            self._log_view.appendPlainText(
                 f"  AI: bpm={state.ai_result.bpm} key={state.ai_result.key} "
                 f"genre={state.ai_result.genre} mood={state.ai_result.mood} energy={state.ai_result.energy} "
                 f"conf={float(state.ai_result.confidence or 0.0):.0%}"
+                + (f" | {desc}" if desc else "")
             )
-            if state.ai_result.description:
-                ai_line += f" [{state.ai_result.description}]"
-            self._log_view.appendPlainText(ai_line)
 
     def _analyze(self) -> None:
         self._start_pipeline()
@@ -1230,6 +1229,25 @@ class _PipelineWorker(QtCore.QRunnable):
         waveform_hex = payload.get("waveform_blob") or ""
         cached.waveform_blob = bytes.fromhex(waveform_hex) if isinstance(waveform_hex, str) and waveform_hex else b""
         return cached
+
+    def _load_cached_ai_result(self, path_obj: Path) -> AnalysisResult | None:
+        payload = load_analysis_cache(path_obj) or {}
+        ai_data = payload.get("ai_result")
+        if not isinstance(ai_data, dict):
+            return None
+        try:
+            known = set(AnalysisResult.__dataclass_fields__)
+            return AnalysisResult(**{k: v for k, v in ai_data.items() if k in known})
+        except Exception:
+            return None
+
+    def _save_cached_ai_result(self, path_obj: Path, result: AnalysisResult) -> None:
+        try:
+            payload = load_analysis_cache(path_obj) or {}
+            payload["ai_result"] = {f: getattr(result, f) for f in result.__dataclass_fields__}
+            save_analysis_cache(path_obj, payload)
+        except Exception:
+            pass
 
 
 def _vsep() -> QtWidgets.QFrame:
