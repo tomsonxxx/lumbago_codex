@@ -100,7 +100,7 @@ const App: React.FC = () => {
   const [savingFileId, setSavingFileId] = useState<string | null>(null);
   const [directoryHandle, setDirectoryHandle] = useState<any | null>(null);
   const [theme, setTheme] = useState<'light' | 'dark'>(() => (localStorage.getItem('theme') as 'light' | 'dark') || 'dark');
-  const [apiKeys, setApiKeys] = useState<ApiKeys>(() => JSON.parse(localStorage.getItem('apiKeys') || '{"grok":"","openai":""}'));
+  const [apiKeys, setApiKeys] = useState<ApiKeys>({ grok: '', openai: '' });
   const [aiProvider, setAiProvider] = useState<AIProvider>(() => (localStorage.getItem('aiProvider') as AIProvider) || 'gemini');
   const [sortKey, setSortKey] = useState<SortKey>(() => (localStorage.getItem('sortKey') as SortKey) || 'dateAdded');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>(() => (localStorage.getItem('sortDirection') as 'asc' | 'desc') || 'asc');
@@ -125,7 +125,6 @@ const App: React.FC = () => {
     localStorage.setItem('theme', theme);
     document.documentElement.className = theme;
   }, [theme]);
-  useEffect(() => localStorage.setItem('apiKeys', JSON.stringify(apiKeys)), [apiKeys]);
   useEffect(() => localStorage.setItem('aiProvider', aiProvider), [aiProvider]);
   useEffect(() => localStorage.setItem('sortKey', sortKey), [sortKey]);
   useEffect(() => localStorage.setItem('sortDirection', sortDirection), [sortDirection]);
