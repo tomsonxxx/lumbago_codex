@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends
 from .db import SessionLocal
 from .duplicate_finder import find_duplicates
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 router = APIRouter(prefix='/api/duplicates')
@@ -18,7 +19,7 @@ def find_route(scope: dict = None, db: Session = Depends(get_db)):
     # Here we mock with a small dataset if DB empty
     tracks = []
     try:
-        rows = db.execute('SELECT id, title, artist, duration, fingerprint FROM tracks').fetchall()
+        rows = db.execute(text('SELECT id, title, artist, duration, fingerprint FROM tracks')).fetchall()
         for r in rows:
             tracks.append({'id': r[0], 'title': r[1], 'artist': r[2], 'duration': r[3], 'fingerprint': r[4]})
     except Exception:

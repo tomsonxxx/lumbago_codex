@@ -1,7 +1,8 @@
 from fastapi import FastAPI, HTTPException, UploadFile, File, Depends
 from pydantic import BaseModel
 from typing import List
-from .db import SessionLocal, init_db
+from .db import SessionLocal
+from .init_db import init_db
 from .models_sql import Track
 from sqlalchemy.orm import Session
 import os
