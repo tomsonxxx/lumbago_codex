@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends
 from .db import SessionLocal
-import subprocess, os
+from sqlalchemy import text
+import subprocess, os, sys
 router = APIRouter(prefix='/api/waveform')
 
 def get_db():
@@ -16,7 +17,7 @@ def generate_waveform(body: dict, db=Depends(get_db)):
     if not track_id:
         raise HTTPException(status_code=400, detail='track_id required')
     try:
-        res = db.execute('SELECT id, title, metadata FROM tracks WHERE id = ?', (track_id,)).fetchone()
+        res = db.execute(text('SELECT id, title, metadata FROM tracks WHERE id = :track_id'), {'track_id': track_id}).fetchone()
         if not res:
             raise HTTPException(status_code=404, detail='track not found')
         # assume storage path in metadata: metadata['storage_path']
@@ -37,7 +38,7 @@ def generate_waveform(body: dict, db=Depends(get_db)):
         script = os.path.join(os.getcwd(), 'scripts', 'generate_waveform.py')
         subprocess.run([sys.executable if 'sys' in globals() else 'python3', script, audio_path, outpath], check=False)
         # update DB
-        db.execute('UPDATE tracks SET waveform_path = ? WHERE id = ?', (outpath, track_id))
+        db.execute(text('UPDATE tracks SET waveform_path = :waveform_path WHERE id = :track_id'), {'waveform_path': outpath, 'track_id': track_id})
         db.commit()
         return {'waveform_path': outpath}
     except HTTPException:
