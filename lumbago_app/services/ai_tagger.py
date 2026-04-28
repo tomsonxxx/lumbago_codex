@@ -117,31 +117,6 @@ class MultiAiTagger:
         self._last_envelope = envelope
         return envelope.merged_result
 
-
-def _missing_fields(track: Track) -> list[str]:
-    return missing_fields(track)
-        if not self.taggers:
-            return AnalysisResult(description="No AI providers selected", confidence=0.0)
-        if len(self.taggers) == 1:
-            return self.taggers[0].analyze(track)
-
-        results: list[tuple[str, AnalysisResult]] = []
-        with ThreadPoolExecutor(max_workers=min(self.max_workers, len(self.taggers))) as pool:
-            futures = {
-                pool.submit(tagger.analyze, track): getattr(tagger, "provider_name", tagger.__class__.__name__)
-                for tagger in self.taggers
-            }
-            for future in as_completed(futures):
-                provider_name = futures[future]
-                try:
-                    result = future.result()
-                except Exception as exc:
-                    result = AnalysisResult(description=f"{provider_name}: {exc}", confidence=0.0)
-                results.append((provider_name, result))
-
-        merged = _merge_results(results)
-        return merged
-
     def cache_key(self) -> str:
         keys: list[str] = []
         for tagger in self.taggers:
@@ -151,6 +126,10 @@ def _missing_fields(track: Track) -> list[str]:
             else:
                 keys.append(getattr(tagger, "provider_name", tagger.__class__.__name__))
         return "multi:" + "|".join(sorted(keys))
+
+
+def _missing_fields(track: Track) -> list[str]:
+    return missing_fields(track)
 
 
 _FLOAT_AI_FIELDS = {"bpm", "energy"}
@@ -292,8 +271,6 @@ def _build_prompt(track: Track, missing: list[str]) -> str:
 
 def _normalize_payload(payload: dict[str, Any]) -> dict[str, Any]:
     return normalize_payload(payload)
-    allowed = set(_ALL_AI_FIELDS) | {"description", "confidence"}
-    return {key: value for key, value in payload.items() if key in allowed}
 
 
 def _resolve_runtime_config(
