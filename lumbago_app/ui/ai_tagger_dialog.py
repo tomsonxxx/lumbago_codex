@@ -19,16 +19,18 @@ from lumbago_app.core.services import enrich_track_with_analysis
 from lumbago_app.core.audio import write_tags
 from lumbago_app.data.repository import replace_track_tags, update_tracks
 from lumbago_app.services.ai_tagger import CloudAiTagger, MultiAiTagger
+from lumbago_app.services.ai_tagger import CloudAiTagger, LocalAiTagger, MultiAiTagger, preflight_provider
 from lumbago_app.services.ai_tagger_merge import _merge_analysis_into_track
 from lumbago_app.services.key_detection import detect_key
 from lumbago_app.services.metadata_enricher import AutoMetadataFiller, MetadataFillReport
 from lumbago_app.ui.widgets import apply_dialog_fade
 
 FIELDS = [
-    "title", "artist", "album", "albumartist", "year", "genre",
-    "tracknumber", "discnumber", "composer",
-    "bpm", "key", "rating", "mood", "energy",
-    "comment", "lyrics", "isrc", "publisher", "grouping", "copyright", "remixer",
+    "title", "bpm", "key", "artist", "album", "genre", "year", "composer",
+    "comment", "lyrics", "publisher",
+    "albumartist", "tracknumber", "discnumber",
+    "rating", "mood", "energy",
+    "isrc", "grouping", "copyright", "remixer",
 ]
 AI_FIELDS = {"genre", "bpm", "key", "mood", "energy"}
 AUDIO_DERIVED_FIELDS = {"bpm", "key", "energy", "mood"}
@@ -133,6 +135,22 @@ def _has_value(value: Any) -> bool:
         normalized = value.strip().lower()
         return bool(normalized) and normalized not in {"-", "â€”", "unknown", "n/a", "none", "null"}
     return True
+
+
+def _to_str(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _to_float(value: Any) -> float | None:
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _format_value(field_name: str, value: Any) -> str:
@@ -637,6 +655,14 @@ class AiTaggerDialog(QtWidgets.QDialog):
                 if not api_key:
                     QtWidgets.QMessageBox.warning(self, "Brak klucza API", f"Ustaw klucz API dla providera '{provider}' w ustawieniach.")
                     return
+                ok, detail = preflight_provider(provider, api_key, base_url, timeout=8)
+                if not ok:
+                    QtWidgets.QMessageBox.warning(
+                        self,
+                        "Błąd API",
+                        f"Provider '{provider}' nie przeszedł testu połączenia.\nSzczegóły: {detail}",
+                    )
+                    return
                 taggers.append(
                     CloudAiTagger(
                         provider,
@@ -671,13 +697,19 @@ class AiTaggerDialog(QtWidgets.QDialog):
         self._run_btn.setEnabled(False)
         self._stop_btn.setEnabled(True)
         self._status_lbl.setText("Uruchamianie analizy...")
+        audio_duration = int(self._audio_duration.value())
+        if len(self._states) >= 250 and audio_duration > 30:
+            audio_duration = 30
+            self._log_view.appendPlainText(
+                "  optymalizacja: skrócono czas analizy audio do 30s dla dużej paczki plików"
+            )
         self._worker = _PipelineWorker(
             self._states,
             tagger,
             auto_filler,
             method,
             self._action_audio.isChecked(),
-            audio_duration_s=int(self._audio_duration.value()),
+            audio_duration_s=audio_duration,
             max_workers=int(self._workers_spin.value()),
             accept_threshold=float(self._accept_threshold.value()),
         )
@@ -876,11 +908,14 @@ class AiTaggerDialog(QtWidgets.QDialog):
         if state.metadata_report is not None:
             self._log_view.appendPlainText(f"  źródła: {state.metadata_report.summary}")
         if state.ai_result is not None:
-            self._log_view.appendPlainText(
+            ai_line = (
                 f"  AI: bpm={state.ai_result.bpm} key={state.ai_result.key} "
                 f"genre={state.ai_result.genre} mood={state.ai_result.mood} energy={state.ai_result.energy} "
                 f"conf={float(state.ai_result.confidence or 0.0):.0%}"
             )
+            if state.ai_result.description:
+                ai_line += f" [{state.ai_result.description}]"
+            self._log_view.appendPlainText(ai_line)
 
     def _analyze(self) -> None:
         self._start_pipeline()
@@ -974,7 +1009,10 @@ class _PipelineWorker(QtCore.QRunnable):
                 )
                 self._persist_audio_features(working.path, state.audio_result)
             if self.tagger is not None:
-                state.ai_result = self.tagger.analyze(ai_input)
+                state.ai_result = self._load_cached_ai_result(path_obj)
+                if state.ai_result is None:
+                    state.ai_result = self.tagger.analyze(ai_input)
+                    self._save_cached_ai_result(path_obj, state.ai_result)
                 _merge_analysis_into_track(working, state.ai_result)
             state.proposed_track = working
             for field_name in _default_accept_fields(state):
@@ -1028,6 +1066,67 @@ class _PipelineWorker(QtCore.QRunnable):
         save_analysis_cache(path_obj, merged)
         return detected
 
+    def _load_cached_ai_result(self, path_obj: Path) -> AnalysisResult | None:
+        if self.tagger is None:
+            return None
+        payload = load_analysis_cache(path_obj) or {}
+        sig = self._audio_signature(path_obj)
+        if payload.get("signature") != sig:
+            return None
+        ai_results = payload.get("ai_results")
+        if not isinstance(ai_results, dict):
+            return None
+        cache_key = self._ai_cache_key()
+        cached = ai_results.get(cache_key)
+        if not isinstance(cached, dict):
+            return None
+        return AnalysisResult(
+            title=_to_str(cached.get("title")),
+            bpm=_to_float(cached.get("bpm")),
+            key=_to_str(cached.get("key")),
+            artist=_to_str(cached.get("artist")),
+            album=_to_str(cached.get("album")),
+            genre=_to_str(cached.get("genre")),
+            year=_to_str(cached.get("year")),
+            composer=_to_str(cached.get("composer")),
+            comment=_to_str(cached.get("comment")),
+            lyrics=_to_str(cached.get("lyrics")),
+            publisher=_to_str(cached.get("publisher")),
+            description=_to_str(cached.get("description")),
+            confidence=_to_float(cached.get("confidence")),
+        )
+
+    def _save_cached_ai_result(self, path_obj: Path, result: AnalysisResult) -> None:
+        payload = load_analysis_cache(path_obj) or {}
+        sig = self._audio_signature(path_obj)
+        ai_results = payload.get("ai_results")
+        if not isinstance(ai_results, dict):
+            ai_results = {}
+        ai_results[self._ai_cache_key()] = {
+            "title": result.title,
+            "bpm": result.bpm,
+            "key": result.key,
+            "artist": result.artist,
+            "album": result.album,
+            "genre": result.genre,
+            "year": result.year,
+            "composer": result.composer,
+            "comment": result.comment,
+            "lyrics": result.lyrics,
+            "publisher": result.publisher,
+            "description": result.description,
+            "confidence": result.confidence,
+        }
+        payload["signature"] = sig
+        payload["ai_results"] = ai_results
+        save_analysis_cache(path_obj, payload)
+
+    def _ai_cache_key(self) -> str:
+        cache_fn = getattr(self.tagger, "cache_key", None)
+        if callable(cache_fn):
+            return str(cache_fn())
+        return getattr(self.tagger, "provider_name", "ai")
+
     def _persist_audio_features(self, track_path: str, audio_result: Any) -> None:
         if audio_result is None:
             return
@@ -1051,6 +1150,42 @@ class _PipelineWorker(QtCore.QRunnable):
             upsert_audio_features(track_path, af)
         except Exception:
             return
+
+    def _load_cached_ai_result(self, path_obj: Path) -> AnalysisResult | None:
+        payload = load_analysis_cache(path_obj) or {}
+        sig = self._audio_signature(path_obj)
+        if payload.get("ai_signature") != sig:
+            return None
+        ai_data = payload.get("ai_result")
+        if not isinstance(ai_data, dict):
+            return None
+        fields = {
+            f: ai_data.get(f)
+            for f in (
+                "bpm", "key", "mood", "energy", "genre", "description", "confidence",
+                "title", "artist", "album", "albumartist", "year", "tracknumber",
+                "discnumber", "composer", "isrc", "publisher", "lyrics", "grouping", "copyright",
+            )
+        }
+        result = AnalysisResult(**fields)
+        if not (result.confidence or 0.0):
+            return None
+        return result
+
+    def _save_cached_ai_result(self, path_obj: Path, result: AnalysisResult) -> None:
+        if result is None or not (result.confidence or 0.0):
+            return
+        payload = load_analysis_cache(path_obj) or {}
+        payload["ai_signature"] = self._audio_signature(path_obj)
+        payload["ai_result"] = {
+            f: getattr(result, f, None)
+            for f in (
+                "bpm", "key", "mood", "energy", "genre", "description", "confidence",
+                "title", "artist", "album", "albumartist", "year", "tracknumber",
+                "discnumber", "composer", "isrc", "publisher", "lyrics", "grouping", "copyright",
+            )
+        }
+        save_analysis_cache(path_obj, payload)
 
     @staticmethod
     def _audio_signature(path_obj: Path) -> str:

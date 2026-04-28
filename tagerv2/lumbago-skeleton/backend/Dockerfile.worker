@@ -1,0 +1,25 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+
+# system deps for audio libs
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    ffmpeg \
+    libsndfile1 \
+    libchromaprint-tools \
+    libchromaprint-dev \
+    pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . /app
+WORKDIR /app/backend
+
+ENV CELERY_BROKER=${CELERY_BROKER:-redis://redis:6379/0}
+ENV CELERY_BACKEND=${CELERY_BACKEND:-redis://redis:6379/1}
+
+CMD [ "celery", "-A", "app.ai_service.celery", "worker", "--loglevel=info", "--concurrency=2" ]

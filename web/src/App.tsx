@@ -275,6 +275,20 @@ export function App() {
           </ul>
         </section>
       ) : null}
+      <div className="card">
+        {loading ? <div className="muted">Ladowanie biblioteki...</div> : null}
+        {error ? <div className="error">{error}</div> : null}
+        <h3>Library ({tracks.length})</h3>
+        <ul>
+          {tracks.map((t) => (
+            <li key={t.id}>
+              {t.title ?? "-"} | {t.bpm ?? "-"} | {t.key ?? "-"} | {t.artist ?? "-"} | {t.album ?? "-"} |{" "}
+              {t.genre ?? "-"} | {t.year ?? "-"} | {t.composer ?? "-"} | {t.comment ?? "-"} | {t.lyrics ?? "-"} |{" "}
+              {t.publisher ?? "-"}
+            </li>
+          ))}
+        </ul>
+      </div>
 
       <AudioPlayer src="/sample.mp3" />
 
