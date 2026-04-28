@@ -1,34 +1,23 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
-from dataclasses import dataclass
+import json
+import queue
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass, field
 from typing import Any
 
-from lumbago_app.core.models import AnalysisResult, Track
-from lumbago_app.services.analysis_engine import (
-    AI_FIELDS,
-    AnalysisEngine,
-    AnalysisEnvelope,
-    MergePolicy,
-    ProviderConfig,
-    build_prompt,
-    missing_fields,
-    normalize_payload,
-)
+import requests
 
-# Backward-compatible exports used by tests and UI.
-_ALL_AI_FIELDS = AI_FIELDS
+from lumbago_app.core.models import AnalysisResult, Track
+from lumbago_app.core.services import heuristic_analysis
 
 
 class LocalAiTagger:
-    """Legacy stub kept for import compatibility. Local provider is no longer supported."""
-
     provider_name = "local"
 
-    def analyze(self, _track: Track) -> AnalysisResult:
-        return AnalysisResult(
-            description="Local AI provider has been removed in vNext. Configure cloud providers.",
-            confidence=0.0,
-        )
+    def analyze(self, track: Track) -> AnalysisResult:
+        return heuristic_analysis(track)
 
     def cache_key(self) -> str:
         return "local"
@@ -47,12 +36,10 @@ class CloudAiTagger:
         self.provider = provider
         self.provider_name = provider or "cloud"
         self.api_key = api_key
-        self.base_url = base_url or _default_base_url(provider or "")
-        self.model = model or _default_model(provider or "")
+        self.base_url = base_url
+        self.model = model
         self.timeout = timeout
         self.retries = max(0, retries)
-        self._engine = AnalysisEngine()
-        self._last_envelope: AnalysisEnvelope | None = None
         self._resolved_base_url, self._resolved_model = _resolve_runtime_config(
             self.provider,
             self.base_url,
@@ -62,21 +49,60 @@ class CloudAiTagger:
     def analyze(self, track: Track) -> AnalysisResult:
         if not self.provider or not self.api_key:
             return AnalysisResult(description="Cloud AI not configured", confidence=0.0)
-        if not self.base_url or not self.model:
+        base_url, model = self._resolved_base_url, self._resolved_model
+        if not base_url or not model:
             return AnalysisResult(description="Cloud AI missing base URL or model", confidence=0.0)
-        config = ProviderConfig(
-            provider=self.provider,
-            api_key=self.api_key,
-            base_url=self.base_url,
-            model=self.model,
-            timeout=self.timeout,
-            retries=self.retries,
-            priority=10,
-            enabled=True,
-        )
-        envelope = self._engine.analyze_track(track, [config], MergePolicy(mode="aggressive"))
-        self._last_envelope = envelope
-        return envelope.merged_result
+
+        missing = _missing_fields(track)
+        if not missing:
+            return AnalysisResult(description="No missing fields", confidence=1.0)
+        prompt = _build_prompt(track, missing)
+        last_exc: Exception | None = None
+        for attempt in range(self.retries + 1):
+            try:
+                if self.provider == "gemini":
+                    text = _call_gemini_generate_content(base_url, self.api_key, model, prompt, self.timeout)
+                else:
+                    text = _call_openai_compatible_chat(
+                        base_url, self.api_key, model, prompt, self.timeout
+                    )
+                payload = _safe_json(text)
+                if not isinstance(payload, dict):
+                    return AnalysisResult(description="Cloud AI returned non-JSON response", confidence=0.0)
+                cleaned = _normalize_payload(payload)
+                confidence = _to_float(cleaned.get("confidence"))
+                if confidence is None:
+                    confidence = _infer_confidence(cleaned)
+                return AnalysisResult(
+                    bpm=_to_float(cleaned.get("bpm")),
+                    key=_to_str(cleaned.get("key")),
+                    mood=_to_str(cleaned.get("mood")),
+                    energy=_to_float(cleaned.get("energy")),
+                    genre=_to_str(cleaned.get("genre")),
+                    description=_to_str(cleaned.get("description")),
+                    confidence=confidence,
+                    title=_to_str(cleaned.get("title")),
+                    artist=_to_str(cleaned.get("artist")),
+                    album=_to_str(cleaned.get("album")),
+                    albumartist=_to_str(cleaned.get("albumartist")),
+                    year=_to_str(cleaned.get("year")),
+                    tracknumber=_to_str(cleaned.get("tracknumber")),
+                    discnumber=_to_str(cleaned.get("discnumber")),
+                    composer=_to_str(cleaned.get("composer")),
+                    isrc=_to_str(cleaned.get("isrc")),
+                    publisher=_to_str(cleaned.get("publisher")),
+                    lyrics=_to_str(cleaned.get("lyrics")),
+                    grouping=_to_str(cleaned.get("grouping")),
+                    copyright=_to_str(cleaned.get("copyright")),
+                    remixer=_to_str(cleaned.get("remixer")),
+                    comment=_to_str(cleaned.get("comment")),
+                )
+            except Exception as exc:
+                last_exc = exc
+                if attempt >= self.retries or not _is_retryable_exception(exc):
+                    break
+                time.sleep(0.3 * (attempt + 1))
+        return AnalysisResult(description=f"Cloud AI error: {last_exc}", confidence=0.0)
 
     def cache_key(self) -> str:
         base_url, model = self._resolved_base_url, self._resolved_model
@@ -84,38 +110,34 @@ class CloudAiTagger:
 
 
 class MultiAiTagger:
-    """Runs configured cloud providers and merges results via aggressive merge policy."""
+    """Runs multiple AI providers in parallel and merges best field-level values."""
 
     def __init__(self, taggers: list[Any], max_workers: int = 3):
-        # Keep the old constructor shape, but internal engine does the merge.
         self.taggers = [tagger for tagger in taggers if tagger is not None]
         self.max_workers = max(1, int(max_workers))
-        self._engine = AnalysisEngine()
-        self._last_envelope: AnalysisEnvelope | None = None
 
     def analyze(self, track: Track) -> AnalysisResult:
-        provider_configs: list[ProviderConfig] = []
-        for idx, tagger in enumerate(self.taggers):
-            if isinstance(tagger, CloudAiTagger):
-                if not tagger.provider or not tagger.api_key:
-                    continue
-                provider_configs.append(
-                    ProviderConfig(
-                        provider=tagger.provider,
-                        api_key=tagger.api_key,
-                        base_url=tagger.base_url or _default_base_url(tagger.provider),
-                        model=tagger.model or _default_model(tagger.provider),
-                        timeout=tagger.timeout,
-                        retries=tagger.retries,
-                        priority=idx,
-                        enabled=True,
-                    )
-                )
-        if not provider_configs:
-            return AnalysisResult(description="No cloud providers configured", confidence=0.0)
-        envelope = self._engine.analyze_track(track, provider_configs, MergePolicy(mode="aggressive"))
-        self._last_envelope = envelope
-        return envelope.merged_result
+        if not self.taggers:
+            return AnalysisResult(description="No AI providers selected", confidence=0.0)
+        if len(self.taggers) == 1:
+            return self.taggers[0].analyze(track)
+
+        results: list[tuple[str, AnalysisResult]] = []
+        with ThreadPoolExecutor(max_workers=min(self.max_workers, len(self.taggers))) as pool:
+            futures = {
+                pool.submit(tagger.analyze, track): getattr(tagger, "provider_name", tagger.__class__.__name__)
+                for tagger in self.taggers
+            }
+            for future in as_completed(futures):
+                provider_name = futures[future]
+                try:
+                    result = future.result()
+                except Exception as exc:
+                    result = AnalysisResult(description=f"{provider_name}: {exc}", confidence=0.0)
+                results.append((provider_name, result))
+
+        merged = _merge_results(results)
+        return merged
 
     def cache_key(self) -> str:
         keys: list[str] = []
@@ -126,10 +148,6 @@ class MultiAiTagger:
             else:
                 keys.append(getattr(tagger, "provider_name", tagger.__class__.__name__))
         return "multi:" + "|".join(sorted(keys))
-
-
-def _missing_fields(track: Track) -> list[str]:
-    return missing_fields(track)
 
 
 _FLOAT_AI_FIELDS = {"bpm", "energy"}
@@ -202,7 +220,7 @@ def _has_nonempty_value(value: Any) -> bool:
     return True
 
 
-_MISSING_SENTINEL = {"", "-", "â€”", "unknown", "n/a", "none", "null"}
+_MISSING_SENTINEL = {"", "-", "—", "unknown", "n/a", "none", "null"}
 
 _ALL_AI_FIELDS: list[str] = [
     "title",
@@ -266,11 +284,182 @@ _FIELD_LABELS: dict[str, str] = {
 
 
 def _build_prompt(track: Track, missing: list[str]) -> str:
-    return build_prompt(track, missing)
+    known_lines = []
+    for field in _ALL_AI_FIELDS:
+        if field in missing:
+            continue
+        value = getattr(track, field, None)
+        if value is None:
+            continue
+        label = _FIELD_LABELS.get(field, field)
+        known_lines.append(f"{label}: {value}")
+
+    known_section = "\n".join(known_lines) if known_lines else "(brak danych)"
+    missing_list = ", ".join(missing)
+    return (
+        "Jestes ekspertem metadanych muzycznych. Na podstawie ponizszych danych uzupelnij brakujace pola.\n"
+        "Zwroc TYLKO poprawny JSON z dokladnie tymi polami: "
+        + missing_list
+        + ".\n"
+        "Jesli danego pola nie mozna ustalic, uzyj null. Nie dodawaj zadnych komentarzy poza JSON.\n\n"
+        "Znane dane utworu:\n"
+        + known_section
+    )
+
+
+def _call_openai_responses(
+    base_url: str, api_key: str, model: str, prompt: str, timeout: int
+) -> str:
+    url = f"{base_url.rstrip('/')}/responses"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": model,
+        "input": [
+            {
+                "role": "user",
+                "content": prompt,
+            }
+        ],
+        "temperature": 0.2,
+    }
+    resp = requests.post(url, headers=headers, json=payload, timeout=timeout)
+    resp.raise_for_status()
+    data = resp.json()
+    return _extract_text_from_responses(data)
+
+
+def _call_openai_compatible_chat(
+    base_url: str, api_key: str, model: str, prompt: str, timeout: int
+) -> str:
+    url = f"{base_url.rstrip('/')}/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": "Zwracaj tylko JSON."},
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": 0.2,
+    }
+    resp = requests.post(url, headers=headers, json=payload, timeout=timeout)
+    resp.raise_for_status()
+    data = resp.json()
+    return _extract_text_from_chat_completions(data)
+
+
+def _call_gemini_generate_content(
+    base_url: str, api_key: str, model: str, prompt: str, timeout: int
+) -> str:
+    url = f"{base_url.rstrip('/')}/models/{model}:generateContent"
+    headers = {
+        "x-goog-api-key": api_key,
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "contents": [
+            {
+                "parts": [{"text": prompt}],
+            }
+        ]
+    }
+    resp = requests.post(url, headers=headers, json=payload, timeout=timeout)
+    resp.raise_for_status()
+    data = resp.json()
+    return _extract_text_from_gemini(data)
+
+
+def _extract_text_from_responses(data: dict[str, Any]) -> str:
+    output = data.get("output", [])
+    if not isinstance(output, list):
+        return ""
+    for item in output:
+        if item.get("type") == "message":
+            content = item.get("content", [])
+            for part in content:
+                if part.get("type") in {"output_text", "text"}:
+                    return part.get("text", "")
+    return ""
+
+
+def _extract_text_from_chat_completions(data: dict[str, Any]) -> str:
+    choices = data.get("choices", [])
+    if not choices:
+        return ""
+    message = choices[0].get("message", {})
+    return message.get("content", "") or ""
+
+
+def _extract_text_from_gemini(data: dict[str, Any]) -> str:
+    candidates = data.get("candidates", [])
+    if not candidates:
+        return ""
+    content = candidates[0].get("content", {})
+    parts = content.get("parts", [])
+    if not parts:
+        return ""
+    text = parts[0].get("text", "")
+    return text or ""
+
+
+def _safe_json(text: str) -> Any:
+    if not text:
+        return None
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        start = text.find("{")
+        end = text.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            return None
+        try:
+            return json.loads(text[start : end + 1])
+        except json.JSONDecodeError:
+            return None
+
+
+def _to_float(value: Any) -> float | None:
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _to_str(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _infer_confidence(payload: dict[str, Any]) -> float | None:
+    populated = 0
+    for field_name in _ALL_AI_FIELDS:
+        value = payload.get(field_name)
+        if value is None:
+            continue
+        if isinstance(value, str) and not value.strip():
+            continue
+        populated += 1
+    if populated == 0:
+        return None
+    if populated >= 6:
+        return 0.85
+    if populated >= 3:
+        return 0.75
+    return 0.65
 
 
 def _normalize_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    return normalize_payload(payload)
+    allowed = set(_ALL_AI_FIELDS) | {"description", "confidence"}
+    return {key: value for key, value in payload.items() if key in allowed}
 
 
 def _resolve_runtime_config(
@@ -333,29 +522,22 @@ def _is_retryable_exception(exc: Exception) -> bool:
     return False
 
 
+# ---------------------------------------------------------------------------
+# BatchAiQueueWorker
+# ---------------------------------------------------------------------------
 
-def _default_base_url(provider: str) -> str:
-    if provider == "gemini":
-        return "https://generativelanguage.googleapis.com/v1beta"
-    if provider == "openai":
-        return "https://api.openai.com/v1"
-    if provider == "grok":
-        return "https://api.x.ai/v1"
-    if provider == "deepseek":
-        return "https://api.deepseek.com/v1"
-    return "https://api.openai.com/v1"
+try:
+    from PyQt6 import QtCore
+
+    _QT_AVAILABLE = True
+except ImportError:
+    _QT_AVAILABLE = False
 
 
-def _default_model(provider: str) -> str:
-    if provider == "gemini":
-        return "gemini-2.5-flash"
-    if provider == "openai":
-        return "gpt-4.1-mini"
-    if provider == "grok":
-        return "grok-2-latest"
-    if provider == "deepseek":
-        return "deepseek-chat"
-    return "gpt-4.1-mini"
+@dataclass(order=True)
+class _QueueItem:
+    priority: int
+    track_path: str = field(compare=False)
 
 
 @dataclass
@@ -371,7 +553,7 @@ if _QT_AVAILABLE:
     class BatchAiQueueWorker(QtCore.QObject):
         """Queue-based AI tagger that processes tracks in priority order.
 
-        Confidence thresholds: Cloud AI â†’ 0.85, Local AI â†’ 0.60.
+        Confidence thresholds: Cloud AI → 0.85, Local AI → 0.60.
         """
 
         CONFIDENCE_CLOUD = 0.85
