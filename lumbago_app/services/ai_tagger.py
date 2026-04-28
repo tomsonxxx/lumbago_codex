@@ -226,14 +226,23 @@ _ALL_AI_FIELDS: list[str] = [
     "title",
     "bpm",
     "key",
+    "mood",
+    "energy",
     "artist",
     "album",
+    "albumartist",
     "genre",
     "year",
+    "tracknumber",
+    "discnumber",
     "composer",
-    "comment",
-    "lyrics",
+    "isrc",
     "publisher",
+    "lyrics",
+    "grouping",
+    "copyright",
+    "remixer",
+    "comment",
 ]
 
 
@@ -254,14 +263,23 @@ _FIELD_LABELS: dict[str, str] = {
     "title": "Tytul",
     "bpm": "BPM",
     "key": "Tonacja",
+    "mood": "Nastroj",
+    "energy": "Energia",
     "artist": "Artysta",
     "album": "Album",
+    "albumartist": "Artysta albumu",
     "genre": "Gatunek",
     "year": "Rok",
+    "tracknumber": "Numer utworu",
+    "discnumber": "Numer dysku",
     "composer": "Kompozytor",
-    "comment": "Komentarz",
-    "lyrics": "Tekst",
+    "isrc": "ISRC",
     "publisher": "Wydawca",
+    "lyrics": "Tekst",
+    "grouping": "Grupowanie",
+    "copyright": "Prawa autorskie",
+    "remixer": "Remikser",
+    "comment": "Komentarz",
 }
 
 
@@ -330,11 +348,7 @@ def _call_openai_compatible_chat(
         "temperature": 0.2,
     }
     resp = requests.post(url, headers=headers, json=payload, timeout=timeout)
-    if not resp.ok:
-        raise requests.HTTPError(
-            f"{resp.status_code} {resp.reason} — {resp.text[:300]}",
-            response=resp,
-        )
+    resp.raise_for_status()
     data = resp.json()
     return _extract_text_from_chat_completions(data)
 
