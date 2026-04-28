@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { AudioFile, CuePoint } from "../types";
+import { AudioFile } from "../types";
 import AlbumCover from "./AlbumCover";
 
 interface PlayerDockProps {
@@ -7,16 +7,6 @@ interface PlayerDockProps {
   onUpdateFile?: (id: string, updates: Partial<AudioFile>) => void;
 }
 
-const CUE_COLORS = [
-  "#f43f5e", // Red (1)
-  "#f97316", // Orange (2)
-  "#eab308", // Yellow (3)
-  "#22c55e", // Green (4)
-  "#06b6d4", // Cyan (5)
-  "#3b82f6", // Blue (6)
-  "#8b5cf6", // Violet (7)
-  "#d946ef", // Pink (8)
-];
 
 const PlayerDock: React.FC<PlayerDockProps> = ({
   activeFile,
