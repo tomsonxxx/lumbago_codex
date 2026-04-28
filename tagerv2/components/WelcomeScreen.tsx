@@ -7,23 +7,6 @@ interface WelcomeScreenProps {
   onDirectoryConnect: (handle: any) => void;
 }
 
-const Feature: React.FC<{
-  icon: React.ReactNode;
-  title: string;
-  description: string;
-}> = ({ icon, title, description }) => (
-  <div className="flex flex-col items-center text-center">
-    <div className="flex items-center justify-center w-12 h-12 mb-3 rounded-none bg-[var(--accent-secondary)] dark:bg-[var(--bg-panel)] text-[var(--accent-primary)] dark:text-[var(--accent-primary)]">
-      {icon}
-    </div>
-    <h3 className="text-md font-semibold text-[var(--text-secondary)] dark:text-[var(--text-secondary)]">
-      {title}
-    </h3>
-    <p className="mt-1 text-sm text-[var(--text-secondary)] dark:text-[var(--text-secondary)]">
-      {description}
-    </p>
-  </div>
-);
 
 const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
   children,

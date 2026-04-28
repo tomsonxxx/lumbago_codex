@@ -1,10 +1,6 @@
-import React, { useMemo } from "react";
+import React from "react";
 import { AudioFile } from "../types";
 import AlbumCover from "./AlbumCover";
-import { findMixSuggestions } from "../utils/djUtils";
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
-// @ts-expect-error type missing
-import _ from "lodash";
 
 interface RightPanelProps {
   file: AudioFile | null;
@@ -18,16 +14,6 @@ interface RightPanelProps {
   popularTags?: string[];
 }
 
-const COLORS = [
-  "#6366f1",
-  "#8b5cf6",
-  "#ec4899",
-  "#f43f5e",
-  "#f59e0b",
-  "#10b981",
-  "#3b82f6",
-  "#64748b",
-];
 
 const DetailRow: React.FC<{
   label: string;
@@ -43,31 +29,6 @@ const DetailRow: React.FC<{
   </div>
 );
 
-const EnergyBar: React.FC<{
-  label: string;
-  value: number | undefined;
-  colorClass: string;
-}> = ({ label, value, colorClass }) => {
-  const safeValue = Math.min(Math.max(value || 0, 0), 10);
-  return (
-    <div className="py-2">
-      <div className="flex justify-between mb-1 items-end">
-        <span className="text-[9px] font-mono font-bold text-[var(--text-muted)] tracking-widest">
-          {label}
-        </span>
-        <span className="text-[9px] font-mono font-bold text-[var(--text-primary)]">
-          {safeValue}/10
-        </span>
-      </div>
-      <div className="w-full bg-black border border-[#333] h-2">
-        <div
-          className={`h-full opacity-80 ${colorClass}`}
-          style={{ width: `${(safeValue / 10) * 100}%` }}
-        ></div>
-      </div>
-    </div>
-  );
-};
 
 const RightPanel: React.FC<RightPanelProps & { isFilterView?: boolean }> = ({
   file,
