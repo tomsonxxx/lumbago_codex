@@ -5,7 +5,7 @@ import queue
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace as _dc_replace
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +13,119 @@ import requests
 
 from lumbago_app.core.models import AnalysisResult, Track
 from lumbago_app.core.services import heuristic_analysis
+from lumbago_app.services.metadata_providers import (
+    RateLimitedMusicBrainzProvider,
+    _best_mbid_from_acoustid,
+    _parse_mb_recording,
+)
+
+
+_ISRC_RE = re.compile(r"^[A-Z]{2}[A-Z0-9]{3}\d{7}$")
+_YEAR_MIN = 1900
+_YEAR_MAX = int(time.strftime("%Y")) + 1
+
+
+def _validate_result(result: AnalysisResult) -> AnalysisResult:
+    """Sanitize AI-returned values — replace out-of-range / malformed fields with None."""
+    kw: dict[str, Any] = {}
+
+    if result.year is not None:
+        digits = re.sub(r"\D", "", str(result.year))[:4]
+        if digits and _YEAR_MIN <= int(digits) <= _YEAR_MAX:
+            kw["year"] = digits
+        else:
+            kw["year"] = None
+
+    if result.isrc is not None:
+        compact = result.isrc.replace("-", "").upper()
+        kw["isrc"] = compact if _ISRC_RE.match(compact) else None
+
+    if result.bpm is not None:
+        kw["bpm"] = result.bpm if 40.0 <= result.bpm <= 250.0 else None
+
+    if result.energy is not None:
+        kw["energy"] = max(0.0, min(1.0, result.energy))
+
+    if result.confidence is not None:
+        kw["confidence"] = max(0.0, min(1.0, result.confidence))
+
+    return _dc_replace(result, **kw) if kw else result
+
+
+class DatabaseTagger:
+    """Enriches tracks using AcoustID fingerprint → MusicBrainz lookup.
+    Falls back to MusicBrainz text search when no AcoustID key is configured."""
+
+    provider_name = "database"
+
+    def __init__(
+        self,
+        acoustid: Any | None = None,
+        mb: RateLimitedMusicBrainzProvider | None = None,
+    ):
+        self._acoustid = acoustid
+        self._mb = mb or RateLimitedMusicBrainzProvider()
+
+    def analyze(self, track: Track) -> AnalysisResult:
+        # --- path 1: AcoustID fingerprint → MB MBID lookup ---
+        mbid = self._resolve_mbid_via_acoustid(track)
+        if mbid:
+            recording = self._mb.get_recording(mbid)
+            if recording:
+                meta = _parse_mb_recording(recording)
+                if meta:
+                    return _mb_meta_to_result(meta, confidence=0.93,
+                                              source="AcoustID+MusicBrainz")
+
+        # --- path 2: MB text search → fetch full recording by MBID ---
+        query = " ".join(filter(None, [track.artist, track.title])).strip()
+        if not query:
+            query = Path(track.path).stem
+        recordings = self._mb.search(query, limit=1)
+        if recordings:
+            rec = recordings[0]
+            rec_id = rec.get("id")
+            if rec_id:
+                full = self._mb.get_recording(rec_id)
+                if full:
+                    meta = _parse_mb_recording(full)
+                    if meta:
+                        return _mb_meta_to_result(meta, confidence=0.78,
+                                                  source="MusicBrainz text search")
+
+        return AnalysisResult(description="Database: no match", confidence=0.0)
+
+    def _resolve_mbid_via_acoustid(self, track: Track) -> str | None:
+        if not self._acoustid:
+            return None
+        try:
+            from lumbago_app.services.recognizer import AcoustIdRecognizer  # local import avoids circular
+            if not isinstance(self._acoustid, AcoustIdRecognizer):
+                return None
+            payload = self._acoustid.recognize(Path(track.path))
+            if payload:
+                return _best_mbid_from_acoustid(payload)
+        except Exception:
+            pass
+        return None
+
+    def cache_key(self) -> str:
+        return "database"
+
+
+def _mb_meta_to_result(meta: dict, confidence: float, source: str) -> AnalysisResult:
+    return AnalysisResult(
+        title=meta.get("title"),
+        artist=meta.get("artist"),
+        albumartist=meta.get("albumartist"),
+        album=meta.get("album"),
+        year=meta.get("year"),
+        isrc=meta.get("isrc"),
+        publisher=meta.get("publisher"),
+        tracknumber=meta.get("tracknumber"),
+        confidence=confidence,
+        description=source,
+    )
 
 
 class LocalAiTagger:
@@ -58,8 +171,6 @@ class CloudAiTagger:
         missing = _missing_fields(track)
         noisy = _noisy_fields(track)
         fields_to_fill = list(dict.fromkeys(missing + [f for f in noisy if f not in missing]))
-        if not fields_to_fill:
-            return AnalysisResult(description="No missing fields", confidence=1.0)
         prompt = _build_prompt(track, fields_to_fill, noisy_fields=noisy)
         last_exc: Exception | None = None
         for attempt in range(self.retries + 1):
@@ -77,7 +188,7 @@ class CloudAiTagger:
                 confidence = _to_float(cleaned.get("confidence"))
                 if confidence is None:
                     confidence = _infer_confidence(cleaned)
-                return AnalysisResult(
+                raw = AnalysisResult(
                     bpm=_to_float(cleaned.get("bpm")),
                     key=_to_str(cleaned.get("key")),
                     mood=_to_str(cleaned.get("mood")),
@@ -101,6 +212,7 @@ class CloudAiTagger:
                     remixer=_to_str(cleaned.get("remixer")),
                     comment=_to_str(cleaned.get("comment")),
                 )
+                return _validate_result(raw)
             except Exception as exc:
                 last_exc = exc
                 if attempt >= self.retries or not _is_retryable_exception(exc):
@@ -272,16 +384,8 @@ def _noisy_fields(track: Track) -> list[str]:
 
 
 def _missing_fields(track: Track) -> list[str]:
-    def _is_missing(value: Any) -> bool:
-        if value is None:
-            return True
-        if isinstance(value, str):
-            return value.strip().lower() in _MISSING_SENTINEL
-        if isinstance(value, (int, float)):
-            return False
-        return False
-
-    return [f for f in _ALL_AI_FIELDS if _is_missing(getattr(track, f, None))]
+    # Always check all fields — AI verifies and corrects even existing values
+    return list(_ALL_AI_FIELDS)
 
 
 _FIELD_LABELS: dict[str, str] = {
@@ -316,6 +420,24 @@ def _build_prompt(
     noisy_set = set(noisy_fields or [])
     # Always include filename as context
     known_lines = [f"Nazwa pliku: {Path(track.path).stem}"]
+
+    # Parent folder — often contains year, genre, label info
+    folder = Path(track.path).parent.name
+    if folder and folder not in (".", ".."):
+        known_lines.append(f"Folder: {folder}")
+
+    # Audio technical context
+    if track.duration:
+        mins, secs = divmod(int(track.duration), 60)
+        known_lines.append(f"Czas trwania: {mins}:{secs:02d}")
+    if track.format or track.bitrate:
+        fmt_parts = []
+        if track.format:
+            fmt_parts.append(track.format.upper())
+        if track.bitrate:
+            fmt_parts.append(f"{track.bitrate}kbps")
+        known_lines.append(f"Format audio: {' '.join(fmt_parts)}")
+
     for fname in _ALL_AI_FIELDS:
         if fname in missing:
             continue
@@ -346,13 +468,15 @@ def _build_prompt(
             )
 
     return (
-        "Jestes ekspertem metadanych muzycznych. Na podstawie ponizszych danych uzupelnij brakujace pola"
-        " i oczyscic zaszumione.\n"
+        "Jestes ekspertem metadanych muzycznych. Na podstawie ponizszych danych ZWERYFIKUJ i POPRAW wszystkie pola"
+        " uzywajac swojej wiedzy o tym utworze (artysta, wydanie, rok premiery, itp.)."
+        " Jesli aktualna wartosc jest bledna lub niepelna — popraw ja na wiarygodna."
+        " Jesli aktualna wartosc jest poprawna — zachowaj ja.\n"
         "Zwroc TYLKO poprawny JSON z dokladnie tymi polami: "
         + fields_list
         + "."
         + clean_note
-        + "\nJesli danego pola nie mozna ustalic, uzyj null. Nie dodawaj zadnych komentarzy poza JSON.\n\n"
+        + "\nJesli danego pola absolutnie nie mozna ustalic, uzyj null. Nie dodawaj zadnych komentarzy poza JSON.\n\n"
         "Znane dane utworu:\n"
         + known_section
     )

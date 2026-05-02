@@ -18,7 +18,7 @@ from lumbago_app.core.models import AnalysisResult, Track
 from lumbago_app.core.services import enrich_track_with_analysis
 from lumbago_app.core.audio import write_tags
 from lumbago_app.data.repository import replace_track_tags, update_tracks, update_track_paths_bulk
-from lumbago_app.services.ai_tagger import CloudAiTagger, LocalAiTagger, MultiAiTagger, preflight_provider
+from lumbago_app.services.ai_tagger import CloudAiTagger, DatabaseTagger, LocalAiTagger, MultiAiTagger, preflight_provider
 from lumbago_app.services.ai_tagger_merge import _merge_analysis_into_track
 from lumbago_app.services.key_detection import detect_key
 from lumbago_app.services.metadata_enricher import AutoMetadataFiller, MetadataFillReport
@@ -655,6 +655,12 @@ class AiTaggerDialog(QtWidgets.QDialog):
                 QtWidgets.QMessageBox.warning(self, "Brak API", "Wybierz co najmniej jedno API w menu Opcje.")
                 return
             taggers: list[Any] = []
+            # DatabaseTagger always runs first — AcoustID if key set, else MB text search
+            _acoustid = None
+            if settings.acoustid_api_key:
+                from lumbago_app.services.recognizer import AcoustIdRecognizer
+                _acoustid = AcoustIdRecognizer(settings.acoustid_api_key)
+            taggers.append(DatabaseTagger(acoustid=_acoustid))
             for provider in selected_providers:
                 if provider == "local":
                     taggers.append(LocalAiTagger())
