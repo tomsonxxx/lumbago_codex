@@ -40,15 +40,24 @@ def build_rename_plan(tracks: Iterable[Track], pattern: str) -> list[RenamePlanI
 
 
 def apply_rename_plan(plan: Iterable[RenamePlanItem]) -> list[dict[str, str]]:
+    """Rename files according to plan.  Each item is attempted independently so
+    a locked or permission-denied file does not abort the whole batch.
+    Returns the list of successfully renamed items (old → new paths).
+    """
     history: list[dict[str, str]] = []
     for item in plan:
         if item.conflict:
             continue
         if not item.old_path.exists():
             continue
-        item.new_path.parent.mkdir(parents=True, exist_ok=True)
-        item.old_path.rename(item.new_path)
-        history.append({"old": str(item.old_path), "new": str(item.new_path)})
+        try:
+            item.new_path.parent.mkdir(parents=True, exist_ok=True)
+            item.old_path.rename(item.new_path)
+            history.append({"old": str(item.old_path), "new": str(item.new_path)})
+        except OSError:
+            # Skip files that are locked, permission-denied, etc.
+            # Already-renamed items remain in history and will be synced to DB.
+            pass
     _store_rename_history(history)
     return history
 

@@ -850,17 +850,25 @@ class AiTaggerDialog(QtWidgets.QDialog):
                     ]
                     conflicts = [item for item in plan if item.conflict]
                     if to_rename:
-                        rename_history = apply_rename_plan(plan)
-                        # Update DB paths for renamed files
-                        if rename_history:
-                            update_track_paths_bulk(rename_history)
-                        # Update in-memory track paths so UI stays consistent
-                        path_map = {entry["old"]: entry["new"] for entry in rename_history}
-                        for state in self._states:
-                            new_path = path_map.get(state.track.path)
-                            if new_path:
-                                state.track.path = new_path
-                        msg += f"\nZmieniono nazwy {len(rename_history)} plików."
+                        rename_history: list[dict[str, str]] = []
+                        rename_error: str | None = None
+                        try:
+                            rename_history = apply_rename_plan(plan)
+                        except Exception as exc:
+                            rename_error = str(exc)
+                        finally:
+                            # Always sync whatever was successfully renamed to DB
+                            # and update in-memory paths — even after a partial failure.
+                            if rename_history:
+                                update_track_paths_bulk(rename_history)
+                                path_map = {e["old"]: e["new"] for e in rename_history}
+                                for state in self._states:
+                                    new_path = path_map.get(state.track.path)
+                                    if new_path:
+                                        state.track.path = new_path
+                                msg += f"\nZmieniono nazwy {len(rename_history)} plików."
+                        if rename_error:
+                            msg += f"\nBłąd rename: {rename_error}"
                     if conflicts:
                         msg += f"\n{len(conflicts)} plików pominięto (konflikty nazw)."
 
