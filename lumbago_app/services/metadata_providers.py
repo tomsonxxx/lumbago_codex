@@ -4,15 +4,17 @@ import requests
 
 
 class MusicBrainzProvider:
-    def __init__(self, app_name: str | None):
+    def __init__(self, app_name: str | None = None):
         self.app_name = app_name or "LumbagoMusicAI"
+
+    def _headers(self) -> dict:
+        return {"User-Agent": f"{self.app_name}/1.0 (lumbago-music-ai)"}
 
     def search_recording(self, query: str) -> dict | None:
         url = "https://musicbrainz.org/ws/2/recording/"
         params = {"query": query, "fmt": "json"}
-        headers = {"User-Agent": self.app_name}
         try:
-            resp = requests.get(url, params=params, headers=headers, timeout=10)
+            resp = requests.get(url, params=params, headers=self._headers(), timeout=10)
             resp.raise_for_status()
             return resp.json()
         except Exception:
@@ -24,6 +26,17 @@ class MusicBrainzProvider:
             return []
         recordings = result.get("recordings", [])
         return recordings[:limit]
+
+    def get_recording(self, mbid: str) -> dict | None:
+        """Full recording lookup by MBID — returns ISRC, releases, labels."""
+        url = f"https://musicbrainz.org/ws/2/recording/{mbid}"
+        params = {"inc": "artist-credits+releases+isrcs+label-info", "fmt": "json"}
+        try:
+            resp = requests.get(url, params=params, headers=self._headers(), timeout=10)
+            resp.raise_for_status()
+            return resp.json()
+        except Exception:
+            return None
 
 
 class DiscogsProvider:
@@ -70,8 +83,14 @@ class RateLimiter:
 
 class RateLimitedMusicBrainzProvider(MusicBrainzProvider):
     _limiter = RateLimiter(calls_per_second=1.0)
+
     def search(self, query: str, limit: int = 5) -> list[dict]:
-        self._limiter.wait(); return super().search(query, limit)
+        self._limiter.wait()
+        return super().search(query, limit)
+
+    def get_recording(self, mbid: str) -> dict | None:
+        self._limiter.wait()
+        return super().get_recording(mbid)
 
 
 class RateLimitedDiscogsProvider(DiscogsProvider):
@@ -109,3 +128,93 @@ class FallbackMetadataChain:
     def get_stats_summary(self) -> str:
         s = self.stats
         return f"AcoustID:{s['acoustid_hits']} | MB:{s['mb_hits']} | Discogs:{s['discogs_hits']} | Puste:{s['misses']}"
+
+
+# ---------------------------------------------------------------------------
+# Parsing helpers
+# ---------------------------------------------------------------------------
+
+def _best_mbid_from_acoustid(payload: dict) -> str | None:
+    """Return the best MusicBrainz recording ID from an AcoustID lookup response."""
+    results = payload.get("results", [])
+    if not results:
+        return None
+    best = max(results, key=lambda r: float(r.get("score", 0)))
+    if float(best.get("score", 0)) < 0.75:
+        return None
+    recordings = best.get("recordings", [])
+    if not recordings:
+        return None
+    return recordings[0].get("id")
+
+
+def _parse_mb_recording(recording: dict) -> dict:
+    """Convert a MusicBrainz recording dict to a flat metadata dict."""
+    meta: dict = {}
+
+    if title := recording.get("title"):
+        meta["title"] = title
+
+    # Artist (join all credits)
+    credits = recording.get("artist-credit", [])
+    artist_str = _join_artist_credits(credits)
+    if artist_str:
+        meta["artist"] = artist_str
+
+    # ISRC (first one)
+    isrcs = recording.get("isrcs", [])
+    if isrcs:
+        meta["isrc"] = isrcs[0]
+
+    # From releases: pick earliest by date
+    releases = recording.get("releases", [])
+    if releases:
+        sorted_releases = sorted(releases, key=lambda r: r.get("date") or "9999")
+        earliest = sorted_releases[0]
+
+        if album := earliest.get("title"):
+            meta["album"] = album
+
+        date_str = earliest.get("date", "")
+        if date_str and len(date_str) >= 4:
+            year = date_str[:4]
+            if year.isdigit() and 1900 <= int(year) <= 2100:
+                meta["year"] = year
+
+        # Track number from first medium
+        for medium in earliest.get("media", []):
+            tracks = medium.get("tracks", [])
+            if tracks:
+                tn = tracks[0].get("number") or str(tracks[0].get("position", ""))
+                if tn:
+                    meta["tracknumber"] = str(tn)
+                break
+
+        # Publisher (label)
+        for li in earliest.get("label-info", []):
+            if isinstance(li, dict) and li.get("label"):
+                label_name = li["label"].get("name", "")
+                if label_name:
+                    meta["publisher"] = label_name
+                    break
+
+        # Album artist from release
+        release_credits = earliest.get("artist-credit", [])
+        albumartist_str = _join_artist_credits(release_credits)
+        if albumartist_str:
+            meta["albumartist"] = albumartist_str
+
+    return meta
+
+
+def _join_artist_credits(credits: list) -> str:
+    parts: list[str] = []
+    for ac in credits:
+        if isinstance(ac, str):
+            parts.append(ac)
+        elif isinstance(ac, dict):
+            name = ac.get("name") or ac.get("artist", {}).get("name", "")
+            joinphrase = ac.get("joinphrase", "")
+            if name:
+                parts.append(name + joinphrase)
+    return "".join(parts).strip()

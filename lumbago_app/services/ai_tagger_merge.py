@@ -19,16 +19,16 @@ def _is_unknown(value: str | None) -> bool:
 _AI_ANALYSIS_TEXT_FIELDS = ("key", "genre", "mood")
 _AI_ANALYSIS_FLOAT_FIELDS = ("bpm", "energy")
 
-# Metadata fields: only fill if currently missing on the track
-_META_FILL_FIELDS = (
-    "title", "artist", "album", "albumartist", "year",
+# Always overwrite with AI-verified values
+_META_OVERWRITE_FIELDS = (
+    "title", "artist",
+    "album", "albumartist", "year",
     "tracknumber", "discnumber", "composer",
     "isrc", "publisher", "lyrics", "grouping", "copyright", "remixer", "comment",
 )
 
-
 def _merge_analysis_into_track(track: Track, result: AnalysisResult) -> Track:
-    """Merge AI analysis into a track while ignoring textual placeholders like 'Unknown'."""
+    """Merge AI analysis into a track, overwriting all fields with verified values."""
     for field in _AI_ANALYSIS_TEXT_FIELDS:
         incoming = getattr(result, field, None)
         if incoming is None:
@@ -44,15 +44,13 @@ def _merge_analysis_into_track(track: Track, result: AnalysisResult) -> Track:
         if incoming is not None:
             setattr(track, field, incoming)
 
-    for field in _META_FILL_FIELDS:
+    for field in _META_OVERWRITE_FIELDS:
         incoming = getattr(result, field, None)
         if incoming is None:
             continue
         if isinstance(incoming, str) and _is_unknown(incoming):
             continue
-        current = getattr(track, field, None)
-        if current is None or (isinstance(current, str) and _is_unknown(current)):
-            setattr(track, field, incoming)
+        setattr(track, field, incoming)
 
     return track
 

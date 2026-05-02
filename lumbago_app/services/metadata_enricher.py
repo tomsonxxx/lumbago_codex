@@ -213,7 +213,8 @@ def _apply_musicbrainz_metadata(track: Track, payload: dict[str, Any]) -> str | 
             for medium in media:
                 for mb_track in medium.get("tracks", medium.get("track-list", [])):
                     if mb_track.get("id") == payload.get("id") or mb_track.get("title") == payload.get("title"):
-                        track.tracknumber = track.tracknumber or mb_track.get("number")
+                        _number = mb_track.get("number")
+                        track.tracknumber = track.tracknumber or (str(_number) if _number is not None else None)
                         position = medium.get("position")
                         if position:
                             track.discnumber = track.discnumber or str(position)
@@ -405,7 +406,7 @@ def _pick_mood_from_tags(tags: list[dict[str, Any]]) -> str | None:
         "aggressive",
         "romantic",
     }
-    for item in sorted(tags, key=lambda entry: entry.get("count", 0), reverse=True):
+    for item in sorted(tags, key=lambda entry: int(entry.get("count") or 0), reverse=True):
         name = str(item.get("name", "")).strip().lower()
         if not name:
             continue

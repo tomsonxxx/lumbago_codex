@@ -17,9 +17,8 @@ from lumbago_app.core.analysis_cache import load_analysis_cache, save_analysis_c
 from lumbago_app.core.models import AnalysisResult, Track
 from lumbago_app.core.services import enrich_track_with_analysis
 from lumbago_app.core.audio import write_tags
-from lumbago_app.data.repository import replace_track_tags, update_tracks
-from lumbago_app.services.ai_tagger import CloudAiTagger, MultiAiTagger
-from lumbago_app.services.ai_tagger import CloudAiTagger, LocalAiTagger, MultiAiTagger, preflight_provider
+from lumbago_app.data.repository import replace_track_tags, update_tracks, update_track_paths_bulk
+from lumbago_app.services.ai_tagger import CloudAiTagger, DatabaseTagger, MultiAiTagger, preflight_provider
 from lumbago_app.services.ai_tagger_merge import _merge_analysis_into_track
 from lumbago_app.services.key_detection import detect_key
 from lumbago_app.services.metadata_enricher import AutoMetadataFiller, MetadataFillReport
@@ -562,9 +561,15 @@ class AiTaggerDialog(QtWidgets.QDialog):
         self._apply_btn.setObjectName("PrimaryBtn")
         self._apply_btn.setEnabled(False)
         self._apply_btn.clicked.connect(self._apply_accepted)
+        self._rename_check = QtWidgets.QCheckBox("Zmień nazwy plików")
+        self._rename_check.setToolTip(
+            "Po zapisaniu tagów zmień nazwy plików na format: Artysta - Tytuł"
+        )
+        self._rename_check.setChecked(True)
         layout.addWidget(self._run_btn)
         layout.addWidget(self._stop_btn)
         layout.addWidget(self._apply_btn)
+        layout.addWidget(self._rename_check)
         default_profile = "Szybki" if len(self._tracks) >= 300 else "Zbalansowany"
         self._apply_profile(default_profile)
         return toolbar
@@ -650,6 +655,12 @@ class AiTaggerDialog(QtWidgets.QDialog):
                 QtWidgets.QMessageBox.warning(self, "Brak API", "Wybierz co najmniej jedno API w menu Opcje.")
                 return
             taggers: list[Any] = []
+            # DatabaseTagger always runs first — AcoustID if key set, else MB text search
+            _acoustid = None
+            if settings.acoustid_api_key:
+                from lumbago_app.services.recognizer import AcoustIdRecognizer
+                _acoustid = AcoustIdRecognizer(settings.acoustid_api_key)
+            taggers.append(DatabaseTagger(acoustid=_acoustid))
             for provider in selected_providers:
                 api_key, base_url, model = _resolve_provider_config(provider, settings)
                 if not api_key:
@@ -821,11 +832,41 @@ class AiTaggerDialog(QtWidgets.QDialog):
                             future.result()
                         except Exception as exc:
                             write_errors.append(f"{Path(track_path).name}: {exc}")
-            msg = f"Zapisano zmiany dla {len(changed_tracks)} utworĂłw (baza + pliki audio)."
+            msg = f"Zapisano zmiany dla {len(changed_tracks)} utworów (baza + pliki audio)."
             if write_errors:
-                msg += f"\nBĹ‚Ä™dy zapisu tagĂłw: {len(write_errors)}"
+                msg += f"\nBłędy zapisu tagów: {len(write_errors)}"
                 for err in write_errors[:5]:
                     msg += f"\n  {err}"
+
+            # Rename files to "Artysta - Tytuł" if checkbox is checked
+            if self._rename_check.isChecked():
+                from lumbago_app.core.renamer import build_rename_plan, apply_rename_plan
+                renameable = [
+                    s.track for s in self._states
+                    if (s.track.artist or "").strip() and (s.track.title or "").strip()
+                ]
+                if renameable:
+                    plan = build_rename_plan(renameable, "{artist} - {title}")
+                    to_rename = [
+                        item for item in plan
+                        if not item.conflict and item.old_path != item.new_path
+                    ]
+                    conflicts = [item for item in plan if item.conflict]
+                    if to_rename:
+                        rename_history = apply_rename_plan(plan)
+                        # Update DB paths for renamed files
+                        if rename_history:
+                            update_track_paths_bulk(rename_history)
+                        # Update in-memory track paths so UI stays consistent
+                        path_map = {entry["old"]: entry["new"] for entry in rename_history}
+                        for state in self._states:
+                            new_path = path_map.get(state.track.path)
+                            if new_path:
+                                state.track.path = new_path
+                        msg += f"\nZmieniono nazwy {len(rename_history)} plików."
+                    if conflicts:
+                        msg += f"\n{len(conflicts)} plików pominięto (konflikty nazw)."
+
             self._status_lbl.setText(msg)
             self.accept()
         else:
@@ -908,14 +949,13 @@ class AiTaggerDialog(QtWidgets.QDialog):
         if state.metadata_report is not None:
             self._log_view.appendPlainText(f"  źródła: {state.metadata_report.summary}")
         if state.ai_result is not None:
-            ai_line = (
+            desc = state.ai_result.description or ""
+            self._log_view.appendPlainText(
                 f"  AI: bpm={state.ai_result.bpm} key={state.ai_result.key} "
                 f"genre={state.ai_result.genre} mood={state.ai_result.mood} energy={state.ai_result.energy} "
                 f"conf={float(state.ai_result.confidence or 0.0):.0%}"
+                + (f" | {desc}" if desc else "")
             )
-            if state.ai_result.description:
-                ai_line += f" [{state.ai_result.description}]"
-            self._log_view.appendPlainText(ai_line)
 
     def _analyze(self) -> None:
         self._start_pipeline()
@@ -1228,6 +1268,40 @@ class _PipelineWorker(QtCore.QRunnable):
         cached.waveform_blob = bytes.fromhex(waveform_hex) if isinstance(waveform_hex, str) and waveform_hex else b""
         return cached
 
+    def _ai_tagger_key(self) -> str | None:
+        fn = getattr(self.tagger, "cache_key", None)
+        return fn() if callable(fn) else None
+
+    def _load_cached_ai_result(self, path_obj: Path) -> AnalysisResult | None:
+        payload = load_analysis_cache(path_obj) or {}
+        ai_data = payload.get("ai_result")
+        if not isinstance(ai_data, dict):
+            return None
+        if payload.get("ai_signature") != self._audio_signature(path_obj):
+            return None
+        tagger_key = self._ai_tagger_key()
+        if tagger_key is not None and payload.get("ai_tagger_key") != tagger_key:
+            return None
+        try:
+            known = set(AnalysisResult.__dataclass_fields__)
+            return AnalysisResult(**{k: v for k, v in ai_data.items() if k in known})
+        except Exception:
+            return None
+
+    def _save_cached_ai_result(self, path_obj: Path, result: AnalysisResult) -> None:
+        if not result.confidence:
+            return
+        try:
+            payload = load_analysis_cache(path_obj) or {}
+            payload["ai_signature"] = self._audio_signature(path_obj)
+            tagger_key = self._ai_tagger_key()
+            if tagger_key is not None:
+                payload["ai_tagger_key"] = tagger_key
+            payload["ai_result"] = {f: getattr(result, f) for f in result.__dataclass_fields__}
+            save_analysis_cache(path_obj, payload)
+        except Exception:
+            pass
+
 
 def _vsep() -> QtWidgets.QFrame:
     separator = QtWidgets.QFrame()
@@ -1257,5 +1331,3 @@ def _is_valid_key(value: str) -> bool:
     if re.match(r"^(1[0-2]|[1-9])[AB]$", value, re.IGNORECASE):
         return True
     return bool(re.match(r"^[A-G](#|b)?m?$", value, re.IGNORECASE))
-
-

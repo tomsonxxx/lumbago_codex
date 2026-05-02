@@ -31,14 +31,14 @@ const EditTagsModal: React.FC<EditTagsModalProps> = ({
   const [tags, setTags] = useState<ID3Tags>({});
   const [manualQuery, setManualQuery] = useState("");
   const [isSearching, setIsSearching] = useState(false);
-  const [searchError, setSearchError] = useState<string | null>(null);
+  const [, setSearchError] = useState<string | null>(null);
 
   // Image Generation State
   const [showGenPanel, setShowGenPanel] = useState(false);
   const [genPrompt, setGenPrompt] = useState("");
   const [genSize, setGenSize] = useState<"1K" | "2K">("1K");
   const [isGenerating, setIsGenerating] = useState(false);
-  const [genError, setGenError] = useState<string | null>(null);
+  const [, setGenError] = useState<string | null>(null);
 
   useEffect(() => {
     if (isOpen && file) {
