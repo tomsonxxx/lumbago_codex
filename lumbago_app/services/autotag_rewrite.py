@@ -77,22 +77,21 @@ class UnifiedAutoTagger:
         return EnrichmentResult(candidates=candidates, best_match=(valid[0] if valid else None))
 
     def apply_best_match(self, track: Track, result: EnrichmentResult) -> bool:
+        raw_candidates = getattr(result, "candidates", []) or []
+        candidates = [candidate for candidate in raw_candidates if candidate.error is None and candidate.score > 0]
+        candidates.sort(key=lambda candidate: candidate.score, reverse=True)
         best = result.best_match
-        if best is None:
+        if best is None and not candidates:
             return False
         changed = False
 
-        mapping: dict[str, Any] = {
-            "title": best.title,
-            "artist": best.artist,
-            "album": best.album,
-            "year": best.year,
-            "genre": best.genre,
-            "mood": best.mood,
-            "key": best.key,
-            "bpm": best.bpm,
-            "energy": best.energy,
-        }
+        mapping: dict[str, Any] = {}
+        for field_name in ("title", "artist", "album", "year", "genre", "mood", "key", "bpm", "energy"):
+            incoming = _best_field_value(candidates, field_name)
+            if incoming is None and best is not None:
+                incoming = getattr(best, field_name, None)
+            mapping[field_name] = incoming
+
         for field_name, incoming in mapping.items():
             if incoming is None:
                 continue
@@ -135,7 +134,7 @@ class UnifiedAutoTagger:
         if not recordings:
             return None
 
-        best = recordings[0]
+        best = max(recordings[:5], key=lambda recording: _musicbrainz_recording_score(track, recording))
         rec_title = best.get("title")
         rec_artist = ", ".join(
             entry.get("name") or (entry.get("artist") or {}).get("name") or ""
@@ -154,6 +153,18 @@ class UnifiedAutoTagger:
             tags = detail.get("tags", [])
             if detail.get("genres"):
                 genre = detail["genres"][0]
+            elif tags:
+                genre = tags[0]
+            if not genre:
+                release_group_id = _musicbrainz_release_group_id(best)
+                if release_group_id:
+                    release_group_detail = self._musicbrainz_release_group_detail(release_group_id)
+                    rg_genres = release_group_detail.get("genres", [])
+                    rg_tags = release_group_detail.get("tags", [])
+                    if rg_genres:
+                        genre = rg_genres[0]
+                    elif rg_tags:
+                        genre = rg_tags[0]
 
         sim = _similarity_bonus(track, rec_title, rec_artist)
         return Candidate(
@@ -171,6 +182,26 @@ class UnifiedAutoTagger:
         try:
             response = requests.get(
                 f"{_MB_BASE}/recording/{mbid}",
+                params={"inc": "tags+genres", "fmt": "json"},
+                headers={"Accept": "application/json", "User-Agent": _USER_AGENT},
+                timeout=15,
+            )
+            response.raise_for_status()
+            payload = response.json()
+        except Exception:
+            return {"tags": [], "genres": []}
+
+        tags = sorted(payload.get("tags", []), key=lambda item: item.get("count", 0), reverse=True)
+        genres = sorted(payload.get("genres", []), key=lambda item: item.get("count", 0), reverse=True)
+        return {
+            "tags": [str(item.get("name")).strip() for item in tags[:8] if item.get("name")],
+            "genres": [str(item.get("name")).strip() for item in genres[:4] if item.get("name")],
+        }
+
+    def _musicbrainz_release_group_detail(self, release_group_id: str) -> dict[str, list[str]]:
+        try:
+            response = requests.get(
+                f"{_MB_BASE}/release-group/{release_group_id}",
                 params={"inc": "tags+genres", "fmt": "json"},
                 headers={"Accept": "application/json", "User-Agent": _USER_AGENT},
                 timeout=15,
@@ -207,7 +238,7 @@ class UnifiedAutoTagger:
         if not results:
             return None
 
-        best = results[0]
+        best = max(results[:5], key=lambda result: _discogs_result_score(track, result))
         title_field = str(best.get("title") or "").strip()
         artist_part = None
         title_part = None
@@ -325,3 +356,122 @@ def _similarity_bonus(track: Track, title: str | None, artist: str | None) -> in
     artist_score = _token_similarity(_normalize(track.artist), _normalize(artist))
     combo = (title_score * 0.65) + (artist_score * 0.35)
     return int(round(combo * 20))
+
+
+def _best_field_value(candidates: list[Candidate], field_name: str) -> Any:
+    for candidate in candidates:
+        value = getattr(candidate, field_name, None)
+        if _has_meaningful_candidate_value(field_name, value):
+            return value
+    return None
+
+
+def _has_meaningful_candidate_value(field_name: str, value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return False
+        lowered = text.lower()
+        if lowered in {"unknown", "n/a", "none", "null", "-"}:
+            return False
+        if field_name == "year":
+            return bool(re.match(r"^(19\d{2}|20\d{2}|2100)$", text) or re.match(r"^\d{4}$", text))
+        return True
+    return True
+
+
+def _musicbrainz_recording_score(track: Track, recording: dict[str, Any]) -> float:
+    title = recording.get("title")
+    artist = _musicbrainz_recording_artist(recording)
+    base = _token_similarity(_normalize(track.title), _normalize(title))
+    base = (base * 0.65) + (_token_similarity(_normalize(track.artist), _normalize(artist)) * 0.35)
+    bonus = 0.0
+    release = (recording.get("releases") or [{}])[0]
+    if release.get("date"):
+        bonus += 0.12
+    if release.get("title"):
+        bonus += 0.08
+    if recording.get("isrcs"):
+        bonus += 0.05
+    if _musicbrainz_recording_genre(recording):
+        bonus += 0.10
+    return base + bonus
+
+
+def _musicbrainz_recording_artist(recording: dict[str, Any]) -> str | None:
+    artists = recording.get("artist-credit", []) or recording.get("artists", [])
+    if not artists:
+        return None
+    names: list[str] = []
+    for entry in artists:
+        if isinstance(entry, dict):
+            names.append(entry.get("name") or (entry.get("artist") or {}).get("name") or "")
+    joined = ", ".join(part for part in names if part).strip(", ")
+    return joined or None
+
+
+def _musicbrainz_recording_genre(recording: dict[str, Any]) -> str | None:
+    detail = recording if recording.get("genres") or recording.get("tags") else None
+    if detail is None:
+        return None
+    genres = detail.get("genres", []) or []
+    if genres:
+        first = genres[0]
+        if isinstance(first, dict):
+            name = first.get("name")
+            if name:
+                return str(name).strip() or None
+        elif first:
+            return str(first).strip() or None
+    tags = detail.get("tags", []) or []
+    if tags:
+        first = tags[0]
+        if isinstance(first, dict):
+            name = first.get("name")
+            if name:
+                return str(name).strip() or None
+        elif first:
+            return str(first).strip() or None
+    return None
+
+
+def _musicbrainz_release_group_id(recording: dict[str, Any]) -> str | None:
+    releases = recording.get("releases", []) or []
+    if not releases:
+        return None
+    release = releases[0] if isinstance(releases[0], dict) else None
+    if not release:
+        return None
+    release_group = release.get("release-group", {})
+    if isinstance(release_group, dict):
+        rg_id = release_group.get("id")
+        if rg_id:
+            return str(rg_id)
+    return None
+
+
+def _discogs_result_score(track: Track, result: dict[str, Any]) -> float:
+    title_field = str(result.get("title") or "").strip()
+    artist_part = None
+    title_part = None
+    if " - " in title_field:
+        left, right = title_field.split(" - ", 1)
+        artist_part = left.strip() or None
+        title_part = right.strip() or None
+    elif title_field:
+        title_part = title_field
+
+    base = _token_similarity(_normalize(track.title), _normalize(title_part))
+    base = (base * 0.65) + (_token_similarity(_normalize(track.artist), _normalize(artist_part)) * 0.35)
+    bonus = 0.0
+    if result.get("year"):
+        bonus += 0.15
+    if result.get("genre"):
+        bonus += 0.10
+    if result.get("style"):
+        bonus += 0.05
+    if result.get("community") and (result.get("community") or {}).get("have"):
+        bonus += 0.05
+    return base + bonus

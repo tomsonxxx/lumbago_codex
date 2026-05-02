@@ -161,13 +161,13 @@ class MetadataEnricher:
             track, candidate.get("title"), _first_artist(candidate), policy=self.validation_policy
         ):
             return None
-        _apply_musicbrainz_metadata(track, candidate)
+        _apply_musicbrainz_metadata(track, candidate, policy=self.validation_policy)
         # Fetch detailed recording to fill remaining fields (composer, tracknumber, etc.)
         recording_id = candidate.get("id")
         if recording_id:
             detailed = self._fetch_musicbrainz_recording(recording_id)
             if detailed:
-                _apply_musicbrainz_metadata(track, detailed)
+                _apply_musicbrainz_metadata(track, detailed, policy=self.validation_policy)
         return track
 
     def _fetch_musicbrainz_recording(self, recording_id: str) -> dict[str, Any] | None:
@@ -188,8 +188,15 @@ class MetadataEnricher:
             return None
 
 
-def _apply_musicbrainz_metadata(track: Track, payload: dict[str, Any]) -> str | None:
-    _apply_preferred_remote_value(track, "title", payload.get("title"), source_confidence=0.93)
+def _apply_musicbrainz_metadata(
+    track: Track,
+    payload: dict[str, Any],
+    *,
+    policy: str = "balanced",
+) -> str | None:
+    _apply_preferred_remote_value(
+        track, "title", payload.get("title"), source_confidence=0.93, policy=policy
+    )
     artists = payload.get("artist-credit", [])
     if artists:
         names = [artist.get("name") for artist in artists if isinstance(artist, dict)]
@@ -199,11 +206,14 @@ def _apply_musicbrainz_metadata(track: Track, payload: dict[str, Any]) -> str | 
                 "artist",
                 ", ".join(names),
                 source_confidence=0.93,
+                policy=policy,
             )
     # ISRC
     isrcs = payload.get("isrcs", [])
     if isrcs and isinstance(isrcs, list):
-        _apply_preferred_remote_value(track, "isrc", isrcs[0], source_confidence=0.93)
+        _apply_preferred_remote_value(
+            track, "isrc", isrcs[0], source_confidence=0.93, policy=policy
+        )
     releases = payload.get("releases", [])
     release_id = None
     if releases:
@@ -215,6 +225,7 @@ def _apply_musicbrainz_metadata(track: Track, payload: dict[str, Any]) -> str | 
                 "album",
                 album_candidate,
                 source_confidence=0.93,
+                policy=policy,
             )
         release_id = release.get("id")
         release_date = release.get("date")
@@ -225,6 +236,7 @@ def _apply_musicbrainz_metadata(track: Track, payload: dict[str, Any]) -> str | 
                 "year",
                 str(release_year),
                 source_confidence=0.93,
+                policy=policy,
             )
         # Track number from release media
         media = release.get("media", [])
@@ -239,6 +251,7 @@ def _apply_musicbrainz_metadata(track: Track, payload: dict[str, Any]) -> str | 
                                 "tracknumber",
                                 str(_number),
                                 source_confidence=0.93,
+                                policy=policy,
                             )
                         position = medium.get("position")
                         if position:
@@ -247,6 +260,7 @@ def _apply_musicbrainz_metadata(track: Track, payload: dict[str, Any]) -> str | 
                                 "discnumber",
                                 str(position),
                                 source_confidence=0.93,
+                                policy=policy,
                             )
                         break
         # Album artist from release artist-credit
@@ -259,6 +273,7 @@ def _apply_musicbrainz_metadata(track: Track, payload: dict[str, Any]) -> str | 
                     "albumartist",
                     ", ".join(ra_names),
                     source_confidence=0.93,
+                    policy=policy,
                 )
         label_info = release.get("label-info", [])
         if label_info and isinstance(label_info, list):
@@ -274,12 +289,14 @@ def _apply_musicbrainz_metadata(track: Track, payload: dict[str, Any]) -> str | 
                     "publisher",
                     label_name,
                     source_confidence=0.93,
+                    policy=policy,
                 )
                 _apply_preferred_remote_value(
                     track,
                     "copyright",
                     label_name,
                     source_confidence=0.93,
+                    policy=policy,
                 )
     tags = payload.get("tags", [])
     if tags:
@@ -291,6 +308,7 @@ def _apply_musicbrainz_metadata(track: Track, payload: dict[str, Any]) -> str | 
                 "genre",
                 tag_name,
                 source_confidence=0.93,
+                policy=policy,
             )
         mood_candidate = _pick_mood_from_tags(tags)
         if mood_candidate:
@@ -299,6 +317,7 @@ def _apply_musicbrainz_metadata(track: Track, payload: dict[str, Any]) -> str | 
                 "mood",
                 mood_candidate,
                 source_confidence=0.93,
+                policy=policy,
             )
     relations = payload.get("relations", [])
     if relations and isinstance(relations, list):
@@ -314,6 +333,7 @@ def _apply_musicbrainz_metadata(track: Track, payload: dict[str, Any]) -> str | 
                     "composer",
                     artist_name,
                     source_confidence=0.93,
+                    policy=policy,
                 )
             if rel_type in {"mix", "remixer"} and artist_name:
                 _apply_preferred_remote_value(
@@ -321,6 +341,7 @@ def _apply_musicbrainz_metadata(track: Track, payload: dict[str, Any]) -> str | 
                     "remixer",
                     artist_name,
                     source_confidence=0.93,
+                    policy=policy,
                 )
     return release_id
 
@@ -537,6 +558,14 @@ def _validate_candidate(
         return score >= STRICT_SCORE_MIN
     if policy == "lenient":
         return score >= LENIENT_SCORE_MIN
+    if policy == "aggressive":
+        if score >= 0.15:
+            return True
+        if title_a and title_b and title_a == title_b:
+            return True
+        if artist_a and artist_b and artist_a == artist_b:
+            return True
+        return False
     return score >= BALANCED_SCORE_MIN
 
 
@@ -776,7 +805,7 @@ class AutoMetadataFiller:
         before = deepcopy(track)
         best_candidate, detail = _build_portal_consensus(track, hits)
         if best_candidate is not None:
-            _apply_portal_candidate(track, best_candidate)
+            _apply_portal_candidate(track, best_candidate, policy=self.validation_policy)
         fields = _collect_changed_fields(before, track)
         report.sources.append(
             SourceProbe(
@@ -1204,22 +1233,37 @@ def _normalize_vote_text(value: str | None) -> str:
     return text
 
 
-def _apply_portal_candidate(track: Track, candidate: dict[str, str]) -> None:
+def _apply_portal_candidate(
+    track: Track,
+    candidate: dict[str, str],
+    *,
+    policy: str = "balanced",
+) -> None:
     candidate_title = candidate.get("title")
     if candidate_title:
-        _apply_preferred_remote_value(track, "title", candidate_title, source_confidence=0.82)
+        _apply_preferred_remote_value(
+            track, "title", candidate_title, source_confidence=0.82, policy=policy
+        )
 
     if candidate.get("artist"):
-        _apply_preferred_remote_value(track, "artist", candidate["artist"], source_confidence=0.82)
         _apply_preferred_remote_value(
-            track, "albumartist", candidate["artist"], source_confidence=0.82
+            track, "artist", candidate["artist"], source_confidence=0.82, policy=policy
+        )
+        _apply_preferred_remote_value(
+            track, "albumartist", candidate["artist"], source_confidence=0.82, policy=policy
         )
     if candidate.get("album"):
-        _apply_preferred_remote_value(track, "album", candidate["album"], source_confidence=0.82)
+        _apply_preferred_remote_value(
+            track, "album", candidate["album"], source_confidence=0.82, policy=policy
+        )
     if candidate.get("genre"):
-        _apply_preferred_remote_value(track, "genre", candidate["genre"], source_confidence=0.82)
+        _apply_preferred_remote_value(
+            track, "genre", candidate["genre"], source_confidence=0.82, policy=policy
+        )
     if candidate.get("mood"):
-        _apply_preferred_remote_value(track, "mood", candidate["mood"], source_confidence=0.82)
+        _apply_preferred_remote_value(
+            track, "mood", candidate["mood"], source_confidence=0.82, policy=policy
+        )
 
     remixer = _extract_remixer_name(candidate_title) or _extract_remixer_name(track.title)
     if remixer and not _has_value(track.remixer):
@@ -1363,6 +1407,8 @@ def _should_replace_local_value(
     current_value: Any,
     incoming_value: str,
     source_confidence: float,
+    *,
+    policy: str = "balanced",
 ) -> bool:
     if not _has_value(current_value):
         return True
@@ -1374,6 +1420,25 @@ def _should_replace_local_value(
         return False
     if str(current_text).strip().lower() in {"-", "—", "unknown", "n/a", "none", "null", "brak"}:
         return True
+    if policy == "aggressive":
+        if field_name in {
+            "title",
+            "artist",
+            "album",
+            "albumartist",
+            "year",
+            "genre",
+            "mood",
+            "composer",
+            "publisher",
+            "copyright",
+            "remixer",
+            "tracknumber",
+            "discnumber",
+            "isrc",
+        }:
+            return source_confidence >= 0.75
+        return source_confidence >= 0.9
     if field_name in {"title", "artist", "album", "albumartist"}:
         if _looks_like_remote_noise(current_text):
             return True
@@ -1397,12 +1462,19 @@ def _apply_preferred_remote_value(
     value: Any,
     *,
     source_confidence: float,
+    policy: str = "balanced",
 ) -> bool:
     cleaned = _clean_remote_value(field_name, value)
     if cleaned is None:
         return False
     current = getattr(track, field_name, None)
-    if not _should_replace_local_value(field_name, current, cleaned, source_confidence):
+    if not _should_replace_local_value(
+        field_name,
+        current,
+        cleaned,
+        source_confidence,
+        policy=policy,
+    ):
         return False
     setattr(track, field_name, cleaned)
     return True

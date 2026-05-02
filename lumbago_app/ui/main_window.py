@@ -20,7 +20,7 @@ from lumbago_app.core.audio import (
 import shutil
 from lumbago_app.core.analysis_cache import save_analysis_cache
 from lumbago_app.core.backup import perform_backup
-from lumbago_app.core.config import cache_dir, load_settings
+from lumbago_app.core.config import cache_dir, load_settings, save_settings
 from lumbago_app.core.models import Track
 from lumbago_app.core.services import enrich_track_with_analysis, heuristic_analysis
 from lumbago_app.core.waveform import generate_waveform
@@ -1919,6 +1919,20 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _load_settings(self):
         self.settings = load_settings()
+        if hasattr(self, "overwrite_existing_tags"):
+            self.overwrite_existing_tags.blockSignals(True)
+            try:
+                self.overwrite_existing_tags.setChecked(
+                    (self.settings.validation_policy or "aggressive") == "aggressive"
+                )
+            finally:
+                self.overwrite_existing_tags.blockSignals(False)
+        self._update_mode_pill()
+
+    def _set_overwrite_existing_tags(self, checked: bool) -> None:
+        policy = "aggressive" if checked else "balanced"
+        save_settings({"VALIDATION_POLICY": policy})
+        self.settings = load_settings()
         self._update_mode_pill()
 
     def _update_mode_pill(self):
@@ -2104,6 +2118,13 @@ class MainWindow(QtWidgets.QMainWindow):
         self._update_mode_pill()
         row.addWidget(self.mode_pill)
         row.addStretch(1)
+
+        self.overwrite_existing_tags = QtWidgets.QCheckBox("Nadpisuj tagi")
+        self.overwrite_existing_tags.setToolTip(
+            "Włącza agresywne nadpisywanie lokalnych tagów lepszymi danymi z internetu."
+        )
+        self.overwrite_existing_tags.toggled.connect(self._set_overwrite_existing_tags)
+        row.addWidget(self.overwrite_existing_tags)
 
         self.settings_btn = AnimatedButton("Ustawienia")
         self.settings_btn.setToolTip("Konfiguracja aplikacji i kluczy API")

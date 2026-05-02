@@ -213,11 +213,13 @@ def load_settings() -> Settings:
         )
         or "deepseek-chat",
         filename_patterns=_parse_patterns(payload.get("FILENAME_PATTERNS")),
-        validation_policy=_first_value(
-            payload.get("VALIDATION_POLICY"),
-            os.getenv("VALIDATION_POLICY"),
-        )
-        or "balanced",
+        validation_policy=_normalize_validation_policy(
+            _first_value(
+                payload.get("VALIDATION_POLICY"),
+                os.getenv("VALIDATION_POLICY"),
+            )
+            or "aggressive"
+        ),
         metadata_cache_ttl_days=_to_int(
             _first_value(
                 payload.get("METADATA_CACHE_TTL_DAYS"),
@@ -254,6 +256,13 @@ def _to_int(value: str | None, default: int = 0) -> int:
         return int(value)
     except ValueError:
         return default
+
+
+def _normalize_validation_policy(value: str) -> str:
+    policy = value.strip().lower()
+    if policy in {"strict", "balanced", "lenient", "aggressive"}:
+        return policy
+    return "aggressive"
 
 
 def _discover_windows_keys() -> dict[str, str]:

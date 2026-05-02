@@ -18,6 +18,7 @@ class SettingsDialog(QtWidgets.QDialog):
         self.setWindowTitle("Ustawienia / Klucze API")
         self.setMinimumWidth(520)
         apply_dialog_fade(self)
+        self._syncing_validation_controls = False
         self._build_ui()
         self._load()
 
@@ -67,8 +68,12 @@ class SettingsDialog(QtWidgets.QDialog):
         self.filename_patterns.setPlaceholderText(
             "Przykład: (?P<artist>.+) - (?P<title>.+)"
         )
+        self.overwrite_existing_tags = QtWidgets.QCheckBox("Nadpisuj istniejące tagi")
+        self.overwrite_existing_tags.setToolTip(
+            "Włącza agresywne nadpisywanie lokalnych tagów lepszymi danymi z internetu."
+        )
         self.validation_policy = QtWidgets.QComboBox()
-        self.validation_policy.addItems(["strict", "balanced", "lenient"])
+        self.validation_policy.addItems(["strict", "balanced", "lenient", "aggressive"])
         self.metadata_cache_ttl = QtWidgets.QSpinBox()
         self.metadata_cache_ttl.setRange(0, 365)
         self.metadata_cache_ttl.setSuffix(" dni")
@@ -98,10 +103,14 @@ class SettingsDialog(QtWidgets.QDialog):
         form.addRow("Adres bazowy OpenAI (URL)", self.openai_base_url)
         form.addRow("Model OpenAI", self.openai_model)
         form.addRow("Wzorce nazw plików (regex, 1 na linię)", self.filename_patterns)
+        form.addRow("", self.overwrite_existing_tags)
         form.addRow("Walidacja metadanych", self.validation_policy)
         form.addRow("Cache metadanych (TTL)", self.metadata_cache_ttl)
 
         layout.addLayout(form)
+
+        self.overwrite_existing_tags.toggled.connect(self._on_overwrite_existing_tags_toggled)
+        self.validation_policy.currentTextChanged.connect(self._on_validation_policy_changed)
 
         test_row = QtWidgets.QGridLayout()
         self.test_musicbrainz_btn = QtWidgets.QPushButton("Test MusicBrainz")
@@ -152,7 +161,8 @@ class SettingsDialog(QtWidgets.QDialog):
         self.openai_base_url.setText(settings.openai_base_url or "")
         self.openai_model.setText(settings.openai_model or "")
         self.filename_patterns.setPlainText("\n".join(settings.filename_patterns or []))
-        self.validation_policy.setCurrentText(settings.validation_policy or "balanced")
+        policy = settings.validation_policy or "aggressive"
+        self._set_validation_policy(policy)
         self.metadata_cache_ttl.setValue(settings.metadata_cache_ttl_days)
 
     def _save(self):
@@ -175,11 +185,39 @@ class SettingsDialog(QtWidgets.QDialog):
                 "OPENAI_BASE_URL": self.openai_base_url.text().strip(),
                 "OPENAI_MODEL": self.openai_model.text().strip(),
                 "FILENAME_PATTERNS": self.filename_patterns.toPlainText().strip(),
-                "VALIDATION_POLICY": self.validation_policy.currentText().strip(),
+                "VALIDATION_POLICY": self.validation_policy.currentText().strip() or "aggressive",
                 "METADATA_CACHE_TTL_DAYS": str(self.metadata_cache_ttl.value()),
             }
         )
         self.accept()
+
+    def _on_overwrite_existing_tags_toggled(self, checked: bool) -> None:
+        if self._syncing_validation_controls:
+            return
+        desired_policy = "aggressive" if checked else "balanced"
+        if checked and self.validation_policy.currentText() != desired_policy:
+            self._set_validation_policy(desired_policy)
+        elif not checked and self.validation_policy.currentText() == "aggressive":
+            self._set_validation_policy(desired_policy)
+
+    def _on_validation_policy_changed(self, policy: str) -> None:
+        if self._syncing_validation_controls:
+            return
+        should_overwrite = policy == "aggressive"
+        if self.overwrite_existing_tags.isChecked() != should_overwrite:
+            self._syncing_validation_controls = True
+            try:
+                self.overwrite_existing_tags.setChecked(should_overwrite)
+            finally:
+                self._syncing_validation_controls = False
+
+    def _set_validation_policy(self, policy: str) -> None:
+        self._syncing_validation_controls = True
+        try:
+            self.validation_policy.setCurrentText(policy)
+            self.overwrite_existing_tags.setChecked(policy == "aggressive")
+        finally:
+            self._syncing_validation_controls = False
 
     def _show_test_result(self, title: str, ok: bool, detail: str = "") -> None:
         text = "Połączenie OK." if ok else "Test nieudany."
