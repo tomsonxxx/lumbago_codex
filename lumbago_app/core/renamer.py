@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -19,36 +20,85 @@ class RenamePlanItem:
 
 
 def build_rename_plan(tracks: Iterable[Track], pattern: str) -> list[RenamePlanItem]:
-    plan: list[RenamePlanItem] = []
-    used_paths: set[Path] = set()
+    prepared: list[RenamePlanItem] = []
     for index, track in enumerate(tracks, 1):
         old_path = Path(track.path)
         name = _render_pattern(track, pattern, index)
         name = _sanitize_filename(name)
         new_path = old_path.with_name(f"{name}{old_path.suffix}")
+        prepared.append(
+            RenamePlanItem(
+                old_path=old_path,
+                new_path=new_path,
+                conflict=False,
+                reason=None,
+            )
+        )
+
+    old_paths = {item.old_path for item in prepared}
+    target_count: dict[Path, int] = {}
+    for item in prepared:
+        target_count[item.new_path] = target_count.get(item.new_path, 0) + 1
+
+    plan: list[RenamePlanItem] = []
+    for item in prepared:
         conflict = False
         reason = None
-        if new_path in used_paths:
+        if target_count.get(item.new_path, 0) > 1:
             conflict = True
             reason = "Konflikt nazwy w planie"
-        elif new_path.exists() and new_path != old_path:
+        elif item.new_path.exists() and item.new_path != item.old_path and item.new_path not in old_paths:
             conflict = True
             reason = "Plik już istnieje"
-        used_paths.add(new_path)
-        plan.append(RenamePlanItem(old_path=old_path, new_path=new_path, conflict=conflict, reason=reason))
+        plan.append(
+            RenamePlanItem(
+                old_path=item.old_path,
+                new_path=item.new_path,
+                conflict=conflict,
+                reason=reason,
+            )
+        )
     return plan
 
 
 def apply_rename_plan(plan: Iterable[RenamePlanItem]) -> list[dict[str, str]]:
+    executable = [
+        item
+        for item in plan
+        if not item.conflict and item.old_path.exists() and item.old_path != item.new_path
+    ]
+    if not executable:
+        _store_rename_history([])
+        return []
+
+    staged: list[tuple[Path, Path, Path]] = []
+    moved_to_temp: list[tuple[Path, Path, Path]] = []
     history: list[dict[str, str]] = []
-    for item in plan:
-        if item.conflict:
-            continue
-        if not item.old_path.exists():
-            continue
-        item.new_path.parent.mkdir(parents=True, exist_ok=True)
-        item.old_path.rename(item.new_path)
-        history.append({"old": str(item.old_path), "new": str(item.new_path)})
+
+    # Two-phase rename avoids collisions and case-only path updates on Windows.
+    for idx, item in enumerate(executable):
+        temp_path = _temporary_path_for(item.old_path, idx)
+        staged.append((item.old_path, temp_path, item.new_path))
+
+    try:
+        for old_path, temp_path, new_path in staged:
+            temp_path.parent.mkdir(parents=True, exist_ok=True)
+            old_path.rename(temp_path)
+            moved_to_temp.append((old_path, temp_path, new_path))
+
+        for old_path, temp_path, new_path in moved_to_temp:
+            new_path.parent.mkdir(parents=True, exist_ok=True)
+            temp_path.rename(new_path)
+            history.append({"old": str(old_path), "new": str(new_path)})
+    except Exception:
+        for old_path, temp_path, _ in reversed(moved_to_temp):
+            if temp_path.exists() and not old_path.exists():
+                try:
+                    temp_path.rename(old_path)
+                except Exception:
+                    pass
+        raise
+
     _store_rename_history(history)
     return history
 
@@ -100,7 +150,10 @@ _NOISE_PATTERNS: tuple[re.Pattern[str], ...] = (
         r"hq|hd|4k|8k|remastered(\s+\d{4})?|live|full\s+album|explicit)\s*[\])]",
         re.IGNORECASE,
     ),
-    re.compile(r"\b(official(\s+music)?\s+video|official\s+audio|lyrics?|lyric\s+video|visualizer)\b", re.IGNORECASE),
+    re.compile(
+        r"\b(official(\s+music)?\s+video|official\s+audio|lyrics?|lyric\s+video|visualizer)\b",
+        re.IGNORECASE,
+    ),
     re.compile(r"\b(hq|hd|4k|8k|remastered(\s+\d{4})?)\b", re.IGNORECASE),
 )
 _ORPHAN_BRACKETS_RE = re.compile(r"[\[\](){}]")
@@ -119,28 +172,25 @@ def _cleanup_metadata_fragment(value: str) -> str:
     return text
 
 
-# Bracket-enclosed noise to remove from titles parsed out of filenames.
-# Only removes specific video/quality/lyrics markers; leaves remixes and feat. intact.
 _FILENAME_NOISE_BRACKET_RE = re.compile(
     r"[\[(]\s*(?:"
-    r"(?:hd|hq|4k|8k)\s+video"                         # [4K Video], [HD Video]
-    r"|(?:hd|hq|4k|8k)"                                 # [4K], [HQ]
-    r"|official\s+(?:music\s+)?lyric(?:s)?\s+video"     # (Official Lyric Video)
-    r"|official\s+(?:music\s+)?video"                   # (Official Music Video), (Official Video)
-    r"|official\s+audio"                                # (Official Audio)
-    r"|lyric\s+video"                                   # (Lyric Video)
-    r"|lyrics?"                                         # (Lyric), (Lyrics)
-    r"|visualizer"                                      # (Visualizer)
-    r"|remastered(?:\s+\d{4})?"                         # (Remastered), (Remastered 2021)
-    r"|full\s+album"                                    # (Full Album)
-    r"|explicit"                                        # (Explicit)
+    r"(?:hd|hq|4k|8k)\s+video"
+    r"|(?:hd|hq|4k|8k)"
+    r"|official\s+(?:music\s+)?lyric(?:s)?\s+video"
+    r"|official\s+(?:music\s+)?video"
+    r"|official\s+audio"
+    r"|lyric\s+video"
+    r"|lyrics?"
+    r"|visualizer"
+    r"|remastered(?:\s+\d{4})?"
+    r"|full\s+album"
+    r"|explicit"
     r")\s*[\])]",
     re.IGNORECASE,
 )
 
 
 def _clean_title_from_filename(title: str) -> str:
-    """Remove video/quality noise from a title fragment while keeping remixes and featurings."""
     title = _FILENAME_NOISE_BRACKET_RE.sub("", title)
     title = re.sub(r"\s+", " ", title).strip(" .-_")
     return title
@@ -161,12 +211,6 @@ def _strip_download_quality_suffix(value: str) -> str:
 
 
 def parse_filename_tags(path: str | Path) -> tuple[str | None, str | None]:
-    """Try to extract (artist, title) from filename stem using 'Artist - Title' pattern.
-
-    Returns (artist, title) with video/quality noise removed, or (None, None) if
-    the 'Artist - Title' separator pattern is not found.
-    Remixes, featurings and other parenthetical info are preserved.
-    """
     stem = _strip_download_quality_suffix(Path(path).stem.replace("_", " ").replace(".", " "))
     for sep in (" – ", " — ", " - "):
         if sep in stem:
@@ -184,6 +228,7 @@ def _history_path() -> Path:
 
 def _store_rename_history(history: list[dict[str, str]]) -> None:
     path = _history_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(history, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
@@ -195,3 +240,16 @@ def _load_rename_history() -> list[dict[str, str]]:
         return json.loads(path.read_text(encoding="utf-8"))
     except Exception:
         return []
+
+
+def _temporary_path_for(original_path: Path, idx: int) -> Path:
+    pid = os.getpid()
+    suffix = original_path.suffix
+    candidate = original_path.with_name(f".lumbago_rename_tmp_{pid}_{idx}{suffix}")
+    collision_counter = 0
+    while candidate.exists():
+        collision_counter += 1
+        candidate = original_path.with_name(
+            f".lumbago_rename_tmp_{pid}_{idx}_{collision_counter}{suffix}"
+        )
+    return candidate
