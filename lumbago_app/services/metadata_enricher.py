@@ -22,6 +22,10 @@ from lumbago_app.core.config import cache_dir
 from lumbago_app.core.audio import extract_metadata, read_tags
 
 
+_YEAR_MIN = 1900
+_YEAR_MAX = datetime.now().year + 1
+
+
 @dataclass
 class SourceProbe:
     key: str
@@ -185,28 +189,43 @@ class MetadataEnricher:
 
 
 def _apply_musicbrainz_metadata(track: Track, payload: dict[str, Any]) -> str | None:
-    track.title = track.title or payload.get("title")
+    _apply_preferred_remote_value(track, "title", payload.get("title"), source_confidence=0.93)
     artists = payload.get("artist-credit", [])
     if artists:
         names = [artist.get("name") for artist in artists if isinstance(artist, dict)]
         if names:
-            track.artist = track.artist or ", ".join(names)
+            _apply_preferred_remote_value(
+                track,
+                "artist",
+                ", ".join(names),
+                source_confidence=0.93,
+            )
     # ISRC
     isrcs = payload.get("isrcs", [])
     if isrcs and isinstance(isrcs, list):
-        track.isrc = track.isrc or isrcs[0]
+        _apply_preferred_remote_value(track, "isrc", isrcs[0], source_confidence=0.93)
     releases = payload.get("releases", [])
     release_id = None
     if releases:
         release = releases[0]
         album_candidate = release.get("title")
         if album_candidate and not _is_compilation_album(album_candidate):
-            track.album = track.album or album_candidate
-            release_id = release.get("id")
-            release_date = release.get("date")
-            release_year = _parse_year(release_date)
-            if release_year and _is_valid_year(release_year):
-                track.year = track.year or str(release_year)
+            _apply_preferred_remote_value(
+                track,
+                "album",
+                album_candidate,
+                source_confidence=0.93,
+            )
+        release_id = release.get("id")
+        release_date = release.get("date")
+        release_year = _parse_year(release_date)
+        if release_year and _is_valid_year(release_year):
+            _apply_preferred_remote_value(
+                track,
+                "year",
+                str(release_year),
+                source_confidence=0.93,
+            )
         # Track number from release media
         media = release.get("media", [])
         if media:
@@ -214,17 +233,33 @@ def _apply_musicbrainz_metadata(track: Track, payload: dict[str, Any]) -> str | 
                 for mb_track in medium.get("tracks", medium.get("track-list", [])):
                     if mb_track.get("id") == payload.get("id") or mb_track.get("title") == payload.get("title"):
                         _number = mb_track.get("number")
-                        track.tracknumber = track.tracknumber or (str(_number) if _number is not None else None)
+                        if _number is not None:
+                            _apply_preferred_remote_value(
+                                track,
+                                "tracknumber",
+                                str(_number),
+                                source_confidence=0.93,
+                            )
                         position = medium.get("position")
                         if position:
-                            track.discnumber = track.discnumber or str(position)
+                            _apply_preferred_remote_value(
+                                track,
+                                "discnumber",
+                                str(position),
+                                source_confidence=0.93,
+                            )
                         break
         # Album artist from release artist-credit
         release_artists = release.get("artist-credit", [])
         if release_artists:
             ra_names = [a.get("name") for a in release_artists if isinstance(a, dict)]
             if ra_names:
-                track.albumartist = track.albumartist or ", ".join(ra_names)
+                _apply_preferred_remote_value(
+                    track,
+                    "albumartist",
+                    ", ".join(ra_names),
+                    source_confidence=0.93,
+                )
         label_info = release.get("label-info", [])
         if label_info and isinstance(label_info, list):
             first_label = label_info[0] if isinstance(label_info[0], dict) else {}
@@ -234,17 +269,37 @@ def _apply_musicbrainz_metadata(track: Track, payload: dict[str, Any]) -> str | 
                 if isinstance(label, dict):
                     label_name = label.get("name")
             if label_name:
-                track.publisher = track.publisher or label_name
-                track.copyright = track.copyright or label_name
+                _apply_preferred_remote_value(
+                    track,
+                    "publisher",
+                    label_name,
+                    source_confidence=0.93,
+                )
+                _apply_preferred_remote_value(
+                    track,
+                    "copyright",
+                    label_name,
+                    source_confidence=0.93,
+                )
     tags = payload.get("tags", [])
     if tags:
         top = max(tags, key=lambda item: item.get("count", 0))
         tag_name = top.get("name")
         if tag_name:
-            track.genre = track.genre or tag_name
+            _apply_preferred_remote_value(
+                track,
+                "genre",
+                tag_name,
+                source_confidence=0.93,
+            )
         mood_candidate = _pick_mood_from_tags(tags)
         if mood_candidate:
-            track.mood = track.mood or mood_candidate
+            _apply_preferred_remote_value(
+                track,
+                "mood",
+                mood_candidate,
+                source_confidence=0.93,
+            )
     relations = payload.get("relations", [])
     if relations and isinstance(relations, list):
         for relation in relations:
@@ -254,9 +309,19 @@ def _apply_musicbrainz_metadata(track: Track, payload: dict[str, Any]) -> str | 
             artist_info = relation.get("artist")
             artist_name = artist_info.get("name") if isinstance(artist_info, dict) else None
             if rel_type == "composer" and artist_name:
-                track.composer = track.composer or artist_name
+                _apply_preferred_remote_value(
+                    track,
+                    "composer",
+                    artist_name,
+                    source_confidence=0.93,
+                )
             if rel_type in {"mix", "remixer"} and artist_name:
-                track.remixer = track.remixer or artist_name
+                _apply_preferred_remote_value(
+                    track,
+                    "remixer",
+                    artist_name,
+                    source_confidence=0.93,
+                )
     return release_id
 
 
@@ -310,8 +375,8 @@ def _select_recording_id(
     if not results:
         return None
 
-    preferred_title_norm = _normalize(preferred_title)
-    preferred_artist_norm = _normalize(preferred_artist)
+    preferred_title_norm = _comparison_text(preferred_title)
+    preferred_artist_norm = _comparison_text(preferred_artist)
     best_id: str | None = None
     best_score = -1.0
 
@@ -325,8 +390,8 @@ def _select_recording_id(
             recording_id = recording.get("id")
             if not recording_id:
                 continue
-            title = _normalize(recording.get("title"))
-            artist = _normalize(_first_artist(recording))
+            title = _comparison_text(recording.get("title"))
+            artist = _comparison_text(_first_artist(recording))
 
             similarity = 0.0
             if preferred_title_norm:
@@ -421,6 +486,12 @@ def _normalize(value: str | None) -> str:
     return "".join(ch.lower() for ch in value if ch.isalnum() or ch.isspace()).strip()
 
 
+def _comparison_text(value: str | None) -> str:
+    if not value:
+        return ""
+    return _normalize(_sanitize_search_text(value))
+
+
 STRICT_SCORE_MIN = 0.9
 BALANCED_SCORE_MIN = 0.65
 LENIENT_SCORE_MIN = 0.4
@@ -437,10 +508,10 @@ def _token_similarity(left: str, right: str) -> float:
 
 
 def _match_score(track: Track, title: str | None, artist: str | None) -> float:
-    title_a = _normalize(track.title)
-    title_b = _normalize(title)
-    artist_a = _normalize(track.artist)
-    artist_b = _normalize(artist)
+    title_a = _comparison_text(track.title)
+    title_b = _comparison_text(title)
+    artist_a = _comparison_text(track.artist)
+    artist_b = _comparison_text(artist)
 
     if not title_a and not artist_a:
         return 0.0
@@ -453,10 +524,10 @@ def _match_score(track: Track, title: str | None, artist: str | None) -> float:
 def _validate_candidate(
     track: Track, title: str | None, artist: str | None, policy: str = "strict"
 ) -> bool:
-    title_a = _normalize(track.title)
-    title_b = _normalize(title)
-    artist_a = _normalize(track.artist)
-    artist_b = _normalize(artist)
+    title_a = _comparison_text(track.title)
+    title_b = _comparison_text(title)
+    artist_a = _comparison_text(track.artist)
+    artist_b = _comparison_text(artist)
 
     score = _match_score(track, title, artist)
     if policy == "strict":
@@ -1135,21 +1206,20 @@ def _normalize_vote_text(value: str | None) -> str:
 
 def _apply_portal_candidate(track: Track, candidate: dict[str, str]) -> None:
     candidate_title = candidate.get("title")
-    if candidate_title and not _has_value(track.title):
-        track.title = candidate_title
-    elif candidate_title and _has_value(track.title) and _should_replace_noisy_title(str(track.title), candidate_title):
-        track.title = candidate_title
+    if candidate_title:
+        _apply_preferred_remote_value(track, "title", candidate_title, source_confidence=0.82)
 
-    if candidate.get("artist") and not _has_value(track.artist):
-        track.artist = candidate["artist"]
-    if candidate.get("artist") and not _has_value(track.albumartist):
-        track.albumartist = candidate["artist"]
-    if candidate.get("album") and not _has_value(track.album):
-        track.album = candidate["album"]
-    if candidate.get("genre") and not _has_value(track.genre):
-        track.genre = candidate["genre"]
-    if candidate.get("mood") and not _has_value(track.mood):
-        track.mood = candidate["mood"]
+    if candidate.get("artist"):
+        _apply_preferred_remote_value(track, "artist", candidate["artist"], source_confidence=0.82)
+        _apply_preferred_remote_value(
+            track, "albumartist", candidate["artist"], source_confidence=0.82
+        )
+    if candidate.get("album"):
+        _apply_preferred_remote_value(track, "album", candidate["album"], source_confidence=0.82)
+    if candidate.get("genre"):
+        _apply_preferred_remote_value(track, "genre", candidate["genre"], source_confidence=0.82)
+    if candidate.get("mood"):
+        _apply_preferred_remote_value(track, "mood", candidate["mood"], source_confidence=0.82)
 
     remixer = _extract_remixer_name(candidate_title) or _extract_remixer_name(track.title)
     if remixer and not _has_value(track.remixer):
@@ -1239,6 +1309,102 @@ def _should_replace_noisy_title(current_title: str, candidate_title: str) -> boo
         return False
     if len(candidate) >= len(current):
         return False
+    return True
+
+
+_REMOTE_NOISE_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(
+        r"[\[(]\s*(official(\s+music)?\s+video|official\s+audio|audio|lyrics?|lyric\s+video|"
+        r"visualizer|hq|hd|4k|8k|remastered(\s+\d{4})?|live|full\s+album|explicit)\s*[\])]",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(official(\s+music)?\s+video|official\s+audio|lyrics?|lyric\s+video|visualizer)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(r"\b(hq|hd|4k|8k|remastered(\s+\d{4})?|live)\b", re.IGNORECASE),
+    re.compile(r"\s+\|\s+(youtube|spotify|soundcloud|apple music|deezer|beatport|tidal|bandcamp|audiomack|last\.fm)\b", re.IGNORECASE),
+)
+
+
+def _clean_remote_value(field_name: str, value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    text = html.unescape(text)
+    text = re.sub(r"\s+", " ", text)
+    if field_name in {"title", "artist", "album", "albumartist"}:
+        for pattern in _REMOTE_NOISE_PATTERNS:
+            text = pattern.sub(" ", text)
+        text = re.sub(r"\s+\|\s+.*$", "", text)
+        text = re.sub(r"\s+", " ", text).strip(" .-_")
+    elif field_name == "year":
+        digits = re.sub(r"\D", "", text)[:4]
+        if digits and _YEAR_MIN <= int(digits) <= _YEAR_MAX:
+            text = digits
+        else:
+            return None
+    else:
+        text = text.strip()
+    return text or None
+
+
+def _looks_like_remote_noise(value: str | None) -> bool:
+    if not value:
+        return False
+    lowered = value.lower()
+    return any(pattern.search(lowered) for pattern in _REMOTE_NOISE_PATTERNS)
+
+
+def _should_replace_local_value(
+    field_name: str,
+    current_value: Any,
+    incoming_value: str,
+    source_confidence: float,
+) -> bool:
+    if not _has_value(current_value):
+        return True
+    current_text = str(current_value).strip()
+    incoming_text = str(incoming_value).strip()
+    if not current_text or not incoming_text:
+        return False
+    if current_text == incoming_text:
+        return False
+    if str(current_text).strip().lower() in {"-", "—", "unknown", "n/a", "none", "null", "brak"}:
+        return True
+    if field_name in {"title", "artist", "album", "albumartist"}:
+        if _looks_like_remote_noise(current_text):
+            return True
+        if source_confidence >= 0.9:
+            return True
+    if field_name == "year":
+        current_year = _parse_year(current_text)
+        incoming_year = _parse_year(incoming_text)
+        if incoming_year and not current_year:
+            return True
+        if incoming_year and current_year and incoming_year != current_year and source_confidence >= 0.9:
+            return True
+    if field_name in {"genre", "mood"} and _looks_like_remote_noise(current_text):
+        return True
+    return False
+
+
+def _apply_preferred_remote_value(
+    track: Track,
+    field_name: str,
+    value: Any,
+    *,
+    source_confidence: float,
+) -> bool:
+    cleaned = _clean_remote_value(field_name, value)
+    if cleaned is None:
+        return False
+    current = getattr(track, field_name, None)
+    if not _should_replace_local_value(field_name, current, cleaned, source_confidence):
+        return False
+    setattr(track, field_name, cleaned)
     return True
 
 

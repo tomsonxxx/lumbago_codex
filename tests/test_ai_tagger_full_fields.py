@@ -13,6 +13,7 @@ from lumbago_app.services.ai_tagger import (
     _missing_fields,
     _normalize_payload,
 )
+from lumbago_app.services.metadata_enricher import MetadataEnricher
 from lumbago_app.services.ai_tagger_merge import _merge_analysis_into_track
 
 
@@ -337,3 +338,63 @@ def test_musicbrainz_enrich_applies_full_metadata(monkeypatch):
     assert track.publisher == "Neo Records"
     assert track.composer == "Ville Virtanen"
     assert track.mood == "energetic"
+
+
+def test_musicbrainz_enrich_replaces_noisy_local_title_and_artist(monkeypatch):
+    monkeypatch.setattr(
+        "lumbago_app.services.metadata_enricher.get_metadata_cache",
+        lambda key, ttl: None,
+    )
+    monkeypatch.setattr(
+        "lumbago_app.services.metadata_enricher.set_metadata_cache",
+        lambda key, data, source=None: None,
+    )
+
+    class _FakeMBProvider:
+        def search_recording(self, query):
+            return {
+                "recordings": [
+                    {
+                        "id": "fake-recording-id",
+                        "title": "Sandstorm",
+                        "artist-credit": [{"name": "Darude"}],
+                        "releases": [
+                            {
+                                "title": "Before the Storm",
+                                "date": "1999-11-15",
+                                "artist-credit": [{"name": "Darude"}],
+                                "label-info": [{"label": {"name": "Neo Records"}}],
+                                "media": [],
+                            }
+                        ],
+                        "tags": [{"name": "trance", "count": 10}],
+                    }
+                ]
+            }
+
+    monkeypatch.setattr(
+        "lumbago_app.services.metadata_enricher.MusicBrainzProvider",
+        lambda app: _FakeMBProvider(),
+    )
+    monkeypatch.setattr(
+        "lumbago_app.services.metadata_enricher.MetadataEnricher._fetch_musicbrainz_recording",
+        lambda self, recording_id: None,
+    )
+
+    enricher = MetadataEnricher("LumbagoTest", validation_policy="lenient")
+    track = Track(
+        path="sandstorm.mp3",
+        title="Sandstorm (Official Video) [HD]",
+        artist="Darude - Topic",
+        album="Sandstorm (Official Video)",
+        year="1998",
+        genre="unknown",
+    )
+
+    enricher.enrich_from_musicbrainz_search(track)
+
+    assert track.title == "Sandstorm"
+    assert track.artist == "Darude"
+    assert track.album == "Before the Storm"
+    assert track.year == "1999"
+    assert track.genre == "trance"

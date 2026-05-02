@@ -32,6 +32,13 @@ def test_enrich_track_with_detected_audio_values():
     assert track.mood == "energetic"
 
 
+def test_enrich_track_with_analysis_preserves_existing_genre_and_mood():
+    track = Track(path="demo.mp3", bpm=128.0, genre="House", mood="uplifting")
+    enrich_track_with_analysis(track)
+    assert track.genre == "House"
+    assert track.mood == "uplifting"
+
+
 def test_enrich_track_with_analysis_falls_back_to_heuristics():
     track = Track(path="demo.mp3", bpm=88.0)
     enrich_track_with_analysis(track)

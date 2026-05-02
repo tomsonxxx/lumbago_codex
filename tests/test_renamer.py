@@ -2,7 +2,7 @@ from pathlib import Path
 import tempfile
 
 from lumbago_app.core.models import Track
-from lumbago_app.core.renamer import _sanitize_filename, build_rename_plan
+from lumbago_app.core.renamer import _sanitize_filename, build_rename_plan, parse_filename_tags
 
 
 def test_build_rename_plan_detects_conflict():
@@ -39,3 +39,9 @@ def test_sanitize_filename_removes_invalid_characters():
     assert "/" not in cleaned
     assert "*" not in cleaned
     assert "official video" not in cleaned.lower()
+
+
+def test_parse_filename_tags_cleans_artist_and_title_noise():
+    artist, title = parse_filename_tags("Artist Name (Official Video) - Song Title [HD].mp3")
+    assert artist == "Artist Name"
+    assert title == "Song Title"

@@ -157,7 +157,7 @@ def parse_filename_tags(path: str | Path) -> tuple[str | None, str | None]:
     for sep in (" – ", " — ", " - "):
         if sep in stem:
             left, right = stem.split(sep, 1)
-            artist = left.strip() or None
+            artist = _clean_title_from_filename(left.strip()) or None
             title = _clean_title_from_filename(right.strip()) or None
             return artist, title
     return None, None
