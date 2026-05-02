@@ -33,6 +33,12 @@ class _FakeAudio:
         }
 
 
+class _FakeAudioNoTags:
+    mime = ["audio/mpeg"]
+    info = _FakeInfo()
+    tags = {}
+
+
 def test_available_metadata_methods_exposes_extended_catalog():
     methods = available_metadata_methods()
     assert len(methods) == 3
@@ -63,6 +69,46 @@ def test_extract_metadata_reads_extended_tags(monkeypatch, tmp_path: Path):
     assert track.rating == 5
     assert track.mood == "peak time"
     assert track.energy == 0.87
+
+
+def test_extract_metadata_ignores_trailing_download_bitrate_in_filename(monkeypatch, tmp_path: Path):
+    audio_path = tmp_path / "Poylow, ATHYN - Good In Goodbye - 320.mp3"
+    audio_path.write_bytes(b"ID3")
+
+    monkeypatch.setattr("lumbago_app.core.audio.MutagenFile", lambda _path: _FakeAudioNoTags())
+    monkeypatch.setattr("lumbago_app.core.audio._apply_folder_metadata", lambda track, path: None)
+
+    track = extract_metadata(audio_path)
+
+    assert track.artist == "Poylow ATHYN"
+    assert track.title == "Good In Goodbye"
+
+
+def test_extract_metadata_treats_single_name_before_bitrate_as_title(monkeypatch, tmp_path: Path):
+    audio_path = tmp_path / "Diamond Heart - 320.mp3"
+    audio_path.write_bytes(b"ID3")
+
+    monkeypatch.setattr("lumbago_app.core.audio.MutagenFile", lambda _path: _FakeAudioNoTags())
+    monkeypatch.setattr("lumbago_app.core.audio._apply_folder_metadata", lambda track, path: None)
+
+    track = extract_metadata(audio_path)
+
+    assert track.artist is None
+    assert track.title == "Diamond Heart"
+
+
+def test_extract_metadata_does_not_use_date_folder_as_album(monkeypatch, tmp_path: Path):
+    folder = tmp_path / "01.03.2025"
+    folder.mkdir()
+    audio_path = folder / "Diamond Heart - 320.mp3"
+    audio_path.write_bytes(b"ID3")
+
+    monkeypatch.setattr("lumbago_app.core.audio.MutagenFile", lambda _path: _FakeAudioNoTags())
+
+    track = extract_metadata(audio_path)
+
+    assert track.album is None
+    assert track.title == "Diamond Heart"
 
 
 def test_copy_missing_fields_treats_placeholders_as_empty():

@@ -22,6 +22,7 @@ from lumbago_app.core.analysis_cache import save_analysis_cache
 from lumbago_app.core.backup import perform_backup
 from lumbago_app.core.config import cache_dir, load_settings, save_settings
 from lumbago_app.core.models import Track
+from lumbago_app.core.renamer import parse_filename_tags
 from lumbago_app.core.services import enrich_track_with_analysis, heuristic_analysis
 from lumbago_app.core.waveform import generate_waveform
 from lumbago_app.services.autotag_rewrite import UnifiedAutoTagger
@@ -179,6 +180,62 @@ def _track_to_tag_dict(track: Track, fields: list[str]) -> dict[str, str]:
         value = getattr(track, field_name, None)
         payload[field_name] = "" if value is None else str(value)
     return payload
+
+
+def _looks_like_download_quality_title(value: str | None) -> bool:
+    if not value:
+        return False
+    return bool(re.fullmatch(r"\s*\d{2,4}\s*(?:kbps|k)?\s*", str(value), re.IGNORECASE))
+
+
+def _strip_download_quality_suffix(value: str | None) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    previous = None
+    while previous != text:
+        previous = text
+        text = re.sub(
+            r"\s+-\s+(?:\d{2,4}\s*(?:kbps|k)?|mp3|flac|wav|m4a|aac)$",
+            "",
+            text,
+            flags=re.IGNORECASE,
+        ).strip(" .-_")
+    return text or None
+
+
+def _repair_identity_from_filename(track: Track) -> None:
+    artist_from_file, title_from_file = parse_filename_tags(track.path)
+    cleaned_current_title = _strip_download_quality_suffix(track.title)
+    if (
+        title_from_file
+        and not artist_from_file
+        and track.artist
+        and re.sub(r"[^\w\s]", "", str(track.artist).lower()).strip()
+        == re.sub(r"[^\w\s]", "", str(title_from_file).lower()).strip()
+    ):
+        track.artist = None
+    if cleaned_current_title and cleaned_current_title != track.title:
+        track.title = cleaned_current_title
+        if artist_from_file and title_from_file:
+            track.artist = artist_from_file
+        return
+    if not _has_value(title_from_file):
+        return
+    if _looks_like_download_quality_title(track.title):
+        if artist_from_file:
+            track.artist = artist_from_file
+        elif (track.artist or "").strip().lower() == str(title_from_file).strip().lower():
+            track.artist = None
+        track.title = title_from_file
+        return
+    if _has_value(artist_from_file) and _has_value(title_from_file):
+        if not _has_value(track.artist):
+            track.artist = artist_from_file
+        if not _has_value(track.title):
+            track.title = title_from_file
+    elif _has_value(title_from_file) and not _has_value(artist_from_file) and not _has_value(track.artist):
+        track.title = title_from_file
 
 
 class TrackFilterProxy(QtCore.QSortFilterProxyModel):
@@ -456,6 +513,7 @@ class AutoTagWorker(QtCore.QRunnable):
     ) -> None:
         refreshed = extract_metadata(Path(track.path))
         _merge_missing_from_source(track, refreshed)
+        _repair_identity_from_filename(track)
         enriched = autotagger.enrich_track(track)
         autotagger.apply_best_match(track, enriched)
 

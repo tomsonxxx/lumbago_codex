@@ -255,7 +255,7 @@ def _apply_folder_json(track: Track, path: Path) -> None:
 
 
 def _apply_filename_metadata(track: Track, path: Path) -> None:
-    cleaned = _cleanup_filename_tokens(path.stem)
+    cleaned = _strip_download_quality_suffix(_cleanup_filename_tokens(path.stem))
     parts = [p.strip() for p in cleaned.split(" - ") if p.strip()]
     if len(parts) >= 2:
         possible_title = parts[-1]
@@ -282,6 +282,20 @@ def _cleanup_filename_tokens(value: str) -> str:
         text = pattern.sub(" ", text)
     text = re.sub(r"[^\w\s\-]", " ", text, flags=re.UNICODE)
     text = re.sub(r"\s+", " ", text).strip(" -_")
+    return text
+
+
+def _strip_download_quality_suffix(value: str) -> str:
+    text = value.strip()
+    previous = None
+    while previous != text:
+        previous = text
+        text = re.sub(
+            r"\s+-\s+(?:\d{2,4}\s*(?:kbps|k)?|mp3|flac|wav|m4a|aac)$",
+            "",
+            text,
+            flags=re.IGNORECASE,
+        ).strip(" -_")
     return text
 
 
@@ -369,6 +383,8 @@ def _apply_folder_metadata(track: Track, path: Path) -> None:
     parent = path.parent
     album = parent.name if parent else None
     artist = parent.parent.name if parent and parent.parent else None
+    if _looks_like_date_folder(album):
+        album = None
     if album and " - " in album:
         parts = [p.strip() for p in album.split(" - ") if p.strip()]
         if len(parts) >= 2:
@@ -376,6 +392,16 @@ def _apply_folder_metadata(track: Track, path: Path) -> None:
             album = album or parts[1]
     _fill_if_empty(track, "album", album)
     _fill_if_empty(track, "artist", artist)
+
+
+def _looks_like_date_folder(value: str | None) -> bool:
+    if not value:
+        return False
+    text = str(value).strip()
+    return bool(
+        re.fullmatch(r"\d{1,2}[.\-_]\d{1,2}[.\-_]\d{2,4}", text)
+        or re.fullmatch(r"\d{4}[.\-_]\d{1,2}[.\-_]\d{1,2}", text)
+    )
 
 
 def _fill_if_empty(track: Track, field: str, value) -> None:

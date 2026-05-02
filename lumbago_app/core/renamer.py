@@ -146,6 +146,20 @@ def _clean_title_from_filename(title: str) -> str:
     return title
 
 
+def _strip_download_quality_suffix(value: str) -> str:
+    text = value.strip()
+    previous = None
+    while previous != text:
+        previous = text
+        text = re.sub(
+            r"\s+-\s+(?:\d{2,4}\s*(?:kbps|k)?|mp3|flac|wav|m4a|aac)$",
+            "",
+            text,
+            flags=re.IGNORECASE,
+        ).strip(" .-_")
+    return text
+
+
 def parse_filename_tags(path: str | Path) -> tuple[str | None, str | None]:
     """Try to extract (artist, title) from filename stem using 'Artist - Title' pattern.
 
@@ -153,14 +167,15 @@ def parse_filename_tags(path: str | Path) -> tuple[str | None, str | None]:
     the 'Artist - Title' separator pattern is not found.
     Remixes, featurings and other parenthetical info are preserved.
     """
-    stem = Path(path).stem
+    stem = _strip_download_quality_suffix(Path(path).stem.replace("_", " ").replace(".", " "))
     for sep in (" – ", " — ", " - "):
         if sep in stem:
             left, right = stem.split(sep, 1)
             artist = _clean_title_from_filename(left.strip()) or None
             title = _clean_title_from_filename(right.strip()) or None
             return artist, title
-    return None, None
+    title = _clean_title_from_filename(stem)
+    return None, title or None
 
 
 def _history_path() -> Path:

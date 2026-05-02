@@ -45,3 +45,15 @@ def test_parse_filename_tags_cleans_artist_and_title_noise():
     artist, title = parse_filename_tags("Artist Name (Official Video) - Song Title [HD].mp3")
     assert artist == "Artist Name"
     assert title == "Song Title"
+
+
+def test_parse_filename_tags_strips_download_bitrate_suffix():
+    artist, title = parse_filename_tags("Artist Name - Song Title - 320.mp3")
+    assert artist == "Artist Name"
+    assert title == "Song Title"
+
+
+def test_parse_filename_tags_uses_single_name_before_bitrate_as_title():
+    artist, title = parse_filename_tags("Diamond Heart - 320.mp3")
+    assert artist is None
+    assert title == "Diamond Heart"

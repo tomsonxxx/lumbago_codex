@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 import re
 from typing import Any
@@ -8,6 +8,7 @@ from typing import Any
 import requests
 
 from lumbago_app.core.models import Track
+from lumbago_app.core.renamer import parse_filename_tags
 from lumbago_app.services.ai_tagger import CloudAiTagger, MultiAiTagger
 
 
@@ -37,12 +38,24 @@ class Candidate:
     title: str | None = None
     artist: str | None = None
     album: str | None = None
+    albumartist: str | None = None
     year: str | None = None
+    tracknumber: str | None = None
+    discnumber: str | None = None
+    composer: str | None = None
     genre: str | None = None
+    rating: int | None = None
     mood: str | None = None
     bpm: float | None = None
     key: str | None = None
     energy: float | None = None
+    comment: str | None = None
+    lyrics: str | None = None
+    isrc: str | None = None
+    publisher: str | None = None
+    grouping: str | None = None
+    copyright: str | None = None
+    remixer: str | None = None
     tags: list[str] = field(default_factory=list)
     error: str | None = None
 
@@ -62,6 +75,7 @@ class UnifiedAutoTagger:
 
         for fn in (
             self._search_musicbrainz,
+            self._search_itunes,
             self._search_discogs,
             self._search_ai,
         ):
@@ -84,11 +98,26 @@ class UnifiedAutoTagger:
         if best is None and not candidates:
             return False
         changed = False
+        filename_artist, filename_title = parse_filename_tags(track.path)
+        protect_filename_identity = bool(
+            filename_title and not filename_artist and _normalize(filename_title) == _normalize(track.title)
+        )
 
         mapping: dict[str, Any] = {}
-        for field_name in ("title", "artist", "album", "year", "genre", "mood", "key", "bpm", "energy"):
-            incoming = _best_field_value(candidates, field_name)
-            if incoming is None and best is not None:
+        for field_name in _CANDIDATE_TRACK_FIELDS:
+            if (
+                protect_filename_identity
+                and field_name in {"title", "artist"}
+                and any(candidate.source in {"Apple Music", "MusicBrainz"} for candidate in candidates)
+            ):
+                incoming = None
+            else:
+                incoming = _best_field_value(candidates, field_name)
+            if incoming is None and best is not None and not (
+                protect_filename_identity
+                and field_name in {"title", "artist"}
+                and best.source in {"Apple Music", "MusicBrainz"}
+            ):
                 incoming = getattr(best, field_name, None)
             mapping[field_name] = incoming
 
@@ -106,6 +135,7 @@ class UnifiedAutoTagger:
         return changed
 
     def _search_musicbrainz(self, track: Track) -> Candidate | None:
+        track = _track_with_filename_identity(track)
         artist = _clean_text(track.artist)
         title = _clean_text(track.title)
         if not artist and not title:
@@ -143,7 +173,9 @@ class UnifiedAutoTagger:
         ).strip(", ")
         release = (best.get("releases") or [{}])[0]
         year = str((release.get("date") or "")[:4]).strip() or None
-        score = int(best.get("score") or 0)
+        score = int(round(_musicbrainz_recording_score(track, best) * 100))
+        if not artist:
+            score = min(score, 68)
 
         genre = None
         tags: list[str] = []
@@ -167,15 +199,54 @@ class UnifiedAutoTagger:
                         genre = rg_tags[0]
 
         sim = _similarity_bonus(track, rec_title, rec_artist)
+        final_score = max(0, min(100, score + sim))
+        if not artist:
+            final_score = min(final_score, 68)
         return Candidate(
             source="MusicBrainz",
-            score=max(0, min(100, score + sim)),
+            score=final_score,
             title=rec_title or track.title,
             artist=rec_artist or track.artist,
             album=release.get("title") or None,
             year=year,
             genre=genre,
             tags=tags,
+        )
+
+    def _search_itunes(self, track: Track) -> Candidate | None:
+        track = _track_with_filename_identity(track)
+        query = " ".join(part for part in [_clean_text(track.artist), _clean_text(track.title)] if part)
+        if not query:
+            return None
+
+        response = requests.get(
+            "https://itunes.apple.com/search",
+            params={"term": query, "entity": "song", "limit": "8"},
+            headers={"Accept": "application/json", "User-Agent": _USER_AGENT},
+            timeout=12,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        results = [item for item in payload.get("results", []) if isinstance(item, dict)]
+        if not results:
+            return None
+
+        best = max(results, key=lambda item: _itunes_result_score(track, item))
+        score = int(round(_itunes_result_score(track, best) * 100))
+        if score < 45:
+            return None
+        if not track.artist:
+            score = min(score, 72)
+        release_date = str(best.get("releaseDate") or "")
+        year = release_date[:4] if release_date[:4].isdigit() else None
+        return Candidate(
+            source="Apple Music",
+            score=max(1, min(95, score)),
+            title=_to_clean_str(best.get("trackName")) or track.title,
+            artist=_to_clean_str(best.get("artistName")) or track.artist,
+            album=_to_clean_str(best.get("collectionName")),
+            year=year,
+            genre=_to_clean_str(best.get("primaryGenreName")),
         )
 
     def _musicbrainz_detail(self, mbid: str) -> dict[str, list[str]]:
@@ -219,6 +290,7 @@ class UnifiedAutoTagger:
         }
 
     def _search_discogs(self, track: Track) -> Candidate | None:
+        track = _track_with_filename_identity(track)
         token = self.settings.discogs_token
         if not token:
             return None
@@ -268,7 +340,24 @@ class UnifiedAutoTagger:
         tagger = self._build_multi_ai_tagger()
         if tagger is None:
             return None
+        track = _track_with_filename_identity(track)
         result = tagger.analyze(track)
+        useful_fields = [
+            result.album,
+            result.year,
+            result.genre,
+            result.comment,
+            result.lyrics,
+            result.isrc,
+            result.publisher,
+            result.grouping,
+            result.copyright,
+            result.remixer,
+        ]
+        if not any(_has_meaningful_candidate_value("ai", value) for value in useful_fields):
+            if not (result.confidence or 0.0):
+                return Candidate(source="AI", score=0, error=result.description or "AI returned no usable fields")
+            return None
         confidence = float(result.confidence or 0.0)
         score = int(max(0.0, min(1.0, confidence if confidence > 0 else 0.7)) * 100)
         tags: list[str] = []
@@ -282,12 +371,24 @@ class UnifiedAutoTagger:
             title=result.title or track.title,
             artist=result.artist or track.artist,
             album=result.album or track.album,
+            albumartist=result.albumartist or track.albumartist,
             year=result.year or track.year,
+            tracknumber=result.tracknumber or track.tracknumber,
+            discnumber=result.discnumber or track.discnumber,
+            composer=result.composer or track.composer,
             genre=result.genre or track.genre,
+            rating=result.rating if result.rating is not None else track.rating,
             mood=result.mood,
             bpm=result.bpm,
             key=result.key,
             energy=result.energy,
+            comment=result.comment or track.comment,
+            lyrics=result.lyrics or track.lyrics,
+            isrc=result.isrc or track.isrc,
+            publisher=result.publisher or track.publisher,
+            grouping=result.grouping or track.grouping,
+            copyright=result.copyright or track.copyright,
+            remixer=result.remixer or track.remixer,
             tags=tags,
         )
 
@@ -335,6 +436,77 @@ def _clean_text(value: str | None) -> str:
     return text.strip()
 
 
+def _to_clean_str(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _looks_like_download_quality_title(value: str | None) -> bool:
+    if not value:
+        return False
+    return bool(re.fullmatch(r"\s*\d{2,4}\s*(?:kbps|k)?\s*", str(value), re.IGNORECASE))
+
+
+def _strip_download_quality_suffix(value: str | None) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    previous = None
+    while previous != text:
+        previous = text
+        text = re.sub(
+            r"\s+-\s+(?:\d{2,4}\s*(?:kbps|k)?|mp3|flac|wav|m4a|aac)$",
+            "",
+            text,
+            flags=re.IGNORECASE,
+        ).strip(" .-_")
+    return text or None
+
+
+def _track_with_filename_identity(track: Track) -> Track:
+    artist_from_file, title_from_file = parse_filename_tags(track.path)
+    cleaned_current_title = _strip_download_quality_suffix(track.title)
+    artist = track.artist
+    if (
+        title_from_file
+        and not artist_from_file
+        and artist
+        and _normalize(artist) == _normalize(title_from_file)
+    ):
+        artist = None
+    if not title_from_file:
+        if cleaned_current_title and cleaned_current_title != track.title:
+            return replace(track, title=cleaned_current_title, artist=artist)
+        if artist != track.artist:
+            return replace(track, artist=artist)
+        return track
+    if _looks_like_download_quality_title(track.title):
+        return replace(
+            track,
+            title=title_from_file,
+            artist=artist_from_file if artist_from_file else None,
+        )
+    if cleaned_current_title and cleaned_current_title != track.title:
+        return replace(
+            track,
+            title=cleaned_current_title,
+            artist=artist_from_file or artist,
+        )
+    if title_from_file and not artist_from_file and not artist and track.title != title_from_file:
+        return replace(track, title=title_from_file, artist=None)
+    if artist_from_file and title_from_file and (not artist or not track.title):
+        return replace(
+            track,
+            artist=artist or artist_from_file,
+            title=track.title or title_from_file,
+        )
+    if artist != track.artist:
+        return replace(track, artist=artist)
+    return track
+
+
 def _normalize(value: str | None) -> str:
     if not value:
         return ""
@@ -364,6 +536,31 @@ def _best_field_value(candidates: list[Candidate], field_name: str) -> Any:
         if _has_meaningful_candidate_value(field_name, value):
             return value
     return None
+
+
+_CANDIDATE_TRACK_FIELDS = (
+    "title",
+    "artist",
+    "album",
+    "albumartist",
+    "year",
+    "tracknumber",
+    "discnumber",
+    "composer",
+    "genre",
+    "rating",
+    "mood",
+    "key",
+    "bpm",
+    "energy",
+    "comment",
+    "lyrics",
+    "isrc",
+    "publisher",
+    "grouping",
+    "copyright",
+    "remixer",
+)
 
 
 def _has_meaningful_candidate_value(field_name: str, value: Any) -> bool:
@@ -398,6 +595,23 @@ def _musicbrainz_recording_score(track: Track, recording: dict[str, Any]) -> flo
     if _musicbrainz_recording_genre(recording):
         bonus += 0.10
     return base + bonus
+
+
+def _itunes_result_score(track: Track, result: dict[str, Any]) -> float:
+    title = result.get("trackName")
+    artist = result.get("artistName")
+    base = _token_similarity(_normalize(track.title), _normalize(title))
+    if track.artist:
+        base = (base * 0.65) + (_token_similarity(_normalize(track.artist), _normalize(artist)) * 0.35)
+    score = base * 0.76
+    bonus = 0.0
+    if result.get("collectionName"):
+        bonus += 0.08
+    if result.get("releaseDate"):
+        bonus += 0.08
+    if result.get("primaryGenreName"):
+        bonus += 0.08
+    return min(1.0, score + bonus)
 
 
 def _musicbrainz_recording_artist(recording: dict[str, Any]) -> str | None:

@@ -442,8 +442,6 @@ def _build_prompt(
         known_lines.append(f"Format audio: {' '.join(fmt_parts)}")
 
     for fname in _ALL_AI_FIELDS:
-        if fname in missing:
-            continue
         if fname in noisy_set:
             continue  # We'll ask AI to clean these
         value = getattr(track, fname, None)
