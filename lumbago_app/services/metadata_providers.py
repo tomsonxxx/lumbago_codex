@@ -2,13 +2,19 @@ from __future__ import annotations
 
 import requests
 
+from lumbago_app.core.config import default_musicbrainz_user_agent, normalize_musicbrainz_user_agent
+
 
 class MusicBrainzProvider:
     def __init__(self, app_name: str | None = None):
-        self.app_name = app_name or "LumbagoMusicAI"
+        self.app_name = (
+            normalize_musicbrainz_user_agent(app_name)
+            if app_name
+            else default_musicbrainz_user_agent()
+        )
 
     def _headers(self) -> dict:
-        return {"User-Agent": f"{self.app_name}/1.0 (lumbago-music-ai)"}
+        return {"User-Agent": self.app_name}
 
     def search_recording(self, query: str) -> dict | None:
         url = "https://musicbrainz.org/ws/2/recording/"

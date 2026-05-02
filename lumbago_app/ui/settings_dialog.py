@@ -3,7 +3,12 @@
 import requests
 from PyQt6 import QtWidgets, QtGui
 
-from lumbago_app.core.config import load_settings, save_settings
+from lumbago_app.core.config import (
+    default_musicbrainz_user_agent,
+    load_settings,
+    normalize_musicbrainz_user_agent,
+    save_settings,
+)
 from lumbago_app.ui.widgets import apply_dialog_fade, dialog_icon_pixmap
 
 
@@ -131,7 +136,7 @@ class SettingsDialog(QtWidgets.QDialog):
 
     def _load(self):
         settings = load_settings()
-        self.musicbrainz_app.setText(settings.musicbrainz_app_name or "")
+        self.musicbrainz_app.setText(settings.musicbrainz_app_name or default_musicbrainz_user_agent())
         self.cloud_provider.setCurrentText(settings.cloud_ai_provider or "")
         self.cloud_api_key.setText(settings.cloud_ai_api_key or "")
         self.gemini_api_key.setText(settings.gemini_api_key or "")
@@ -151,9 +156,10 @@ class SettingsDialog(QtWidgets.QDialog):
         self.metadata_cache_ttl.setValue(settings.metadata_cache_ttl_days)
 
     def _save(self):
+        musicbrainz_user_agent = normalize_musicbrainz_user_agent(self.musicbrainz_app.text())
         save_settings(
             {
-                "MUSICBRAINZ_APP_NAME": self.musicbrainz_app.text().strip(),
+                "MUSICBRAINZ_APP_NAME": musicbrainz_user_agent,
                 "CLOUD_AI_PROVIDER": self.cloud_provider.currentText().strip(),
                 "CLOUD_AI_API_KEY": self.cloud_api_key.text().strip(),
                 "GEMINI_API_KEY": self.gemini_api_key.text().strip(),
@@ -185,9 +191,9 @@ class SettingsDialog(QtWidgets.QDialog):
             QtWidgets.QMessageBox.warning(self, title, text)
 
     def _test_musicbrainz(self) -> None:
-        app_name = self.musicbrainz_app.text().strip() or "LumbagoMusicAI"
+        app_name = normalize_musicbrainz_user_agent(self.musicbrainz_app.text())
         url = "https://musicbrainz.org/ws/2/recording"
-        headers = {"User-Agent": f"{app_name}/1.0"}
+        headers = {"User-Agent": app_name}
         params = {"query": "recording:test", "fmt": "json", "limit": "1"}
         try:
             response = requests.get(url, headers=headers, params=params, timeout=12)
