@@ -17,7 +17,7 @@ from lumbago_app.core.analysis_cache import load_analysis_cache, save_analysis_c
 from lumbago_app.core.models import AnalysisResult, Track
 from lumbago_app.core.services import enrich_track_with_analysis
 from lumbago_app.core.audio import write_tags
-from lumbago_app.data.repository import replace_track_tags, update_tracks
+from lumbago_app.data.repository import replace_track_tags, update_tracks, update_track_paths_bulk
 from lumbago_app.services.ai_tagger import CloudAiTagger, LocalAiTagger, MultiAiTagger, preflight_provider
 from lumbago_app.services.ai_tagger_merge import _merge_analysis_into_track
 from lumbago_app.services.key_detection import detect_key
@@ -561,9 +561,15 @@ class AiTaggerDialog(QtWidgets.QDialog):
         self._apply_btn.setObjectName("PrimaryBtn")
         self._apply_btn.setEnabled(False)
         self._apply_btn.clicked.connect(self._apply_accepted)
+        self._rename_check = QtWidgets.QCheckBox("Zmień nazwy plików")
+        self._rename_check.setToolTip(
+            "Po zapisaniu tagów zmień nazwy plików na format: Artysta - Tytuł"
+        )
+        self._rename_check.setChecked(True)
         layout.addWidget(self._run_btn)
         layout.addWidget(self._stop_btn)
         layout.addWidget(self._apply_btn)
+        layout.addWidget(self._rename_check)
         default_profile = "Szybki" if len(self._tracks) >= 300 else "Zbalansowany"
         self._apply_profile(default_profile)
         return toolbar
@@ -823,11 +829,41 @@ class AiTaggerDialog(QtWidgets.QDialog):
                             future.result()
                         except Exception as exc:
                             write_errors.append(f"{Path(track_path).name}: {exc}")
-            msg = f"Zapisano zmiany dla {len(changed_tracks)} utworĂłw (baza + pliki audio)."
+            msg = f"Zapisano zmiany dla {len(changed_tracks)} utworów (baza + pliki audio)."
             if write_errors:
-                msg += f"\nBĹ‚Ä™dy zapisu tagĂłw: {len(write_errors)}"
+                msg += f"\nBłędy zapisu tagów: {len(write_errors)}"
                 for err in write_errors[:5]:
                     msg += f"\n  {err}"
+
+            # Rename files to "Artysta - Tytuł" if checkbox is checked
+            if self._rename_check.isChecked():
+                from lumbago_app.core.renamer import build_rename_plan, apply_rename_plan
+                renameable = [
+                    s.track for s in self._states
+                    if (s.track.artist or "").strip() and (s.track.title or "").strip()
+                ]
+                if renameable:
+                    plan = build_rename_plan(renameable, "{artist} - {title}")
+                    to_rename = [
+                        item for item in plan
+                        if not item.conflict and item.old_path != item.new_path
+                    ]
+                    conflicts = [item for item in plan if item.conflict]
+                    if to_rename:
+                        rename_history = apply_rename_plan(plan)
+                        # Update DB paths for renamed files
+                        if rename_history:
+                            update_track_paths_bulk(rename_history)
+                        # Update in-memory track paths so UI stays consistent
+                        path_map = {entry["old"]: entry["new"] for entry in rename_history}
+                        for state in self._states:
+                            new_path = path_map.get(state.track.path)
+                            if new_path:
+                                state.track.path = new_path
+                        msg += f"\nZmieniono nazwy {len(rename_history)} plików."
+                    if conflicts:
+                        msg += f"\n{len(conflicts)} plików pominięto (konflikty nazw)."
+
             self._status_lbl.setText(msg)
             self.accept()
         else:
