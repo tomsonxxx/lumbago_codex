@@ -13,7 +13,7 @@ interface DashboardProps {
 const Dashboard: React.FC<DashboardProps> = ({
   totalFiles,
   onImport,
-  onFindDuplicates,
+  onFindDuplicates: _onFindDuplicates,
   onAnalyzeAll,
   onBatchEdit,
   popularTags = [],

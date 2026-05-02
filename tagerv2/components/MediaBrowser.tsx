@@ -24,7 +24,7 @@ const MediaBrowser: React.FC<MediaBrowserProps> = ({
   files,
   onPlay,
   onContextMenu,
-  onSelectEntries,
+  onSelectEntries: _onSelectEntries,
   popularTags = [],
   onTagClick,
 }) => {
