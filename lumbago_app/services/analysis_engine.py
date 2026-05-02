@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import time
@@ -20,6 +20,7 @@ AI_FIELDS: list[str] = [
     "discnumber",
     "composer",
     "genre",
+    "rating",
     "bpm",
     "key",
     "mood",
@@ -44,6 +45,7 @@ _FIELD_PRIORITY = {
     "discnumber": 0.68,
     "composer": 0.68,
     "genre": 0.6,
+    "rating": 0.55,
     "bpm": 0.58,
     "key": 0.58,
     "mood": 0.58,
@@ -145,6 +147,7 @@ def build_prompt(track: Track, fields: list[str]) -> str:
         "- jesli nie masz pewnosci: null\n"
         "- bez komentarzy, bez markdown, tylko obiekt JSON\n"
         "- dla bpm/energy zwracaj liczby\n\n"
+        "- dla ratingu zwracaj liczbe calkowita 0-5\n\n"
         "Dane wejściowe utworu:\n"
         + known
     )
@@ -302,6 +305,7 @@ def _to_analysis_result(values: dict[str, Any], results: list[ProviderResult]) -
         mood=_to_str(values.get("mood")),
         energy=_to_float(values.get("energy")),
         genre=_to_str(values.get("genre")),
+        rating=_to_int(values.get("rating")),
         title=_to_str(values.get("title")),
         artist=_to_str(values.get("artist")),
         album=_to_str(values.get("album")),
@@ -415,6 +419,18 @@ def _to_str(value: Any) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _to_int(value: Any) -> int | None:
+    if value is None or value == "":
+        return None
+    try:
+        rating = int(float(value))
+    except (TypeError, ValueError):
+        return None
+    if rating > 5:
+        rating = max(0, min(5, round(rating / 2)))
+    return rating if 0 <= rating <= 5 else None
 
 
 def _infer_confidence(payload: dict[str, Any]) -> float:

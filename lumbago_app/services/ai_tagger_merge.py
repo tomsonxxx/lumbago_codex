@@ -44,6 +44,18 @@ def _merge_analysis_into_track(track: Track, result: AnalysisResult) -> Track:
         if incoming is not None:
             setattr(track, field, incoming)
 
+    rating = getattr(result, "rating", None)
+    if rating is not None:
+        try:
+            rating_int = int(rating)
+        except (TypeError, ValueError):
+            rating_int = None
+        if rating_int is not None:
+            if rating_int > 5:
+                rating_int = max(0, min(5, round(rating_int / 2)))
+            if 0 <= rating_int <= 5:
+                track.rating = rating_int
+
     for field in _META_OVERWRITE_FIELDS:
         incoming = getattr(result, field, None)
         if incoming is None:

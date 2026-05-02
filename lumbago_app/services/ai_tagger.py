@@ -194,6 +194,7 @@ class CloudAiTagger:
                     mood=_to_str(cleaned.get("mood")),
                     energy=_to_float(cleaned.get("energy")),
                     genre=_to_str(cleaned.get("genre")),
+                    rating=_parse_rating(cleaned.get("rating")),
                     description=_to_str(cleaned.get("description")),
                     confidence=confidence,
                     title=_to_str(cleaned.get("title")),
@@ -308,6 +309,7 @@ def _merge_results(results: list[tuple[str, AnalysisResult]]) -> AnalysisResult:
         mood=_to_str(winners.get("mood")),
         energy=_to_float(winners.get("energy")),
         genre=_to_str(winners.get("genre")),
+        rating=_parse_rating(winners.get("rating")),
         title=_to_str(winners.get("title")),
         artist=_to_str(winners.get("artist")),
         album=_to_str(winners.get("album")),
@@ -347,6 +349,7 @@ _ALL_AI_FIELDS: list[str] = [
     "album",
     "albumartist",
     "genre",
+    "rating",
     "year",
     "tracknumber",
     "discnumber",
@@ -397,6 +400,7 @@ _FIELD_LABELS: dict[str, str] = {
     "album": "Album",
     "albumartist": "Artysta albumu",
     "genre": "Gatunek",
+    "rating": "Ocena",
     "year": "Rok",
     "tracknumber": "Numer utworu",
     "discnumber": "Numer dysku",
@@ -475,6 +479,7 @@ def _build_prompt(
         + fields_list
         + "."
         + clean_note
+        + "\nDla ratingu zwracaj liczbe calkowita 0-5.\n"
         + "\nJesli danego pola absolutnie nie mozna ustalic, uzyj null. Nie dodawaj zadnych komentarzy poza JSON.\n\n"
         "Znane dane utworu:\n"
         + known_section
@@ -634,6 +639,26 @@ def _infer_confidence(payload: dict[str, Any]) -> float | None:
 def _normalize_payload(payload: dict[str, Any]) -> dict[str, Any]:
     allowed = set(_ALL_AI_FIELDS) | {"description", "confidence"}
     return {key: value for key, value in payload.items() if key in allowed}
+
+
+def _parse_rating(value: Any) -> int | None:
+    if value is None or value == "":
+        return None
+    try:
+        rating = int(float(value))
+    except (TypeError, ValueError):
+        text = str(value).strip()
+        if not text:
+            return None
+        if "/" in text:
+            text = text.split("/", 1)[0].strip()
+        match = re.search(r"\d+", text)
+        if not match:
+            return None
+        rating = int(match.group(0))
+    if rating > 5:
+        rating = max(0, min(5, round(rating / 2)))
+    return rating if 0 <= rating <= 5 else None
 
 
 def _resolve_runtime_config(

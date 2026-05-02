@@ -29,6 +29,7 @@ class AnalysisResult:
     mood: str | None = None
     energy: float | None = None
     genre: str | None = None
+    rating: int | None = None
     description: str | None = None
     confidence: float | None = None
     title: str | None = None

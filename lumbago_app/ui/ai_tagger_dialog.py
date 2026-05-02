@@ -31,7 +31,7 @@ FIELDS = [
     "rating", "mood", "energy",
     "isrc", "grouping", "copyright", "remixer",
 ]
-AI_FIELDS = {"genre", "bpm", "key", "mood", "energy"}
+AI_FIELDS = {"genre", "bpm", "key", "mood", "energy", "rating"}
 AUDIO_DERIVED_FIELDS = {"bpm", "key", "energy", "mood"}
 FIELD_LABELS = {
     "title": "TytuĹ‚",
