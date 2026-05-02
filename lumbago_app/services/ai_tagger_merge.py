@@ -19,9 +19,12 @@ def _is_unknown(value: str | None) -> bool:
 _AI_ANALYSIS_TEXT_FIELDS = ("key", "genre", "mood")
 _AI_ANALYSIS_FLOAT_FIELDS = ("bpm", "energy")
 
+# Title/artist: always overwrite if analysis returns a cleaner value
+_META_OVERWRITE_FIELDS = ("title", "artist")
+
 # Metadata fields: only fill if currently missing on the track
 _META_FILL_FIELDS = (
-    "title", "artist", "album", "albumartist", "year",
+    "album", "albumartist", "year",
     "tracknumber", "discnumber", "composer",
     "isrc", "publisher", "lyrics", "grouping", "copyright", "remixer", "comment",
 )
@@ -43,6 +46,15 @@ def _merge_analysis_into_track(track: Track, result: AnalysisResult) -> Track:
         incoming = getattr(result, field, None)
         if incoming is not None:
             setattr(track, field, incoming)
+
+    # Title and artist: always overwrite if analysis returns a non-empty value
+    for field in _META_OVERWRITE_FIELDS:
+        incoming = getattr(result, field, None)
+        if incoming is None:
+            continue
+        if isinstance(incoming, str) and _is_unknown(incoming):
+            continue
+        setattr(track, field, incoming)
 
     for field in _META_FILL_FIELDS:
         incoming = getattr(result, field, None)

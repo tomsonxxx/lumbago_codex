@@ -119,6 +119,50 @@ def _cleanup_metadata_fragment(value: str) -> str:
     return text
 
 
+# Bracket-enclosed noise to remove from titles parsed out of filenames.
+# Only removes specific video/quality/lyrics markers; leaves remixes and feat. intact.
+_FILENAME_NOISE_BRACKET_RE = re.compile(
+    r"[\[(]\s*(?:"
+    r"(?:hd|hq|4k|8k)\s+video"                         # [4K Video], [HD Video]
+    r"|(?:hd|hq|4k|8k)"                                 # [4K], [HQ]
+    r"|official\s+(?:music\s+)?lyric(?:s)?\s+video"     # (Official Lyric Video)
+    r"|official\s+(?:music\s+)?video"                   # (Official Music Video), (Official Video)
+    r"|official\s+audio"                                # (Official Audio)
+    r"|lyric\s+video"                                   # (Lyric Video)
+    r"|lyrics?"                                         # (Lyric), (Lyrics)
+    r"|visualizer"                                      # (Visualizer)
+    r"|remastered(?:\s+\d{4})?"                         # (Remastered), (Remastered 2021)
+    r"|full\s+album"                                    # (Full Album)
+    r"|explicit"                                        # (Explicit)
+    r")\s*[\])]",
+    re.IGNORECASE,
+)
+
+
+def _clean_title_from_filename(title: str) -> str:
+    """Remove video/quality noise from a title fragment while keeping remixes and featurings."""
+    title = _FILENAME_NOISE_BRACKET_RE.sub("", title)
+    title = re.sub(r"\s+", " ", title).strip(" .-_")
+    return title
+
+
+def parse_filename_tags(path: str | Path) -> tuple[str | None, str | None]:
+    """Try to extract (artist, title) from filename stem using 'Artist - Title' pattern.
+
+    Returns (artist, title) with video/quality noise removed, or (None, None) if
+    the 'Artist - Title' separator pattern is not found.
+    Remixes, featurings and other parenthetical info are preserved.
+    """
+    stem = Path(path).stem
+    for sep in (" – ", " — ", " - "):
+        if sep in stem:
+            left, right = stem.split(sep, 1)
+            artist = left.strip() or None
+            title = _clean_title_from_filename(right.strip()) or None
+            return artist, title
+    return None, None
+
+
 def _history_path() -> Path:
     return cache_dir() / "rename_history.json"
 

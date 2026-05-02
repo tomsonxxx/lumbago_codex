@@ -2,9 +2,11 @@
 
 import json
 import queue
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 import requests
@@ -54,9 +56,11 @@ class CloudAiTagger:
             return AnalysisResult(description="Cloud AI missing base URL or model", confidence=0.0)
 
         missing = _missing_fields(track)
-        if not missing:
+        noisy = _noisy_fields(track)
+        fields_to_fill = list(dict.fromkeys(missing + [f for f in noisy if f not in missing]))
+        if not fields_to_fill:
             return AnalysisResult(description="No missing fields", confidence=1.0)
-        prompt = _build_prompt(track, missing)
+        prompt = _build_prompt(track, fields_to_fill, noisy_fields=noisy)
         last_exc: Exception | None = None
         for attempt in range(self.retries + 1):
             try:
@@ -220,21 +224,42 @@ def _has_nonempty_value(value: Any) -> bool:
     return True
 
 
-_MISSING_SENTINEL = {"", "-", "â€”", "unknown", "n/a", "none", "null"}
+_MISSING_SENTINEL = {'', '-', '—', 'unknown', 'n/a', 'none', 'null'}
 
 _ALL_AI_FIELDS: list[str] = [
-    "title",
-    "bpm",
-    "key",
-    "artist",
-    "album",
-    "genre",
-    "year",
-    "composer",
-    "comment",
-    "lyrics",
-    "publisher",
+    'title',
+    'bpm',
+    'key',
+    'artist',
+    'album',
+    'genre',
+    'year',
+    'composer',
+    'comment',
+    'lyrics',
+    'publisher',
 ]
+
+# Patterns that indicate a title/artist contains video/quality noise
+_NOISE_CHECK_RE = re.compile(
+    r'[\[(]\s*('
+    r'official(\s+music)?\s+video|official\s+audio|audio|lyrics?|lyric\s+video|'
+    r'visualizer|hq|hd|4k|8k|remastered(\s+\d{4})?|live|full\s+album|explicit'
+    r')\s*[\])]'
+    r'|\b(official(\s+music)?\s+video|official\s+audio|lyric\s+video|visualizer)\b'
+    r'|\b(4k|8k)\b',
+    re.IGNORECASE,
+)
+
+
+def _noisy_fields(track: Track) -> list[str]:
+    '''Return title/artist fields that contain video/quality noise markers.'''
+    noisy: list[str] = []
+    for fname in ('title', 'artist'):
+        val = getattr(track, fname, None)
+        if isinstance(val, str) and _NOISE_CHECK_RE.search(val):
+            noisy.append(fname)
+    return noisy
 
 
 def _missing_fields(track: Track) -> list[str]:
@@ -265,25 +290,51 @@ _FIELD_LABELS: dict[str, str] = {
 }
 
 
-def _build_prompt(track: Track, missing: list[str]) -> str:
-    known_lines = []
-    for field in _ALL_AI_FIELDS:
-        if field in missing:
+def _build_prompt(
+    track: Track,
+    missing: list[str],
+    noisy_fields: list[str] | None = None,
+) -> str:
+    noisy_set = set(noisy_fields or [])
+    # Always include filename as context
+    known_lines = [f"Nazwa pliku: {Path(track.path).stem}"]
+    for fname in _ALL_AI_FIELDS:
+        if fname in missing:
             continue
-        value = getattr(track, field, None)
+        if fname in noisy_set:
+            continue  # We'll ask AI to clean these
+        value = getattr(track, fname, None)
         if value is None:
             continue
-        label = _FIELD_LABELS.get(field, field)
+        label = _FIELD_LABELS.get(fname, fname)
         known_lines.append(f"{label}: {value}")
 
-    known_section = "\n".join(known_lines) if known_lines else "(brak danych)"
-    missing_list = ", ".join(missing)
+    known_section = "\n".join(known_lines)
+    fields_list = ", ".join(missing)
+
+    clean_note = ""
+    if noisy_set:
+        noisy_current = []
+        for fname in noisy_set:
+            val = getattr(track, fname, None)
+            if val:
+                noisy_current.append(f"{_FIELD_LABELS.get(fname, fname)}: \"{val}\"")
+        if noisy_current:
+            clean_note = (
+                "\nPola do oczyszczenia (usuń zbędne elementy jak '[4K Video]', "
+                "'(Official Lyric Video)', '(Official Music Video)', 'HQ', 'HD', itp., "
+                "zachowaj remixy i featuringi): "
+                + "; ".join(noisy_current)
+            )
+
     return (
-        "Jestes ekspertem metadanych muzycznych. Na podstawie ponizszych danych uzupelnij brakujace pola.\n"
+        "Jestes ekspertem metadanych muzycznych. Na podstawie ponizszych danych uzupelnij brakujace pola"
+        " i oczyscic zaszumione.\n"
         "Zwroc TYLKO poprawny JSON z dokladnie tymi polami: "
-        + missing_list
-        + ".\n"
-        "Jesli danego pola nie mozna ustalic, uzyj null. Nie dodawaj zadnych komentarzy poza JSON.\n\n"
+        + fields_list
+        + "."
+        + clean_note
+        + "\nJesli danego pola nie mozna ustalic, uzyj null. Nie dodawaj zadnych komentarzy poza JSON.\n\n"
         "Znane dane utworu:\n"
         + known_section
     )

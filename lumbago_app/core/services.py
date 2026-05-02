@@ -7,6 +7,7 @@ from typing import Iterable
 from lumbago_app.core.audio import file_hash
 from lumbago_app.services.recognizer import AcoustIdRecognizer
 from lumbago_app.core.models import AnalysisResult, DuplicateGroup, Track
+from lumbago_app.core.renamer import parse_filename_tags
 
 
 def heuristic_analysis(track: Track) -> AnalysisResult:
@@ -22,6 +23,14 @@ def heuristic_analysis(track: Track) -> AnalysisResult:
             energy, mood = 0.75, "energetic"
         else:
             energy, mood = 0.9, "peak"
+
+    # Parse filename to propose clean artist/title
+    artist_from_file, title_from_file = parse_filename_tags(track.path)
+    current_artist = (track.artist or "").strip()
+    current_title = (track.title or "").strip()
+    proposed_artist = artist_from_file if artist_from_file and artist_from_file != current_artist else None
+    proposed_title = title_from_file if title_from_file and title_from_file != current_title else None
+
     return AnalysisResult(
         bpm=bpm,
         key=track.key,
@@ -29,7 +38,9 @@ def heuristic_analysis(track: Track) -> AnalysisResult:
         energy=energy,
         genre=track.genre,
         description=None,
-        confidence=0.4,
+        confidence=0.6,
+        artist=proposed_artist,
+        title=proposed_title,
     )
 
 
