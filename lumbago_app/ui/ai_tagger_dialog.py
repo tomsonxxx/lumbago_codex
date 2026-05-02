@@ -17,7 +17,7 @@ from lumbago_app.core.analysis_cache import load_analysis_cache, save_analysis_c
 from lumbago_app.core.models import AnalysisResult, Track
 from lumbago_app.core.services import enrich_track_with_analysis
 from lumbago_app.core.audio import write_tags
-from lumbago_app.data.repository import replace_track_tags, update_tracks
+from lumbago_app.data.repository import replace_track_tags, update_tracks, update_track_paths_bulk
 from lumbago_app.services.ai_tagger import CloudAiTagger, LocalAiTagger, MultiAiTagger, preflight_provider
 from lumbago_app.services.ai_tagger_merge import _merge_analysis_into_track
 from lumbago_app.services.key_detection import detect_key
@@ -850,8 +850,17 @@ class AiTaggerDialog(QtWidgets.QDialog):
                     ]
                     conflicts = [item for item in plan if item.conflict]
                     if to_rename:
-                        apply_rename_plan(plan)
-                        msg += f"\nZmieniono nazwy {len(to_rename)} plików."
+                        rename_history = apply_rename_plan(plan)
+                        # Update DB paths for renamed files
+                        if rename_history:
+                            update_track_paths_bulk(rename_history)
+                        # Update in-memory track paths so UI stays consistent
+                        path_map = {entry["old"]: entry["new"] for entry in rename_history}
+                        for state in self._states:
+                            new_path = path_map.get(state.track.path)
+                            if new_path:
+                                state.track.path = new_path
+                        msg += f"\nZmieniono nazwy {len(rename_history)} plików."
                     if conflicts:
                         msg += f"\n{len(conflicts)} plików pominięto (konflikty nazw)."
 
