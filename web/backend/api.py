@@ -47,6 +47,24 @@ def _web_conn() -> sqlite3.Connection:
     return conn
 
 
+class TrackUpdatePayload(BaseModel):
+    title: str | None = None
+    artist: str | None = None
+    album: str | None = None
+    albumartist: str | None = None
+    year: str | None = None
+    genre: str | None = None
+    tracknumber: str | None = None
+    composer: str | None = None
+    comment: str | None = None
+    lyrics: str | None = None
+    publisher: str | None = None
+    bpm: float | None = None
+    key: str | None = None
+    mood: str | None = None
+    energy: float | None = None
+
+
 class SettingPayload(BaseModel):
     value: str = Field(default="")
 
@@ -115,8 +133,10 @@ def _serialize_track(row: TrackOrm) -> dict:
         "title": row.title or Path(row.path).stem,
         "artist": row.artist or "Unknown",
         "album": row.album,
+        "albumartist": row.albumartist,
         "year": row.year,
         "genre": row.genre,
+        "tracknumber": row.tracknumber,
         "composer": row.composer,
         "comment": row.comment,
         "lyrics": row.lyrics,
@@ -124,8 +144,15 @@ def _serialize_track(row: TrackOrm) -> dict:
         "key": row.key,
         "bpm": row.bpm,
         "duration": row.duration,
+        "loudness": row.loudness_lufs,
+        "energy": row.energy,
+        "mood": row.mood,
+        "artwork_path": row.artwork_path,
+        "format": row.format,
+        "bitrate": row.bitrate,
+        "file_size": row.file_size,
+        "date_added": row.date_added.isoformat() if row.date_added else None,
         "hash": row.file_hash,
-        "fingerprint": row.fingerprint,
         "url": row.path,
     }
 
@@ -525,6 +552,40 @@ def read_tag_history(track_id: int) -> dict[str, list[dict]]:
 @app.get("/tracks")
 def list_tracks() -> dict[str, list[dict]]:
     return {"tracks": [_serialize_track(row) for row in _list_track_rows()]}
+
+
+@app.put("/tracks/{track_path:path}")
+def update_track_endpoint(track_path: str, payload: TrackUpdatePayload) -> dict:
+    """Aktualizuje tagi wybranego tracka w bazie i pliku audio."""
+    from lumbago_app.data.repository import update_track as repo_update_track
+
+    init_db()
+    Session = get_session_factory()
+    with Session() as session:
+        row = session.scalar(select(TrackOrm).where(TrackOrm.path == track_path))
+        if row is None:
+            raise HTTPException(status_code=404, detail=f"Track not found: {track_path}")
+
+        update_data = payload.model_dump(exclude_none=True)
+        for field, value in update_data.items():
+            if hasattr(row, field):
+                setattr(row, field, value)
+        session.commit()
+        updated_row = session.scalar(select(TrackOrm).where(TrackOrm.path == track_path))
+
+    # Zapisz tagi do pliku audio
+    if update_data:
+        try:
+            from lumbago_app.core.audio import write_tags
+            file_tags = {k: str(v) for k, v in update_data.items()
+                         if k not in {"energy", "mood", "loudness"}}
+            if file_tags:
+                write_tags(Path(track_path), file_tags)
+        except Exception as exc:
+            # Błąd zapisu do pliku — zwróć ostrzeżenie, ale nie przerywaj
+            return {"track": _serialize_track(updated_row), "warning": str(exc)}
+
+    return {"track": _serialize_track(updated_row)}
 
 
 @app.post("/tracks/import-preview")

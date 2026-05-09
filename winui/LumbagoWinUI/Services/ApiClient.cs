@@ -56,6 +56,15 @@ public sealed class ApiClient
         await _http.PutAsJsonAsync($"/settings/{Uri.EscapeDataString(key)}", payload, ct);
     }
 
+    public async Task<Track?> UpdateTrackAsync(string path, TrackUpdate update, CancellationToken ct = default)
+    {
+        var resp = await _http.PutAsJsonAsync(
+            $"/tracks/{Uri.EscapeDataString(path)}", update, _json, ct);
+        resp.EnsureSuccessStatusCode();
+        var result = await resp.Content.ReadFromJsonAsync<UpdateTrackResponse>(_json, ct);
+        return result?.Track;
+    }
+
     public async Task<List<Track>> SearchTracksAsync(string query, CancellationToken ct = default)
     {
         var all = await GetTracksAsync(ct);
@@ -71,4 +80,5 @@ public sealed class ApiClient
 
     private sealed record SettingResponse(string? Value);
     private sealed record TracksResponse(List<Track>? Tracks);
+    private sealed record UpdateTrackResponse(Track? Track);
 }
