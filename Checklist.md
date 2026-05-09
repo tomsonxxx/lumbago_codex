@@ -223,7 +223,7 @@
 ### 4.2 Implementacja
 - [x] Szkielet aplikacji WinUI 3 (shell, nawigacja, routing) — `winui/LumbagoWinUI/` (18 plików; wymaga VS 2022 + Windows App SDK workload do kompilacji)
 - [x] Widok Biblioteki (lista + siatka + filtry + detail panel) — przełącznik lista↔siatka, filtry Gatunek/Tonacja/BPM, panel edycji tagów, PUT /tracks/{path} w backend
-- [ ] (P1) Import, Duplikaty, Konwerter XML, Ustawienia
+- [x] (P1) Import, Duplikaty, Konwerter XML — ImportPage (FolderPicker + podgląd + commit), DuplicatesPage (3 tryby + karty grup + usuwanie), ConverterPage (Rekordbox→VirtualDJ); backend: DELETE /tracks/{path} + POST /convert/rekordbox-to-virtualdj
 - [ ] (P1) Dialog Porównania Tagów + Smart Tagger
 - [ ] (P1) Globalny odtwarzacz (dock) + pasek akcji
 - [ ] (P1) Podłączenie danych z logiką (tracki, playlisty, tagi)
