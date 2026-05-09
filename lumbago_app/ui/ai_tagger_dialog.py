@@ -947,13 +947,14 @@ class AiTaggerDialog(QtWidgets.QDialog):
         if state.metadata_report is not None:
             self._log_view.appendPlainText(f"  źródła: {state.metadata_report.summary}")
         if state.ai_result is not None:
-            desc = state.ai_result.description or ""
-            self._log_view.appendPlainText(
+            ai_line = (
                 f"  AI: bpm={state.ai_result.bpm} key={state.ai_result.key} "
                 f"genre={state.ai_result.genre} mood={state.ai_result.mood} energy={state.ai_result.energy} "
                 f"conf={float(state.ai_result.confidence or 0.0):.0%}"
-                + (f" | {desc}" if desc else "")
             )
+            if state.ai_result.description:
+                ai_line += f" [{state.ai_result.description}]"
+            self._log_view.appendPlainText(ai_line)
 
     def _analyze(self) -> None:
         self._start_pipeline()

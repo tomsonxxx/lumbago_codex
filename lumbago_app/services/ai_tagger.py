@@ -526,12 +526,18 @@ def _call_openai_compatible_chat(
         "response_format": {"type": "json_object"},
     }
     # Try with JSON mode first; fall back for endpoints that reject the extra field.
+    payload = base_payload
     for use_json_mode in (True, False):
-        payload = {**base_payload, **({"response_format": {"type": "json_object"}} if use_json_mode else {})}
         resp = requests.post(url, headers=headers, json=payload, timeout=timeout)
         if not use_json_mode or resp.status_code not in (400, 422):
-            resp.raise_for_status()
+            if not resp.ok:
+                raise requests.HTTPError(
+                    f"{resp.status_code} {resp.reason} — {resp.text[:300]}",
+                    response=resp,
+                )
             return _extract_text_from_chat_completions(resp.json())
+        # retry without JSON mode
+        payload = {k: v for k, v in base_payload.items() if k != "response_format"}
     raise RuntimeError("unreachable")
 
 
