@@ -102,8 +102,9 @@ public sealed partial class LibraryPage : Page
     {
         if (e.AddedItems.FirstOrDefault() is Track track)
         {
-            if (XamlRoot?.Content is MainWindow win)
-                win.UpdatePlayerInfo(track.DisplayTitle, track.DisplayArtist, track.DisplayBpm, track.DisplayKey);
+            // Window jest poza drzewem UIElement w WinUI 3 — używamy statycznej referencji.
+            App.Window?.UpdatePlayerInfo(
+                track.DisplayTitle, track.DisplayArtist, track.DisplayBpm, track.DisplayKey);
         }
     }
 }

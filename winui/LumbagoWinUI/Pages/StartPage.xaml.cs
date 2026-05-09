@@ -12,12 +12,8 @@ public sealed partial class StartPage : Page
 
     private void Card_PointerPressed(object sender, PointerRoutedEventArgs e)
     {
-        if (sender is Microsoft.UI.Xaml.FrameworkElement { Tag: string tag } &&
-            App.Current is App &&
-            Frame.Parent is NavigationView nav &&
-            nav.Parent?.Parent is MainWindow win)
-        {
-            win.NavigateTo(tag);
-        }
+        // Window jest poza drzewem UIElement w WinUI 3 — używamy statycznej referencji.
+        if (sender is Microsoft.UI.Xaml.FrameworkElement { Tag: string tag })
+            App.Window?.NavigateTo(tag);
     }
 }

@@ -8,6 +8,12 @@ public partial class App : Application
     public static ApiClient Api { get; private set; } = new();
     public static BackendLauncher? Backend { get; private set; }
 
+    /// <summary>
+    /// Statyczna referencja do głównego okna — potrzebna bo Window nie jest UIElement
+    /// i nie wchodzi do drzewa wizualnego WinUI 3.
+    /// </summary>
+    public static MainWindow? Window { get; private set; }
+
     private MainWindow? _window;
 
     public App()
@@ -30,6 +36,7 @@ public partial class App : Application
         }
 
         _window = new MainWindow();
+        Window = _window;
         _window.Closed += OnMainWindowClosed;
         _window.Activate();
     }
@@ -38,5 +45,6 @@ public partial class App : Application
     {
         Backend?.Dispose();
         Backend = null;
+        Window = null;
     }
 }
