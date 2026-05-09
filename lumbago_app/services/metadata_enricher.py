@@ -396,8 +396,8 @@ def _select_recording_id(
     if not results:
         return None
 
-    preferred_title_norm = _comparison_text(preferred_title)
-    preferred_artist_norm = _comparison_text(preferred_artist)
+    preferred_title_norm = _normalize(preferred_title)
+    preferred_artist_norm = _normalize(preferred_artist)
     best_id: str | None = None
     best_score = -1.0
 
@@ -411,8 +411,8 @@ def _select_recording_id(
             recording_id = recording.get("id")
             if not recording_id:
                 continue
-            title = _comparison_text(recording.get("title"))
-            artist = _comparison_text(_first_artist(recording))
+            title = _normalize(recording.get("title"))
+            artist = _normalize(_first_artist(recording))
 
             similarity = 0.0
             if preferred_title_norm:
