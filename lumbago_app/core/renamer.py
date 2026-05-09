@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Iterable
 
 from lumbago_app.core.config import cache_dir
@@ -152,7 +152,7 @@ def _strip_download_quality_suffix(value: str) -> str:
     while previous != text:
         previous = text
         text = re.sub(
-            r"\s+-\s+(?:\d{2,4}\s*(?:kbps|k)?|mp3|flac|wav|m4a|aac)$",
+            r"[ \t]+-[ \t]+(?:\d{2,4}[ \t]*(?:kbps|k)?|mp3|flac|wav|m4a|aac)$",
             "",
             text,
             flags=re.IGNORECASE,
@@ -167,7 +167,7 @@ def parse_filename_tags(path: str | Path) -> tuple[str | None, str | None]:
     the 'Artist - Title' separator pattern is not found.
     Remixes, featurings and other parenthetical info are preserved.
     """
-    stem = _strip_download_quality_suffix(Path(path).stem.replace("_", " ").replace(".", " "))
+    stem = _strip_download_quality_suffix(PureWindowsPath(path).stem.replace("_", " ").replace(".", " "))
     for sep in (" – ", " — ", " - "):
         if sep in stem:
             left, right = stem.split(sep, 1)

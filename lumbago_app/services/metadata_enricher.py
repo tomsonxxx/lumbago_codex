@@ -1368,6 +1368,8 @@ _REMOTE_NOISE_PATTERNS: tuple[re.Pattern[str], ...] = (
     ),
     re.compile(r"\b(hq|hd|4k|8k|remastered(\s+\d{4})?|live)\b", re.IGNORECASE),
     re.compile(r"\s+\|\s+(youtube|spotify|soundcloud|apple music|deezer|beatport|tidal|bandcamp|audiomack|last\.fm)\b", re.IGNORECASE),
+    # YouTube auto-generated channel names ("Artist - Topic")
+    re.compile(r"\s+-\s+topic\s*$", re.IGNORECASE),
 )
 
 
@@ -1442,8 +1444,8 @@ def _should_replace_local_value(
     if field_name in {"title", "artist", "album", "albumartist"}:
         if _looks_like_remote_noise(current_text):
             return True
-        if source_confidence >= 0.9:
-            return True
+        # balanced mode: do not overwrite existing non-noise values even at high confidence
+        # (use aggressive policy to enable that behaviour)
     if field_name == "year":
         current_year = _parse_year(current_text)
         incoming_year = _parse_year(incoming_text)

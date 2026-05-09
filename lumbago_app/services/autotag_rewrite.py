@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 import re
 from typing import Any
 
@@ -139,7 +139,7 @@ class UnifiedAutoTagger:
         artist = _clean_text(track.artist)
         title = _clean_text(track.title)
         if not artist and not title:
-            base = _clean_text(Path(track.path).stem.replace("_", " ").replace(".", " "))
+            base = _clean_text(PureWindowsPath(track.path).stem.replace("_", " ").replace(".", " "))
             if base:
                 title = base
         if not artist and not title:
@@ -357,7 +357,8 @@ class UnifiedAutoTagger:
         if not any(_has_meaningful_candidate_value("ai", value) for value in useful_fields):
             if not (result.confidence or 0.0):
                 return Candidate(source="AI", score=0, error=result.description or "AI returned no usable fields")
-            return None
+            # confidence > 0 but useful_fields list is empty — fall through and build
+            # candidate from whatever the AI did return (title, artist, key, bpm, etc.)
         confidence = float(result.confidence or 0.0)
         score = int(max(0.0, min(1.0, confidence if confidence > 0 else 0.7)) * 100)
         tags: list[str] = []
@@ -446,7 +447,7 @@ def _to_clean_str(value: Any) -> str | None:
 def _looks_like_download_quality_title(value: str | None) -> bool:
     if not value:
         return False
-    return bool(re.fullmatch(r"\s*\d{2,4}\s*(?:kbps|k)?\s*", str(value), re.IGNORECASE))
+    return bool(re.fullmatch(r"[ \t]*\d{2,4}[ \t]*(?:kbps|k)?[ \t]*", str(value), re.IGNORECASE))
 
 
 def _strip_download_quality_suffix(value: str | None) -> str | None:
@@ -457,7 +458,7 @@ def _strip_download_quality_suffix(value: str | None) -> str | None:
     while previous != text:
         previous = text
         text = re.sub(
-            r"\s+-\s+(?:\d{2,4}\s*(?:kbps|k)?|mp3|flac|wav|m4a|aac)$",
+            r"[ \t]+-[ \t]+(?:\d{2,4}[ \t]*(?:kbps|k)?|mp3|flac|wav|m4a|aac)$",
             "",
             text,
             flags=re.IGNORECASE,
