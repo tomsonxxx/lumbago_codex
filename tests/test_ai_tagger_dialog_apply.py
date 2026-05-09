@@ -6,6 +6,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PyQt6 import QtWidgets
 
 from lumbago_app.core.models import Track
+from lumbago_app.services.metadata_writeback import PendingTrackWrite, WritebackResult
 from lumbago_app.ui.ai_tagger_dialog import AiTaggerDialog
 
 
@@ -25,33 +26,24 @@ def test_apply_accepted_persists_placeholder_replacements(monkeypatch, tmp_path:
 
     calls: dict[str, object] = {}
 
-    def _replace_track_tags(track_path: str, tags: list[str], source: str, confidence):
-        calls["replace"] = {
-            "track_path": track_path,
-            "tags": tags,
-            "source": source,
-            "confidence": confidence,
-        }
+    def _apply_track_writes(writes, *, max_workers=4, update_mode="bulk"):
+        pending: list[PendingTrackWrite] = list(writes)
+        calls["writes"] = pending
+        return WritebackResult(track_count=len(pending))
 
-    def _write_tags(path: Path, tags: dict[str, str]):
-        calls["write"] = {"path": path, "tags": tags}
-
-    def _update_tracks(tracks):
-        calls["update"] = list(tracks)
-
-    monkeypatch.setattr("lumbago_app.ui.ai_tagger_dialog.replace_track_tags", _replace_track_tags)
-    monkeypatch.setattr("lumbago_app.ui.ai_tagger_dialog.write_tags", _write_tags)
-    monkeypatch.setattr("lumbago_app.ui.ai_tagger_dialog.update_tracks", _update_tracks)
+    monkeypatch.setattr("lumbago_app.ui.ai_tagger_dialog.apply_track_writes", _apply_track_writes)
     monkeypatch.setattr(dialog, "accept", lambda: calls.__setitem__("accepted", True))
 
     dialog._apply_accepted()
 
     assert original.title == "Fixed Title"
     assert original.artist == "Fixed Artist"
-    assert calls["replace"]["tags"] == ["title:Fixed Title", "artist:Fixed Artist"]
-    assert calls["write"]["path"] == track_path
-    assert calls["write"]["tags"] == {"title": "Fixed Title", "artist": "Fixed Artist"}
-    assert calls["update"] == [original]
+
+    writes: list[PendingTrackWrite] = calls["writes"]
+    assert len(writes) == 1
+    w = writes[0]
+    assert w.track is original
+    assert w.fields == {"title": "Fixed Title", "artist": "Fixed Artist"}
     assert calls["accepted"] is True
 
     app.quit()
