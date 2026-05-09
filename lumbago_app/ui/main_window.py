@@ -29,6 +29,7 @@ from lumbago_app.services.autotag_rewrite import UnifiedAutoTagger
 from lumbago_app.services.beatgrid import auto_cue_points, compute_beatgrid
 from lumbago_app.services.key_detection import detect_key
 from lumbago_app.services.loudness import analyze_loudness, normalize_loudness
+from lumbago_app.services.metadata_writeback import PendingTrackWrite, apply_track_writes
 from lumbago_app.services.xml_converter import XmlTrack, export_virtualdj_xml
 from lumbago_app.data.repository import (
     add_track_to_playlist,
@@ -64,6 +65,7 @@ from lumbago_app.ui.xml_converter_dialog import XmlConverterDialog
 from lumbago_app.ui.xml_import_dialog import XmlImportDialog
 from lumbago_app.ui.player_widget import PlayerWidget as DJPlayerWidget
 from lumbago_app.ui.library_widget import LibraryWidget
+from lumbago_app.ui.background_task_monitor import BackgroundTaskManager, BackgroundTaskMonitorWidget
 from lumbago_app.ui.health_dashboard import HealthReportDashboard
 
 
@@ -496,16 +498,27 @@ class AutoTagWorker(QtCore.QRunnable):
                 sync_fields = self._fields_requiring_file_sync(track)
                 fields_to_write = sorted(set(changed_fields) | set(sync_fields))
                 if fields_to_write:
-                    if changed_fields:
-                        update_track(track)
-                    write_tags(Path(track.path), _track_to_tag_dict(track, fields_to_write))
-                    replace_track_tags(
-                        track.path,
-                        [f"{name}:{getattr(track, name, None)}" for name in fields_to_write],
-                        source="autotag:file_sync",
-                        confidence=None,
+                    old_values = {
+                        name: (None if getattr(before, name, None) is None else str(getattr(before, name, None)))
+                        for name in fields_to_write
+                    }
+                    result = apply_track_writes(
+                        [
+                            PendingTrackWrite(
+                                track=track,
+                                fields=_track_to_tag_dict(track, fields_to_write),
+                                source="autotag:file_sync",
+                                confidence=None,
+                                change_log_source="autotag:file_sync",
+                                old_values=old_values,
+                            )
+                        ],
+                        max_workers=1,
+                        update_mode="single",
                     )
-                    updated += 1
+                    if result.file_write_errors:
+                        raise RuntimeError("; ".join(result.file_write_errors))
+                    updated += result.track_count
             except Exception:
                 errors += 1
             processed += 1
@@ -593,10 +606,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.setWindowTitle("Lumbago Music AI")
         self.setMinimumSize(1200, 720)
         self.thread_pool = QtCore.QThreadPool.globalInstance()
+        self.task_manager = BackgroundTaskManager(self)
         self._apply_app_icon()
 
         self._build_ui()
         _debug_log("MainWindow: build_ui ok")
+        self._load_column_state()
         self._load_tracks()
         _debug_log("MainWindow: load_tracks ok")
         self._load_settings()
@@ -610,11 +625,22 @@ class MainWindow(QtWidgets.QMainWindow):
         layout = QtWidgets.QHBoxLayout(central)
         layout.setContentsMargins(0, 0, 0, 0)
 
-        self.sidebar = self._build_sidebar()
-        layout.addWidget(self.sidebar, 0)
+        self.main_splitter = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
+        self.main_splitter.setChildrenCollapsible(True)
+        self.main_splitter.setHandleWidth(4)
 
-        main_column = QtWidgets.QVBoxLayout()
-        layout.addLayout(main_column, 1)
+        self.sidebar = self._build_sidebar()
+        self.main_splitter.addWidget(self.sidebar)
+
+        self._main_column_widget = QtWidgets.QWidget()
+        main_column = QtWidgets.QVBoxLayout(self._main_column_widget)
+        main_column.setContentsMargins(0, 0, 0, 0)
+        main_column.setSpacing(0)
+        self.main_splitter.addWidget(self._main_column_widget)
+        self.main_splitter.setStretchFactor(0, 0)
+        self.main_splitter.setStretchFactor(1, 1)
+        self.main_splitter.setSizes([200, 1000])
+        layout.addWidget(self.main_splitter)
 
         toolbar = self._build_toolbar()
         main_column.addWidget(toolbar)
@@ -715,11 +741,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.btn_scan.enable_pulse()
         layout.addWidget(self.btn_scan)
 
-        self.btn_recognition = AnimatedButton("Rozpoznaj metadane (wsadowo)")
-        self.btn_recognition.setToolTip("Rozpoznaj i uzupełnij metadane dla zaznaczonych utworów")
-        self.btn_recognition.clicked.connect(self._run_recognition_queue)
-        layout.addWidget(self.btn_recognition)
-
         self.btn_ai = AnimatedButton("Autotagowanie (natychmiast)")
         self.btn_ai.setToolTip("Jednym kliknięciem: analiza + pobranie + walidacja + zapis tagów")
         self.btn_ai.clicked.connect(self._run_ai_tagger)
@@ -740,25 +761,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.btn_renamer.clicked.connect(self._open_renamer)
         layout.addWidget(self.btn_renamer)
 
-        self.btn_xml = AnimatedButton("Konwerter XML")
-        self.btn_xml.setToolTip("Konwersja Rekordbox ↔ VirtualDJ")
-        self.btn_xml.clicked.connect(self._open_xml_converter)
-        layout.addWidget(self.btn_xml)
-
-        self.btn_xml_import = AnimatedButton("Import XML")
-        self.btn_xml_import.setToolTip("Importuj metadane z Rekordbox/VirtualDJ XML")
-        self.btn_xml_import.clicked.connect(self._open_xml_import)
-        layout.addWidget(self.btn_xml_import)
-
         self.btn_settings = AnimatedButton("Ustawienia / API")
         self.btn_settings.setToolTip("Ustaw klucze API i konfigurację")
         self.btn_settings.clicked.connect(self._open_settings)
         layout.addWidget(self.btn_settings)
-
-        self.btn_health = AnimatedButton("Raport zdrowia")
-        self.btn_health.setToolTip("Sprawdź kompletność metadanych biblioteki")
-        self.btn_health.clicked.connect(self._open_health_report)
-        layout.addWidget(self.btn_health)
 
         playlists_title = QtWidgets.QLabel("Playlisty")
         playlists_title.setObjectName("SectionTitle")
@@ -775,6 +781,9 @@ class MainWindow(QtWidgets.QMainWindow):
         layout.addWidget(self.playlist_list, 1)
 
         layout.addStretch(0)
+
+        self.task_monitor_widget = BackgroundTaskMonitorWidget(self.task_manager)
+        layout.addWidget(self.task_monitor_widget)
         return frame
 
     def _build_header(self) -> QtWidgets.QFrame:
@@ -785,6 +794,13 @@ class MainWindow(QtWidgets.QMainWindow):
         layout.setSpacing(8)
 
         title_row = QtWidgets.QHBoxLayout()
+        self.sidebar_toggle_btn = QtWidgets.QPushButton("☰")
+        self.sidebar_toggle_btn.setFixedSize(28, 28)
+        self.sidebar_toggle_btn.setCheckable(True)
+        self.sidebar_toggle_btn.setChecked(True)
+        self.sidebar_toggle_btn.setToolTip("Pokaż / ukryj lewy panel")
+        self.sidebar_toggle_btn.clicked.connect(self._toggle_sidebar)
+        title_row.addWidget(self.sidebar_toggle_btn)
         header_label = QtWidgets.QLabel("Przegladarka biblioteki")
         header_label.setObjectName("SectionTitle")
         title_row.addWidget(header_label)
@@ -792,9 +808,25 @@ class MainWindow(QtWidgets.QMainWindow):
         subtitle.setObjectName("DialogHint")
         title_row.addWidget(subtitle)
         title_row.addStretch(1)
+        self.filter_toggle_btn = QtWidgets.QPushButton("🔍")
+        self.filter_toggle_btn.setFixedSize(28, 28)
+        self.filter_toggle_btn.setCheckable(True)
+        self.filter_toggle_btn.setChecked(True)
+        self.filter_toggle_btn.setToolTip("Pokaż / ukryj pasek filtrów")
+        self.filter_toggle_btn.clicked.connect(self._toggle_filter_row)
+        title_row.addWidget(self.filter_toggle_btn)
+        self.dj_player_btn = QtWidgets.QPushButton("🎛")
+        self.dj_player_btn.setFixedSize(28, 28)
+        self.dj_player_btn.setCheckable(True)
+        self.dj_player_btn.setChecked(False)
+        self.dj_player_btn.setToolTip("Pokaż / ukryj DJ Player")
+        self.dj_player_btn.clicked.connect(self._toggle_dj_player)
+        title_row.addWidget(self.dj_player_btn)
         layout.addLayout(title_row)
 
-        row = QtWidgets.QHBoxLayout()
+        self.filter_row_widget = QtWidgets.QWidget()
+        row = QtWidgets.QHBoxLayout(self.filter_row_widget)
+        row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(8)
 
         self.search_category = QtWidgets.QComboBox()
@@ -873,7 +905,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.view_toggle.setToolTip("Przełącz widok listy/siatki")
         self.view_toggle.currentIndexChanged.connect(self._on_view_toggle)
         row.addWidget(self.view_toggle)
-        layout.addLayout(row)
+        layout.addWidget(self.filter_row_widget)
         return frame
 
     def _build_detail_panel(self) -> QtWidgets.QFrame:
@@ -1154,6 +1186,37 @@ class MainWindow(QtWidgets.QMainWindow):
         self.filter_proxy.key = self.key_input.text().strip()
         self.filter_proxy.genre = self.genre_input.text().strip()
         self.filter_proxy.invalidateFilter()
+
+    def _save_column_state(self):
+        hidden = [col for col in range(len(self.table_model.headers)) if self.table_view.isColumnHidden(col)]
+        try:
+            path = cache_dir() / "column_state.json"
+            path.write_text(json.dumps(hidden), encoding="utf-8")
+        except Exception:
+            pass
+
+    def _load_column_state(self):
+        try:
+            path = cache_dir() / "column_state.json"
+            if not path.exists():
+                return
+            hidden: list[int] = json.loads(path.read_text(encoding="utf-8"))
+            for col in hidden:
+                if 0 <= col < len(self.table_model.headers):
+                    self.table_view.setColumnHidden(col, True)
+        except Exception:
+            pass
+
+    def _toggle_sidebar(self):
+        visible = self.sidebar_toggle_btn.isChecked()
+        if visible:
+            self.main_splitter.setSizes([200, self.main_splitter.width() - 200])
+        else:
+            self.main_splitter.setSizes([0, self.main_splitter.width()])
+
+    def _toggle_filter_row(self):
+        visible = self.filter_toggle_btn.isChecked()
+        self.filter_row_widget.setVisible(visible)
 
     def _clear_filters(self):
         self.search_input.clear()
@@ -1470,6 +1533,18 @@ class MainWindow(QtWidgets.QMainWindow):
             add_menu.addAction(name)
         ai_action = menu.addAction("Analiza AI")
         local_meta_action = menu.addAction("Wczytaj metadane lokalne")
+        menu.addSeparator()
+        col_menu = menu.addMenu("Kolumny")
+        show_all_col = col_menu.addAction("Pokaż wszystkie")
+        hide_all_col = col_menu.addAction("Ukryj wszystkie")
+        col_menu.addSeparator()
+        col_actions: list[tuple[QtGui.QAction, int]] = []
+        for col, name in enumerate(self.table_model.headers):
+            act = QtGui.QAction(name, col_menu)
+            act.setCheckable(True)
+            act.setChecked(not self.table_view.isColumnHidden(col))
+            col_actions.append((act, col))
+            col_menu.addAction(act)
         action = menu.exec(self.table_view.viewport().mapToGlobal(pos))
         if action == play_action:
             self._play_selected()
@@ -1500,6 +1575,20 @@ class MainWindow(QtWidgets.QMainWindow):
             self._run_ai_tagger()
         elif action == local_meta_action:
             self._apply_local_metadata_selected()
+        elif action == show_all_col:
+            for _, col in col_actions:
+                self.table_view.setColumnHidden(col, False)
+            self._save_column_state()
+        elif action == hide_all_col:
+            for _, col in col_actions:
+                self.table_view.setColumnHidden(col, True)
+            self._save_column_state()
+        else:
+            for act, col in col_actions:
+                if action == act:
+                    self.table_view.setColumnHidden(col, not act.isChecked())
+                    self._save_column_state()
+                    break
 
     def _show_table_column_menu(self, pos):
         menu = QtWidgets.QMenu(self)
@@ -1508,7 +1597,7 @@ class MainWindow(QtWidgets.QMainWindow):
         menu.addSeparator()
         actions = []
         for col, name in enumerate(self.table_model.headers):
-            action = QtWidgets.QAction(name, menu)
+            action = QtGui.QAction(name, menu)
             action.setCheckable(True)
             action.setChecked(not self.table_view.isColumnHidden(col))
             actions.append((action, col))
@@ -1517,14 +1606,17 @@ class MainWindow(QtWidgets.QMainWindow):
         if chosen == show_all:
             for _, col in actions:
                 self.table_view.setColumnHidden(col, False)
+            self._save_column_state()
             return
         if chosen == hide_all:
             for _, col in actions:
                 self.table_view.setColumnHidden(col, True)
+            self._save_column_state()
             return
         for action, col in actions:
             if chosen == action:
                 self.table_view.setColumnHidden(col, not action.isChecked())
+                self._save_column_state()
                 break
     def _fill_detail_fields(self, track: Track):
         self.detail_title.setText(track.title or "")
@@ -1572,8 +1664,23 @@ class MainWindow(QtWidgets.QMainWindow):
             track.bpm = None
         self._log_changes(track, snapshot)
         update_track(track)
+        try:
+            tags = {
+                "title": track.title,
+                "artist": track.artist,
+                "album": track.album,
+                "year": track.year,
+                "genre": track.genre,
+                "bpm": str(track.bpm) if track.bpm is not None else "",
+                "key": track.key or "",
+            }
+            write_tags(Path(track.path), tags)
+        except Exception as exc:
+            self._show_message(f"Zapis do DB OK, błąd zapisu do pliku: {exc}")
+            self._load_tracks()
+            return
         self._load_tracks()
-        self._show_message("Utwór zaktualizowany.")
+        self._show_message("Utwór zaktualizowany i zapisany do pliku.")
 
     def _log_changes(self, track: Track, snapshot: dict):
         for field in ["title", "artist", "album", "year", "genre", "bpm", "key"]:
@@ -1708,22 +1815,14 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         settings = load_settings()
         self._autotag_worker = AutoTagWorker(tracks, settings)
-        progress = QtWidgets.QProgressDialog(
-            "Autotagowanie: analiza, pobieranie i zapis...", "Anuluj", 0, len(tracks), self
-        )
-        progress.setWindowTitle("Autotagowanie")
-        progress.setMinimumDuration(0)
-        progress.setValue(0)
+        task_id = self.task_manager.add_task("Autotagowanie", len(tracks))
 
         def on_progress(current: int, total: int, name: str):
-            progress.setMaximum(total)
-            progress.setValue(current)
+            self.task_manager.update_task(task_id, current, total)
             self.status.showMessage(f"Autotag {current}/{total}: {name}")
-            if progress.wasCanceled():
-                self._autotag_worker.stop()
 
         def on_finished(processed: int, updated: int, errors: int):
-            progress.close()
+            self.task_manager.finish_task(task_id)
             self._load_tracks()
             self.status.showMessage(
                 f"Autotagowanie zakończone. Przetworzono: {processed}, zapisano: {updated}, błędy: {errors}"
@@ -1750,20 +1849,14 @@ class MainWindow(QtWidgets.QMainWindow):
             self._show_message("Zaznacz co najmniej jeden utwór.")
             return
         worker = LoudnessWorker(tracks)
-        progress = QtWidgets.QProgressDialog(
-            "Analiza loudness (LUFS)...", "Zamknij", 0, len(tracks), self
-        )
-        progress.setWindowTitle("Analiza loudness")
-        progress.setMinimumDuration(0)
-        progress.setValue(0)
+        task_id = self.task_manager.add_task("Analiza loudness (LUFS)", len(tracks))
 
         def on_progress(current: int, total: int):
-            progress.setMaximum(total)
-            progress.setValue(current)
-            self.status.showMessage(f"Analiza {current}/{total} utworów")
+            self.task_manager.update_task(task_id, current, total)
+            self.status.showMessage(f"Analiza loudness {current}/{total}")
 
         def on_finished(updated: list[Track]):
-            progress.close()
+            self.task_manager.finish_task(task_id)
             update_tracks(updated)
             self._load_tracks()
             self.status.showMessage("Analiza loudness zakończona.")
@@ -1792,20 +1885,14 @@ class MainWindow(QtWidgets.QMainWindow):
         if not ok:
             return
         worker = NormalizeWorker(tracks, Path(output_dir), target)
-        progress = QtWidgets.QProgressDialog(
-            "Normalizacja do LUFS...", "Zamknij", 0, len(tracks), self
-        )
-        progress.setWindowTitle("Normalizacja loudness")
-        progress.setMinimumDuration(0)
-        progress.setValue(0)
+        task_id = self.task_manager.add_task("Normalizacja loudness", len(tracks))
 
         def on_progress(current: int, total: int):
-            progress.setMaximum(total)
-            progress.setValue(current)
+            self.task_manager.update_task(task_id, current, total)
             self.status.showMessage(f"Normalizacja {current}/{total}")
 
         def on_finished(created: int, errors: int):
-            progress.close()
+            self.task_manager.finish_task(task_id)
             self._load_tracks()
             self.status.showMessage(f"Normalizacja zakończona. Nowe pliki: {created}, błędy: {errors}")
 
@@ -1819,20 +1906,14 @@ class MainWindow(QtWidgets.QMainWindow):
             self._show_message("Zaznacz co najmniej jeden utwór.")
             return
         worker = KeyDetectionWorker(tracks, force=False)
-        progress = QtWidgets.QProgressDialog(
-            "Wykrywanie tonacji...", "Zamknij", 0, len(tracks), self
-        )
-        progress.setWindowTitle("Auto‑key")
-        progress.setMinimumDuration(0)
-        progress.setValue(0)
+        task_id = self.task_manager.add_task("Wykrywanie tonacji", len(tracks))
 
         def on_progress(current: int, total: int):
-            progress.setMaximum(total)
-            progress.setValue(current)
+            self.task_manager.update_task(task_id, current, total)
             self.status.showMessage(f"Tonacja {current}/{total}")
 
         def on_finished(updated: list[Track]):
-            progress.close()
+            self.task_manager.finish_task(task_id)
             update_tracks(updated)
             self._load_tracks()
             self.status.showMessage("Wykrywanie tonacji zakończone.")
@@ -1907,23 +1988,16 @@ class MainWindow(QtWidgets.QMainWindow):
             settings.musicbrainz_app_name,
             settings.validation_policy,
             settings.metadata_cache_ttl_days,
+            acoustid_api_key=getattr(settings, "acoustid_api_key", None),
         )
-        progress = QtWidgets.QProgressDialog(
-            "Rozpoznawanie metadanych...", "Anuluj", 0, len(tracks), self
-        )
-        progress.setWindowTitle("Kolejka rozpoznawania")
-        progress.setMinimumDuration(0)
-        progress.setValue(0)
+        task_id = self.task_manager.add_task("Rozpoznawanie metadanych", len(tracks))
 
         def on_progress(current: int, total: int):
-            progress.setMaximum(total)
-            progress.setValue(current)
+            self.task_manager.update_task(task_id, current, total)
             self.status.showMessage(f"Rozpoznano {current}/{total} utworów")
-            if progress.wasCanceled():
-                self._recognition_worker.stop()
 
         def on_finished(processed: int, errors: int):
-            progress.close()
+            self.task_manager.finish_task(task_id)
             self._load_tracks()
             self.status.showMessage(f"Rozpoznawanie zakończone. Błędy: {errors}")
 
@@ -1971,27 +2045,18 @@ class MainWindow(QtWidgets.QMainWindow):
         try:
             self._dj_player = DJPlayerWidget(self)
             self._dj_player.setVisible(False)
-            toggle_btn = AnimatedButton("DJ Player ▼")
-            toggle_btn.setToolTip("Pokaż/ukryj zaawansowany odtwarzacz DJ")
-            container = QtWidgets.QWidget()
-            vl = QtWidgets.QVBoxLayout(container)
-            vl.setContentsMargins(0, 0, 0, 0)
-            vl.setSpacing(0)
-            vl.addWidget(toggle_btn)
-            vl.addWidget(self._dj_player)
-            _player_ref = self._dj_player
-
-            def _toggle():
-                visible = not _player_ref.isVisible()
-                _player_ref.setVisible(visible)
-                toggle_btn.setText("DJ Player ▲" if visible else "DJ Player ▼")
-
-            toggle_btn.clicked.connect(_toggle)
-            return container
+            return self._dj_player
         except Exception as exc:
             _debug_log(f"DJPlayerWidget init failed: {exc}")
             self._dj_player = None
             return QtWidgets.QWidget()
+
+    def _toggle_dj_player(self):
+        if self._dj_player is None:
+            return
+        visible = not self._dj_player.isVisible()
+        self._dj_player.setVisible(visible)
+        self.dj_player_btn.setChecked(visible)
 
     def _init_watch_folder_service(self):
         try:
@@ -2146,13 +2211,10 @@ class MainWindow(QtWidgets.QMainWindow):
             return QtGui.QIcon(str(icons_dir / name))
 
         self.btn_scan.setIcon(icon("scan.svg"))
-        self.btn_recognition.setIcon(icon("refresh.svg"))
         self.btn_ai.setIcon(icon("ai.svg"))
         self.btn_local_meta.setIcon(icon("tag.svg"))
         self.btn_duplicates.setIcon(icon("duplicates.svg"))
         self.btn_renamer.setIcon(icon("rename.svg"))
-        self.btn_xml.setIcon(icon("xml.svg"))
-        self.btn_xml_import.setIcon(icon("import.svg"))
         self.btn_settings.setIcon(icon("settings.svg"))
         self.settings_btn.setIcon(icon("settings.svg"))
         self.auto_tag_btn.setIcon(icon("magic.svg"))

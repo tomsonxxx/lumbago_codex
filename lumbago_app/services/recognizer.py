@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import logging
 import subprocess
 from pathlib import Path
 import json
 
 import requests
+
+log = logging.getLogger(__name__)
 
 
 class AcoustIdRecognizer:
@@ -24,13 +27,14 @@ class AcoustIdRecognizer:
             ["fpcalc", "-json", "-length", "120", str(audio_path)],
             [str(Path(__file__).resolve().parents[2] / "tools" / "fpcalc.exe"), "-json", "-length", "120", str(audio_path)],
         ]
-        try:
-            for command in commands:
+        for command in commands:
+            try:
                 proc = subprocess.run(
                     command,
                     capture_output=True,
                     text=True,
                     check=True,
+                    timeout=30,
                 )
                 payload = json.loads(proc.stdout)
                 duration = int(payload["duration"])
@@ -38,9 +42,16 @@ class AcoustIdRecognizer:
                 result = (duration, fingerprint)
                 self._fingerprint_cache[cache_key] = result
                 return result
-            return None
-        except Exception:
-            return None
+            except FileNotFoundError:
+                continue
+            except subprocess.TimeoutExpired:
+                log.warning("fpcalc timeout: %s", audio_path)
+                return None
+            except Exception as exc:
+                log.debug("fpcalc error for %s: %s", audio_path, exc)
+                continue
+        log.debug("fpcalc not available (tried %d commands)", len(commands))
+        return None
 
     def recognize(self, audio_path: Path) -> dict | None:
         if not self.api_key:
@@ -65,5 +76,9 @@ class AcoustIdRecognizer:
                 if results:
                     return payload
             return None
-        except Exception:
+        except requests.exceptions.Timeout:
+            log.warning("AcoustID timeout for %s", audio_path)
+            return None
+        except Exception as exc:
+            log.warning("AcoustID error for %s: %s", audio_path, exc)
             return None

@@ -76,6 +76,7 @@ class UnifiedAutoTagger:
         for fn in (
             self._search_musicbrainz,
             self._search_itunes,
+            self._search_deezer,
             self._search_discogs,
             self._search_ai,
         ):
@@ -121,15 +122,20 @@ class UnifiedAutoTagger:
                 incoming = getattr(best, field_name, None)
             mapping[field_name] = incoming
 
+        # Fields measured locally — don't overwrite with external guesses
+        _LOCALLY_MEASURED = {"bpm", "key", "energy", "loudness_lufs", "fingerprint", "file_hash"}
+
         for field_name, incoming in mapping.items():
             if incoming is None:
                 continue
             current = getattr(track, field_name, None)
+            if field_name in _LOCALLY_MEASURED and _has_value(current):
+                continue
             if current != incoming:
                 setattr(track, field_name, incoming)
                 changed = True
 
-        if best.artist and not track.albumartist:
+        if best is not None and best.artist and not track.albumartist:
             track.albumartist = best.artist
             changed = True
         return changed
@@ -138,33 +144,46 @@ class UnifiedAutoTagger:
         track = _track_with_filename_identity(track)
         artist = _clean_text(track.artist)
         title = _clean_text(track.title)
-        if not artist and not title:
-            base = _clean_text(PureWindowsPath(track.path).stem.replace("_", " ").replace(".", " "))
-            if base:
-                title = base
-        if not artist and not title:
+        stem = _clean_text(PureWindowsPath(track.path).stem.replace("_", " ").replace(".", " "))
+        if not artist and not title and stem:
+            title = stem
+
+        # Build multiple fallback queries — try most specific first.
+        queries: list[str] = []
+        if artist and title:
+            queries.append(f'recording:"{title[:60]}" AND artist:"{artist[:60]}"')
+        if title:
+            queries.append(f'recording:"{title[:60]}"')
+        if artist and not title and stem:
+            queries.append(f'recording:"{stem[:60]}" AND artist:"{artist[:60]}"')
+        if stem and stem != title:
+            queries.append(f'recording:"{stem[:60]}"')
+        if not queries:
             return None
 
-        query_parts = []
-        if title:
-            query_parts.append(f'recording:"{title[:60]}"')
-        if artist:
-            query_parts.append(f'artist:"{artist[:60]}"')
-        query = " AND ".join(query_parts)
+        recordings: list = []
+        used_query = queries[0]
+        for query in queries:
+            try:
+                response = requests.get(
+                    f"{_MB_BASE}/recording/",
+                    params={"query": query, "limit": "10", "fmt": "json"},
+                    headers={"Accept": "application/json", "User-Agent": _USER_AGENT},
+                    timeout=15,
+                )
+                response.raise_for_status()
+                payload = response.json()
+                recordings = payload.get("recordings", [])
+                if recordings:
+                    used_query = query
+                    break
+            except Exception:
+                continue
 
-        response = requests.get(
-            f"{_MB_BASE}/recording/",
-            params={"query": query, "limit": "5", "fmt": "json"},
-            headers={"Accept": "application/json", "User-Agent": _USER_AGENT},
-            timeout=15,
-        )
-        response.raise_for_status()
-        payload = response.json()
-        recordings = payload.get("recordings", [])
         if not recordings:
             return None
 
-        best = max(recordings[:5], key=lambda recording: _musicbrainz_recording_score(track, recording))
+        best = max(recordings[:10], key=lambda r: _musicbrainz_recording_score(track, r))
         rec_title = best.get("title")
         rec_artist = ", ".join(
             entry.get("name") or (entry.get("artist") or {}).get("name") or ""
@@ -233,7 +252,8 @@ class UnifiedAutoTagger:
 
         best = max(results, key=lambda item: _itunes_result_score(track, item))
         score = int(round(_itunes_result_score(track, best) * 100))
-        if score < 45:
+        min_score = 30 if not track.artist else 45
+        if score < min_score:
             return None
         if not track.artist:
             score = min(score, 72)
@@ -288,6 +308,67 @@ class UnifiedAutoTagger:
             "tags": [str(item.get("name")).strip() for item in tags[:8] if item.get("name")],
             "genres": [str(item.get("name")).strip() for item in genres[:4] if item.get("name")],
         }
+
+    def _search_deezer(self, track: Track) -> Candidate | None:
+        track = _track_with_filename_identity(track)
+        artist = _clean_text(track.artist)
+        title = _clean_text(track.title)
+        if not title and not artist:
+            return None
+
+        # Deezer supports artist:"X" track:"Y" syntax
+        parts: list[str] = []
+        if artist:
+            parts.append(f'artist:"{artist[:50]}"')
+        if title:
+            parts.append(f'track:"{title[:60]}"')
+        query = " ".join(parts) if parts else (artist or title)
+
+        try:
+            response = requests.get(
+                "https://api.deezer.com/search",
+                params={"q": query, "limit": "10", "order": "RANKING"},
+                headers={"Accept": "application/json", "User-Agent": _USER_AGENT},
+                timeout=12,
+            )
+            response.raise_for_status()
+            payload = response.json()
+        except Exception:
+            return None
+
+        results = payload.get("data", [])
+        if not results:
+            # Retry with simpler query
+            simple = f"{artist} {title}".strip()
+            try:
+                resp2 = requests.get(
+                    "https://api.deezer.com/search",
+                    params={"q": simple[:80], "limit": "10"},
+                    headers={"Accept": "application/json", "User-Agent": _USER_AGENT},
+                    timeout=12,
+                )
+                resp2.raise_for_status()
+                results = resp2.json().get("data", [])
+            except Exception:
+                pass
+        if not results:
+            return None
+
+        best = max(results[:10], key=lambda r: _deezer_result_score(track, r))
+        score = int(round(_deezer_result_score(track, best) * 100))
+        if score < 30:
+            return None
+
+        rec_title = _to_clean_str(best.get("title")) or _to_clean_str(best.get("title_short"))
+        rec_artist = _to_clean_str((best.get("artist") or {}).get("name"))
+        rec_album = _to_clean_str((best.get("album") or {}).get("title"))
+        return Candidate(
+            source="Deezer",
+            score=max(1, min(90, score)),
+            title=rec_title or track.title,
+            artist=rec_artist or track.artist,
+            album=rec_album,
+        )
 
     def _search_discogs(self, track: Track) -> Candidate | None:
         track = _track_with_filename_identity(track)
@@ -690,6 +771,22 @@ def _musicbrainz_release_group_id(recording: dict[str, Any]) -> str | None:
         if rg_id:
             return str(rg_id)
     return None
+
+
+def _deezer_result_score(track: Track, result: dict[str, Any]) -> float:
+    rec_title = str(result.get("title") or result.get("title_short") or "").strip()
+    rec_artist = str((result.get("artist") or {}).get("name") or "").strip()
+    base = _token_similarity(_normalize(track.title), _normalize(rec_title))
+    if track.artist:
+        base = (base * 0.65) + (_token_similarity(_normalize(track.artist), _normalize(rec_artist)) * 0.35)
+    bonus = 0.0
+    if result.get("album"):
+        bonus += 0.06
+    if result.get("duration"):
+        bonus += 0.04
+    if result.get("rank") and int(result.get("rank") or 0) > 100000:
+        bonus += 0.05
+    return min(1.0, base * 0.82 + bonus)
 
 
 def _discogs_result_score(track: Track, result: dict[str, Any]) -> float:

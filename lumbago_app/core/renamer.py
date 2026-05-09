@@ -127,12 +127,20 @@ def _render_pattern(track: Track, pattern: str, index: int) -> str:
         "key": _cleanup_metadata_fragment(track.key or ""),
         "index": str(index),
     }
+    if "{index:03}" in pattern:
+        mapping["index:03"] = f"{index:03d}"
+
     result = pattern
     for key, value in mapping.items():
         result = result.replace(f"{{{key}}}", value)
-    if "{index:03}" in result:
-        result = result.replace("{index:03}", f"{index:03d}")
-    return result.strip() or f"track_{index}"
+
+    # Remove dangling separators caused by empty fields:
+    # e.g. " - Tytuł" when artist is empty, or "Artysta - " when title is empty.
+    result = re.sub(r"^\s*[-–—|]+\s*", "", result)
+    result = re.sub(r"\s*[-–—|]+\s*$", "", result)
+    # Collapse multiple consecutive separators: "A -  - B" → "A - B"
+    result = re.sub(r"(\s*-\s*){2,}", " - ", result)
+    return result.strip(" .-_") or f"track_{index}"
 
 
 def _sanitize_filename(name: str) -> str:
@@ -157,9 +165,11 @@ _NOISE_PATTERNS: tuple[re.Pattern[str], ...] = (
     ),
     re.compile(r"\b(hq|hd|4k|8k|remastered(\s+\d{4})?)\b", re.IGNORECASE),
 )
-_ORPHAN_BRACKETS_RE = re.compile(r"[\[\](){}]")
-_MULTI_SEPARATOR_RE = re.compile(r"\s*[-–—_|]+\s*")
-_NOISY_PUNCT_RE = re.compile(r"[^\w\s\-\.,&+]+", re.UNICODE)
+_ORPHAN_BRACKETS_RE = re.compile(r"[\[\]{}]")
+# Apostrophe and parentheses are kept — they appear in valid artist/title names.
+_NOISY_PUNCT_RE = re.compile(r"[^\w\s\-\.,&+()']+", re.UNICODE)
+# Only collapse runs of pure separators (not apostrophes or parens).
+_MULTI_SEPARATOR_RE = re.compile(r"\s*[–—_|]+\s*")
 
 
 def _cleanup_metadata_fragment(value: str) -> str:
@@ -214,11 +224,23 @@ def _strip_download_quality_suffix(value: str) -> str:
 
 def parse_filename_tags(path: str | Path) -> tuple[str | None, str | None]:
     stem = _strip_download_quality_suffix(PureWindowsPath(path).stem.replace("_", " ").replace(".", " "))
+    # Try separators with surrounding spaces first (most reliable), then bare dash.
     for sep in (" – ", " — ", " - "):
         if sep in stem:
             left, right = stem.split(sep, 1)
             artist = _clean_title_from_filename(left.strip()) or None
             title = _clean_title_from_filename(right.strip()) or None
+            if artist and title:
+                return artist, title
+    # Bare dash: only split when both sides are non-trivial (length > 1)
+    # to avoid splitting "A-ha" → ("A", "ha").
+    bare_dash_match = re.match(r"^([^-]{2,})-([^-]{2,})$", stem.strip())
+    if bare_dash_match:
+        left = bare_dash_match.group(1).strip()
+        right = bare_dash_match.group(2).strip()
+        artist = _clean_title_from_filename(left) or None
+        title = _clean_title_from_filename(right) or None
+        if artist and title:
             return artist, title
     title = _clean_title_from_filename(stem)
     return None, title or None

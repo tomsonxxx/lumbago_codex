@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import math
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -16,12 +15,11 @@ from lumbago_app.core.config import load_settings
 from lumbago_app.core.analysis_cache import load_analysis_cache, save_analysis_cache
 from lumbago_app.core.models import AnalysisResult, Track
 from lumbago_app.core.services import enrich_track_with_analysis
-from lumbago_app.core.audio import write_tags
-from lumbago_app.data.repository import replace_track_tags, update_tracks, update_track_paths_bulk
 from lumbago_app.services.ai_tagger import CloudAiTagger, DatabaseTagger, MultiAiTagger, preflight_provider
 from lumbago_app.services.ai_tagger_merge import _merge_analysis_into_track
 from lumbago_app.services.key_detection import detect_key
 from lumbago_app.services.metadata_enricher import AutoMetadataFiller, MetadataFillReport
+from lumbago_app.services.metadata_writeback import PendingTrackWrite, apply_track_writes
 from lumbago_app.ui.widgets import apply_dialog_fade
 
 FIELDS = [
@@ -408,87 +406,6 @@ class FieldComparisonWidget(QtWidgets.QWidget):
         self.decisions_changed.emit()
 
 
-class AudioInfoPanel(QtWidgets.QWidget):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        layout = QtWidgets.QFormLayout(self)
-        layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(8)
-
-        def _bar() -> QtWidgets.QProgressBar:
-            bar = QtWidgets.QProgressBar()
-            bar.setRange(0, 100)
-            bar.setTextVisible(False)
-            return bar
-
-        self._tempo = QtWidgets.QLabel("â€”")
-        self._brightness = _bar()
-        self._roughness = _bar()
-        self._spectral = QtWidgets.QLabel("â€”")
-        self._mfcc = QtWidgets.QLabel("â€”")
-        self._mfcc.setWordWrap(True)
-        layout.addRow("Tempo:", self._tempo)
-        layout.addRow("JasnoĹ›Ä‡:", self._brightness)
-        layout.addRow("SzorstkoĹ›Ä‡:", self._roughness)
-        layout.addRow("Centroid spektralny:", self._spectral)
-        layout.addRow("MFCC top-5:", self._mfcc)
-
-    def load_result(self, result: Any) -> None:
-        if result is None:
-            self._tempo.setText("â€”")
-            self._brightness.setValue(0)
-            self._roughness.setValue(0)
-            self._spectral.setText("â€”")
-            self._mfcc.setText("â€”")
-            return
-        tempo = _safe_tempo(result)
-        self._tempo.setText(f"{tempo:.1f} BPM" if tempo is not None else "â€”")
-        self._brightness.setValue(int((getattr(result, "brightness", 0.0) or 0.0) * 100))
-        self._roughness.setValue(int((getattr(result, "roughness", 0.0) or 0.0) * 100))
-        spectral = getattr(result, "spectral_centroid", None)
-        self._spectral.setText(f"{float(spectral):.0f} Hz" if spectral else "â€”")
-        try:
-            mfcc = json.loads(getattr(result, "mfcc_json", "") or "[]")
-        except Exception:
-            mfcc = []
-        self._mfcc.setText(str([round(float(value), 2) for value in mfcc[:5]]) if mfcc else "â€”")
-
-
-class MetadataSourcesPanel(QtWidgets.QWidget):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        layout = QtWidgets.QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        self._summary = QtWidgets.QLabel("Brak danych o ĹşrĂłdĹ‚ach.")
-        self._summary.setWordWrap(True)
-        layout.addWidget(self._summary)
-        self._table = QtWidgets.QTableWidget(0, 4)
-        self._table.setHorizontalHeaderLabels(["ĹąrĂłdĹ‚o", "Status", "Pola", "SzczegĂłĹ‚y"])
-        self._table.verticalHeader().setVisible(False)
-        self._table.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
-        self._table.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.SingleSelection)
-        self._table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
-        self._table.horizontalHeader().setStretchLastSection(True)
-        self._table.horizontalHeader().setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
-        self._table.horizontalHeader().setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
-        self._table.horizontalHeader().setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
-        layout.addWidget(self._table, 1)
-
-    def load_report(self, report: MetadataFillReport | None) -> None:
-        self._table.setRowCount(0)
-        if report is None:
-            self._summary.setText("Brak raportu ĹşrĂłdeĹ‚ dla zaznaczonego utworu.")
-            return
-        self._summary.setText(f"Metoda: {report.method}. {report.summary}")
-        for source in report.sources:
-            row = self._table.rowCount()
-            self._table.insertRow(row)
-            self._table.setItem(row, 0, QtWidgets.QTableWidgetItem(source.label))
-            self._table.setItem(row, 1, QtWidgets.QTableWidgetItem(source.status))
-            self._table.setItem(row, 2, QtWidgets.QTableWidgetItem(", ".join(source.fields) if source.fields else "â€”"))
-            self._table.setItem(row, 3, QtWidgets.QTableWidgetItem(source.detail or "â€”"))
-
-
 class AiTaggerDialog(QtWidgets.QDialog):
     def __init__(
         self,
@@ -559,15 +476,9 @@ class AiTaggerDialog(QtWidgets.QDialog):
         self._apply_btn.setObjectName("PrimaryBtn")
         self._apply_btn.setEnabled(False)
         self._apply_btn.clicked.connect(self._apply_accepted)
-        self._rename_check = QtWidgets.QCheckBox("Zmień nazwy plików")
-        self._rename_check.setToolTip(
-            "Po zapisaniu tagów zmień nazwy plików na format: Artysta - Tytuł"
-        )
-        self._rename_check.setChecked(True)
         layout.addWidget(self._run_btn)
         layout.addWidget(self._stop_btn)
         layout.addWidget(self._apply_btn)
-        layout.addWidget(self._rename_check)
         default_profile = "Szybki" if len(self._tracks) >= 300 else "Zbalansowany"
         self._apply_profile(default_profile)
         return toolbar
@@ -795,12 +706,10 @@ class AiTaggerDialog(QtWidgets.QDialog):
     def _apply_accepted(self) -> None:
         providers = self._last_run_providers or self._selected_providers()
         source = "ai:" + ("+".join(providers) if providers else "manual")
-        changed_tracks: list[Track] = []
-        pending_file_writes: list[tuple[str, dict[str, str]]] = []
-        write_errors: list[str] = []
+        pending_writes: list[PendingTrackWrite] = []
         for state in self._states:
-            db_tags: list[str] = []
             file_tags: dict[str, str] = {}
+            old_values: dict[str, str | None] = {}
             for field_name in FIELDS:
                 if state.decisions.get(field_name) is not True:
                     continue
@@ -808,71 +717,31 @@ class AiTaggerDialog(QtWidgets.QDialog):
                 new_value = getattr(state.proposed_track, field_name, None)
                 if _format_value(field_name, old_value) == _format_value(field_name, new_value):
                     continue
+                old_values[field_name] = None if old_value is None else str(old_value)
                 setattr(state.track, field_name, new_value)
-                db_tags.append(f"{field_name}:{new_value}")
                 file_tags[field_name] = str(new_value) if new_value is not None else ""
-            if db_tags:
-                replace_track_tags(state.track.path, db_tags, source=source, confidence=state.ai_result.confidence if state.ai_result else None)
-                pending_file_writes.append((state.track.path, file_tags))
-                changed_tracks.append(state.track)
-        if changed_tracks:
-            update_tracks(changed_tracks)
-            if pending_file_writes:
-                max_workers = max(1, min(16, int(self._workers_spin.value())))
-                with ThreadPoolExecutor(max_workers=max_workers) as pool:
-                    future_map = {
-                        pool.submit(write_tags, Path(track_path), tags): track_path
-                        for track_path, tags in pending_file_writes
-                    }
-                    for future in as_completed(future_map):
-                        track_path = future_map[future]
-                        try:
-                            future.result()
-                        except Exception as exc:
-                            write_errors.append(f"{Path(track_path).name}: {exc}")
-            msg = f"Zapisano zmiany dla {len(changed_tracks)} utworów (baza + pliki audio)."
-            if write_errors:
-                msg += f"\nBłędy zapisu tagów: {len(write_errors)}"
-                for err in write_errors[:5]:
+            if file_tags:
+                pending_writes.append(
+                    PendingTrackWrite(
+                        track=state.track,
+                        fields=file_tags,
+                        source=source,
+                        confidence=state.ai_result.confidence if state.ai_result else None,
+                        change_log_source=source,
+                        old_values=old_values,
+                    )
+                )
+        if pending_writes:
+            result = apply_track_writes(
+                pending_writes,
+                max_workers=int(self._workers_spin.value()),
+                update_mode="bulk",
+            )
+            msg = f"Zapisano zmiany dla {result.track_count} utworow (baza + pliki audio)."
+            if result.file_write_errors:
+                msg += f"\nBledy zapisu tagow: {len(result.file_write_errors)}"
+                for err in result.file_write_errors[:5]:
                     msg += f"\n  {err}"
-
-            # Rename files to "Artysta - Tytuł" if checkbox is checked
-            if self._rename_check.isChecked():
-                from lumbago_app.core.renamer import build_rename_plan, apply_rename_plan
-                renameable = [
-                    s.track for s in self._states
-                    if (s.track.artist or "").strip() and (s.track.title or "").strip()
-                ]
-                if renameable:
-                    plan = build_rename_plan(renameable, "{artist} - {title}")
-                    to_rename = [
-                        item for item in plan
-                        if not item.conflict and item.old_path != item.new_path
-                    ]
-                    conflicts = [item for item in plan if item.conflict]
-                    if to_rename:
-                        rename_history: list[dict[str, str]] = []
-                        rename_error: str | None = None
-                        try:
-                            rename_history = apply_rename_plan(plan)
-                        except Exception as exc:
-                            rename_error = str(exc)
-                        finally:
-                            # Always sync whatever was successfully renamed to DB
-                            # and update in-memory paths — even after a partial failure.
-                            if rename_history:
-                                update_track_paths_bulk(rename_history)
-                                path_map = {e["old"]: e["new"] for e in rename_history}
-                                for state in self._states:
-                                    new_path = path_map.get(state.track.path)
-                                    if new_path:
-                                        state.track.path = new_path
-                                msg += f"\nZmieniono nazwy {len(rename_history)} plików."
-                        if rename_error:
-                            msg += f"\nBłąd rename: {rename_error}"
-                    if conflicts:
-                        msg += f"\n{len(conflicts)} plików pominięto (konflikty nazw)."
-
             self._status_lbl.setText(msg)
             self.accept()
         else:
@@ -963,9 +832,6 @@ class AiTaggerDialog(QtWidgets.QDialog):
             if state.ai_result.description:
                 ai_line += f" [{state.ai_result.description}]"
             self._log_view.appendPlainText(ai_line)
-
-    def _analyze(self) -> None:
-        self._start_pipeline()
 
 
 class _WorkerSignals(QtCore.QObject):
@@ -1112,68 +978,6 @@ class _PipelineWorker(QtCore.QRunnable):
         merged["detected_key"] = detected
         save_analysis_cache(path_obj, merged)
         return detected
-
-    def _load_cached_ai_result(self, path_obj: Path) -> AnalysisResult | None:
-        if self.tagger is None:
-            return None
-        payload = load_analysis_cache(path_obj) or {}
-        sig = self._audio_signature(path_obj)
-        if payload.get("signature") != sig:
-            return None
-        ai_results = payload.get("ai_results")
-        if not isinstance(ai_results, dict):
-            return None
-        cache_key = self._ai_cache_key()
-        cached = ai_results.get(cache_key)
-        if not isinstance(cached, dict):
-            return None
-        return AnalysisResult(
-            title=_to_str(cached.get("title")),
-            bpm=_to_float(cached.get("bpm")),
-            key=_to_str(cached.get("key")),
-            artist=_to_str(cached.get("artist")),
-            album=_to_str(cached.get("album")),
-            genre=_to_str(cached.get("genre")),
-            year=_to_str(cached.get("year")),
-            composer=_to_str(cached.get("composer")),
-            comment=_to_str(cached.get("comment")),
-            lyrics=_to_str(cached.get("lyrics")),
-            publisher=_to_str(cached.get("publisher")),
-            description=_to_str(cached.get("description")),
-            confidence=_to_float(cached.get("confidence")),
-        )
-
-    def _save_cached_ai_result(self, path_obj: Path, result: AnalysisResult) -> None:
-        payload = load_analysis_cache(path_obj) or {}
-        sig = self._audio_signature(path_obj)
-        ai_results = payload.get("ai_results")
-        if not isinstance(ai_results, dict):
-            ai_results = {}
-        ai_results[self._ai_cache_key()] = {
-            "title": result.title,
-            "bpm": result.bpm,
-            "key": result.key,
-            "artist": result.artist,
-            "album": result.album,
-            "genre": result.genre,
-            "year": result.year,
-            "composer": result.composer,
-            "comment": result.comment,
-            "lyrics": result.lyrics,
-            "publisher": result.publisher,
-            "description": result.description,
-            "confidence": result.confidence,
-        }
-        payload["signature"] = sig
-        payload["ai_results"] = ai_results
-        save_analysis_cache(path_obj, payload)
-
-    def _ai_cache_key(self) -> str:
-        cache_fn = getattr(self.tagger, "cache_key", None)
-        if callable(cache_fn):
-            return str(cache_fn())
-        return getattr(self.tagger, "provider_name", "ai")
-
     def _persist_audio_features(self, track_path: str, audio_result: Any) -> None:
         if audio_result is None:
             return
@@ -1197,43 +1001,6 @@ class _PipelineWorker(QtCore.QRunnable):
             upsert_audio_features(track_path, af)
         except Exception:
             return
-
-    def _load_cached_ai_result(self, path_obj: Path) -> AnalysisResult | None:
-        payload = load_analysis_cache(path_obj) or {}
-        sig = self._audio_signature(path_obj)
-        if payload.get("ai_signature") != sig:
-            return None
-        ai_data = payload.get("ai_result")
-        if not isinstance(ai_data, dict):
-            return None
-        fields = {
-            f: ai_data.get(f)
-            for f in (
-                "bpm", "key", "mood", "energy", "genre", "description", "confidence",
-                "title", "artist", "album", "albumartist", "year", "tracknumber",
-                "discnumber", "composer", "isrc", "publisher", "lyrics", "grouping", "copyright",
-            )
-        }
-        result = AnalysisResult(**fields)
-        if not (result.confidence or 0.0):
-            return None
-        return result
-
-    def _save_cached_ai_result(self, path_obj: Path, result: AnalysisResult) -> None:
-        if result is None or not (result.confidence or 0.0):
-            return
-        payload = load_analysis_cache(path_obj) or {}
-        payload["ai_signature"] = self._audio_signature(path_obj)
-        payload["ai_result"] = {
-            f: getattr(result, f, None)
-            for f in (
-                "bpm", "key", "mood", "energy", "genre", "description", "confidence",
-                "title", "artist", "album", "albumartist", "year", "tracknumber",
-                "discnumber", "composer", "isrc", "publisher", "lyrics", "grouping", "copyright",
-            )
-        }
-        save_analysis_cache(path_obj, payload)
-
     @staticmethod
     def _audio_signature(path_obj: Path) -> str:
         try:
@@ -1308,13 +1075,6 @@ class _PipelineWorker(QtCore.QRunnable):
             save_analysis_cache(path_obj, payload)
         except Exception:
             pass
-
-
-def _vsep() -> QtWidgets.QFrame:
-    separator = QtWidgets.QFrame()
-    separator.setFrameShape(QtWidgets.QFrame.Shape.VLine)
-    separator.setFrameShadow(QtWidgets.QFrame.Shadow.Sunken)
-    return separator
 
 
 def _resolve_provider_config(provider: str, settings) -> tuple[str | None, str | None, str | None]:

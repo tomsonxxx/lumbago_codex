@@ -203,17 +203,21 @@ class LibraryWidget(QtWidgets.QWidget):
         self.lbl_count = QtWidgets.QLabel("0 tracków"); self.lbl_count.setStyleSheet("color:#4a6080;font-size:11px;")
         self.btn_cols = QtWidgets.QPushButton("⚙ Kolumny"); self.btn_cols.setFixedHeight(26); self.btn_cols.hide()
         self.btn_cols.clicked.connect(self._open_col_cfg)
+        self.btn_toggle_filters = QtWidgets.QPushButton("🔍"); self.btn_toggle_filters.setFixedSize(26,26)
+        self.btn_toggle_filters.setCheckable(True); self.btn_toggle_filters.setChecked(True)
+        self.btn_toggle_filters.setToolTip("Pokaż / ukryj filtry")
+        self.btn_toggle_filters.clicked.connect(self._toggle_filter_bar)
         for w in [self.btn_list,self.btn_grid,self.btn_crate]: tb.addWidget(w)
-        tb.addStretch(); tb.addWidget(self.lbl_count); tb.addWidget(self.btn_cols)
+        tb.addStretch(); tb.addWidget(self.lbl_count); tb.addWidget(self.btn_toggle_filters); tb.addWidget(self.btn_cols)
         tb_frame = QtWidgets.QFrame(); tb_frame.setStyleSheet("background:#111827;border-bottom:1px solid #1e2d42;")
         tb_frame.setLayout(tb); layout.addWidget(tb_frame)
 
         # Filter bar
         self.filter_bar = LibraryFilterBar(self)
         self.filter_bar.filter_changed.connect(self._on_filter)
-        fb_frame = QtWidgets.QFrame(); fb_frame.setStyleSheet("background:#0d1320;border-bottom:1px solid #1e2d42;")
-        fbl = QtWidgets.QVBoxLayout(fb_frame); fbl.setContentsMargins(0,0,0,0); fbl.addWidget(self.filter_bar)
-        layout.addWidget(fb_frame)
+        self.fb_frame = QtWidgets.QFrame(); self.fb_frame.setStyleSheet("background:#0d1320;border-bottom:1px solid #1e2d42;")
+        fbl = QtWidgets.QVBoxLayout(self.fb_frame); fbl.setContentsMargins(0,0,0,0); fbl.addWidget(self.filter_bar)
+        layout.addWidget(self.fb_frame)
 
         # Stack
         self.stack = QtWidgets.QStackedWidget()
@@ -307,6 +311,10 @@ class LibraryWidget(QtWidgets.QWidget):
             from lumbago_app.services.beatgrid import camelot_adjacent_keys
             return tk in camelot_adjacent_keys(fk)
         except Exception: return tk == fk
+
+    def _toggle_filter_bar(self):
+        visible = self.btn_toggle_filters.isChecked()
+        self.fb_frame.setVisible(visible)
 
     def _on_sel(self):
         tracks = self.selected_tracks()

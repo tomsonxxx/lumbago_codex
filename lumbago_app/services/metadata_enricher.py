@@ -12,8 +12,12 @@ import re
 from typing import Any
 from copy import deepcopy
 
+import logging
+
 from lumbago_app.services.metadata_providers import MusicBrainzProvider
 from lumbago_app.data.repository import get_metadata_cache, set_metadata_cache, list_tracks
+
+log = logging.getLogger(__name__)
 
 import requests
 
@@ -137,37 +141,81 @@ class MetadataEnricher:
         musicbrainz_app: str | None = None,
         validation_policy: str | None = None,
         cache_ttl_days: int = 30,
+        acoustid_api_key: str | None = None,
     ):
         self.musicbrainz_app = musicbrainz_app or "LumbagoMusicAI"
         self.validation_policy = validation_policy or "balanced"
         self.cache_ttl_seconds = max(0, cache_ttl_days) * 24 * 3600
+        self.acoustid_api_key = acoustid_api_key
 
     def enrich_track(self, track: Track) -> Track | None:
+        # Try AcoustID fingerprint first — most accurate identification
+        if self.acoustid_api_key:
+            result = self.enrich_from_acoustid(track)
+            if result is not None:
+                return result
         return self.enrich_from_musicbrainz_search(track)
 
-    def enrich_from_musicbrainz_search(self, track: Track) -> Track | None:
-        query = _build_text_query(track)
-        if not query:
+    def enrich_from_acoustid(self, track: Track) -> Track | None:
+        from lumbago_app.services.recognizer import AcoustIdRecognizer
+        from lumbago_app.services.metadata_providers import _best_mbid_from_acoustid
+        recognizer = AcoustIdRecognizer(self.acoustid_api_key)
+        audio_path = Path(track.path)
+        cache_key = f"acoustid:{audio_path}:{audio_path.stat().st_mtime if audio_path.exists() else 0}"
+        payload = get_metadata_cache(cache_key, self.cache_ttl_seconds)
+        if payload is None:
+            payload = recognizer.recognize(audio_path)
+            if payload:
+                set_metadata_cache(cache_key, payload, source="acoustid")
+        if not payload:
             return None
+        mbid = _best_mbid_from_acoustid(payload)
+        if not mbid:
+            return None
+        detailed = self._fetch_musicbrainz_recording(mbid)
+        if not detailed:
+            return None
+        _apply_musicbrainz_metadata(track, detailed, policy=self.validation_policy)
+        log.debug("AcoustID identified %s → MBID %s", audio_path.name, mbid)
+        return track
+
+    def enrich_from_musicbrainz_search(self, track: Track) -> Track | None:
+        # When track has almost no metadata, be more lenient in validation
+        has_title = bool(track.title and track.title.strip())
+        has_artist = bool(track.artist and track.artist.strip())
+        effective_policy = self.validation_policy
+        if not has_title or not has_artist:
+            effective_policy = "lenient" if self.validation_policy in {"strict", "balanced"} else self.validation_policy
+
         provider = MusicBrainzProvider(self.musicbrainz_app)
-        cache_key = f"musicbrainz:search:{query}"
-        data = get_metadata_cache(cache_key, self.cache_ttl_seconds) or provider.search_recording(query)
-        if data:
-            set_metadata_cache(cache_key, data, source="musicbrainz")
-        candidate = _select_musicbrainz_recording(data)
+
+        # Build multiple fallback queries
+        queries = _build_text_queries(track)
+        if not queries:
+            return None
+
+        data = None
+        for query in queries:
+            cache_key = f"musicbrainz:search:{query}"
+            data = get_metadata_cache(cache_key, self.cache_ttl_seconds) or provider.search_recording(query)
+            if data:
+                set_metadata_cache(cache_key, data, source="musicbrainz")
+                if data.get("recordings"):
+                    break
+
+        candidate = _select_musicbrainz_recording(data, track.title, track.artist)
         if not candidate:
             return None
         if not _validate_candidate(
-            track, candidate.get("title"), _first_artist(candidate), policy=self.validation_policy
+            track, candidate.get("title"), _first_artist(candidate), policy=effective_policy
         ):
             return None
-        _apply_musicbrainz_metadata(track, candidate, policy=self.validation_policy)
-        # Fetch detailed recording to fill remaining fields (composer, tracknumber, etc.)
+        _apply_musicbrainz_metadata(track, candidate, policy=effective_policy)
         recording_id = candidate.get("id")
         if recording_id:
             detailed = self._fetch_musicbrainz_recording(recording_id)
             if detailed:
-                _apply_musicbrainz_metadata(track, detailed, policy=self.validation_policy)
+                _apply_musicbrainz_metadata(track, detailed, policy=effective_policy)
         return track
 
     def _fetch_musicbrainz_recording(self, recording_id: str) -> dict[str, Any] | None:
@@ -364,25 +412,67 @@ def _fetch_cover_art(release_id: str, track_path: str) -> Path | None:
 
 
 def _build_text_query(track: Track) -> str | None:
+    queries = _build_text_queries(track)
+    return queries[0] if queries else None
+
+
+def _build_text_queries(track: Track) -> list[str]:
+    """Return multiple MB queries in decreasing specificity order."""
     artist = _shorten_query_text(_sanitize_search_text(track.artist or track.albumartist))
     title = _shorten_query_text(_sanitize_search_text(track.title))
+    stem = _shorten_query_text(_sanitize_search_text(Path(track.path).stem.replace("_", " ").replace(".", " ")))
+
+    seen: set[str] = set()
+    queries: list[str] = []
+
+    def _add(q: str) -> None:
+        q = q.strip()
+        if q and q not in seen:
+            seen.add(q)
+            queries.append(q)
+
     if artist and title:
-        return f'artist:"{artist}" AND recording:"{title}"'
+        _add(f'artist:"{artist}" AND recording:"{title}"')
     if title:
-        return f'recording:"{title}"'
-    fallback = _shorten_query_text(_sanitize_search_text(Path(track.path).stem.replace("_", " ").replace(".", " ")))
-    if fallback:
-        return f'recording:"{fallback}"'
-    return None
+        _add(f'recording:"{title}"')
+    if artist and stem and stem != title:
+        _add(f'artist:"{artist}" AND recording:"{stem}"')
+    if stem:
+        _add(f'recording:"{stem}"')
+    if artist:
+        _add(f'artist:"{artist}"')
+    return queries
 
 
-def _select_musicbrainz_recording(payload: dict[str, Any] | None) -> dict[str, Any] | None:
+def _select_musicbrainz_recording(
+    payload: dict[str, Any] | None,
+    preferred_title: str | None = None,
+    preferred_artist: str | None = None,
+) -> dict[str, Any] | None:
     if not payload:
         return None
     recordings = payload.get("recordings", [])
     if not recordings:
         return None
-    return recordings[0]
+    if not preferred_title and not preferred_artist:
+        return recordings[0]
+    pt = _normalize(preferred_title)
+    pa = _normalize(preferred_artist)
+    best = recordings[0]
+    best_score = -1.0
+    for rec in recordings:
+        title_sim = _token_similarity(pt, _normalize(rec.get("title"))) if pt else 0.5
+        artist_sim = _token_similarity(pa, _normalize(_first_artist(rec))) if pa else 0.5
+        score = title_sim * 0.65 + artist_sim * 0.35
+        # Bonus for recordings with releases or ISRCs
+        if rec.get("releases"):
+            score += 0.05
+        if rec.get("isrcs"):
+            score += 0.03
+        if score > best_score:
+            best_score = score
+            best = rec
+    return best
 
 
 def _select_recording_id(
