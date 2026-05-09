@@ -100,6 +100,13 @@ def _has_value(value) -> bool:
     return True
 
 
+def _looks_like_track_number(value: str | None) -> bool:
+    """Return True when value is a bare track/disc number (e.g. '01', '2', '14')."""
+    if not value:
+        return False
+    return bool(re.fullmatch(r"\d{1,3}", value.strip()))
+
+
 _AUTOTAG_FIELDS = [
     "title",
     "artist",
@@ -223,14 +230,14 @@ def _repair_identity_from_filename(track: Track) -> None:
     if not _has_value(title_from_file):
         return
     if _looks_like_download_quality_title(track.title):
-        if artist_from_file:
+        if artist_from_file and not _looks_like_track_number(artist_from_file):
             track.artist = artist_from_file
         elif (track.artist or "").strip().lower() == str(title_from_file).strip().lower():
             track.artist = None
         track.title = title_from_file
         return
     if _has_value(artist_from_file) and _has_value(title_from_file):
-        if not _has_value(track.artist):
+        if not _has_value(track.artist) and not _looks_like_track_number(artist_from_file):
             track.artist = artist_from_file
         if not _has_value(track.title):
             track.title = title_from_file
@@ -612,9 +619,6 @@ class MainWindow(QtWidgets.QMainWindow):
         toolbar = self._build_toolbar()
         main_column.addWidget(toolbar)
 
-        content = QtWidgets.QHBoxLayout()
-        main_column.addLayout(content, 1)
-
         self.table_model = TrackTableModel([])
         self.filter_proxy = TrackFilterProxy()
         self.filter_proxy.setSourceModel(self.table_model)
@@ -664,10 +668,18 @@ class MainWindow(QtWidgets.QMainWindow):
         header = self._build_header()
         main_column.addWidget(header)
 
-        content.addWidget(self.view_stack, 3)
-
+        # --- Splitter z możliwością resize/ukrycia panelu szczegółów ---
+        self.content_splitter = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
+        self.content_splitter.setChildrenCollapsible(True)
+        self.content_splitter.setHandleWidth(5)
+        self.content_splitter.addWidget(self.view_stack)
         self.detail_panel = self._build_detail_panel()
-        content.addWidget(self.detail_panel, 1)
+        self.content_splitter.addWidget(self.detail_panel)
+        self.content_splitter.setStretchFactor(0, 3)
+        self.content_splitter.setStretchFactor(1, 1)
+        self.content_splitter.setSizes([900, 300])
+        self.content_splitter.splitterMoved.connect(self._on_splitter_moved)
+        main_column.addWidget(self.content_splitter, 1)
 
         player = self._build_player()
         main_column.addWidget(player)
@@ -679,6 +691,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._apply_icons()
         self._setup_shortcuts()
         self._build_menu()
+        # Przywróć pozycję splittera z poprzedniej sesji
+        QtCore.QTimer.singleShot(0, self._restore_ui_state)
 
     def _apply_app_icon(self):
         icon_path = Path(__file__).resolve().parents[2] / "assets" / "icon.svg"
@@ -865,26 +879,66 @@ class MainWindow(QtWidgets.QMainWindow):
     def _build_detail_panel(self) -> QtWidgets.QFrame:
         frame = QtWidgets.QFrame()
         frame.setObjectName("DetailPanel")
-        layout = QtWidgets.QVBoxLayout(frame)
-        layout.setContentsMargins(12, 12, 12, 12)
-        title = QtWidgets.QLabel("Szczegóły")
-        title.setObjectName("SectionTitle")
-        layout.addWidget(title)
+        frame.setMinimumWidth(60)
+        outer = QtWidgets.QVBoxLayout(frame)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+
+        # --- Nagłówek z tytułem i przyciskiem collapse ---
+        header_bar = QtWidgets.QWidget()
+        header_bar.setObjectName("DetailPanelHeader")
+        header_bar.setFixedHeight(32)
+        hb_layout = QtWidgets.QHBoxLayout(header_bar)
+        hb_layout.setContentsMargins(10, 0, 4, 0)
+        hb_layout.setSpacing(4)
+        self._detail_title_label = QtWidgets.QLabel("Szczegóły")
+        self._detail_title_label.setObjectName("SectionTitle")
+        hb_layout.addWidget(self._detail_title_label, 1)
+        self.toggle_detail_btn = QtWidgets.QToolButton()
+        self.toggle_detail_btn.setText("◀")
+        self.toggle_detail_btn.setToolTip("Ukryj/pokaż panel szczegółów  [Ctrl+Shift+D]")
+        self.toggle_detail_btn.setFixedSize(24, 24)
+        self.toggle_detail_btn.clicked.connect(self._toggle_detail_panel)
+        hb_layout.addWidget(self.toggle_detail_btn)
+        outer.addWidget(header_bar)
+
+        # --- Scrollowalny obszar z treścią panelu ---
+        scroll = QtWidgets.QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+
+        content_widget = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(content_widget)
+        layout.setContentsMargins(10, 8, 10, 10)
+        layout.setSpacing(6)
+
         self.detail_text = QtWidgets.QTextEdit()
         self.detail_text.setReadOnly(True)
+        self.detail_text.setMaximumHeight(100)
         layout.addWidget(self.detail_text)
 
+        # Okładka wyśrodkowana
+        cover_row = QtWidgets.QHBoxLayout()
+        cover_row.addStretch()
         self.cover_label = QtWidgets.QLabel()
         self.cover_label.setFixedSize(140, 140)
         self.cover_label.setScaledContents(True)
-        layout.addWidget(self.cover_label)
+        self.cover_label.setObjectName("CoverLabel")
+        cover_row.addWidget(self.cover_label)
+        cover_row.addStretch()
+        layout.addLayout(cover_row)
 
         self.cover_btn = AnimatedButton("Zmień okładkę")
         self.cover_btn.setToolTip("Wybierz nową okładkę utworu")
         self.cover_btn.clicked.connect(self._change_cover)
         layout.addWidget(self.cover_btn)
 
+        # Formularz tagów
         form = QtWidgets.QFormLayout()
+        form.setRowWrapPolicy(QtWidgets.QFormLayout.RowWrapPolicy.WrapLongRows)
+        form.setLabelAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
+        form.setVerticalSpacing(4)
         self.detail_title = QtWidgets.QLineEdit()
         self.detail_artist = QtWidgets.QLineEdit()
         self.detail_album = QtWidgets.QLineEdit()
@@ -913,34 +967,38 @@ class MainWindow(QtWidgets.QMainWindow):
         form.addRow("Nastrój", self.detail_mood)
         layout.addLayout(form)
 
-        self.save_btn = AnimatedButton("Zapisz zmiany")
+        # Przyciski akcji — 2 w rzędzie
+        btn_grid = QtWidgets.QGridLayout()
+        btn_grid.setSpacing(4)
+        self.save_btn = AnimatedButton("💾 Zapisz")
         self.save_btn.setToolTip("Zapisz zmiany w bazie")
         self.save_btn.clicked.connect(self._save_detail_changes)
-        layout.addWidget(self.save_btn)
-
-        self.save_file_btn = AnimatedButton("Zapisz do pliku")
+        self.save_file_btn = AnimatedButton("📁 Do pliku")
         self.save_file_btn.setToolTip("Zapisz tagi bezpośrednio do pliku audio")
         self.save_file_btn.clicked.connect(self._save_tags_to_file)
-        layout.addWidget(self.save_file_btn)
-
-        self.reload_tags_btn = AnimatedButton("Odczytaj z pliku")
+        self.reload_tags_btn = AnimatedButton("🔄 Z pliku")
         self.reload_tags_btn.setToolTip("Wczytaj tagi z pliku audio")
         self.reload_tags_btn.clicked.connect(self._reload_tags_from_file)
-        layout.addWidget(self.reload_tags_btn)
-
-        self.clear_tags_btn = AnimatedButton("Wyczyść tagi")
+        self.clear_tags_btn = AnimatedButton("🗑 Wyczyść")
         self.clear_tags_btn.setToolTip("Usuń tagi z pliku i bazy")
         self.clear_tags_btn.clicked.connect(self._clear_tags)
-        layout.addWidget(self.clear_tags_btn)
-
-        self.history_btn = AnimatedButton("Historia zmian")
+        self.history_btn = AnimatedButton("📋 Historia")
         self.history_btn.setToolTip("Pokaż historię zmian tagów")
         self.history_btn.clicked.connect(self._open_change_history)
-        layout.addWidget(self.history_btn)
+        btn_grid.addWidget(self.save_btn, 0, 0)
+        btn_grid.addWidget(self.save_file_btn, 0, 1)
+        btn_grid.addWidget(self.reload_tags_btn, 1, 0)
+        btn_grid.addWidget(self.clear_tags_btn, 1, 1)
+        btn_grid.addWidget(self.history_btn, 2, 0, 1, 2)
+        layout.addLayout(btn_grid)
 
         self.waveform_label = QtWidgets.QLabel()
         self.waveform_label.setFixedHeight(32)
         layout.addWidget(self.waveform_label)
+        layout.addStretch()
+
+        scroll.setWidget(content_widget)
+        outer.addWidget(scroll, 1)
         return frame
 
     def _build_player(self) -> QtWidgets.QFrame:
@@ -2008,8 +2066,59 @@ class MainWindow(QtWidgets.QMainWindow):
         self.mode_pill.style().unpolish(self.mode_pill)
         self.mode_pill.style().polish(self.mode_pill)
 
+    # ------------------------------------------------------------------ #
+    #  Panel szczegółów — toggle / zapis stanu                           #
+    # ------------------------------------------------------------------ #
+    def _toggle_detail_panel(self) -> None:
+        """Ukrywa lub pokazuje panel szczegółów (collapse splitter)."""
+        sizes = self.content_splitter.sizes()
+        if sizes[1] > 0:
+            # Zapamiętaj szerokość przed ukryciem
+            self._detail_panel_last_width = sizes[1]
+            self.content_splitter.setSizes([sizes[0] + sizes[1], 0])
+            self.toggle_detail_btn.setText("▶")
+            self.toggle_detail_btn.setToolTip("Pokaż panel szczegółów  [Ctrl+Shift+D]")
+            self._detail_title_label.hide()
+        else:
+            restored = getattr(self, "_detail_panel_last_width", 300)
+            total = sizes[0] + sizes[1]
+            self.content_splitter.setSizes([total - restored, restored])
+            self.toggle_detail_btn.setText("◀")
+            self.toggle_detail_btn.setToolTip("Ukryj panel szczegółów  [Ctrl+Shift+D]")
+            self._detail_title_label.show()
+
+    def _on_splitter_moved(self, pos: int, index: int) -> None:
+        """Sync button/label state when splitter handle is dragged manually."""
+        panel_visible = self.content_splitter.sizes()[1] > 0
+        if panel_visible:
+            self.toggle_detail_btn.setText("◀")
+            self.toggle_detail_btn.setToolTip("Ukryj panel szczegółów  [Ctrl+Shift+D]")
+            self._detail_title_label.show()
+        else:
+            self.toggle_detail_btn.setText("▶")
+            self.toggle_detail_btn.setToolTip("Pokaż panel szczegółów  [Ctrl+Shift+D]")
+            self._detail_title_label.hide()
+
+    def _save_ui_state(self) -> None:
+        qs = QtCore.QSettings("LumbagoMusicAI", "MainWindow")
+        qs.setValue("splitter_state", self.content_splitter.saveState())
+        qs.setValue("detail_last_width", getattr(self, "_detail_panel_last_width", 300))
+        qs.setValue("detail_visible", self.content_splitter.sizes()[1] > 0)
+
+    def _restore_ui_state(self) -> None:
+        qs = QtCore.QSettings("LumbagoMusicAI", "MainWindow")
+        state = qs.value("splitter_state")
+        if state:
+            self.content_splitter.restoreState(state)
+        self._detail_panel_last_width = int(qs.value("detail_last_width", 300))
+        # Zsynchronizuj ikonę przycisku z faktycznym stanem
+        if self.content_splitter.sizes()[1] == 0:
+            self.toggle_detail_btn.setText("▶")
+            self._detail_title_label.hide()
+
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:
         try:
+            self._save_ui_state()
             perform_backup()
         finally:
             super().closeEvent(event)
@@ -2028,6 +2137,7 @@ class MainWindow(QtWidgets.QMainWindow):
         QtGui.QShortcut(QtGui.QKeySequence("Ctrl+R"), self, activated=self._open_renamer)
         QtGui.QShortcut(QtGui.QKeySequence("Ctrl+E"), self, activated=self._open_xml_converter)
         QtGui.QShortcut(QtGui.QKeySequence("Ctrl+T"), self, activated=self._run_ai_tagger)
+        QtGui.QShortcut(QtGui.QKeySequence("Ctrl+Shift+D"), self, activated=self._toggle_detail_panel)
 
     def _apply_icons(self):
         icons_dir = Path(__file__).resolve().parent / "assets" / "icons"

@@ -1083,9 +1083,9 @@ def _fetch_portal_search_markdown(search_query: str) -> str:
     if search_query in _PORTAL_SEARCH_CACHE:
         return _PORTAL_SEARCH_CACHE[search_query]
     encoded = requests.utils.quote(search_query, safe="")
-    url = f"https://r.jina.ai/http://duckduckgo.com/?q={encoded}"
+    url = f"https://r.jina.ai/https://duckduckgo.com/html/?q={encoded}"
     try:
-        response = requests.get(url, headers={"User-Agent": "LumbagoMusicAI/0.1"}, timeout=12)
+        response = requests.get(url, headers={"User-Agent": "LumbagoMusicAI/0.1", "Accept": "text/plain"}, timeout=15)
         response.raise_for_status()
         payload = response.text
     except Exception:
@@ -1368,6 +1368,8 @@ _REMOTE_NOISE_PATTERNS: tuple[re.Pattern[str], ...] = (
     ),
     re.compile(r"\b(hq|hd|4k|8k|remastered(\s+\d{4})?|live)\b", re.IGNORECASE),
     re.compile(r"\s+\|\s+(youtube|spotify|soundcloud|apple music|deezer|beatport|tidal|bandcamp|audiomack|last\.fm)\b", re.IGNORECASE),
+    # YouTube auto-generated channel names ("Artist - Topic")
+    re.compile(r"\s+-\s+topic\s*$", re.IGNORECASE),
 )
 
 
@@ -1442,8 +1444,8 @@ def _should_replace_local_value(
     if field_name in {"title", "artist", "album", "albumartist"}:
         if _looks_like_remote_noise(current_text):
             return True
-        if source_confidence >= 0.9:
-            return True
+        # balanced mode: do not overwrite existing non-noise values even at high confidence
+        # (use aggressive policy to enable that behaviour)
     if field_name == "year":
         current_year = _parse_year(current_text)
         incoming_year = _parse_year(incoming_text)

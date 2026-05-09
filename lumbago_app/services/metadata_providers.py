@@ -16,18 +16,18 @@ class MusicBrainzProvider:
     def _headers(self) -> dict:
         return {"User-Agent": self.app_name}
 
-    def search_recording(self, query: str) -> dict | None:
+    def search_recording(self, query: str, limit: int = 5) -> dict | None:
         url = "https://musicbrainz.org/ws/2/recording/"
-        params = {"query": query, "fmt": "json"}
+        params = {"query": query, "fmt": "json", "limit": max(1, limit)}
         try:
-            resp = requests.get(url, params=params, headers=self._headers(), timeout=10)
+            resp = requests.get(url, params=params, headers=self._headers(), timeout=15)
             resp.raise_for_status()
             return resp.json()
         except Exception:
             return None
 
     def search(self, query: str, limit: int = 5) -> list[dict]:
-        result = self.search_recording(query)
+        result = self.search_recording(query, limit=limit)
         if not result:
             return []
         recordings = result.get("recordings", [])
