@@ -28,6 +28,7 @@ htmlcov/
 # IDE
 .vscode/
 .idea/
+.vs/
 *.swp
 .venv311_new/
 web/node_modules/
