@@ -19,6 +19,7 @@ from lumbago_app.services.ai_tagger_merge import _merge_analysis_into_track
 
 class _FakeResponse:
     status_code = 200
+    ok = True
 
     def __init__(self, payload: dict):
         self._payload = payload

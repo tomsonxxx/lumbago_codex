@@ -8,6 +8,7 @@ from lumbago_app.data.repository import init_db, upsert_tracks, list_tracks, upd
 def test_integration_db_roundtrip(monkeypatch):
     with tempfile.TemporaryDirectory() as temp_dir:
         monkeypatch.setenv("APPDATA", temp_dir)
+        reset_engine()
         init_db()
         track = Track(path="x.mp3", title="Test", artist="Artist", album="Album", year="2020")
         upsert_tracks([track])
