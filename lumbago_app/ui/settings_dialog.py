@@ -3,7 +3,12 @@
 import requests
 from PyQt6 import QtWidgets, QtGui
 
-from lumbago_app.core.config import load_settings, save_settings
+from lumbago_app.core.config import (
+    default_musicbrainz_user_agent,
+    load_settings,
+    normalize_musicbrainz_user_agent,
+    save_settings,
+)
 from lumbago_app.ui.widgets import apply_dialog_fade, dialog_icon_pixmap
 
 
@@ -13,6 +18,7 @@ class SettingsDialog(QtWidgets.QDialog):
         self.setWindowTitle("Ustawienia / Klucze API")
         self.setMinimumWidth(520)
         apply_dialog_fade(self)
+        self._syncing_validation_controls = False
         self._build_ui()
         self._load()
 
@@ -62,8 +68,12 @@ class SettingsDialog(QtWidgets.QDialog):
         self.filename_patterns.setPlaceholderText(
             "Przykład: (?P<artist>.+) - (?P<title>.+)"
         )
+        self.overwrite_existing_tags = QtWidgets.QCheckBox("Nadpisuj istniejące tagi")
+        self.overwrite_existing_tags.setToolTip(
+            "Włącza agresywne nadpisywanie lokalnych tagów lepszymi danymi z internetu."
+        )
         self.validation_policy = QtWidgets.QComboBox()
-        self.validation_policy.addItems(["strict", "balanced", "lenient"])
+        self.validation_policy.addItems(["strict", "balanced", "lenient", "aggressive"])
         self.metadata_cache_ttl = QtWidgets.QSpinBox()
         self.metadata_cache_ttl.setRange(0, 365)
         self.metadata_cache_ttl.setSuffix(" dni")
@@ -93,10 +103,14 @@ class SettingsDialog(QtWidgets.QDialog):
         form.addRow("Adres bazowy OpenAI (URL)", self.openai_base_url)
         form.addRow("Model OpenAI", self.openai_model)
         form.addRow("Wzorce nazw plików (regex, 1 na linię)", self.filename_patterns)
+        form.addRow("", self.overwrite_existing_tags)
         form.addRow("Walidacja metadanych", self.validation_policy)
         form.addRow("Cache metadanych (TTL)", self.metadata_cache_ttl)
 
         layout.addLayout(form)
+
+        self.overwrite_existing_tags.toggled.connect(self._on_overwrite_existing_tags_toggled)
+        self.validation_policy.currentTextChanged.connect(self._on_validation_policy_changed)
 
         test_row = QtWidgets.QGridLayout()
         self.test_musicbrainz_btn = QtWidgets.QPushButton("Test MusicBrainz")
@@ -131,7 +145,7 @@ class SettingsDialog(QtWidgets.QDialog):
 
     def _load(self):
         settings = load_settings()
-        self.musicbrainz_app.setText(settings.musicbrainz_app_name or "")
+        self.musicbrainz_app.setText(settings.musicbrainz_app_name or default_musicbrainz_user_agent())
         self.cloud_provider.setCurrentText(settings.cloud_ai_provider or "")
         self.cloud_api_key.setText(settings.cloud_ai_api_key or "")
         self.gemini_api_key.setText(settings.gemini_api_key or "")
@@ -147,13 +161,15 @@ class SettingsDialog(QtWidgets.QDialog):
         self.openai_base_url.setText(settings.openai_base_url or "")
         self.openai_model.setText(settings.openai_model or "")
         self.filename_patterns.setPlainText("\n".join(settings.filename_patterns or []))
-        self.validation_policy.setCurrentText(settings.validation_policy or "balanced")
+        policy = settings.validation_policy or "aggressive"
+        self._set_validation_policy(policy)
         self.metadata_cache_ttl.setValue(settings.metadata_cache_ttl_days)
 
     def _save(self):
+        musicbrainz_user_agent = normalize_musicbrainz_user_agent(self.musicbrainz_app.text())
         save_settings(
             {
-                "MUSICBRAINZ_APP_NAME": self.musicbrainz_app.text().strip(),
+                "MUSICBRAINZ_APP_NAME": musicbrainz_user_agent,
                 "CLOUD_AI_PROVIDER": self.cloud_provider.currentText().strip(),
                 "CLOUD_AI_API_KEY": self.cloud_api_key.text().strip(),
                 "GEMINI_API_KEY": self.gemini_api_key.text().strip(),
@@ -169,11 +185,39 @@ class SettingsDialog(QtWidgets.QDialog):
                 "OPENAI_BASE_URL": self.openai_base_url.text().strip(),
                 "OPENAI_MODEL": self.openai_model.text().strip(),
                 "FILENAME_PATTERNS": self.filename_patterns.toPlainText().strip(),
-                "VALIDATION_POLICY": self.validation_policy.currentText().strip(),
+                "VALIDATION_POLICY": self.validation_policy.currentText().strip() or "aggressive",
                 "METADATA_CACHE_TTL_DAYS": str(self.metadata_cache_ttl.value()),
             }
         )
         self.accept()
+
+    def _on_overwrite_existing_tags_toggled(self, checked: bool) -> None:
+        if self._syncing_validation_controls:
+            return
+        desired_policy = "aggressive" if checked else "balanced"
+        if checked and self.validation_policy.currentText() != desired_policy:
+            self._set_validation_policy(desired_policy)
+        elif not checked and self.validation_policy.currentText() == "aggressive":
+            self._set_validation_policy(desired_policy)
+
+    def _on_validation_policy_changed(self, policy: str) -> None:
+        if self._syncing_validation_controls:
+            return
+        should_overwrite = policy == "aggressive"
+        if self.overwrite_existing_tags.isChecked() != should_overwrite:
+            self._syncing_validation_controls = True
+            try:
+                self.overwrite_existing_tags.setChecked(should_overwrite)
+            finally:
+                self._syncing_validation_controls = False
+
+    def _set_validation_policy(self, policy: str) -> None:
+        self._syncing_validation_controls = True
+        try:
+            self.validation_policy.setCurrentText(policy)
+            self.overwrite_existing_tags.setChecked(policy == "aggressive")
+        finally:
+            self._syncing_validation_controls = False
 
     def _show_test_result(self, title: str, ok: bool, detail: str = "") -> None:
         text = "Połączenie OK." if ok else "Test nieudany."
@@ -185,9 +229,9 @@ class SettingsDialog(QtWidgets.QDialog):
             QtWidgets.QMessageBox.warning(self, title, text)
 
     def _test_musicbrainz(self) -> None:
-        app_name = self.musicbrainz_app.text().strip() or "LumbagoMusicAI"
+        app_name = normalize_musicbrainz_user_agent(self.musicbrainz_app.text())
         url = "https://musicbrainz.org/ws/2/recording"
-        headers = {"User-Agent": f"{app_name}/1.0"}
+        headers = {"User-Agent": app_name}
         params = {"query": "recording:test", "fmt": "json", "limit": "1"}
         try:
             response = requests.get(url, headers=headers, params=params, timeout=12)

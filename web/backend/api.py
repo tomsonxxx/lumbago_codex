@@ -1,18 +1,25 @@
 from __future__ import annotations
 
+import json
 import os
 import sqlite3
+import threading
+import uuid
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import BackgroundTasks, FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from lumbago_app.core.audio import apply_local_metadata, extract_metadata, iter_audio_files
+from lumbago_app.core.config import load_settings
 from lumbago_app.core.models import Track
 from lumbago_app.data.db import get_session_factory
 from lumbago_app.data.repository import init_db, upsert_tracks
 from lumbago_app.data.schema import TrackOrm
+from lumbago_app.services.analysis_engine import AI_FIELDS, AnalysisEngine, MergePolicy, ProviderConfig
 from web.backend.db import (
     add_tag_history,
     connect,
@@ -70,7 +77,35 @@ class DuplicatesPayload(BaseModel):
     mode: str = Field(pattern="^(hash|fingerprint|metadata)$")
 
 
-app = FastAPI(title="Lumbago Web Backend", version="0.2.0")
+class ProviderConfigPayload(BaseModel):
+    provider: str = Field(pattern="^(openai|gemini|grok|deepseek)$")
+    api_key: str = ""
+    base_url: str = ""
+    model: str = ""
+    priority: int = 100
+    enabled: bool = True
+
+
+class ProviderConfigUpdatePayload(BaseModel):
+    providers: list[ProviderConfigPayload]
+
+
+class AnalysisJobCreatePayload(BaseModel):
+    track_ids: list[int] = Field(default_factory=list)
+    providers: list[ProviderConfigPayload] = Field(default_factory=list)
+    policy: str = Field(default="aggressive")
+
+
+class AnalysisApplyPayload(BaseModel):
+    overrides: dict[str, dict[str, bool]] = Field(default_factory=dict)
+    source_prefix: str = "ai"
+
+
+app = FastAPI(title="Lumbago Web Backend", version="0.3.0")
+
+_ANALYSIS_ENGINE = AnalysisEngine()
+_ANALYSIS_LOCK = threading.Lock()
+_ANALYSIS_JOBS: dict[str, dict[str, Any]] = {}
 
 
 def _serialize_track(row: TrackOrm) -> dict:
@@ -82,6 +117,10 @@ def _serialize_track(row: TrackOrm) -> dict:
         "album": row.album,
         "year": row.year,
         "genre": row.genre,
+        "composer": row.composer,
+        "comment": row.comment,
+        "lyrics": row.lyrics,
+        "publisher": row.publisher,
         "key": row.key,
         "bpm": row.bpm,
         "duration": row.duration,
@@ -91,7 +130,7 @@ def _serialize_track(row: TrackOrm) -> dict:
     }
 
 
-def _serialize_preview_track(track) -> dict:
+def _serialize_preview_track(track: Track) -> dict:
     return {
         "id": 0,
         "path": track.path,
@@ -100,6 +139,10 @@ def _serialize_preview_track(track) -> dict:
         "album": track.album,
         "year": track.year,
         "genre": track.genre,
+        "composer": track.composer,
+        "comment": track.comment,
+        "lyrics": track.lyrics,
+        "publisher": track.publisher,
         "key": track.key,
         "bpm": track.bpm,
         "duration": track.duration,
@@ -109,7 +152,7 @@ def _serialize_preview_track(track) -> dict:
     }
 
 
-def _extract_track(path: Path):
+def _extract_track(path: Path) -> Track:
     try:
         track = extract_metadata(path)
     except Exception:
@@ -124,6 +167,179 @@ def _list_track_rows() -> list[TrackOrm]:
     Session = get_session_factory()
     with Session() as session:
         return list(session.scalars(select(TrackOrm).order_by(TrackOrm.id)).all())
+
+
+def _track_from_row(row: TrackOrm) -> Track:
+    return Track(
+        path=row.path,
+        title=row.title,
+        artist=row.artist,
+        album=row.album,
+        albumartist=row.albumartist,
+        year=row.year,
+        genre=row.genre,
+        tracknumber=row.tracknumber,
+        discnumber=row.discnumber,
+        composer=row.composer,
+        bpm=row.bpm,
+        key=row.key,
+        mood=row.mood,
+        energy=row.energy,
+        comment=row.comment,
+        isrc=row.isrc,
+        publisher=row.publisher,
+        grouping=row.grouping,
+        copyright=row.copyright,
+        remixer=row.remixer,
+    )
+
+
+def _default_provider_payloads() -> list[ProviderConfigPayload]:
+    settings = load_settings()
+    defaults = [
+        ProviderConfigPayload(
+            provider="openai",
+            api_key=settings.openai_api_key or settings.cloud_ai_api_key or "",
+            base_url=settings.openai_base_url or "https://api.openai.com/v1",
+            model=settings.openai_model or "gpt-4.1-mini",
+            priority=0,
+            enabled=True,
+        ),
+        ProviderConfigPayload(
+            provider="gemini",
+            api_key=settings.gemini_api_key or settings.cloud_ai_api_key or "",
+            base_url=settings.gemini_base_url or "https://generativelanguage.googleapis.com/v1beta",
+            model=settings.gemini_model or "gemini-2.5-flash",
+            priority=1,
+            enabled=True,
+        ),
+        ProviderConfigPayload(
+            provider="grok",
+            api_key=settings.grok_api_key or settings.cloud_ai_api_key or "",
+            base_url=settings.grok_base_url or "https://api.x.ai/v1",
+            model=settings.grok_model or "grok-2-latest",
+            priority=2,
+            enabled=True,
+        ),
+        ProviderConfigPayload(
+            provider="deepseek",
+            api_key=settings.deepseek_api_key or settings.cloud_ai_api_key or "",
+            base_url=settings.deepseek_base_url or "https://api.deepseek.com/v1",
+            model=settings.deepseek_model or "deepseek-chat",
+            priority=3,
+            enabled=True,
+        ),
+    ]
+    return defaults
+
+
+def _load_provider_payloads() -> list[ProviderConfigPayload]:
+    conn = _web_conn()
+    try:
+        raw = get_setting(conn, "ai_providers")
+    finally:
+        conn.close()
+    if not raw:
+        return _default_provider_payloads()
+    try:
+        data = json.loads(raw)
+        if not isinstance(data, list):
+            return _default_provider_payloads()
+        out: list[ProviderConfigPayload] = []
+        for item in data:
+            if not isinstance(item, dict):
+                continue
+            out.append(ProviderConfigPayload(**item))
+        return out or _default_provider_payloads()
+    except Exception:
+        return _default_provider_payloads()
+
+
+def _to_provider_configs(payloads: list[ProviderConfigPayload]) -> list[ProviderConfig]:
+    providers: list[ProviderConfig] = []
+    for payload in payloads:
+        if not payload.enabled:
+            continue
+        if not payload.api_key.strip():
+            continue
+        providers.append(
+            ProviderConfig(
+                provider=payload.provider,
+                api_key=payload.api_key.strip(),
+                base_url=payload.base_url.strip(),
+                model=payload.model.strip(),
+                priority=payload.priority,
+                enabled=payload.enabled,
+            )
+        )
+    return providers
+
+
+def _process_analysis_job(job_id: str) -> None:
+    with _ANALYSIS_LOCK:
+        job = _ANALYSIS_JOBS.get(job_id)
+    if not job:
+        return
+    track_ids = [int(item) for item in job["track_ids"]]
+    provider_payloads = [ProviderConfigPayload(**item) for item in job["provider_payloads"]]
+    providers = _to_provider_configs(provider_payloads)
+    if not providers:
+        with _ANALYSIS_LOCK:
+            job["status"] = "failed"
+            job["error"] = "No enabled providers with valid API keys"
+            job["finished_at"] = datetime.now(timezone.utc).isoformat()
+        return
+
+    Session = get_session_factory()
+    items: list[dict[str, Any]] = []
+    with Session() as session:
+        rows = list(session.scalars(select(TrackOrm).where(TrackOrm.id.in_(track_ids))).all())
+        total = len(rows)
+        with _ANALYSIS_LOCK:
+            job["total"] = total
+        for index, row in enumerate(rows, start=1):
+            track = _track_from_row(row)
+            envelope = _ANALYSIS_ENGINE.analyze_track(
+                track=track,
+                providers=providers,
+                policy=MergePolicy(mode=job.get("policy", "aggressive")),
+            )
+            item = {
+                "track_id": row.id,
+                "path": row.path,
+                "title": row.title or Path(row.path).stem,
+                "artist": row.artist or "Unknown",
+                "provider_chain": envelope.provider_chain,
+                "confidence": envelope.confidence,
+                "decisions": [
+                    {
+                        "field": decision.field,
+                        "old_value": decision.old_value,
+                        "new_value": decision.new_value,
+                        "winner_provider": decision.winner_provider,
+                        "confidence": decision.confidence,
+                        "accepted": decision.accepted,
+                        "reason": decision.reason,
+                    }
+                    for decision in envelope.decisions
+                ],
+                "provider_results": [
+                    {
+                        "provider": result.provider,
+                        "overall_confidence": result.overall_confidence,
+                        "values": result.values,
+                        "error": result.error,
+                    }
+                    for result in envelope.provider_results
+                ],
+            }
+            items.append(item)
+            with _ANALYSIS_LOCK:
+                job["processed"] = index
+                job["items"] = items
+        with _ANALYSIS_LOCK:
+            job["status"] = "completed"
+            job["finished_at"] = datetime.now(timezone.utc).isoformat()
 
 
 @app.get("/health")
@@ -167,6 +383,116 @@ def write_cache(key: str, payload: CachePayload) -> dict[str, str | int]:
     finally:
         conn.close()
     return {"key": key, "value": payload.value, "ttl_seconds": payload.ttl_seconds}
+
+
+@app.get("/ai/providers")
+def get_ai_providers() -> dict[str, list[dict[str, Any]]]:
+    providers = _load_provider_payloads()
+    return {"providers": [item.model_dump() for item in providers]}
+
+
+@app.put("/ai/providers")
+def put_ai_providers(payload: ProviderConfigUpdatePayload) -> dict[str, list[dict[str, Any]]]:
+    conn = _web_conn()
+    try:
+        set_setting(conn, "ai_providers", json.dumps([item.model_dump() for item in payload.providers], ensure_ascii=False))
+    finally:
+        conn.close()
+    return {"providers": [item.model_dump() for item in payload.providers]}
+
+
+@app.post("/analysis/jobs")
+def create_analysis_job(payload: AnalysisJobCreatePayload, background: BackgroundTasks) -> dict[str, Any]:
+    track_ids = payload.track_ids
+    if not track_ids:
+        track_ids = [row.id for row in _list_track_rows()]
+    if not track_ids:
+        raise HTTPException(status_code=400, detail="No tracks available for analysis.")
+    provider_payloads = payload.providers or _load_provider_payloads()
+    job_id = uuid.uuid4().hex
+    job = {
+        "id": job_id,
+        "status": "queued",
+        "policy": payload.policy or "aggressive",
+        "track_ids": track_ids,
+        "provider_payloads": [item.model_dump() for item in provider_payloads],
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "processed": 0,
+        "total": len(track_ids),
+        "items": [],
+    }
+    with _ANALYSIS_LOCK:
+        _ANALYSIS_JOBS[job_id] = job
+        _ANALYSIS_JOBS[job_id]["status"] = "running"
+    background.add_task(_process_analysis_job, job_id)
+    return {"job_id": job_id, "status": "running"}
+
+
+@app.get("/analysis/jobs/{job_id}")
+def get_analysis_job(job_id: str) -> dict[str, Any]:
+    with _ANALYSIS_LOCK:
+        job = _ANALYSIS_JOBS.get(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found.")
+        return dict(job)
+
+
+@app.post("/analysis/jobs/{job_id}/apply")
+def apply_analysis_job(job_id: str, payload: AnalysisApplyPayload) -> dict[str, Any]:
+    with _ANALYSIS_LOCK:
+        job = _ANALYSIS_JOBS.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found.")
+    if job.get("status") != "completed":
+        raise HTTPException(status_code=409, detail="Job is not completed yet.")
+
+    Session = get_session_factory()
+    conn = _web_conn()
+    updated = 0
+    changes = 0
+    try:
+        with Session() as session:
+            rows = list(session.scalars(select(TrackOrm).where(TrackOrm.id.in_(job["track_ids"]))).all())
+            by_id = {row.id: row for row in rows}
+            for item in job.get("items", []):
+                track_id = int(item["track_id"])
+                row = by_id.get(track_id)
+                if row is None:
+                    continue
+                item_changes = 0
+                override = payload.overrides.get(str(track_id), {})
+                source = f"{payload.source_prefix}:{item.get('provider_chain', 'unknown')}"
+                for decision in item.get("decisions", []):
+                    field_name = decision.get("field")
+                    if field_name not in AI_FIELDS:
+                        continue
+                    accepted = bool(decision.get("accepted"))
+                    if field_name in override:
+                        accepted = bool(override[field_name])
+                    if not accepted:
+                        continue
+                    new_value = decision.get("new_value")
+                    old_value = getattr(row, field_name, None)
+                    if old_value == new_value:
+                        continue
+                    setattr(row, field_name, new_value)
+                    add_tag_history(
+                        conn=conn,
+                        track_id=track_id,
+                        field_name=field_name,
+                        old_value=str(old_value) if old_value is not None else None,
+                        new_value=str(new_value) if new_value is not None else None,
+                        source=source,
+                    )
+                    item_changes += 1
+                    changes += 1
+                if item_changes > 0:
+                    row.date_modified = datetime.utcnow()
+                    updated += 1
+            session.commit()
+    finally:
+        conn.close()
+    return {"updated_tracks": updated, "applied_changes": changes}
 
 
 @app.post("/tag-history")

@@ -1,0 +1,7 @@
+Aby zbudować ZIP:
+
+Linux/macOS:
+   zip -r lumbago-ui-package.zip lumbago-ui-package/
+
+Windows PowerShell:
+   Compress-Archive -Path .\lumbago-ui-package\* -DestinationPath .\lumbago-ui-package.zip

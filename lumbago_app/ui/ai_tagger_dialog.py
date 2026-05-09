@@ -17,20 +17,21 @@ from lumbago_app.core.analysis_cache import load_analysis_cache, save_analysis_c
 from lumbago_app.core.models import AnalysisResult, Track
 from lumbago_app.core.services import enrich_track_with_analysis
 from lumbago_app.core.audio import write_tags
-from lumbago_app.data.repository import replace_track_tags, update_tracks
-from lumbago_app.services.ai_tagger import CloudAiTagger, LocalAiTagger, MultiAiTagger
+from lumbago_app.data.repository import replace_track_tags, update_tracks, update_track_paths_bulk
+from lumbago_app.services.ai_tagger import CloudAiTagger, DatabaseTagger, MultiAiTagger, preflight_provider
 from lumbago_app.services.ai_tagger_merge import _merge_analysis_into_track
 from lumbago_app.services.key_detection import detect_key
 from lumbago_app.services.metadata_enricher import AutoMetadataFiller, MetadataFillReport
 from lumbago_app.ui.widgets import apply_dialog_fade
 
 FIELDS = [
-    "title", "artist", "album", "albumartist", "year", "genre",
-    "tracknumber", "discnumber", "composer",
-    "bpm", "key", "rating", "mood", "energy",
-    "comment", "lyrics", "isrc", "publisher", "grouping", "copyright", "remixer",
+    "title", "bpm", "key", "artist", "album", "genre", "year", "composer",
+    "comment", "lyrics", "publisher",
+    "albumartist", "tracknumber", "discnumber",
+    "rating", "mood", "energy",
+    "isrc", "grouping", "copyright", "remixer",
 ]
-AI_FIELDS = {"genre", "bpm", "key", "mood", "energy"}
+AI_FIELDS = {"genre", "bpm", "key", "mood", "energy", "rating", "year"}
 AUDIO_DERIVED_FIELDS = {"bpm", "key", "energy", "mood"}
 FIELD_LABELS = {
     "title": "TytuĹ‚",
@@ -135,6 +136,22 @@ def _has_value(value: Any) -> bool:
     return True
 
 
+def _to_str(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _to_float(value: Any) -> float | None:
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _format_value(field_name: str, value: Any) -> str:
     if not _has_value(value):
         return "â€”"
@@ -194,9 +211,7 @@ def _default_accept_fields(state: TrackAnalysisState) -> set[str]:
     if state.metadata_report is not None:
         accepted.update(field for field in state.metadata_report.changed_fields if field in changed)
     for field_name in changed:
-        if field_name in AI_FIELDS and _field_confidence(state, field_name) >= 0.6:
-            accepted.add(field_name)
-        elif field_name in AUDIO_DERIVED_FIELDS and state.audio_result is not None:
+        if _field_confidence(state, field_name) >= 0.6:
             accepted.add(field_name)
     return accepted
 
@@ -544,9 +559,15 @@ class AiTaggerDialog(QtWidgets.QDialog):
         self._apply_btn.setObjectName("PrimaryBtn")
         self._apply_btn.setEnabled(False)
         self._apply_btn.clicked.connect(self._apply_accepted)
+        self._rename_check = QtWidgets.QCheckBox("Zmień nazwy plików")
+        self._rename_check.setToolTip(
+            "Po zapisaniu tagów zmień nazwy plików na format: Artysta - Tytuł"
+        )
+        self._rename_check.setChecked(True)
         layout.addWidget(self._run_btn)
         layout.addWidget(self._stop_btn)
         layout.addWidget(self._apply_btn)
+        layout.addWidget(self._rename_check)
         default_profile = "Szybki" if len(self._tracks) >= 300 else "Zbalansowany"
         self._apply_profile(default_profile)
         return toolbar
@@ -632,13 +653,24 @@ class AiTaggerDialog(QtWidgets.QDialog):
                 QtWidgets.QMessageBox.warning(self, "Brak API", "Wybierz co najmniej jedno API w menu Opcje.")
                 return
             taggers: list[Any] = []
+            # DatabaseTagger always runs first — AcoustID if key set, else MB text search
+            _acoustid = None
+            if settings.acoustid_api_key:
+                from lumbago_app.services.recognizer import AcoustIdRecognizer
+                _acoustid = AcoustIdRecognizer(settings.acoustid_api_key)
+            taggers.append(DatabaseTagger(acoustid=_acoustid))
             for provider in selected_providers:
-                if provider == "local":
-                    taggers.append(LocalAiTagger())
-                    continue
                 api_key, base_url, model = _resolve_provider_config(provider, settings)
                 if not api_key:
                     QtWidgets.QMessageBox.warning(self, "Brak klucza API", f"Ustaw klucz API dla providera '{provider}' w ustawieniach.")
+                    return
+                ok, detail = preflight_provider(provider, api_key, base_url, timeout=8)
+                if not ok:
+                    QtWidgets.QMessageBox.warning(
+                        self,
+                        "Błąd API",
+                        f"Provider '{provider}' nie przeszedł testu połączenia.\nSzczegóły: {detail}",
+                    )
                     return
                 taggers.append(
                     CloudAiTagger(
@@ -674,13 +706,19 @@ class AiTaggerDialog(QtWidgets.QDialog):
         self._run_btn.setEnabled(False)
         self._stop_btn.setEnabled(True)
         self._status_lbl.setText("Uruchamianie analizy...")
+        audio_duration = int(self._audio_duration.value())
+        if len(self._states) >= 250 and audio_duration > 30:
+            audio_duration = 30
+            self._log_view.appendPlainText(
+                "  optymalizacja: skrócono czas analizy audio do 30s dla dużej paczki plików"
+            )
         self._worker = _PipelineWorker(
             self._states,
             tagger,
             auto_filler,
             method,
             self._action_audio.isChecked(),
-            audio_duration_s=int(self._audio_duration.value()),
+            audio_duration_s=audio_duration,
             max_workers=int(self._workers_spin.value()),
             accept_threshold=float(self._accept_threshold.value()),
         )
@@ -792,11 +830,41 @@ class AiTaggerDialog(QtWidgets.QDialog):
                             future.result()
                         except Exception as exc:
                             write_errors.append(f"{Path(track_path).name}: {exc}")
-            msg = f"Zapisano zmiany dla {len(changed_tracks)} utworĂłw (baza + pliki audio)."
+            msg = f"Zapisano zmiany dla {len(changed_tracks)} utworów (baza + pliki audio)."
             if write_errors:
-                msg += f"\nBĹ‚Ä™dy zapisu tagĂłw: {len(write_errors)}"
+                msg += f"\nBłędy zapisu tagów: {len(write_errors)}"
                 for err in write_errors[:5]:
                     msg += f"\n  {err}"
+
+            # Rename files to "Artysta - Tytuł" if checkbox is checked
+            if self._rename_check.isChecked():
+                from lumbago_app.core.renamer import build_rename_plan, apply_rename_plan
+                renameable = [
+                    s.track for s in self._states
+                    if (s.track.artist or "").strip() and (s.track.title or "").strip()
+                ]
+                if renameable:
+                    plan = build_rename_plan(renameable, "{artist} - {title}")
+                    to_rename = [
+                        item for item in plan
+                        if not item.conflict and item.old_path != item.new_path
+                    ]
+                    conflicts = [item for item in plan if item.conflict]
+                    if to_rename:
+                        rename_history = apply_rename_plan(plan)
+                        # Update DB paths for renamed files
+                        if rename_history:
+                            update_track_paths_bulk(rename_history)
+                        # Update in-memory track paths so UI stays consistent
+                        path_map = {entry["old"]: entry["new"] for entry in rename_history}
+                        for state in self._states:
+                            new_path = path_map.get(state.track.path)
+                            if new_path:
+                                state.track.path = new_path
+                        msg += f"\nZmieniono nazwy {len(rename_history)} plików."
+                    if conflicts:
+                        msg += f"\n{len(conflicts)} plików pominięto (konflikty nazw)."
+
             self._status_lbl.setText(msg)
             self.accept()
         else:
@@ -820,14 +888,13 @@ class AiTaggerDialog(QtWidgets.QDialog):
         providers_menu = self._options_menu.addMenu("API AI")
         self._provider_actions: dict[str, QtGui.QAction] = {}
         settings = load_settings()
-        default_provider = settings.cloud_ai_provider or "local"
-        for provider in ["local", "openai", "gemini", "grok", "deepseek"]:
+        default_provider = settings.cloud_ai_provider or "openai"
+        for provider in ["openai", "gemini", "grok", "deepseek"]:
             action = providers_menu.addAction(provider)
             action.setCheckable(True)
             action.setChecked(provider == default_provider)
             self._provider_actions[provider] = action
         if self._force_cloud:
-            self._provider_actions["local"].setChecked(False)
             self._provider_actions["openai"].setChecked(True)
 
         self._options_menu.addSeparator()
@@ -869,9 +936,9 @@ class AiTaggerDialog(QtWidgets.QDialog):
 
     def _selected_providers(self) -> list[str]:
         providers = [name for name, action in self._provider_actions.items() if action.isChecked()]
-        if not providers and "local" in self._provider_actions:
-            self._provider_actions["local"].setChecked(True)
-            providers.append("local")
+        if not providers and "openai" in self._provider_actions:
+            self._provider_actions["openai"].setChecked(True)
+            providers.append("openai")
         return providers
 
     def _append_track_report_to_log(self, state: TrackAnalysisState) -> None:
@@ -880,10 +947,12 @@ class AiTaggerDialog(QtWidgets.QDialog):
         if state.metadata_report is not None:
             self._log_view.appendPlainText(f"  źródła: {state.metadata_report.summary}")
         if state.ai_result is not None:
+            desc = state.ai_result.description or ""
             self._log_view.appendPlainText(
                 f"  AI: bpm={state.ai_result.bpm} key={state.ai_result.key} "
                 f"genre={state.ai_result.genre} mood={state.ai_result.mood} energy={state.ai_result.energy} "
                 f"conf={float(state.ai_result.confidence or 0.0):.0%}"
+                + (f" | {desc}" if desc else "")
             )
 
     def _analyze(self) -> None:
@@ -978,7 +1047,10 @@ class _PipelineWorker(QtCore.QRunnable):
                 )
                 self._persist_audio_features(working.path, state.audio_result)
             if self.tagger is not None:
-                state.ai_result = self.tagger.analyze(ai_input)
+                state.ai_result = self._load_cached_ai_result(path_obj)
+                if state.ai_result is None:
+                    state.ai_result = self.tagger.analyze(ai_input)
+                    self._save_cached_ai_result(path_obj, state.ai_result)
                 _merge_analysis_into_track(working, state.ai_result)
             state.proposed_track = working
             for field_name in _default_accept_fields(state):
@@ -1032,6 +1104,67 @@ class _PipelineWorker(QtCore.QRunnable):
         save_analysis_cache(path_obj, merged)
         return detected
 
+    def _load_cached_ai_result(self, path_obj: Path) -> AnalysisResult | None:
+        if self.tagger is None:
+            return None
+        payload = load_analysis_cache(path_obj) or {}
+        sig = self._audio_signature(path_obj)
+        if payload.get("signature") != sig:
+            return None
+        ai_results = payload.get("ai_results")
+        if not isinstance(ai_results, dict):
+            return None
+        cache_key = self._ai_cache_key()
+        cached = ai_results.get(cache_key)
+        if not isinstance(cached, dict):
+            return None
+        return AnalysisResult(
+            title=_to_str(cached.get("title")),
+            bpm=_to_float(cached.get("bpm")),
+            key=_to_str(cached.get("key")),
+            artist=_to_str(cached.get("artist")),
+            album=_to_str(cached.get("album")),
+            genre=_to_str(cached.get("genre")),
+            year=_to_str(cached.get("year")),
+            composer=_to_str(cached.get("composer")),
+            comment=_to_str(cached.get("comment")),
+            lyrics=_to_str(cached.get("lyrics")),
+            publisher=_to_str(cached.get("publisher")),
+            description=_to_str(cached.get("description")),
+            confidence=_to_float(cached.get("confidence")),
+        )
+
+    def _save_cached_ai_result(self, path_obj: Path, result: AnalysisResult) -> None:
+        payload = load_analysis_cache(path_obj) or {}
+        sig = self._audio_signature(path_obj)
+        ai_results = payload.get("ai_results")
+        if not isinstance(ai_results, dict):
+            ai_results = {}
+        ai_results[self._ai_cache_key()] = {
+            "title": result.title,
+            "bpm": result.bpm,
+            "key": result.key,
+            "artist": result.artist,
+            "album": result.album,
+            "genre": result.genre,
+            "year": result.year,
+            "composer": result.composer,
+            "comment": result.comment,
+            "lyrics": result.lyrics,
+            "publisher": result.publisher,
+            "description": result.description,
+            "confidence": result.confidence,
+        }
+        payload["signature"] = sig
+        payload["ai_results"] = ai_results
+        save_analysis_cache(path_obj, payload)
+
+    def _ai_cache_key(self) -> str:
+        cache_fn = getattr(self.tagger, "cache_key", None)
+        if callable(cache_fn):
+            return str(cache_fn())
+        return getattr(self.tagger, "provider_name", "ai")
+
     def _persist_audio_features(self, track_path: str, audio_result: Any) -> None:
         if audio_result is None:
             return
@@ -1055,6 +1188,42 @@ class _PipelineWorker(QtCore.QRunnable):
             upsert_audio_features(track_path, af)
         except Exception:
             return
+
+    def _load_cached_ai_result(self, path_obj: Path) -> AnalysisResult | None:
+        payload = load_analysis_cache(path_obj) or {}
+        sig = self._audio_signature(path_obj)
+        if payload.get("ai_signature") != sig:
+            return None
+        ai_data = payload.get("ai_result")
+        if not isinstance(ai_data, dict):
+            return None
+        fields = {
+            f: ai_data.get(f)
+            for f in (
+                "bpm", "key", "mood", "energy", "genre", "description", "confidence",
+                "title", "artist", "album", "albumartist", "year", "tracknumber",
+                "discnumber", "composer", "isrc", "publisher", "lyrics", "grouping", "copyright",
+            )
+        }
+        result = AnalysisResult(**fields)
+        if not (result.confidence or 0.0):
+            return None
+        return result
+
+    def _save_cached_ai_result(self, path_obj: Path, result: AnalysisResult) -> None:
+        if result is None or not (result.confidence or 0.0):
+            return
+        payload = load_analysis_cache(path_obj) or {}
+        payload["ai_signature"] = self._audio_signature(path_obj)
+        payload["ai_result"] = {
+            f: getattr(result, f, None)
+            for f in (
+                "bpm", "key", "mood", "energy", "genre", "description", "confidence",
+                "title", "artist", "album", "albumartist", "year", "tracknumber",
+                "discnumber", "composer", "isrc", "publisher", "lyrics", "grouping", "copyright",
+            )
+        }
+        save_analysis_cache(path_obj, payload)
 
     @staticmethod
     def _audio_signature(path_obj: Path) -> str:
@@ -1097,6 +1266,40 @@ class _PipelineWorker(QtCore.QRunnable):
         cached.waveform_blob = bytes.fromhex(waveform_hex) if isinstance(waveform_hex, str) and waveform_hex else b""
         return cached
 
+    def _ai_tagger_key(self) -> str | None:
+        fn = getattr(self.tagger, "cache_key", None)
+        return fn() if callable(fn) else None
+
+    def _load_cached_ai_result(self, path_obj: Path) -> AnalysisResult | None:
+        payload = load_analysis_cache(path_obj) or {}
+        ai_data = payload.get("ai_result")
+        if not isinstance(ai_data, dict):
+            return None
+        if payload.get("ai_signature") != self._audio_signature(path_obj):
+            return None
+        tagger_key = self._ai_tagger_key()
+        if tagger_key is not None and payload.get("ai_tagger_key") != tagger_key:
+            return None
+        try:
+            known = set(AnalysisResult.__dataclass_fields__)
+            return AnalysisResult(**{k: v for k, v in ai_data.items() if k in known})
+        except Exception:
+            return None
+
+    def _save_cached_ai_result(self, path_obj: Path, result: AnalysisResult) -> None:
+        if not result.confidence:
+            return
+        try:
+            payload = load_analysis_cache(path_obj) or {}
+            payload["ai_signature"] = self._audio_signature(path_obj)
+            tagger_key = self._ai_tagger_key()
+            if tagger_key is not None:
+                payload["ai_tagger_key"] = tagger_key
+            payload["ai_result"] = {f: getattr(result, f) for f in result.__dataclass_fields__}
+            save_analysis_cache(path_obj, payload)
+        except Exception:
+            pass
+
 
 def _vsep() -> QtWidgets.QFrame:
     separator = QtWidgets.QFrame()
@@ -1126,5 +1329,3 @@ def _is_valid_key(value: str) -> bool:
     if re.match(r"^(1[0-2]|[1-9])[AB]$", value, re.IGNORECASE):
         return True
     return bool(re.match(r"^[A-G](#|b)?m?$", value, re.IGNORECASE))
-
-

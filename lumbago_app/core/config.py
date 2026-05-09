@@ -6,6 +6,10 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+DEFAULT_MUSICBRAINZ_APP_NAME = "LumbagoMusicAI"
+DEFAULT_MUSICBRAINZ_APP_VERSION = "0.1.0"
+DEFAULT_MUSICBRAINZ_CONTACT = "tomsonxxx@gmail.com"
+
 
 def app_data_dir() -> Path:
     base = os.getenv("APPDATA") or str(Path.home() / "AppData" / "Roaming")
@@ -82,6 +86,24 @@ class Settings:
     metadata_cache_ttl_days: int
 
 
+def default_musicbrainz_user_agent() -> str:
+    return (
+        f"{DEFAULT_MUSICBRAINZ_APP_NAME}/{DEFAULT_MUSICBRAINZ_APP_VERSION}"
+        f" ({DEFAULT_MUSICBRAINZ_CONTACT})"
+    )
+
+
+def normalize_musicbrainz_user_agent(value: str | None) -> str:
+    text = (value or "").strip()
+    if not text:
+        return default_musicbrainz_user_agent()
+    if "(" in text and ")" in text:
+        return text
+    if "/" in text:
+        return f"{text} ({DEFAULT_MUSICBRAINZ_CONTACT})"
+    return f"{text}/{DEFAULT_MUSICBRAINZ_APP_VERSION} ({DEFAULT_MUSICBRAINZ_CONTACT})"
+
+
 def load_settings() -> Settings:
     data_dir = app_data_dir()
     file_path = settings_path()
@@ -92,6 +114,14 @@ def load_settings() -> Settings:
     except Exception:
         payload = {}
     auto = _discover_windows_keys()
+    cloud_provider = _first_value(
+        payload.get("CLOUD_AI_PROVIDER"),
+        os.getenv("CLOUD_AI_PROVIDER"),
+        auto.get("CLOUD_AI_PROVIDER"),
+    )
+    if (cloud_provider or "").strip().lower() == "local":
+        cloud_provider = "openai"
+
     return Settings(
         db_path=data_dir / "lumbago.db",
         cache_path=cache_dir(),
@@ -101,21 +131,19 @@ def load_settings() -> Settings:
             os.getenv("ACOUSTID_API_KEY"),
             auto.get("ACOUSTID_API_KEY"),
         ),
-        musicbrainz_app_name=_first_value(
-            payload.get("MUSICBRAINZ_APP_NAME"),
-            os.getenv("MUSICBRAINZ_APP_NAME"),
-            auto.get("MUSICBRAINZ_APP_NAME"),
+        musicbrainz_app_name=normalize_musicbrainz_user_agent(
+            _first_value(
+                payload.get("MUSICBRAINZ_APP_NAME"),
+                os.getenv("MUSICBRAINZ_APP_NAME"),
+                auto.get("MUSICBRAINZ_APP_NAME"),
+            )
         ),
         discogs_token=_first_value(
             payload.get("DISCOGS_TOKEN"),
             os.getenv("DISCOGS_TOKEN"),
             auto.get("DISCOGS_TOKEN"),
         ),
-        cloud_ai_provider=_first_value(
-            payload.get("CLOUD_AI_PROVIDER"),
-            os.getenv("CLOUD_AI_PROVIDER"),
-            auto.get("CLOUD_AI_PROVIDER"),
-        ),
+        cloud_ai_provider=cloud_provider,
         cloud_ai_api_key=_first_value(
             payload.get("CLOUD_AI_API_KEY"),
             payload.get("GEMINI_API_KEY"),
@@ -185,11 +213,13 @@ def load_settings() -> Settings:
         )
         or "deepseek-chat",
         filename_patterns=_parse_patterns(payload.get("FILENAME_PATTERNS")),
-        validation_policy=_first_value(
-            payload.get("VALIDATION_POLICY"),
-            os.getenv("VALIDATION_POLICY"),
-        )
-        or "balanced",
+        validation_policy=_normalize_validation_policy(
+            _first_value(
+                payload.get("VALIDATION_POLICY"),
+                os.getenv("VALIDATION_POLICY"),
+            )
+            or "aggressive"
+        ),
         metadata_cache_ttl_days=_to_int(
             _first_value(
                 payload.get("METADATA_CACHE_TTL_DAYS"),
@@ -226,6 +256,13 @@ def _to_int(value: str | None, default: int = 0) -> int:
         return int(value)
     except ValueError:
         return default
+
+
+def _normalize_validation_policy(value: str) -> str:
+    policy = value.strip().lower()
+    if policy in {"strict", "balanced", "lenient", "aggressive"}:
+        return policy
+    return "aggressive"
 
 
 def _discover_windows_keys() -> dict[str, str]:

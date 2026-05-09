@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Iterable
 
 from lumbago_app.core.config import cache_dir
@@ -117,6 +117,65 @@ def _cleanup_metadata_fragment(value: str) -> str:
     text = _MULTI_SEPARATOR_RE.sub(" - ", text)
     text = re.sub(r"\s+", " ", text).strip(" .-_")
     return text
+
+
+# Bracket-enclosed noise to remove from titles parsed out of filenames.
+# Only removes specific video/quality/lyrics markers; leaves remixes and feat. intact.
+_FILENAME_NOISE_BRACKET_RE = re.compile(
+    r"[\[(]\s*(?:"
+    r"(?:hd|hq|4k|8k)\s+video"                         # [4K Video], [HD Video]
+    r"|(?:hd|hq|4k|8k)"                                 # [4K], [HQ]
+    r"|official\s+(?:music\s+)?lyric(?:s)?\s+video"     # (Official Lyric Video)
+    r"|official\s+(?:music\s+)?video"                   # (Official Music Video), (Official Video)
+    r"|official\s+audio"                                # (Official Audio)
+    r"|lyric\s+video"                                   # (Lyric Video)
+    r"|lyrics?"                                         # (Lyric), (Lyrics)
+    r"|visualizer"                                      # (Visualizer)
+    r"|remastered(?:\s+\d{4})?"                         # (Remastered), (Remastered 2021)
+    r"|full\s+album"                                    # (Full Album)
+    r"|explicit"                                        # (Explicit)
+    r")\s*[\])]",
+    re.IGNORECASE,
+)
+
+
+def _clean_title_from_filename(title: str) -> str:
+    """Remove video/quality noise from a title fragment while keeping remixes and featurings."""
+    title = _FILENAME_NOISE_BRACKET_RE.sub("", title)
+    title = re.sub(r"\s+", " ", title).strip(" .-_")
+    return title
+
+
+def _strip_download_quality_suffix(value: str) -> str:
+    text = value.strip()
+    previous = None
+    while previous != text:
+        previous = text
+        text = re.sub(
+            r" {1,4}- {1,4}(?:\d{2,4} {0,2}(?:kbps|k)?|mp3|flac|wav|m4a|aac)$",
+            "",
+            text,
+            flags=re.IGNORECASE,
+        ).strip(" .-_")
+    return text
+
+
+def parse_filename_tags(path: str | Path) -> tuple[str | None, str | None]:
+    """Try to extract (artist, title) from filename stem using 'Artist - Title' pattern.
+
+    Returns (artist, title) with video/quality noise removed, or (None, None) if
+    the 'Artist - Title' separator pattern is not found.
+    Remixes, featurings and other parenthetical info are preserved.
+    """
+    stem = _strip_download_quality_suffix(PureWindowsPath(path).stem.replace("_", " ").replace(".", " "))
+    for sep in (" – ", " — ", " - "):
+        if sep in stem:
+            left, right = stem.split(sep, 1)
+            artist = _clean_title_from_filename(left.strip()) or None
+            title = _clean_title_from_filename(right.strip()) or None
+            return artist, title
+    title = _clean_title_from_filename(stem)
+    return None, title or None
 
 
 def _history_path() -> Path:

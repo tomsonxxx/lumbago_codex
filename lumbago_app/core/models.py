@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 
 
 @dataclass
@@ -29,8 +29,24 @@ class AnalysisResult:
     mood: str | None = None
     energy: float | None = None
     genre: str | None = None
+    rating: int | None = None
     description: str | None = None
     confidence: float | None = None
+    title: str | None = None
+    artist: str | None = None
+    album: str | None = None
+    albumartist: str | None = None
+    year: str | None = None
+    tracknumber: str | None = None
+    discnumber: str | None = None
+    composer: str | None = None
+    isrc: str | None = None
+    publisher: str | None = None
+    lyrics: str | None = None
+    grouping: str | None = None
+    copyright: str | None = None
+    remixer: str | None = None
+    comment: str | None = None
 
 
 @dataclass
@@ -139,3 +155,49 @@ class WatchFolder:
     path: str
     active: bool = True
     folder_id: int | None = None
+
+
+@dataclass
+class ProviderConfigContract:
+    provider: str
+    api_key: str
+    base_url: str
+    model: str
+    priority: int = 100
+    enabled: bool = True
+
+
+@dataclass
+class ProviderResultContract:
+    provider: str
+    values: dict[str, Any] = field(default_factory=dict)
+    field_confidence: dict[str, float] = field(default_factory=dict)
+    overall_confidence: float = 0.0
+    error: str | None = None
+
+
+@dataclass
+class FieldDecisionContract:
+    field: str
+    old_value: Any = None
+    new_value: Any = None
+    winner_provider: str = ""
+    confidence: float = 0.0
+    accepted: bool = False
+    reason: str = ""
+
+
+@dataclass
+class AnalysisEnvelopeContract:
+    track_path: str
+    provider_results: list[ProviderResultContract] = field(default_factory=list)
+    decisions: list[FieldDecisionContract] = field(default_factory=list)
+    provider_chain: str = ""
+    confidence: float = 0.0
+
+
+@dataclass
+class MergePolicyContract:
+    mode: str = "aggressive"
+    default_threshold: float = 0.62
+    thresholds: dict[str, float] = field(default_factory=dict)

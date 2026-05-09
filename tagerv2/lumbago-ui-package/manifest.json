@@ -1,0 +1,12 @@
+{
+  "name": "Lumbago UI Kit",
+  "version": "1.0.0",
+  "author": "Graphic Designer (AI)",
+  "files": [
+    "mockups/*",
+    "icons/*",
+    "design-tokens/*",
+    "ui-kit/*",
+    "react-starter/*"
+  ]
+}

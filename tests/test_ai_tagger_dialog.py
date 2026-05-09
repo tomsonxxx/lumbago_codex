@@ -32,12 +32,13 @@ def test_default_accept_fields_includes_metadata_and_confident_ai_changes():
         album="Album",
         genre="house",
         bpm=128.0,
+        year="1997",
     )
     report = MetadataFillReport(method="mix", changed_fields=["album"])
     state = TrackAnalysisState(
         track=original,
         proposed_track=proposed,
-        ai_result=AnalysisResult(genre="house", bpm=128.0, confidence=None),
+        ai_result=AnalysisResult(genre="house", bpm=128.0, year="1997", confidence=None),
         metadata_report=report,
     )
 
@@ -46,3 +47,4 @@ def test_default_accept_fields_includes_metadata_and_confident_ai_changes():
     assert "album" in accepted
     assert "genre" in accepted
     assert "bpm" in accepted
+    assert "year" in accepted

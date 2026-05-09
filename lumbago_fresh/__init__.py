@@ -1,0 +1,2 @@
+"""Lumbago Fresh application package."""
+

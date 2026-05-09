@@ -3,6 +3,9 @@ name: Web CI
 permissions:
   contents: read
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 on:
   push:
     branches: ["main"]
@@ -19,7 +22,7 @@ jobs:
     outputs:
       has_web: ${{ steps.filter.outputs.has_web }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4.2.2
       - uses: dorny/paths-filter@v3
         id: filter
         with:
@@ -38,10 +41,10 @@ jobs:
     needs: detect_web
     if: needs.detect_web.outputs.has_web == 'true'
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v4.2.2
+      - uses: actions/setup-node@v4.2.0
         with:
-          node-version: "20"
+          node-version: "24"
 
       - name: Resolve web working directory
         id: web_dir

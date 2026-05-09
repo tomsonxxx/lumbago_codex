@@ -15,10 +15,22 @@ def _is_unknown(value: str | None) -> bool:
     return value.strip().lower() in _UNKNOWN_VALUES
 
 
+# AI always overwrites these (audio analysis fields)
+_AI_ANALYSIS_TEXT_FIELDS = ("key", "genre", "mood")
+_AI_ANALYSIS_FLOAT_FIELDS = ("bpm", "energy")
+
+# Always overwrite with AI-verified values
+_META_OVERWRITE_FIELDS = (
+    "title", "artist",
+    "album", "albumartist", "year",
+    "tracknumber", "discnumber", "composer",
+    "isrc", "publisher", "lyrics", "grouping", "copyright", "remixer", "comment",
+)
+
 def _merge_analysis_into_track(track: Track, result: AnalysisResult) -> Track:
-    """Merge AI analysis into a track while ignoring textual placeholders like 'Unknown'."""
-    for field in ("key", "genre", "mood"):
-        incoming = getattr(result, field)
+    """Merge AI analysis into a track, overwriting all fields with verified values."""
+    for field in _AI_ANALYSIS_TEXT_FIELDS:
+        incoming = getattr(result, field, None)
         if incoming is None:
             continue
         if isinstance(incoming, str) and _is_unknown(incoming):
@@ -27,10 +39,30 @@ def _merge_analysis_into_track(track: Track, result: AnalysisResult) -> Track:
             incoming = _normalize_genre(incoming)
         setattr(track, field, incoming)
 
-    for field in ("bpm", "energy"):
-        incoming = getattr(result, field)
+    for field in _AI_ANALYSIS_FLOAT_FIELDS:
+        incoming = getattr(result, field, None)
         if incoming is not None:
             setattr(track, field, incoming)
+
+    rating = getattr(result, "rating", None)
+    if rating is not None:
+        try:
+            rating_int = int(rating)
+        except (TypeError, ValueError):
+            rating_int = None
+        if rating_int is not None:
+            if rating_int > 5:
+                rating_int = max(0, min(5, round(rating_int / 2)))
+            if 0 <= rating_int <= 5:
+                track.rating = rating_int
+
+    for field in _META_OVERWRITE_FIELDS:
+        incoming = getattr(result, field, None)
+        if incoming is None:
+            continue
+        if isinstance(incoming, str) and _is_unknown(incoming):
+            continue
+        setattr(track, field, incoming)
 
     return track
 

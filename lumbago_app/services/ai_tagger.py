@@ -1,16 +1,131 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import queue
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace as _dc_replace
+from pathlib import Path
 from typing import Any
 
 import requests
 
 from lumbago_app.core.models import AnalysisResult, Track
 from lumbago_app.core.services import heuristic_analysis
+from lumbago_app.services.metadata_providers import (
+    RateLimitedMusicBrainzProvider,
+    _best_mbid_from_acoustid,
+    _parse_mb_recording,
+)
+
+
+_ISRC_RE = re.compile(r"^[A-Z]{2}[A-Z0-9]{3}\d{7}$")
+_YEAR_MIN = 1900
+_YEAR_MAX = int(time.strftime("%Y")) + 1
+
+
+def _validate_result(result: AnalysisResult) -> AnalysisResult:
+    """Sanitize AI-returned values — replace out-of-range / malformed fields with None."""
+    kw: dict[str, Any] = {}
+
+    if result.year is not None:
+        digits = re.sub(r"\D", "", str(result.year))[:4]
+        if digits and _YEAR_MIN <= int(digits) <= _YEAR_MAX:
+            kw["year"] = digits
+        else:
+            kw["year"] = None
+
+    if result.isrc is not None:
+        compact = result.isrc.replace("-", "").upper()
+        kw["isrc"] = compact if _ISRC_RE.match(compact) else None
+
+    if result.bpm is not None:
+        kw["bpm"] = result.bpm if 40.0 <= result.bpm <= 250.0 else None
+
+    if result.energy is not None:
+        kw["energy"] = max(0.0, min(1.0, result.energy))
+
+    if result.confidence is not None:
+        kw["confidence"] = max(0.0, min(1.0, result.confidence))
+
+    return _dc_replace(result, **kw) if kw else result
+
+
+class DatabaseTagger:
+    """Enriches tracks using AcoustID fingerprint → MusicBrainz lookup.
+    Falls back to MusicBrainz text search when no AcoustID key is configured."""
+
+    provider_name = "database"
+
+    def __init__(
+        self,
+        acoustid: Any | None = None,
+        mb: RateLimitedMusicBrainzProvider | None = None,
+    ):
+        self._acoustid = acoustid
+        self._mb = mb or RateLimitedMusicBrainzProvider()
+
+    def analyze(self, track: Track) -> AnalysisResult:
+        # --- path 1: AcoustID fingerprint → MB MBID lookup ---
+        mbid = self._resolve_mbid_via_acoustid(track)
+        if mbid:
+            recording = self._mb.get_recording(mbid)
+            if recording:
+                meta = _parse_mb_recording(recording)
+                if meta:
+                    return _mb_meta_to_result(meta, confidence=0.93,
+                                              source="AcoustID+MusicBrainz")
+
+        # --- path 2: MB text search → fetch full recording by MBID ---
+        query = " ".join(filter(None, [track.artist, track.title])).strip()
+        if not query:
+            query = Path(track.path).stem
+        recordings = self._mb.search(query, limit=1)
+        if recordings:
+            rec = recordings[0]
+            rec_id = rec.get("id")
+            if rec_id:
+                full = self._mb.get_recording(rec_id)
+                if full:
+                    meta = _parse_mb_recording(full)
+                    if meta:
+                        return _mb_meta_to_result(meta, confidence=0.78,
+                                                  source="MusicBrainz text search")
+
+        return AnalysisResult(description="Database: no match", confidence=0.0)
+
+    def _resolve_mbid_via_acoustid(self, track: Track) -> str | None:
+        if not self._acoustid:
+            return None
+        try:
+            from lumbago_app.services.recognizer import AcoustIdRecognizer  # local import avoids circular
+            if not isinstance(self._acoustid, AcoustIdRecognizer):
+                return None
+            payload = self._acoustid.recognize(Path(track.path))
+            if payload:
+                return _best_mbid_from_acoustid(payload)
+        except Exception:
+            pass
+        return None
+
+    def cache_key(self) -> str:
+        return "database"
+
+
+def _mb_meta_to_result(meta: dict, confidence: float, source: str) -> AnalysisResult:
+    return AnalysisResult(
+        title=meta.get("title"),
+        artist=meta.get("artist"),
+        albumartist=meta.get("albumartist"),
+        album=meta.get("album"),
+        year=meta.get("year"),
+        isrc=meta.get("isrc"),
+        publisher=meta.get("publisher"),
+        tracknumber=meta.get("tracknumber"),
+        confidence=confidence,
+        description=source,
+    )
 
 
 class LocalAiTagger:
@@ -18,6 +133,9 @@ class LocalAiTagger:
 
     def analyze(self, track: Track) -> AnalysisResult:
         return heuristic_analysis(track)
+
+    def cache_key(self) -> str:
+        return "local"
 
 
 class CloudAiTagger:
@@ -37,23 +155,23 @@ class CloudAiTagger:
         self.model = model
         self.timeout = timeout
         self.retries = max(0, retries)
+        self._resolved_base_url, self._resolved_model = _resolve_runtime_config(
+            self.provider,
+            self.base_url,
+            self.model,
+        )
 
     def analyze(self, track: Track) -> AnalysisResult:
         if not self.provider or not self.api_key:
             return AnalysisResult(description="Cloud AI not configured", confidence=0.0)
-        if self.provider == "gemini":
-            base_url = self.base_url or "https://generativelanguage.googleapis.com/v1beta"
-            model = self.model or "gemini-2.5-flash"
-        else:
-            base_url = self.base_url
-            model = self.model
+        base_url, model = self._resolved_base_url, self._resolved_model
         if not base_url or not model:
             return AnalysisResult(description="Cloud AI missing base URL or model", confidence=0.0)
 
         missing = _missing_fields(track)
-        if not missing:
-            return AnalysisResult(description="No missing fields", confidence=1.0)
-        prompt = _build_prompt(track, missing)
+        noisy = _noisy_fields(track)
+        fields_to_fill = list(dict.fromkeys(missing + [f for f in noisy if f not in missing]))
+        prompt = _build_prompt(track, fields_to_fill, noisy_fields=noisy)
         last_exc: Exception | None = None
         for attempt in range(self.retries + 1):
             try:
@@ -70,21 +188,42 @@ class CloudAiTagger:
                 confidence = _to_float(cleaned.get("confidence"))
                 if confidence is None:
                     confidence = _infer_confidence(cleaned)
-                return AnalysisResult(
+                raw = AnalysisResult(
                     bpm=_to_float(cleaned.get("bpm")),
                     key=_to_str(cleaned.get("key")),
                     mood=_to_str(cleaned.get("mood")),
                     energy=_to_float(cleaned.get("energy")),
                     genre=_to_str(cleaned.get("genre")),
+                    rating=_parse_rating(cleaned.get("rating")),
                     description=_to_str(cleaned.get("description")),
                     confidence=confidence,
+                    title=_to_str(cleaned.get("title")),
+                    artist=_to_str(cleaned.get("artist")),
+                    album=_to_str(cleaned.get("album")),
+                    albumartist=_to_str(cleaned.get("albumartist")),
+                    year=_to_str(cleaned.get("year")),
+                    tracknumber=_to_str(cleaned.get("tracknumber")),
+                    discnumber=_to_str(cleaned.get("discnumber")),
+                    composer=_to_str(cleaned.get("composer")),
+                    isrc=_to_str(cleaned.get("isrc")),
+                    publisher=_to_str(cleaned.get("publisher")),
+                    lyrics=_to_str(cleaned.get("lyrics")),
+                    grouping=_to_str(cleaned.get("grouping")),
+                    copyright=_to_str(cleaned.get("copyright")),
+                    remixer=_to_str(cleaned.get("remixer")),
+                    comment=_to_str(cleaned.get("comment")),
                 )
+                return _validate_result(raw)
             except Exception as exc:
                 last_exc = exc
                 if attempt >= self.retries or not _is_retryable_exception(exc):
                     break
                 time.sleep(0.3 * (attempt + 1))
         return AnalysisResult(description=f"Cloud AI error: {last_exc}", confidence=0.0)
+
+    def cache_key(self) -> str:
+        base_url, model = self._resolved_base_url, self._resolved_model
+        return f"{self.provider_name}|{base_url or ''}|{model or ''}"
 
 
 class MultiAiTagger:
@@ -117,16 +256,28 @@ class MultiAiTagger:
         merged = _merge_results(results)
         return merged
 
+    def cache_key(self) -> str:
+        keys: list[str] = []
+        for tagger in self.taggers:
+            cache_fn = getattr(tagger, "cache_key", None)
+            if callable(cache_fn):
+                keys.append(str(cache_fn()))
+            else:
+                keys.append(getattr(tagger, "provider_name", tagger.__class__.__name__))
+        return "multi:" + "|".join(sorted(keys))
+
+
+_FLOAT_AI_FIELDS = {"bpm", "energy"}
+
 
 def _merge_results(results: list[tuple[str, AnalysisResult]]) -> AnalysisResult:
     if not results:
         return AnalysisResult(description="No AI results", confidence=0.0)
 
-    field_names = ("bpm", "key", "mood", "energy", "genre")
     winners: dict[str, Any] = {}
     winner_confidences: list[float] = []
 
-    for field_name in field_names:
+    for field_name in _ALL_AI_FIELDS:
         best_value = None
         best_score = -1.0
         for _provider, result in results:
@@ -143,9 +294,14 @@ def _merge_results(results: list[tuple[str, AnalysisResult]]) -> AnalysisResult:
         if best_score > 0:
             winner_confidences.append(best_score)
 
-    providers_info = ", ".join(
-        f"{provider}:{float(result.confidence or 0.0):.2f}" for provider, result in results
-    )
+    provider_parts = []
+    for provider, result in results:
+        conf = float(result.confidence or 0.0)
+        part = f"{provider}:{conf:.2f}"
+        if conf == 0.0 and result.description:
+            part += f"({result.description})"
+        provider_parts.append(part)
+    providers_info = ", ".join(provider_parts)
     merged_conf = sum(winner_confidences) / len(winner_confidences) if winner_confidences else 0.0
     return AnalysisResult(
         bpm=_to_float(winners.get("bpm")),
@@ -153,6 +309,22 @@ def _merge_results(results: list[tuple[str, AnalysisResult]]) -> AnalysisResult:
         mood=_to_str(winners.get("mood")),
         energy=_to_float(winners.get("energy")),
         genre=_to_str(winners.get("genre")),
+        rating=_parse_rating(winners.get("rating")),
+        title=_to_str(winners.get("title")),
+        artist=_to_str(winners.get("artist")),
+        album=_to_str(winners.get("album")),
+        albumartist=_to_str(winners.get("albumartist")),
+        year=_to_str(winners.get("year")),
+        tracknumber=_to_str(winners.get("tracknumber")),
+        discnumber=_to_str(winners.get("discnumber")),
+        composer=_to_str(winners.get("composer")),
+        isrc=_to_str(winners.get("isrc")),
+        publisher=_to_str(winners.get("publisher")),
+        lyrics=_to_str(winners.get("lyrics")),
+        grouping=_to_str(winners.get("grouping")),
+        copyright=_to_str(winners.get("copyright")),
+        remixer=_to_str(winners.get("remixer")),
+        comment=_to_str(winners.get("comment")),
         description=f"Merged from providers ({providers_info})",
         confidence=merged_conf,
     )
@@ -166,55 +338,149 @@ def _has_nonempty_value(value: Any) -> bool:
     return True
 
 
+_MISSING_SENTINEL = {"", "-", "—", "unknown", "n/a", "none", "null"}
+_ALL_AI_FIELDS: list[str] = [
+    "title",
+    "bpm",
+    "key",
+    "mood",
+    "energy",
+    "artist",
+    "album",
+    "albumartist",
+    "genre",
+    "rating",
+    "year",
+    "tracknumber",
+    "discnumber",
+    "composer",
+    "isrc",
+    "publisher",
+    "lyrics",
+    "grouping",
+    "copyright",
+    "remixer",
+    "comment",
+]
+
+# Patterns that indicate a title/artist contains video/quality noise
+_NOISE_CHECK_RE = re.compile(
+    r'[\[(]\s*('
+    r'official(\s+music)?\s+video|official\s+audio|audio|lyrics?|lyric\s+video|'
+    r'visualizer|hq|hd|4k|8k|remastered(\s+\d{4})?|live|full\s+album|explicit'
+    r')\s*[\])]'
+    r'|\b(official(\s+music)?\s+video|official\s+audio|lyric\s+video|visualizer)\b'
+    r'|\b(4k|8k)\b',
+    re.IGNORECASE,
+)
+
+
+def _noisy_fields(track: Track) -> list[str]:
+    '''Return title/artist fields that contain video/quality noise markers.'''
+    noisy: list[str] = []
+    for fname in ('title', 'artist'):
+        val = getattr(track, fname, None)
+        if isinstance(val, str) and _NOISE_CHECK_RE.search(val):
+            noisy.append(fname)
+    return noisy
+
+
 def _missing_fields(track: Track) -> list[str]:
-    def _is_missing(value: Any) -> bool:
+    # Always check all fields — AI verifies and corrects even existing values
+    return list(_ALL_AI_FIELDS)
+
+
+_FIELD_LABELS: dict[str, str] = {
+    "title": "Tytul",
+    "bpm": "BPM",
+    "key": "Tonacja",
+    "mood": "Nastroj",
+    "energy": "Energia",
+    "artist": "Artysta",
+    "album": "Album",
+    "albumartist": "Artysta albumu",
+    "genre": "Gatunek",
+    "rating": "Ocena",
+    "year": "Rok",
+    "tracknumber": "Numer utworu",
+    "discnumber": "Numer dysku",
+    "composer": "Kompozytor",
+    "isrc": "ISRC",
+    "publisher": "Wydawca",
+    "lyrics": "Tekst",
+    "grouping": "Grupowanie",
+    "copyright": "Prawa autorskie",
+    "remixer": "Remikser",
+    "comment": "Komentarz",
+}
+
+
+def _build_prompt(
+    track: Track,
+    missing: list[str],
+    noisy_fields: list[str] | None = None,
+) -> str:
+    noisy_set = set(noisy_fields or [])
+    # Always include filename as context
+    known_lines = [f"Nazwa pliku: {Path(track.path).stem}"]
+
+    # Parent folder — often contains year, genre, label info
+    folder = Path(track.path).parent.name
+    if folder and folder not in (".", ".."):
+        known_lines.append(f"Folder: {folder}")
+
+    # Audio technical context
+    if track.duration:
+        mins, secs = divmod(int(track.duration), 60)
+        known_lines.append(f"Czas trwania: {mins}:{secs:02d}")
+    if track.format or track.bitrate:
+        fmt_parts = []
+        if track.format:
+            fmt_parts.append(track.format.upper())
+        if track.bitrate:
+            fmt_parts.append(f"{track.bitrate}kbps")
+        known_lines.append(f"Format audio: {' '.join(fmt_parts)}")
+
+    for fname in _ALL_AI_FIELDS:
+        if fname in noisy_set:
+            continue  # We'll ask AI to clean these
+        value = getattr(track, fname, None)
         if value is None:
-            return True
-        if isinstance(value, str):
-            normalized = value.strip().lower()
-            return normalized in {"", "-", "—", "unknown", "n/a", "none", "null"}
-        return False
+            continue
+        label = _FIELD_LABELS.get(fname, fname)
+        known_lines.append(f"{label}: {value}")
 
-    missing = []
-    if _is_missing(track.bpm):
-        missing.append("bpm")
-    if _is_missing(track.key):
-        missing.append("key")
-    if _is_missing(track.mood):
-        missing.append("mood")
-    if _is_missing(track.energy):
-        missing.append("energy")
-    if _is_missing(track.genre):
-        missing.append("genre")
-    return missing
+    known_section = "\n".join(known_lines)
+    fields_list = ", ".join(missing)
 
+    clean_note = ""
+    if noisy_set:
+        noisy_current = []
+        for fname in noisy_set:
+            val = getattr(track, fname, None)
+            if val:
+                noisy_current.append(f"{_FIELD_LABELS.get(fname, fname)}: \"{val}\"")
+        if noisy_current:
+            clean_note = (
+                "\nPola do oczyszczenia (usuń zbędne elementy jak '[4K Video]', "
+                "'(Official Lyric Video)', '(Official Music Video)', 'HQ', 'HD', itp., "
+                "zachowaj remixy i featuringi): "
+                + "; ".join(noisy_current)
+            )
 
-def _build_prompt(track: Track, missing: list[str]) -> str:
-    field_hints = {
-        "bpm": "numeric beats per minute (e.g. 128.0), or null",
-        "key": "musical key in standard notation (e.g. 'Am', 'F#m', 'C', '8B'), or null",
-        "mood": "single mood word (e.g. 'energetic', 'melancholic', 'dark', 'uplifting'), or null",
-        "energy": "float 0.0-1.0 where 1.0 is maximum energy, or null",
-        "genre": "music genre string (e.g. 'Techno', 'House', 'Hip-Hop'), or null",
-    }
-    schema_lines = "\n".join(
-        f'  "{f}": {field_hints[f]}' for f in missing if f in field_hints
-    )
     return (
-        "You are a music metadata expert. "
-        "Return ONLY a valid JSON object (no markdown, no explanation) with exactly these fields:\n"
-        "{\n" + schema_lines + "\n}\n\n"
-        "Track information:\n"
-        f"  Title: {track.title or '(unknown)'}\n"
-        f"  Artist: {track.artist or '(unknown)'}\n"
-        f"  Album: {track.album or ''}\n"
-        f"  Genre: {track.genre or ''}\n"
-        f"  BPM: {track.bpm or ''}\n"
-        f"  Key: {track.key or ''}\n"
-        f"  Mood: {track.mood or ''}\n"
-        f"  Energy: {track.energy or ''}\n"
-        "Use your knowledge of this artist/track to fill the missing fields. "
-        "If genuinely unknown, use null."
+        "Jestes ekspertem metadanych muzycznych. Na podstawie ponizszych danych ZWERYFIKUJ i POPRAW wszystkie pola"
+        " uzywajac swojej wiedzy o tym utworze (artysta, wydanie, rok premiery, itp.)."
+        " Jesli aktualna wartosc jest bledna lub niepelna — popraw ja na wiarygodna."
+        " Jesli aktualna wartosc jest poprawna — zachowaj ja.\n"
+        "Zwroc TYLKO poprawny JSON z dokladnie tymi polami: "
+        + fields_list
+        + "."
+        + clean_note
+        + "\nDla ratingu zwracaj liczbe calkowita 0-5.\n"
+        + "\nJesli danego pola absolutnie nie mozna ustalic, uzyj null. Nie dodawaj zadnych komentarzy poza JSON.\n\n"
+        "Znane dane utworu:\n"
+        + known_section
     )
 
 
@@ -357,7 +623,7 @@ def _to_str(value: Any) -> str | None:
 
 def _infer_confidence(payload: dict[str, Any]) -> float | None:
     populated = 0
-    for field_name in ("bpm", "key", "mood", "energy", "genre"):
+    for field_name in _ALL_AI_FIELDS:
         value = payload.get(field_name)
         if value is None:
             continue
@@ -366,16 +632,83 @@ def _infer_confidence(payload: dict[str, Any]) -> float | None:
         populated += 1
     if populated == 0:
         return None
-    if populated >= 4:
+    if populated >= 6:
         return 0.85
-    if populated >= 2:
+    if populated >= 3:
         return 0.75
     return 0.65
 
 
 def _normalize_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    allowed = {"bpm", "key", "mood", "energy", "genre", "description", "confidence"}
+    allowed = set(_ALL_AI_FIELDS) | {"description", "confidence"}
     return {key: value for key, value in payload.items() if key in allowed}
+
+
+def _parse_rating(value: Any) -> int | None:
+    if value is None or value == "":
+        return None
+    try:
+        rating = int(float(value))
+    except (TypeError, ValueError):
+        text = str(value).strip()
+        if not text:
+            return None
+        if "/" in text:
+            text = text.split("/", 1)[0].strip()
+        match = re.search(r"\d+", text)
+        if not match:
+            return None
+        rating = int(match.group(0))
+    if rating > 5:
+        rating = max(0, min(5, round(rating / 2)))
+    return rating if 0 <= rating <= 5 else None
+
+
+def _resolve_runtime_config(
+    provider: str | None,
+    base_url: str | None,
+    model: str | None,
+) -> tuple[str | None, str | None]:
+    if provider == "gemini":
+        return base_url or "https://generativelanguage.googleapis.com/v1beta", model or "gemini-2.5-flash"
+    return base_url, model
+
+
+def preflight_provider(
+    provider: str,
+    api_key: str,
+    base_url: str | None,
+    *,
+    timeout: int = 8,
+) -> tuple[bool, str]:
+    resolved_base_url, _ = _resolve_runtime_config(provider, base_url, None)
+    if not resolved_base_url:
+        return False, "Brak base URL"
+    if provider == "gemini":
+        url = f"{resolved_base_url.rstrip('/')}/models"
+        headers = {"x-goog-api-key": api_key}
+    else:
+        url = f"{resolved_base_url.rstrip('/')}/models"
+        headers = {"Authorization": f"Bearer {api_key}"}
+    try:
+        resp = requests.get(url, headers=headers, timeout=timeout)
+        if resp.status_code == 200:
+            return True, "OK"
+        detail = f"HTTP {resp.status_code}"
+        try:
+            payload = resp.json()
+            error = payload.get("error")
+            if isinstance(error, dict):
+                msg = str(error.get("message", "")).strip()
+                if msg:
+                    detail = f"{detail}: {msg}"
+            elif isinstance(error, str) and error.strip():
+                detail = f"{detail}: {error.strip()}"
+        except Exception:
+            pass
+        return False, detail
+    except Exception as exc:
+        return False, str(exc)
 
 
 def _is_retryable_exception(exc: Exception) -> bool:
@@ -462,15 +795,12 @@ if _QT_AVAILABLE:
                         self.track_done.emit(path)
                         continue
                     result = tagger.analyze(track)
-                    fields: dict[str, Any] = {
-                        "bpm": str(result.bpm) if result.bpm is not None else None,
-                        "key": result.key,
-                        "genre": result.genre,
-                        "mood": result.mood,
-                        "energy": str(result.energy) if result.energy is not None else None,
-                    }
-                    for fname, fval in fields.items():
-                        if fval is not None and fval != "":
+                    for fname in _ALL_AI_FIELDS:
+                        raw = getattr(result, fname, None)
+                        if raw is None:
+                            continue
+                        fval = str(raw) if not isinstance(raw, str) else raw
+                        if fval.strip():
                             self.track_progress.emit(path, fname, fval, confidence)
                 except Exception:
                     pass
