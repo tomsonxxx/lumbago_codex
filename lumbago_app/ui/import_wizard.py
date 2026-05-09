@@ -87,11 +87,12 @@ class ScanWizardWorker(QtCore.QRunnable):
                     except Exception as exc:
                         errors.append({"path": str(path), "stage": "audio", "error": str(exc)})
                 detected_key = None
-                try:
-                    if not track.key:
-                        detected_key = detect_key(path)
-                except Exception as exc:
-                    errors.append({"path": str(path), "stage": "key", "error": str(exc)})
+                if self.options.deep_audio_scan:
+                    try:
+                        if not track.key:
+                            detected_key = detect_key(path)
+                    except Exception as exc:
+                        errors.append({"path": str(path), "stage": "key", "error": str(exc)})
                 enrich_track_with_analysis(
                     track,
                     detected_bpm=detected_bpm,
@@ -355,9 +356,11 @@ class ImportWizard(QtWidgets.QDialog):
         self.preview_table.setRowCount(0)
         self.scan_progress.setValue(0)
         self._errors = []
+        self._tracks = []
         options = self._options()
         if not options:
             return
+        self.next_btn.setEnabled(False)
         self._scan_worker = ScanWizardWorker(options)
         self._scan_worker.signals.progress.connect(self._scan_progress)
         self._scan_worker.signals.finished.connect(self._scan_finished)
@@ -370,6 +373,7 @@ class ImportWizard(QtWidgets.QDialog):
     def _scan_finished(self, tracks: list[Track], errors: list[dict[str, Any]], canceled: bool):
         self._tracks = tracks
         self._errors.extend(errors)
+        self.next_btn.setEnabled(True)
         for track in tracks[:500]:
             row = self.preview_table.rowCount()
             self.preview_table.insertRow(row)
