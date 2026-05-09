@@ -519,10 +519,11 @@ def _call_openai_compatible_chat(
     payload = {
         "model": model,
         "messages": [
-            {"role": "system", "content": "Zwracaj tylko JSON."},
+            {"role": "system", "content": "You are a music metadata assistant. Return ONLY valid JSON, no markdown fences."},
             {"role": "user", "content": prompt},
         ],
         "temperature": 0.2,
+        "response_format": {"type": "json_object"},
     }
     resp = requests.post(url, headers=headers, json=payload, timeout=timeout)
     resp.raise_for_status()
@@ -543,7 +544,11 @@ def _call_gemini_generate_content(
             {
                 "parts": [{"text": prompt}],
             }
-        ]
+        ],
+        "generationConfig": {
+            "responseMimeType": "application/json",
+            "temperature": 0.2,
+        },
     }
     resp = requests.post(url, headers=headers, json=payload, timeout=timeout)
     resp.raise_for_status()
