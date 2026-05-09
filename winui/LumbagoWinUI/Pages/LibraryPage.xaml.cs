@@ -206,17 +206,18 @@ public sealed partial class LibraryPage : Page
             var updated = await App.Api.UpdateTrackAsync(_selectedTrack.Path, update);
             if (updated is not null)
             {
-                // Zastąp w lokalnej kolekcji
+                // Zastąp w _allTracks, a potem przelicz filtry — edytowane pole (gatunek,
+                // tonacja, BPM) mogło zmienić widoczność tracka w bieżącym widoku.
                 var idx = _allTracks.FindIndex(t => t.Path == updated.Path);
                 if (idx >= 0) _allTracks[idx] = updated;
-
-                var fidx = FilteredTracks.IndexOf(_selectedTrack);
-                if (fidx >= 0) FilteredTracks[fidx] = updated;
 
                 _selectedTrack = updated;
                 FillDetailPanel(updated);
                 App.Window?.UpdatePlayerInfo(
                     updated.DisplayTitle, updated.DisplayArtist, updated.DisplayBpm, updated.DisplayKey);
+
+                // Przebuduj FilteredTracks z uwzględnieniem aktualnych filtrów.
+                ApplyAllFilters();
             }
             ShowDetailStatus("✓ Zapisano", isError: false);
         }
