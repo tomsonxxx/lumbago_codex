@@ -152,7 +152,7 @@ def _strip_download_quality_suffix(value: str) -> str:
     while previous != text:
         previous = text
         text = re.sub(
-            r"[ \t]+-[ \t]+(?:\d{2,4}[ \t]*(?:kbps|k)?|mp3|flac|wav|m4a|aac)$",
+            r" {1,4}- {1,4}(?:\d{2,4} {0,2}(?:kbps|k)?|mp3|flac|wav|m4a|aac)$",
             "",
             text,
             flags=re.IGNORECASE,

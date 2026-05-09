@@ -447,7 +447,7 @@ def _to_clean_str(value: Any) -> str | None:
 def _looks_like_download_quality_title(value: str | None) -> bool:
     if not value:
         return False
-    return bool(re.fullmatch(r"[ \t]*\d{2,4}[ \t]*(?:kbps|k)?[ \t]*", str(value), re.IGNORECASE))
+    return bool(re.fullmatch(r" {0,4}\d{2,4} {0,2}(?:kbps|k)? {0,4}", str(value), re.IGNORECASE))
 
 
 def _strip_download_quality_suffix(value: str | None) -> str | None:
@@ -458,7 +458,7 @@ def _strip_download_quality_suffix(value: str | None) -> str | None:
     while previous != text:
         previous = text
         text = re.sub(
-            r"[ \t]+-[ \t]+(?:\d{2,4}[ \t]*(?:kbps|k)?|mp3|flac|wav|m4a|aac)$",
+            r" {1,4}- {1,4}(?:\d{2,4} {0,2}(?:kbps|k)?|mp3|flac|wav|m4a|aac)$",
             "",
             text,
             flags=re.IGNORECASE,
