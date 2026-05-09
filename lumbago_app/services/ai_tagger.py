@@ -516,7 +516,7 @@ def _call_openai_compatible_chat(
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
-    payload = {
+    base_payload = {
         "model": model,
         "messages": [
             {"role": "system", "content": "You are a music metadata assistant. Return ONLY valid JSON, no markdown fences."},
@@ -525,10 +525,14 @@ def _call_openai_compatible_chat(
         "temperature": 0.2,
         "response_format": {"type": "json_object"},
     }
-    resp = requests.post(url, headers=headers, json=payload, timeout=timeout)
-    resp.raise_for_status()
-    data = resp.json()
-    return _extract_text_from_chat_completions(data)
+    # Try with JSON mode first; fall back for endpoints that reject the extra field.
+    for use_json_mode in (True, False):
+        payload = {**base_payload, **({"response_format": {"type": "json_object"}} if use_json_mode else {})}
+        resp = requests.post(url, headers=headers, json=payload, timeout=timeout)
+        if not use_json_mode or resp.status_code not in (400, 422):
+            resp.raise_for_status()
+            return _extract_text_from_chat_completions(resp.json())
+    raise RuntimeError("unreachable")
 
 
 def _call_gemini_generate_content(
