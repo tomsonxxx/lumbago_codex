@@ -61,9 +61,9 @@ def enrich_track_with_analysis(
     inferred = heuristic_analysis(track)
     if track.energy is None and inferred.energy is not None:
         track.energy = inferred.energy
-    if inferred.mood:
+    if not track.mood and inferred.mood:
         track.mood = inferred.mood
-    if inferred.genre and not track.genre:
+    if not track.genre and inferred.genre:
         track.genre = inferred.genre
     return track
 

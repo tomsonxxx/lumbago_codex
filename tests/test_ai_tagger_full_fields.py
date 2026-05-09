@@ -13,6 +13,7 @@ from lumbago_app.services.ai_tagger import (
     _missing_fields,
     _normalize_payload,
 )
+from lumbago_app.services.metadata_enricher import MetadataEnricher
 from lumbago_app.services.ai_tagger_merge import _merge_analysis_into_track
 
 
@@ -49,7 +50,7 @@ def test_missing_fields_detects_all_empty_track():
     assert "publisher" in missing
 
 
-def test_missing_fields_skips_populated_fields():
+def test_missing_fields_always_requests_verification_for_populated_fields():
     track = Track(
         path="x.mp3",
         title="Sandstorm",
@@ -61,13 +62,13 @@ def test_missing_fields_skips_populated_fields():
         year="1999",
     )
     missing = _missing_fields(track)
-    assert "title" not in missing
-    assert "artist" not in missing
-    assert "album" not in missing
-    assert "genre" not in missing
-    assert "bpm" not in missing
-    assert "key" not in missing
-    assert "year" not in missing
+    assert "title" in missing
+    assert "artist" in missing
+    assert "album" in missing
+    assert "genre" in missing
+    assert "bpm" in missing
+    assert "key" in missing
+    assert "year" in missing
 
 
 def test_missing_fields_treats_unknown_as_missing():
@@ -94,12 +95,13 @@ def test_build_prompt_lists_missing_fields():
     assert "Darude" in prompt
 
 
-def test_build_prompt_does_not_ask_for_known_fields():
+def test_build_prompt_asks_for_known_fields_but_keeps_them_as_context():
     track = Track(path="x.mp3", title="Sandstorm", artist="Darude", genre="Trance")
     missing = _missing_fields(track)
     prompt = _build_prompt(track, missing)
-    assert "genre" not in missing
-    # Known genre should appear in known section, not in missing list
+    assert "genre" in missing
+    assert "Sandstorm" in prompt
+    assert "Darude" in prompt
     assert "Trance" in prompt
 
 
@@ -225,7 +227,7 @@ def test_merge_fills_missing_metadata_from_ai():
     assert track.publisher == "Virgin Records"
 
 
-def test_merge_does_not_overwrite_existing_metadata():
+def test_merge_overwrites_existing_metadata_with_ai_verified_values():
     track = Track(
         path="x.mp3",
         title="Around the World",
@@ -237,9 +239,9 @@ def test_merge_does_not_overwrite_existing_metadata():
     result = AnalysisResult(album="Wrong Album", year="2000", composer="AI Composer")
     _merge_analysis_into_track(track, result)
 
-    assert track.album == "Homework"
-    assert track.year == "1997"
-    assert track.composer == "Hand-edited Composer"
+    assert track.album == "Wrong Album"
+    assert track.year == "2000"
+    assert track.composer == "AI Composer"
 
 
 def test_merge_overwrites_unknown_metadata_placeholder():
@@ -337,3 +339,63 @@ def test_musicbrainz_enrich_applies_full_metadata(monkeypatch):
     assert track.publisher == "Neo Records"
     assert track.composer == "Ville Virtanen"
     assert track.mood == "energetic"
+
+
+def test_musicbrainz_enrich_replaces_noisy_local_title_and_artist(monkeypatch):
+    monkeypatch.setattr(
+        "lumbago_app.services.metadata_enricher.get_metadata_cache",
+        lambda key, ttl: None,
+    )
+    monkeypatch.setattr(
+        "lumbago_app.services.metadata_enricher.set_metadata_cache",
+        lambda key, data, source=None: None,
+    )
+
+    class _FakeMBProvider:
+        def search_recording(self, query):
+            return {
+                "recordings": [
+                    {
+                        "id": "fake-recording-id",
+                        "title": "Sandstorm",
+                        "artist-credit": [{"name": "Darude"}],
+                        "releases": [
+                            {
+                                "title": "Before the Storm",
+                                "date": "1999-11-15",
+                                "artist-credit": [{"name": "Darude"}],
+                                "label-info": [{"label": {"name": "Neo Records"}}],
+                                "media": [],
+                            }
+                        ],
+                        "tags": [{"name": "trance", "count": 10}],
+                    }
+                ]
+            }
+
+    monkeypatch.setattr(
+        "lumbago_app.services.metadata_enricher.MusicBrainzProvider",
+        lambda app: _FakeMBProvider(),
+    )
+    monkeypatch.setattr(
+        "lumbago_app.services.metadata_enricher.MetadataEnricher._fetch_musicbrainz_recording",
+        lambda self, recording_id: None,
+    )
+
+    enricher = MetadataEnricher("LumbagoTest", validation_policy="lenient")
+    track = Track(
+        path="sandstorm.mp3",
+        title="Sandstorm (Official Video) [HD]",
+        artist="Darude - Topic",
+        album="Sandstorm (Official Video)",
+        year="1998",
+        genre="unknown",
+    )
+
+    enricher.enrich_from_musicbrainz_search(track)
+
+    assert track.title == "Sandstorm"
+    assert track.artist == "Darude"
+    assert track.album == "Before the Storm"
+    assert track.year == "1999"
+    assert track.genre == "trance"

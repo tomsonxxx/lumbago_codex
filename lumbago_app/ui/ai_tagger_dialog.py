@@ -31,7 +31,7 @@ FIELDS = [
     "rating", "mood", "energy",
     "isrc", "grouping", "copyright", "remixer",
 ]
-AI_FIELDS = {"genre", "bpm", "key", "mood", "energy", "rating"}
+AI_FIELDS = {"genre", "bpm", "key", "mood", "energy", "rating", "year"}
 AUDIO_DERIVED_FIELDS = {"bpm", "key", "energy", "mood"}
 FIELD_LABELS = {
     "title": "TytuĹ‚",
@@ -211,9 +211,7 @@ def _default_accept_fields(state: TrackAnalysisState) -> set[str]:
     if state.metadata_report is not None:
         accepted.update(field for field in state.metadata_report.changed_fields if field in changed)
     for field_name in changed:
-        if field_name in AI_FIELDS and _field_confidence(state, field_name) >= 0.6:
-            accepted.add(field_name)
-        elif field_name in AUDIO_DERIVED_FIELDS and state.audio_result is not None:
+        if _field_confidence(state, field_name) >= 0.6:
             accepted.add(field_name)
     return accepted
 

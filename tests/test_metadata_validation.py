@@ -26,6 +26,11 @@ def test_validate_candidate_lenient_allows_looser_match():
     assert _validate_candidate(track, "Around", "Daft", policy="lenient") is True
 
 
+def test_validate_candidate_aggressive_allows_noisy_local_metadata():
+    track = Track(path="x", title="Sandstorm (Official Video) [HD]", artist="Darude - Topic")
+    assert _validate_candidate(track, "Sandstorm", "Darude", policy="aggressive") is True
+
+
 def test_compilation_album_detection():
     assert _is_compilation_album("Greatest Hits") is True
 

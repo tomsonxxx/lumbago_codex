@@ -20,8 +20,9 @@ from lumbago_app.core.audio import (
 import shutil
 from lumbago_app.core.analysis_cache import save_analysis_cache
 from lumbago_app.core.backup import perform_backup
-from lumbago_app.core.config import cache_dir, load_settings
+from lumbago_app.core.config import cache_dir, load_settings, save_settings
 from lumbago_app.core.models import Track
+from lumbago_app.core.renamer import parse_filename_tags
 from lumbago_app.core.services import enrich_track_with_analysis, heuristic_analysis
 from lumbago_app.core.waveform import generate_waveform
 from lumbago_app.services.autotag_rewrite import UnifiedAutoTagger
@@ -97,6 +98,13 @@ def _has_value(value) -> bool:
         normalized = value.strip().lower()
         return bool(normalized) and normalized not in {"-", "—", "unknown", "n/a", "none", "null", "brak"}
     return True
+
+
+def _looks_like_track_number(value: str | None) -> bool:
+    """Return True when value is a bare track/disc number (e.g. '01', '2', '14')."""
+    if not value:
+        return False
+    return bool(re.fullmatch(r"\d{1,3}", value.strip()))
 
 
 _AUTOTAG_FIELDS = [
@@ -179,6 +187,62 @@ def _track_to_tag_dict(track: Track, fields: list[str]) -> dict[str, str]:
         value = getattr(track, field_name, None)
         payload[field_name] = "" if value is None else str(value)
     return payload
+
+
+def _looks_like_download_quality_title(value: str | None) -> bool:
+    if not value:
+        return False
+    return bool(re.fullmatch(r"\s*\d{2,4}\s*(?:kbps|k)?\s*", str(value), re.IGNORECASE))
+
+
+def _strip_download_quality_suffix(value: str | None) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    previous = None
+    while previous != text:
+        previous = text
+        text = re.sub(
+            r"\s+-\s+(?:\d{2,4}\s*(?:kbps|k)?|mp3|flac|wav|m4a|aac)$",
+            "",
+            text,
+            flags=re.IGNORECASE,
+        ).strip(" .-_")
+    return text or None
+
+
+def _repair_identity_from_filename(track: Track) -> None:
+    artist_from_file, title_from_file = parse_filename_tags(track.path)
+    cleaned_current_title = _strip_download_quality_suffix(track.title)
+    if (
+        title_from_file
+        and not artist_from_file
+        and track.artist
+        and re.sub(r"[^\w\s]", "", str(track.artist).lower()).strip()
+        == re.sub(r"[^\w\s]", "", str(title_from_file).lower()).strip()
+    ):
+        track.artist = None
+    if cleaned_current_title and cleaned_current_title != track.title:
+        track.title = cleaned_current_title
+        if artist_from_file and title_from_file:
+            track.artist = artist_from_file
+        return
+    if not _has_value(title_from_file):
+        return
+    if _looks_like_download_quality_title(track.title):
+        if artist_from_file and not _looks_like_track_number(artist_from_file):
+            track.artist = artist_from_file
+        elif (track.artist or "").strip().lower() == str(title_from_file).strip().lower():
+            track.artist = None
+        track.title = title_from_file
+        return
+    if _has_value(artist_from_file) and _has_value(title_from_file):
+        if not _has_value(track.artist) and not _looks_like_track_number(artist_from_file):
+            track.artist = artist_from_file
+        if not _has_value(track.title):
+            track.title = title_from_file
+    elif _has_value(title_from_file) and not _has_value(artist_from_file) and not _has_value(track.artist):
+        track.title = title_from_file
 
 
 class TrackFilterProxy(QtCore.QSortFilterProxyModel):
@@ -456,6 +520,7 @@ class AutoTagWorker(QtCore.QRunnable):
     ) -> None:
         refreshed = extract_metadata(Path(track.path))
         _merge_missing_from_source(track, refreshed)
+        _repair_identity_from_filename(track)
         enriched = autotagger.enrich_track(track)
         autotagger.apply_best_match(track, enriched)
 
@@ -1919,6 +1984,20 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _load_settings(self):
         self.settings = load_settings()
+        if hasattr(self, "overwrite_existing_tags"):
+            self.overwrite_existing_tags.blockSignals(True)
+            try:
+                self.overwrite_existing_tags.setChecked(
+                    (self.settings.validation_policy or "aggressive") == "aggressive"
+                )
+            finally:
+                self.overwrite_existing_tags.blockSignals(False)
+        self._update_mode_pill()
+
+    def _set_overwrite_existing_tags(self, checked: bool) -> None:
+        policy = "aggressive" if checked else "balanced"
+        save_settings({"VALIDATION_POLICY": policy})
+        self.settings = load_settings()
         self._update_mode_pill()
 
     def _update_mode_pill(self):
@@ -2104,6 +2183,13 @@ class MainWindow(QtWidgets.QMainWindow):
         self._update_mode_pill()
         row.addWidget(self.mode_pill)
         row.addStretch(1)
+
+        self.overwrite_existing_tags = QtWidgets.QCheckBox("Nadpisuj tagi")
+        self.overwrite_existing_tags.setToolTip(
+            "Włącza agresywne nadpisywanie lokalnych tagów lepszymi danymi z internetu."
+        )
+        self.overwrite_existing_tags.toggled.connect(self._set_overwrite_existing_tags)
+        row.addWidget(self.overwrite_existing_tags)
 
         self.settings_btn = AnimatedButton("Ustawienia")
         self.settings_btn.setToolTip("Konfiguracja aplikacji i kluczy API")
