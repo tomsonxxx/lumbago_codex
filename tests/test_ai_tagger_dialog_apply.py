@@ -39,6 +39,7 @@ def test_apply_accepted_persists_placeholder_replacements(monkeypatch, tmp_path:
     def _update_tracks(tracks):
         calls["update"] = list(tracks)
 
+    monkeypatch.setattr("lumbago_app.services.metadata_writeback.add_change_log", lambda *a, **kw: None)
     monkeypatch.setattr("lumbago_app.services.metadata_writeback.replace_track_tags", _replace_track_tags)
     monkeypatch.setattr("lumbago_app.services.metadata_writeback.write_tags", _write_tags)
     monkeypatch.setattr("lumbago_app.services.metadata_writeback.update_tracks", _update_tracks)
