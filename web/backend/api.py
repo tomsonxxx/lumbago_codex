@@ -582,8 +582,13 @@ def update_track_endpoint(track_path: str, payload: TrackUpdatePayload) -> dict:
             if file_tags:
                 write_tags(Path(track_path), file_tags)
         except Exception as exc:
-            # Błąd zapisu do pliku — zwróć ostrzeżenie, ale nie przerywaj
-            return {"track": _serialize_track(updated_row), "warning": str(exc)}
+            # Błąd zapisu do pliku — loguj szczegóły wewnętrznie, nie eksponuj
+            # stack trace / ścieżek systemowych w odpowiedzi HTTP (CodeQL CWE-209).
+            import logging
+            logging.getLogger(__name__).warning("write_tags failed for %s: %s",
+                                                Path(track_path).name, exc)
+            return {"track": _serialize_track(updated_row),
+                    "warning": "Zapis tagów do pliku audio nie powiódł się."}
 
     return {"track": _serialize_track(updated_row)}
 
