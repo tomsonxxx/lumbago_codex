@@ -17,7 +17,7 @@ from lumbago_app.core.audio import apply_local_metadata, extract_metadata, iter_
 from lumbago_app.core.config import load_settings
 from lumbago_app.core.models import Track
 from lumbago_app.data.db import get_session_factory
-from lumbago_app.data.repository import init_db, upsert_tracks
+from lumbago_app.data.repository import delete_tracks_by_paths, init_db, upsert_tracks
 from lumbago_app.data.schema import TrackOrm
 from lumbago_app.services.analysis_engine import AI_FIELDS, AnalysisEngine, MergePolicy, ProviderConfig
 from web.backend.db import (
@@ -93,6 +93,11 @@ class ImportCommitPayload(BaseModel):
 
 class DuplicatesPayload(BaseModel):
     mode: str = Field(pattern="^(hash|fingerprint|metadata)$")
+
+
+class XmlConvertPayload(BaseModel):
+    input_path: str
+    output_path: str
 
 
 class ProviderConfigPayload(BaseModel):
@@ -667,3 +672,31 @@ def analyze_duplicates(payload: DuplicatesPayload) -> dict[str, list[dict]]:
         )
 
     return {"groups": groups}
+
+
+@app.delete("/tracks/{track_path:path}")
+def delete_track_endpoint(track_path: str) -> dict[str, str]:
+    """Usuwa track z bazy danych (nie usuwa pliku z dysku)."""
+    init_db()
+    delete_tracks_by_paths([track_path])
+    return {"deleted": track_path}
+
+
+@app.post("/convert/rekordbox-to-virtualdj")
+def convert_rekordbox_to_virtualdj(payload: XmlConvertPayload) -> dict[str, object]:
+    """Konwertuje plik Rekordbox XML na format VirtualDJ XML."""
+    from lumbago_app.services.xml_converter import export_virtualdj_xml, parse_rekordbox_xml
+
+    input_path = Path(payload.input_path)
+    output_path = Path(payload.output_path)
+
+    if not input_path.exists():
+        raise HTTPException(status_code=400, detail="Plik wejściowy nie istnieje.")
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    tracks = parse_rekordbox_xml(input_path)
+    if not tracks:
+        raise HTTPException(status_code=422, detail="Nie znaleziono tracków w pliku XML.")
+
+    export_virtualdj_xml(tracks, output_path)
+    return {"converted": len(tracks), "output_path": str(output_path)}

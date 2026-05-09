@@ -57,6 +57,53 @@ public sealed class ApiClient
         resp.EnsureSuccessStatusCode();
     }
 
+    public async Task<ImportPreviewResult> ImportPreviewAsync(
+        string folder, bool recursive = true, CancellationToken ct = default)
+    {
+        var payload = new { folder, recursive };
+        var resp = await _http.PostAsJsonAsync("/tracks/import-preview", payload, ct);
+        resp.EnsureSuccessStatusCode();
+        return await resp.Content.ReadFromJsonAsync<ImportPreviewResult>(_json, ct)
+               ?? new ImportPreviewResult();
+    }
+
+    public async Task<ImportCommitResult> ImportCommitAsync(
+        IEnumerable<string> paths, CancellationToken ct = default)
+    {
+        var payload = new { paths = paths.ToList() };
+        var resp = await _http.PostAsJsonAsync("/tracks/import-commit", payload, ct);
+        resp.EnsureSuccessStatusCode();
+        return await resp.Content.ReadFromJsonAsync<ImportCommitResult>(_json, ct)
+               ?? new ImportCommitResult();
+    }
+
+    public async Task<DuplicatesResult> AnalyzeDuplicatesAsync(
+        string mode = "metadata", CancellationToken ct = default)
+    {
+        var payload = new { mode };
+        var resp = await _http.PostAsJsonAsync("/duplicates/analyze", payload, ct);
+        resp.EnsureSuccessStatusCode();
+        return await resp.Content.ReadFromJsonAsync<DuplicatesResult>(_json, ct)
+               ?? new DuplicatesResult();
+    }
+
+    public async Task DeleteTrackAsync(string path, CancellationToken ct = default)
+    {
+        var resp = await _http.DeleteAsync(
+            $"/tracks/{Uri.EscapeDataString(path)}", ct);
+        resp.EnsureSuccessStatusCode();
+    }
+
+    public async Task<XmlConvertResult> ConvertXmlAsync(
+        string inputPath, string outputPath, CancellationToken ct = default)
+    {
+        var payload = new { input_path = inputPath, output_path = outputPath };
+        var resp = await _http.PostAsJsonAsync("/convert/rekordbox-to-virtualdj", payload, ct);
+        resp.EnsureSuccessStatusCode();
+        return await resp.Content.ReadFromJsonAsync<XmlConvertResult>(_json, ct)
+               ?? new XmlConvertResult();
+    }
+
     public async Task<Track?> UpdateTrackAsync(string path, TrackUpdate update, CancellationToken ct = default)
     {
         var resp = await _http.PutAsJsonAsync(
@@ -82,4 +129,51 @@ public sealed class ApiClient
     private sealed record SettingResponse(string? Value);
     private sealed record TracksResponse(List<Track>? Tracks);
     private sealed record UpdateTrackResponse(Track? Track);
+}
+
+// ── Typy wyników API ─────────────────────────────────────────────────────────
+
+public sealed class ImportPreviewResult
+{
+    [System.Text.Json.Serialization.JsonPropertyName("tracks")]
+    public List<Track> Tracks { get; init; } = [];
+
+    [System.Text.Json.Serialization.JsonPropertyName("errors")]
+    public List<string> Errors { get; init; } = [];
+}
+
+public sealed class ImportCommitResult
+{
+    [System.Text.Json.Serialization.JsonPropertyName("imported")]
+    public int Imported { get; init; }
+
+    [System.Text.Json.Serialization.JsonPropertyName("errors")]
+    public List<string> Errors { get; init; } = [];
+}
+
+public sealed class DuplicateGroup
+{
+    [System.Text.Json.Serialization.JsonPropertyName("key")]
+    public string Key { get; init; } = string.Empty;
+
+    [System.Text.Json.Serialization.JsonPropertyName("similarity")]
+    public double Similarity { get; init; }
+
+    [System.Text.Json.Serialization.JsonPropertyName("tracks")]
+    public List<Track> Tracks { get; init; } = [];
+}
+
+public sealed class DuplicatesResult
+{
+    [System.Text.Json.Serialization.JsonPropertyName("groups")]
+    public List<DuplicateGroup> Groups { get; init; } = [];
+}
+
+public sealed class XmlConvertResult
+{
+    [System.Text.Json.Serialization.JsonPropertyName("converted")]
+    public int Converted { get; init; }
+
+    [System.Text.Json.Serialization.JsonPropertyName("output_path")]
+    public string OutputPath { get; init; } = string.Empty;
 }
