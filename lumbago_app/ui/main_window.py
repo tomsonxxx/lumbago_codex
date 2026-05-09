@@ -678,6 +678,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.content_splitter.setStretchFactor(0, 3)
         self.content_splitter.setStretchFactor(1, 1)
         self.content_splitter.setSizes([900, 300])
+        self.content_splitter.splitterMoved.connect(self._on_splitter_moved)
         main_column.addWidget(self.content_splitter, 1)
 
         player = self._build_player()
@@ -2085,6 +2086,18 @@ class MainWindow(QtWidgets.QMainWindow):
             self.toggle_detail_btn.setText("◀")
             self.toggle_detail_btn.setToolTip("Ukryj panel szczegółów  [Ctrl+Shift+D]")
             self._detail_title_label.show()
+
+    def _on_splitter_moved(self, pos: int, index: int) -> None:
+        """Sync button/label state when splitter handle is dragged manually."""
+        panel_visible = self.content_splitter.sizes()[1] > 0
+        if panel_visible:
+            self.toggle_detail_btn.setText("◀")
+            self.toggle_detail_btn.setToolTip("Ukryj panel szczegółów  [Ctrl+Shift+D]")
+            self._detail_title_label.show()
+        else:
+            self.toggle_detail_btn.setText("▶")
+            self.toggle_detail_btn.setToolTip("Pokaż panel szczegółów  [Ctrl+Shift+D]")
+            self._detail_title_label.hide()
 
     def _save_ui_state(self) -> None:
         qs = QtCore.QSettings("LumbagoMusicAI", "MainWindow")
