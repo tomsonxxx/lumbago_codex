@@ -9,10 +9,10 @@ class MusicBrainzProvider:
 
     def search_recording(self, query: str) -> dict | None:
         url = "https://musicbrainz.org/ws/2/recording/"
-        params = {"query": query, "fmt": "json"}
-        headers = {"User-Agent": self.app_name}
+        params = {"query": query, "fmt": "json", "limit": 5}
+        headers = {"User-Agent": f"{self.app_name}/0.1 ( https://github.com/lumbago-musicai )"}
         try:
-            resp = requests.get(url, params=params, headers=headers, timeout=10)
+            resp = requests.get(url, params=params, headers=headers, timeout=15)
             resp.raise_for_status()
             return resp.json()
         except Exception:

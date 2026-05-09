@@ -190,19 +190,31 @@ def _missing_fields(track: Track) -> list[str]:
 
 
 def _build_prompt(track: Track, missing: list[str]) -> str:
+    field_hints = {
+        "bpm": "numeric beats per minute (e.g. 128.0), or null",
+        "key": "musical key in standard notation (e.g. 'Am', 'F#m', 'C', '8B'), or null",
+        "mood": "single mood word (e.g. 'energetic', 'melancholic', 'dark', 'uplifting'), or null",
+        "energy": "float 0.0-1.0 where 1.0 is maximum energy, or null",
+        "genre": "music genre string (e.g. 'Techno', 'House', 'Hip-Hop'), or null",
+    }
+    schema_lines = "\n".join(
+        f'  "{f}": {field_hints[f]}' for f in missing if f in field_hints
+    )
     return (
-        "Zwroc JSON tylko dla pol: "
-        + ", ".join(missing)
-        + ". Wartosci puste ustaw na null. "
-        "Dane wejsciowe:\n"
-        f"Tytul: {track.title or ''}\n"
-        f"Artysta: {track.artist or ''}\n"
-        f"Album: {track.album or ''}\n"
-        f"Gatunek: {track.genre or ''}\n"
-        f"BPM: {track.bpm or ''}\n"
-        f"Tonacja: {track.key or ''}\n"
-        f"Nastroj: {track.mood or ''}\n"
-        f"Energia: {track.energy or ''}\n"
+        "You are a music metadata expert. "
+        "Return ONLY a valid JSON object (no markdown, no explanation) with exactly these fields:\n"
+        "{\n" + schema_lines + "\n}\n\n"
+        "Track information:\n"
+        f"  Title: {track.title or '(unknown)'}\n"
+        f"  Artist: {track.artist or '(unknown)'}\n"
+        f"  Album: {track.album or ''}\n"
+        f"  Genre: {track.genre or ''}\n"
+        f"  BPM: {track.bpm or ''}\n"
+        f"  Key: {track.key or ''}\n"
+        f"  Mood: {track.mood or ''}\n"
+        f"  Energy: {track.energy or ''}\n"
+        "Use your knowledge of this artist/track to fill the missing fields. "
+        "If genuinely unknown, use null."
     )
 
 
@@ -241,10 +253,11 @@ def _call_openai_compatible_chat(
     payload = {
         "model": model,
         "messages": [
-            {"role": "system", "content": "Zwracaj tylko JSON."},
+            {"role": "system", "content": "You are a music metadata assistant. Return ONLY valid JSON, no markdown fences."},
             {"role": "user", "content": prompt},
         ],
         "temperature": 0.2,
+        "response_format": {"type": "json_object"},
     }
     resp = requests.post(url, headers=headers, json=payload, timeout=timeout)
     resp.raise_for_status()
@@ -265,7 +278,11 @@ def _call_gemini_generate_content(
             {
                 "parts": [{"text": prompt}],
             }
-        ]
+        ],
+        "generationConfig": {
+            "responseMimeType": "application/json",
+            "temperature": 0.2,
+        },
     }
     resp = requests.post(url, headers=headers, json=payload, timeout=timeout)
     resp.raise_for_status()
