@@ -14,3 +14,9 @@ Pliki:
 - Pages/TagCompareDialog.xaml — porównanie tagów
 
 Makiety są gotowe do podpięcia pod właściwe ViewModel i dane.
+
+---
+
+> **UWAGA:** Pliki XAML w tym katalogu to **specyfikacje/makiety** (design reference).
+> Implementacja robocza znajduje się w `winui/LumbagoWinUI/`.
+> Pliki tu nie są kompilowane — służą jako wzorzec przy dalszym rozwoju Fazy 2+.

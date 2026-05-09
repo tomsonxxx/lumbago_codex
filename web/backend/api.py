@@ -17,7 +17,7 @@ from lumbago_app.core.audio import apply_local_metadata, extract_metadata, iter_
 from lumbago_app.core.config import load_settings
 from lumbago_app.core.models import Track
 from lumbago_app.data.db import get_session_factory
-from lumbago_app.data.repository import init_db, upsert_tracks
+from lumbago_app.data.repository import delete_tracks_by_paths, init_db, upsert_tracks
 from lumbago_app.data.schema import TrackOrm
 from lumbago_app.services.analysis_engine import AI_FIELDS, AnalysisEngine, MergePolicy, ProviderConfig
 from web.backend.db import (
@@ -45,6 +45,24 @@ def _web_conn() -> sqlite3.Connection:
     conn = connect(db_path)
     migrate(conn, Path("web/backend/migrations"))
     return conn
+
+
+class TrackUpdatePayload(BaseModel):
+    title: str | None = None
+    artist: str | None = None
+    album: str | None = None
+    albumartist: str | None = None
+    year: str | None = None
+    genre: str | None = None
+    tracknumber: str | None = None
+    composer: str | None = None
+    comment: str | None = None
+    lyrics: str | None = None
+    publisher: str | None = None
+    bpm: float | None = None
+    key: str | None = None
+    mood: str | None = None
+    energy: float | None = None
 
 
 class SettingPayload(BaseModel):
@@ -75,6 +93,11 @@ class ImportCommitPayload(BaseModel):
 
 class DuplicatesPayload(BaseModel):
     mode: str = Field(pattern="^(hash|fingerprint|metadata)$")
+
+
+class XmlConvertPayload(BaseModel):
+    input_path: str
+    output_path: str
 
 
 class ProviderConfigPayload(BaseModel):
@@ -115,8 +138,10 @@ def _serialize_track(row: TrackOrm) -> dict:
         "title": row.title or Path(row.path).stem,
         "artist": row.artist or "Unknown",
         "album": row.album,
+        "albumartist": row.albumartist,
         "year": row.year,
         "genre": row.genre,
+        "tracknumber": row.tracknumber,
         "composer": row.composer,
         "comment": row.comment,
         "lyrics": row.lyrics,
@@ -124,8 +149,15 @@ def _serialize_track(row: TrackOrm) -> dict:
         "key": row.key,
         "bpm": row.bpm,
         "duration": row.duration,
+        "loudness": row.loudness_lufs,
+        "energy": row.energy,
+        "mood": row.mood,
+        "artwork_path": row.artwork_path,
+        "format": row.format,
+        "bitrate": row.bitrate,
+        "file_size": row.file_size,
+        "date_added": row.date_added.isoformat() if row.date_added else None,
         "hash": row.file_hash,
-        "fingerprint": row.fingerprint,
         "url": row.path,
     }
 
@@ -527,9 +559,48 @@ def list_tracks() -> dict[str, list[dict]]:
     return {"tracks": [_serialize_track(row) for row in _list_track_rows()]}
 
 
+@app.put("/tracks/{track_path:path}")
+def update_track_endpoint(track_path: str, payload: TrackUpdatePayload) -> dict:
+    """Aktualizuje tagi wybranego tracka w bazie i pliku audio."""
+    from lumbago_app.data.repository import update_track as repo_update_track
+
+    init_db()
+    Session = get_session_factory()
+    with Session() as session:
+        row = session.scalar(select(TrackOrm).where(TrackOrm.path == track_path))
+        if row is None:
+            raise HTTPException(status_code=404, detail=f"Track not found: {track_path}")
+
+        update_data = payload.model_dump(exclude_none=True)
+        for field, value in update_data.items():
+            if hasattr(row, field):
+                setattr(row, field, value)
+        session.commit()
+        updated_row = session.scalar(select(TrackOrm).where(TrackOrm.path == track_path))
+
+    # Zapisz tagi do pliku audio
+    if update_data:
+        try:
+            from lumbago_app.core.audio import write_tags
+            file_tags = {k: str(v) for k, v in update_data.items()
+                         if k not in {"energy", "mood", "loudness"}}
+            if file_tags:
+                write_tags(Path(track_path), file_tags)
+        except Exception as exc:
+            # Błąd zapisu do pliku — loguj szczegóły wewnętrznie, nie eksponuj
+            # stack trace / ścieżek systemowych w odpowiedzi HTTP (CodeQL CWE-209).
+            import logging
+            logging.getLogger(__name__).warning("write_tags failed for %s: %s",
+                                                Path(track_path).name, exc)
+            return {"track": _serialize_track(updated_row),
+                    "warning": "Zapis tagów do pliku audio nie powiódł się."}
+
+    return {"track": _serialize_track(updated_row)}
+
+
 @app.post("/tracks/import-preview")
 def import_preview(payload: ImportPreviewPayload) -> dict[str, list[dict] | list[str]]:
-    folder = Path(payload.folder)
+    folder = Path(payload.folder).resolve()
     if not folder.exists() or not folder.is_dir():
         raise HTTPException(status_code=400, detail="Folder importu nie istnieje.")
 
@@ -552,7 +623,7 @@ def import_commit(payload: ImportCommitPayload) -> dict[str, int | list[str]]:
     imported = []
     errors: list[str] = []
     for raw_path in payload.paths:
-        path = Path(raw_path)
+        path = Path(raw_path).resolve()
         if not path.exists() or not path.is_file():
             errors.append(f"{raw_path}: plik nie istnieje")
             continue
@@ -601,3 +672,36 @@ def analyze_duplicates(payload: DuplicatesPayload) -> dict[str, list[dict]]:
         )
 
     return {"groups": groups}
+
+
+@app.delete("/tracks/{track_path:path}")
+def delete_track_endpoint(track_path: str) -> dict[str, str]:
+    """Usuwa track z bazy danych (nie usuwa pliku z dysku)."""
+    init_db()
+    delete_tracks_by_paths([track_path])
+    return {"deleted": track_path}
+
+
+@app.post("/convert/rekordbox-to-virtualdj")
+def convert_rekordbox_to_virtualdj(payload: XmlConvertPayload) -> dict[str, object]:
+    """Konwertuje plik Rekordbox XML na format VirtualDJ XML."""
+    from lumbago_app.services.xml_converter import export_virtualdj_xml, parse_rekordbox_xml
+
+    # resolve() canonicalizuje ścieżkę (eliminuje ../) — sanitizer dla CWE-022.
+    input_path = Path(payload.input_path).resolve()
+    output_path = Path(payload.output_path).resolve()
+
+    if input_path.suffix.lower() != ".xml":
+        raise HTTPException(status_code=400, detail="Plik wejściowy musi mieć rozszerzenie .xml.")
+    if output_path.suffix.lower() != ".xml":
+        raise HTTPException(status_code=400, detail="Plik wyjściowy musi mieć rozszerzenie .xml.")
+    if not input_path.is_file():
+        raise HTTPException(status_code=400, detail="Plik wejściowy nie istnieje.")
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    tracks = parse_rekordbox_xml(input_path)
+    if not tracks:
+        raise HTTPException(status_code=422, detail="Nie znaleziono tracków w pliku XML.")
+
+    export_virtualdj_xml(tracks, output_path)
+    return {"converted": len(tracks), "output_path": str(output_path)}
