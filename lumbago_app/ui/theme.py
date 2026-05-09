@@ -367,6 +367,40 @@ QFrame#DetailPanel {
     background-color: rgba(12, 18, 31, 238);
     border-left: 1px solid #2a4465;
 }
+QWidget#DetailPanelHeader {
+    background-color: rgba(20, 30, 50, 255);
+    border-bottom: 1px solid #2a4465;
+}
+QToolButton {
+    background-color: rgba(30, 50, 80, 180);
+    border: 1px solid #2a4465;
+    border-radius: 4px;
+    color: #7ecfff;
+    font-size: 11px;
+    padding: 2px 4px;
+}
+QToolButton:hover {
+    background-color: rgba(0, 170, 255, 60);
+    border-color: #00aaff;
+    color: #ffffff;
+}
+QToolButton:pressed {
+    background-color: rgba(0, 170, 255, 100);
+}
+QSplitter::handle {
+    background-color: #1a2a40;
+}
+QSplitter::handle:hover {
+    background-color: #00aaff;
+}
+QSplitter::handle:horizontal {
+    width: 5px;
+}
+QLabel#CoverLabel {
+    border: 1px solid #2a4465;
+    border-radius: 4px;
+    background-color: rgba(0,0,0,120);
+}
 QFrame#PlayerDock {
     background-color: rgba(15, 19, 34, 230);
     border-top: 1px solid #22324a;
