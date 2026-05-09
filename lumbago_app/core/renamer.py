@@ -213,17 +213,7 @@ def _strip_download_quality_suffix(value: str) -> str:
 
 
 def parse_filename_tags(path: str | Path) -> tuple[str | None, str | None]:
-<<<<<<< HEAD
-    """Try to extract (artist, title) from filename stem using 'Artist - Title' pattern.
-
-    Returns (artist, title) with video/quality noise removed, or (None, None) if
-    the 'Artist - Title' separator pattern is not found.
-    Remixes, featurings and other parenthetical info are preserved.
-    """
     stem = _strip_download_quality_suffix(PureWindowsPath(path).stem.replace("_", " ").replace(".", " "))
-=======
-    stem = _strip_download_quality_suffix(Path(path).stem.replace("_", " ").replace(".", " "))
->>>>>>> codex/przejrzyj-ostatnie-commity
     for sep in (" – ", " — ", " - "):
         if sep in stem:
             left, right = stem.split(sep, 1)
