@@ -27,6 +27,7 @@ _META_OVERWRITE_FIELDS = (
     "isrc", "publisher", "lyrics", "grouping", "copyright", "remixer", "comment",
 )
 
+
 def _merge_analysis_into_track(track: Track, result: AnalysisResult) -> Track:
     """Merge AI analysis into a track, overwriting all fields with verified values."""
     for field in _AI_ANALYSIS_TEXT_FIELDS:

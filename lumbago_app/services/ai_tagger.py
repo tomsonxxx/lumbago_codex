@@ -270,6 +270,9 @@ class MultiAiTagger:
 _FLOAT_AI_FIELDS = {"bpm", "energy"}
 
 
+_FLOAT_AI_FIELDS = {"bpm", "energy"}
+
+
 def _merge_results(results: list[tuple[str, AnalysisResult]]) -> AnalysisResult:
     if not results:
         return AnalysisResult(description="No AI results", confidence=0.0)
