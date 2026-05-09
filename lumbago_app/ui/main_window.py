@@ -2099,6 +2099,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.toggle_detail_btn.setToolTip("Pokaż panel szczegółów  [Ctrl+Shift+D]")
             self._detail_title_label.hide()
 
+
     def _save_ui_state(self) -> None:
         qs = QtCore.QSettings("LumbagoMusicAI", "MainWindow")
         qs.setValue("splitter_state", self.content_splitter.saveState())
