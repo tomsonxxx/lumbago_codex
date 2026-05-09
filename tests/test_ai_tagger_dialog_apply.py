@@ -31,7 +31,16 @@ def test_apply_accepted_persists_placeholder_replacements(monkeypatch, tmp_path:
         calls["writes"] = pending
         return WritebackResult(track_count=len(pending))
 
-    monkeypatch.setattr("lumbago_app.ui.ai_tagger_dialog.apply_track_writes", _apply_track_writes)
+    def _write_tags(path: Path, tags: dict[str, str]):
+        calls["write"] = {"path": path, "tags": tags}
+
+    def _update_tracks(tracks):
+        calls["update"] = list(tracks)
+
+    monkeypatch.setattr("lumbago_app.services.metadata_writeback.add_change_log", lambda *a, **kw: None)
+    monkeypatch.setattr("lumbago_app.services.metadata_writeback.replace_track_tags", _replace_track_tags)
+    monkeypatch.setattr("lumbago_app.services.metadata_writeback.write_tags", _write_tags)
+    monkeypatch.setattr("lumbago_app.services.metadata_writeback.update_tracks", _update_tracks)
     monkeypatch.setattr(dialog, "accept", lambda: calls.__setitem__("accepted", True))
 
     dialog._apply_accepted()
