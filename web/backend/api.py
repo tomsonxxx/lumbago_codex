@@ -600,7 +600,7 @@ def update_track_endpoint(track_path: str, payload: TrackUpdatePayload) -> dict:
 
 @app.post("/tracks/import-preview")
 def import_preview(payload: ImportPreviewPayload) -> dict[str, list[dict] | list[str]]:
-    folder = Path(payload.folder)
+    folder = Path(payload.folder).resolve()
     if not folder.exists() or not folder.is_dir():
         raise HTTPException(status_code=400, detail="Folder importu nie istnieje.")
 
@@ -623,7 +623,7 @@ def import_commit(payload: ImportCommitPayload) -> dict[str, int | list[str]]:
     imported = []
     errors: list[str] = []
     for raw_path in payload.paths:
-        path = Path(raw_path)
+        path = Path(raw_path).resolve()
         if not path.exists() or not path.is_file():
             errors.append(f"{raw_path}: plik nie istnieje")
             continue
@@ -687,10 +687,15 @@ def convert_rekordbox_to_virtualdj(payload: XmlConvertPayload) -> dict[str, obje
     """Konwertuje plik Rekordbox XML na format VirtualDJ XML."""
     from lumbago_app.services.xml_converter import export_virtualdj_xml, parse_rekordbox_xml
 
-    input_path = Path(payload.input_path)
-    output_path = Path(payload.output_path)
+    # resolve() canonicalizuje ścieżkę (eliminuje ../) — sanitizer dla CWE-022.
+    input_path = Path(payload.input_path).resolve()
+    output_path = Path(payload.output_path).resolve()
 
-    if not input_path.exists():
+    if input_path.suffix.lower() != ".xml":
+        raise HTTPException(status_code=400, detail="Plik wejściowy musi mieć rozszerzenie .xml.")
+    if output_path.suffix.lower() != ".xml":
+        raise HTTPException(status_code=400, detail="Plik wyjściowy musi mieć rozszerzenie .xml.")
+    if not input_path.is_file():
         raise HTTPException(status_code=400, detail="Plik wejściowy nie istnieje.")
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
