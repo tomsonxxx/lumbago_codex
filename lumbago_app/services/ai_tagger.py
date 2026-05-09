@@ -171,6 +171,8 @@ class CloudAiTagger:
         missing = _missing_fields(track)
         noisy = _noisy_fields(track)
         fields_to_fill = list(dict.fromkeys(missing + [f for f in noisy if f not in missing]))
+        if not fields_to_fill:
+            return AnalysisResult(description="No missing fields", confidence=1.0)
         prompt = _build_prompt(track, fields_to_fill, noisy_fields=noisy)
         last_exc: Exception | None = None
         for attempt in range(self.retries + 1):
@@ -342,6 +344,7 @@ def _has_nonempty_value(value: Any) -> bool:
 
 
 _MISSING_SENTINEL = {"", "-", "—", "unknown", "n/a", "none", "null"}
+
 _ALL_AI_FIELDS: list[str] = [
     "title",
     "bpm",
