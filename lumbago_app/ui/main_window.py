@@ -100,6 +100,13 @@ def _has_value(value) -> bool:
     return True
 
 
+def _looks_like_track_number(value: str | None) -> bool:
+    """Return True when value is a bare track/disc number (e.g. '01', '2', '14')."""
+    if not value:
+        return False
+    return bool(re.fullmatch(r"\d{1,3}", value.strip()))
+
+
 _AUTOTAG_FIELDS = [
     "title",
     "artist",
@@ -223,14 +230,14 @@ def _repair_identity_from_filename(track: Track) -> None:
     if not _has_value(title_from_file):
         return
     if _looks_like_download_quality_title(track.title):
-        if artist_from_file:
+        if artist_from_file and not _looks_like_track_number(artist_from_file):
             track.artist = artist_from_file
         elif (track.artist or "").strip().lower() == str(title_from_file).strip().lower():
             track.artist = None
         track.title = title_from_file
         return
     if _has_value(artist_from_file) and _has_value(title_from_file):
-        if not _has_value(track.artist):
+        if not _has_value(track.artist) and not _looks_like_track_number(artist_from_file):
             track.artist = artist_from_file
         if not _has_value(track.title):
             track.title = title_from_file

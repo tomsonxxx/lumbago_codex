@@ -444,6 +444,35 @@ def _to_clean_str(value: Any) -> str | None:
     return text or None
 
 
+def _has_value(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        return bool(normalized) and normalized not in {"-", "—", "unknown", "n/a", "none", "null", "brak"}
+    return True
+
+
+def _looks_like_track_number(value: str | None) -> bool:
+    """Return True when value is a bare track/disc number (e.g. '01', '2', '14')."""
+    if not value:
+        return False
+    return bool(re.fullmatch(r"\d{1,3}", value.strip()))
+
+
+def _looks_like_opaque_id(value: str | None) -> bool:
+    """Return True for filenames that look like hashes or download IDs rather than real titles.
+
+    Opaque IDs tend to be hex strings or purely alphanumeric blobs without
+    spaces that are at least 8 characters long (e.g. '3a7f2b1c', 'abc123def456').
+    """
+    if not value:
+        return False
+    s = value.strip()
+    # Hex hash: 8+ consecutive hex characters, no spaces or non-hex letters
+    return bool(re.fullmatch(r"[0-9a-f]{8,}", s, re.IGNORECASE))
+
+
 def _looks_like_download_quality_title(value: str | None) -> bool:
     if not value:
         return False
@@ -484,20 +513,16 @@ def _track_with_filename_identity(track: Track) -> Track:
             return replace(track, artist=artist)
         return track
     if _looks_like_download_quality_title(track.title):
-        return replace(
-            track,
-            title=title_from_file,
-            artist=artist_from_file if artist_from_file else None,
-        )
+        safe_artist = artist_from_file if (artist_from_file and not _looks_like_track_number(artist_from_file)) else None
+        return replace(track, title=title_from_file, artist=safe_artist)
     if cleaned_current_title and cleaned_current_title != track.title:
-        return replace(
-            track,
-            title=cleaned_current_title,
-            artist=artist_from_file or artist,
-        )
-    if title_from_file and not artist_from_file and not artist and track.title != title_from_file:
+        safe_artist = artist_from_file if (artist_from_file and not _looks_like_track_number(artist_from_file)) else artist
+        return replace(track, title=cleaned_current_title, artist=safe_artist)
+    # Use filename title only when track title is absent or the filename-derived
+    # title is clearly not an opaque hash/ID (avoids clobbering good tags with noise)
+    if title_from_file and not _looks_like_opaque_id(title_from_file) and not artist_from_file and not artist and track.title != title_from_file:
         return replace(track, title=title_from_file, artist=None)
-    if artist_from_file and title_from_file and (not artist or not track.title):
+    if artist_from_file and not _looks_like_track_number(artist_from_file) and title_from_file and (not artist or not track.title):
         return replace(
             track,
             artist=artist or artist_from_file,
