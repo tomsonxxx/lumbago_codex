@@ -53,7 +53,8 @@ public sealed class ApiClient
     public async Task SetSettingAsync(string key, string value, CancellationToken ct = default)
     {
         var payload = new { value };
-        await _http.PutAsJsonAsync($"/settings/{Uri.EscapeDataString(key)}", payload, ct);
+        var resp = await _http.PutAsJsonAsync($"/settings/{Uri.EscapeDataString(key)}", payload, ct);
+        resp.EnsureSuccessStatusCode();
     }
 
     public async Task<Track?> UpdateTrackAsync(string path, TrackUpdate update, CancellationToken ct = default)

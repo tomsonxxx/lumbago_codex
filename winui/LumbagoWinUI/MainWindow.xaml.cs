@@ -16,6 +16,10 @@ public sealed partial class MainWindow : Window
         ["Settings"]   = typeof(SettingsPage),
     };
 
+    // Guard: prevents SelectionChanged from re-triggering Navigate when
+    // we programmatically set SelectedItem inside SelectNavItem().
+    private bool _suppressNavigation;
+
     public MainWindow()
     {
         InitializeComponent();
@@ -32,14 +36,23 @@ public sealed partial class MainWindow : Window
 
     private void SelectNavItem(string tag)
     {
-        foreach (var item in NavView.MenuItems.OfType<NavigationViewItem>())
-            if (item.Tag?.ToString() == tag) { NavView.SelectedItem = item; return; }
-        foreach (var item in NavView.FooterMenuItems.OfType<NavigationViewItem>())
-            if (item.Tag?.ToString() == tag) { NavView.SelectedItem = item; return; }
+        _suppressNavigation = true;
+        try
+        {
+            foreach (var item in NavView.MenuItems.OfType<NavigationViewItem>())
+                if (item.Tag?.ToString() == tag) { NavView.SelectedItem = item; return; }
+            foreach (var item in NavView.FooterMenuItems.OfType<NavigationViewItem>())
+                if (item.Tag?.ToString() == tag) { NavView.SelectedItem = item; return; }
+        }
+        finally
+        {
+            _suppressNavigation = false;
+        }
     }
 
     private void NavView_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs e)
     {
+        if (_suppressNavigation) return;
         if (e.SelectedItem is NavigationViewItem { Tag: string tag })
             Navigate(tag);
     }
