@@ -32,8 +32,9 @@ public sealed class ApiClient
 
     public async Task<List<Track>> GetTracksAsync(CancellationToken ct = default)
     {
-        var result = await _http.GetFromJsonAsync<List<Track>>("/tracks", _json, ct);
-        return result ?? [];
+        // Backend returns {"tracks": [...]} wrapper, not a bare array.
+        var result = await _http.GetFromJsonAsync<TracksResponse>("/tracks", _json, ct);
+        return result?.Tracks ?? [];
     }
 
     public async Task<string?> GetSettingAsync(string key, CancellationToken ct = default)
@@ -69,4 +70,5 @@ public sealed class ApiClient
     }
 
     private sealed record SettingResponse(string? Value);
+    private sealed record TracksResponse(List<Track>? Tracks);
 }

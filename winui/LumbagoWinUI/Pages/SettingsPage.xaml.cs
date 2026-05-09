@@ -53,9 +53,9 @@ public sealed partial class SettingsPage : Page
         {
             foreach (var (key, getter, _) in _fields)
             {
+                // Save all values, including empty strings — allows users to clear a stored key.
                 var value = getter(this);
-                if (!string.IsNullOrEmpty(value))
-                    await App.Api.SetSettingAsync(key, value);
+                await App.Api.SetSettingAsync(key, value);
             }
             StatusMsg.Text = "✓ Ustawienia zapisane";
             StatusMsg.Visibility = Visibility.Visible;

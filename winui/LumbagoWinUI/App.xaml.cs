@@ -30,6 +30,13 @@ public partial class App : Application
         }
 
         _window = new MainWindow();
+        _window.Closed += OnMainWindowClosed;
         _window.Activate();
+    }
+
+    private void OnMainWindowClosed(object sender, Microsoft.UI.Xaml.WindowEventArgs args)
+    {
+        Backend?.Dispose();
+        Backend = null;
     }
 }
