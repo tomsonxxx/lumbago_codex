@@ -7,7 +7,30 @@ from typing import Iterable
 
 from mutagen import File as MutagenFile
 import re
-from mutagen.id3 import ID3, ID3NoHeaderError
+from mutagen.id3 import (
+    COMM,
+    POPM,
+    TALB,
+    TCOM,
+    TCON,
+    TCOP,
+    TDRC,
+    TIT1,
+    TIT2,
+    TKEY,
+    TPE1,
+    TPE2,
+    TPE4,
+    TPOS,
+    TPUB,
+    TRCK,
+    TSRC,
+    TXXX,
+    TYER,
+    USLT,
+    ID3,
+    ID3NoHeaderError,
+)
 from mutagen.mp4 import MP4FreeForm
 
 from lumbago_app.core.models import Track
@@ -168,16 +191,21 @@ def write_tags(path: Path, tags: dict[str, str]) -> None:
     if path.suffix.lower() in _MP4_EXTENSIONS:
         _write_mp4_tags(path, tags)
         return
+    if path.suffix.lower() == ".mp3":
+        _write_id3_tags(path, tags)
+        return
 
     audio = _open_mutagen(path, easy=True)
     if audio is None:
-        return
+        raise RuntimeError(f"Nie udało się otworzyć pliku do zapisu tagów: {path}")
     if audio.tags is None:
         try:
             ID3(path).save()
         except ID3NoHeaderError:
             ID3().save(path)
         audio = _open_mutagen(path, easy=True)
+        if audio is None:
+            raise RuntimeError(f"Nie udało się utworzyć nagłówka tagów: {path}")
     key_map = {
         "key": "initialkey", "year": "date",
         "albumartist": "albumartist", "publisher": "organization",
@@ -189,11 +217,90 @@ def write_tags(path: Path, tags: dict[str, str]) -> None:
             if target_key in audio:
                 del audio[target_key]
             continue
-        try:
-            audio[target_key] = [value]
-        except Exception:
-            continue
+        audio[target_key] = [value]
     audio.save()
+
+
+def _write_id3_tags(path: Path, tags: dict[str, str]) -> None:
+    try:
+        id3 = ID3(path)
+    except ID3NoHeaderError:
+        id3 = ID3()
+
+    frame_map = {
+        "title": TIT2,
+        "artist": TPE1,
+        "album": TALB,
+        "albumartist": TPE2,
+        "genre": TCON,
+        "tracknumber": TRCK,
+        "discnumber": TPOS,
+        "composer": TCOM,
+        "key": TKEY,
+        "isrc": TSRC,
+        "publisher": TPUB,
+        "grouping": TIT1,
+        "copyright": TCOP,
+        "remixer": TPE4,
+    }
+
+    for field_name, frame_cls in frame_map.items():
+        if field_name not in tags:
+            continue
+        value = (tags.get(field_name) or "").strip()
+        id3.delall(frame_cls.__name__)
+        if value:
+            id3.add(frame_cls(encoding=3, text=[value]))
+
+    if "year" in tags:
+        year_value = (tags.get("year") or "").strip()
+        id3.delall("TDRC")
+        id3.delall("TYER")
+        if year_value:
+            id3.add(TDRC(encoding=3, text=[year_value]))
+            id3.add(TYER(encoding=3, text=[year_value[:4]]))
+
+    if "bpm" in tags:
+        bpm_value = (tags.get("bpm") or "").strip()
+        id3.delall("TBPM")
+        if bpm_value:
+            from mutagen.id3 import TBPM
+
+            id3.add(TBPM(encoding=3, text=[bpm_value]))
+
+    if "comment" in tags:
+        comment = (tags.get("comment") or "").strip()
+        id3.delall("COMM")
+        if comment:
+            id3.add(COMM(encoding=3, lang="eng", desc="", text=[comment]))
+
+    if "lyrics" in tags:
+        lyrics = (tags.get("lyrics") or "").strip()
+        id3.delall("USLT")
+        if lyrics:
+            id3.add(USLT(encoding=3, lang="eng", desc="", text=lyrics))
+
+    for txxx_field, desc in {"mood": "MOOD", "energy": "ENERGY"}.items():
+        if txxx_field not in tags:
+            continue
+        value = (tags.get(txxx_field) or "").strip()
+        id3.delall("TXXX:" + desc)
+        if value:
+            id3.add(TXXX(encoding=3, desc=desc, text=[value]))
+
+    if "rating" in tags:
+        raw_rating = (tags.get("rating") or "").strip()
+        id3.delall("POPM")
+        if raw_rating:
+            try:
+                rating_0_5 = max(0, min(5, int(float(raw_rating))))
+                # Map 0..5 to POPM 0..255.
+                popm_rating = int(round((rating_0_5 / 5) * 255))
+                id3.add(POPM(email="lumbago@local", rating=popm_rating, count=0))
+            except (TypeError, ValueError):
+                pass
+
+    id3.save(path)
 
 
 def clear_tags(path: Path) -> None:
