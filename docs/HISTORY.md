@@ -1,4 +1,10 @@
-# Build Log (Lumbago Music AI - Python/Windows)
+# Historia budowania — Lumbago Music AI
+
+> Scalono z `Build.md` (faza Python/PyQt6) i `Build2.md` (faza WinUI 3 Reboot).
+
+---
+
+## Faza 1 — Python/PyQt6 Desktop (Build.md)
 
 1. **Bootstrap projektu**: utworzono strukturę `lumbago_app/` (core, data, services, ui) i plik `requirements.txt` z zależnościami.
 2. **Konfiguracja środowiska**: dodano `core/config.py` z katalogami `%APPDATA%` i cache.
@@ -32,7 +38,7 @@
 30. **AI Tagger start**: podpięto wybór providera (local/cloud) w dialogu tagowania.
 31. **UI PL + tooltips**: spolszczono interfejs i dodano dymki podpowiedzi.
 32. **Tag compare upgrade**: dodano nawigację, zapisywanie zmian i przyciski akcji w porównaniu tagów.
-33. **Tag compare UX**: dodano podgląd okładki, podgląd tagów, zapis przy następnym i tryb „tylko różnice”.
+33. **Tag compare UX**: dodano podgląd okładki, podgląd tagów, zapis przy następnym i tryb „tylko różnice".
 34. **AI Tagger Accept/Reject**: dodano akcje Akceptuj/Odrzuć na wierszach oraz przyciski zbiorcze.
 35. **AI Tagger DB**: zapis wyników AI do tabeli `tags` z oznaczeniem źródła.
 36. **Cloud AI realne wywołania**: dodano obsługę OpenAI (Responses API) oraz kompatybilnych endpointów Grok/DeepSeek.
@@ -74,53 +80,63 @@
 72. **PyInstaller**: dodano spec i skrypt budowania portable ZIP.
 73. **Instrukcja**: dodano `docs/user_guide.md`.
 74. **Tagi (Top 20)**: rozszerzono listę tagów w oknie porównania do 20 najczęściej używanych pól.
-75. **Fallback danych**: dodano bezpieczny fallback do `.lumbago_data` przy braku uprawnieĹ„ w `%APPDATA%` (ustawienia, cache, DB).
-76. **Logi startu**: dodano `startup.log` oraz `app.log` do diagnozowania zamkniÄ™cia okna.
-77. **ObsĹ‚uga bĹ‚Ä™dĂłw**: dodano crash log oraz handler komunikatĂłw Qt do `qt.log`.
-78. **Tryb bezpieczny**: dodano `LUMBAGO_SAFE_MODE=1` do uruchamiania minimalnego okna bez peĹ‚nej logiki.
-79. **Multimedia toggle**: dodano `LUMBAGO_DISABLE_MULTIMEDIA=1` do wyĹ‚Ä…czania inicjalizacji odtwarzacza.
-80. **ToDo: metody tagów**: dodano listę metod analizy, wyszukiwania i walidacji tagów do ToDo.md.
-80. **Pipeline metadanych**: dodano tryb auto z priorytetami (AcoustID -> MusicBrainz -> Discogs) oraz walidację kandydatów.
+75. **Fallback danych**: dodano bezpieczny fallback do `.lumbago_data` przy braku uprawnień w `%APPDATA%`.
+76. **Logi startu**: dodano `startup.log` oraz `app.log` do diagnozowania zamknięcia okna.
+77. **Obsługa błędów**: dodano crash log oraz handler komunikatów Qt do `qt.log`.
+78. **Tryb bezpieczny**: dodano `LUMBAGO_SAFE_MODE=1` do uruchamiania minimalnego okna bez pełnej logiki.
+79. **Multimedia toggle**: dodano `LUMBAGO_DISABLE_MULTIMEDIA=1` do wyłączania inicjalizacji odtwarzacza.
+80. **Pipeline metadanych**: dodano tryb auto z priorytetami (AcoustID → MusicBrainz → Discogs) oraz walidację kandydatów.
 81. **AI minimalny prompt**: skrócono prompt AI do brakujących pól.
 82. **Walidacja (balanced)**: obniżono rygor walidacji kandydatów do trybu zbalansowanego i ustawiono progi dopasowania.
-83. **Testy**: próba uruchomienia pytest zakończona brakiem modułu w środowisku.
-84. **Pytest**: dodano pytest do zależności oraz pierwsze testy walidacji metadanych.
-85. **Pytest config**: dodano pytest.ini, aby izolować testy tylko do katalogu tests.
-86. **Testy OK**: uruchomiono pytest, 3 testy przeszły.
-87. **Cache metadanych**: dodano tabelę cache w SQLite oraz TTL dla zapytań MusicBrainz/Discogs.
-88. **Walidacja lenient**: dodano tryb lenient i testy dla wszystkich trybów walidacji.
-89. **Ustawienia cache**: dodano TTL cache metadanych w ustawieniach UI.
-90. **AI minimalne wywołania**: pomijanie chmury, gdy brakujących pól nie ma.
-91. **Cache online**: cache zapytań MusicBrainz/Discogs z TTL w SQLite.
-92. **Walidacja lenient**: dostrojono próg (0.4) i testy przeszły.
-93. **Filtr kompilacji**: odrzucanie albumów typu "Greatest Hits" przy uzupełnianiu.
-94. **Testy OK**: uruchomiono pytest, 5 testów przeszło.
-95. **Walidacja AI**: dodano filtr BPM/Key/energy oraz progi confidence w AI Taggerze.
-96. **Rok wydania**: dodano pole year w modelu, DB i UI oraz walidację zakresu.
-97. **Testy OK**: uruchomiono pytest, 6 testów przeszło.
-98. **Test renamera**: dodano unit test dla konfliktów w planie rename.
-99. **Testy OK**: uruchomiono pytest, 7 testów przeszło.
-100. **Testy parserów**: dodano unit testy dla XML (Rekordbox/VDJ) i duplikatów.
-101. **Testy OK**: uruchomiono pytest, 10 testów przeszło.
-87. **Walidacja w UI**: dodano wybór trybu walidacji (strict/balanced/lenient) w ustawieniach.
-102. **Test integracyjny DB**: dodano reset silnika po teście i uruchomiono pytest (11 testów OK).
-103. **Smoke mode**: dodano `LUMBAGO_SMOKE_SECONDS` do automatycznego zamykania aplikacji podczas testów.
-104. **UI smoke test**: dodano test uruchomieniowy UI w trybie safe i uruchomiono pytest (12 testów OK).
-105. **Bundlowanie fpcalc**: build.ps1 wykrywa `fpcalc` z `tools/` lub `PATH`, dodano instrukcję w `tools/README.md`.
-106. **Pobieranie fpcalc**: dodano `tools/fetch_fpcalc.ps1` i pobrano `fpcalc.exe` do `tools/`.
-107. **PyInstaller**: dodano zależność i zainstalowano PyInstaller 6.19.0 w venv.
-108. **Ikona ICO**: wygenerowano `assets/icon.ico` i ustawiono w spec, dodano `COLLECT` dla trybu onedir.
-109. **Build portable**: zbudowano `dist/LumbagoMusicAI` oraz `dist/LumbagoMusicAI-portable.zip`.
-110. **Smoke test EXE**: uruchomiono `dist/LumbagoMusicAI/LumbagoMusicAI.exe` w trybie safe z auto‑zamknięciem.
-111. **Checklist clean Windows**: dodano `docs/clean_windows_test.md`.
-112. **Test clean Windows**: odłożony na później (na prośbę użytkownika).
-113. **Loudness (LUFS)**: dodano analizę głośności i normalizację do nowego pliku.
-114. **Beatgrid + auto‑cue**: dodano wyliczanie siatki beatów i automatyczne cue (intro/outro) z cache.
-115. **Auto‑key**: dodano wykrywanie tonacji z mapowaniem Camelot.
-116. **Backup**: dodano automatyczny backup bazy i ustawień (start/wyjście).
-117. **Eksport setów**: dodano eksport playlisty do VirtualDJ XML.
-118. **Track fields**: dodano `loudness_lufs` i `cue_in_ms/cue_out_ms` do modeli i DB.
-119. **Testy audio/UX**: dodano testy beatgrid/auto‑cue i zmieniono smoke test na subprocess.
-120. **Testy OK**: uruchomiono pytest, 15 testów przeszło.
-121. **Zależności**: dodano `numpy` i `librosa` do analizy tonacji.
-122. **WinUI 3 shell**: dodano szkice XAML (shell + strony + dialog) i theme w `docs/winui3`.
+83. **Pytest**: dodano pytest do zależności oraz pierwsze testy walidacji metadanych.
+84. **Pytest config**: dodano pytest.ini, aby izolować testy tylko do katalogu tests.
+85. **Cache metadanych**: dodano tabelę cache w SQLite oraz TTL dla zapytań MusicBrainz/Discogs.
+86. **Walidacja lenient**: dodano tryb lenient i testy dla wszystkich trybów walidacji.
+87. **Ustawienia cache**: dodano TTL cache metadanych w ustawieniach UI.
+88. **AI minimalne wywołania**: pomijanie chmury, gdy brakujących pól nie ma.
+89. **Cache online**: cache zapytań MusicBrainz/Discogs z TTL w SQLite.
+90. **Filtr kompilacji**: odrzucanie albumów typu "Greatest Hits" przy uzupełnianiu.
+91. **Walidacja AI**: dodano filtr BPM/Key/energy oraz progi confidence w AI Taggerze.
+92. **Rok wydania**: dodano pole year w modelu, DB i UI oraz walidację zakresu.
+93. **Test renamera**: dodano unit test dla konfliktów w planie rename.
+94. **Testy parserów**: dodano unit testy dla XML (Rekordbox/VDJ) i duplikatów.
+95. **Walidacja w UI**: dodano wybór trybu walidacji (strict/balanced/lenient) w ustawieniach.
+96. **Test integracyjny DB**: dodano reset silnika po teście i uruchomiono pytest (11 testów OK).
+97. **Smoke mode**: dodano `LUMBAGO_SMOKE_SECONDS` do automatycznego zamykania aplikacji podczas testów.
+98. **UI smoke test**: dodano test uruchomieniowy UI w trybie safe i uruchomiono pytest (12 testów OK).
+99. **Bundlowanie fpcalc**: build.ps1 wykrywa `fpcalc` z `tools/` lub `PATH`, dodano instrukcję w `tools/README.md`.
+100. **Pobieranie fpcalc**: dodano `tools/fetch_fpcalc.ps1` i pobrano `fpcalc.exe` do `tools/`.
+101. **PyInstaller v2**: dodano zależność i zainstalowano PyInstaller 6.19.0 w venv.
+102. **Ikona ICO**: wygenerowano `assets/icon.ico` i ustawiono w spec, dodano `COLLECT` dla trybu onedir.
+103. **Build portable**: zbudowano `dist/LumbagoMusicAI` oraz `dist/LumbagoMusicAI-portable.zip`.
+104. **Smoke test EXE**: uruchomiono `dist/LumbagoMusicAI/LumbagoMusicAI.exe` w trybie safe z auto‑zamknięciem.
+105. **Checklist clean Windows**: dodano `docs/clean_windows_test.md`.
+106. **Loudness (LUFS)**: dodano analizę głośności i normalizację do nowego pliku.
+107. **Beatgrid + auto‑cue**: dodano wyliczanie siatki beatów i automatyczne cue (intro/outro) z cache.
+108. **Auto‑key**: dodano wykrywanie tonacji z mapowaniem Camelot.
+109. **Backup**: dodano automatyczny backup bazy i ustawień (start/wyjście).
+110. **Eksport setów**: dodano eksport playlisty do VirtualDJ XML.
+111. **Track fields**: dodano `loudness_lufs` i `cue_in_ms/cue_out_ms` do modeli i DB.
+112. **Testy audio/UX**: dodano testy beatgrid/auto‑cue i zmieniono smoke test na subprocess.
+113. **Zależności**: dodano `numpy` i `librosa` do analizy tonacji.
+114. **WinUI 3 shell**: dodano szkice XAML (shell + strony + dialog) i theme w `docs/winui3`.
+
+---
+
+## Faza 2 — WinUI 3 Reboot (Build2.md, od 2026-03-17)
+
+1. 2026-03-17 — Utworzono Build2.md i ToDo2.md, wykonano audyt dokumentacji oraz przegląd podglądów UI.
+2. 2026-03-17 — Rozpoczęto benchmarking wzorców UI z aplikacji DJ i menedżerów biblioteki.
+3. 2026-03-17 — Dodano wstępne wzorce UI do ToDo2.md.
+4. 2026-03-17 — Potwierdzono WinUI 3 i styl „neon glass", dodano plan projektowania UI we współpracy.
+5. 2026-03-17 — Utworzono `docs/winui3/ui_plan.md` (styl v1, mapa widoków, makieta Biblioteki v1).
+6. 2026-03-17 — Dodano makiety Importu i Duplikatów (v1) do `docs/winui3/ui_plan.md`.
+7. 2026-03-17 — Dodano makiety Odtwarzacza, Tag Compare, Smart Tagger oraz Start/Dashboard (v1).
+8. 2026-03-17 — Dodano makiety Playlist, Konwertera XML i Ustawień (v1).
+9. 2026-03-17 — Ustalono strukturę nawigacji, stany globalne i komponenty bazowe (v1).
+10. 2026-03-17 — Dodano style listy/siatki, zasady dostępności i must‑have interakcje (v1).
+11. 2026-03-17 — Wygenerowano przykładowe screeny UI (v1) w `output/imagegen/ui_v1_2026-03-17`.
+12. 2026-03-17 — Dopracowano screeny (v2) i przeniesiono do `docs/winui3/previews` jako `*_v2.png`.
+13. 2026-03-17 — Zaktualizowano `Theme.xaml` pod styl neon glass (kolory, Acrylic, NeonCardBorder).
+14. 2026-03-17 — Podmieniono karty stron na NeonCardBorder w Start/Library/Import/Duplicates/Settings/Converter.
+15. 2026-03-17 — Ujednolicono polskie etykiety i teksty w stronach WinUI 3.
