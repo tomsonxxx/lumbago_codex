@@ -217,11 +217,11 @@
 - [x] Styl: „neon glass" / WinUI 3
 - [x] Makiety wszystkich widoków (v1 + v2 w `docs/winui3/previews/`)
 - [x] Theme.xaml, App.xaml, strony (`docs/winui3/`)
-- [ ] (P0) Decyzja o modelu integracji UI ↔ logika (lokalny HTTP API vs IPC vs embedded Python)
-- [ ] (P0) Definicja zakresu MVP nowego UI
+- [x] Decyzja o modelu integracji UI ↔ logika — lokalny HTTP 127.0.0.1 (FastAPI) — patrz `docs/winui3/ipc_decision.md`
+- [x] Definicja zakresu MVP nowego UI — Library, Start, Settings + ApiClient + BackendLauncher
 
-### 4.2 Implementacja (nie rozpoczęta)
-- [ ] (P0) Szkielet aplikacji WinUI 3 (shell, nawigacja, routing)
+### 4.2 Implementacja
+- [x] Szkielet aplikacji WinUI 3 (shell, nawigacja, routing) — `winui/LumbagoWinUI/` (18 plików; wymaga VS 2022 + Windows App SDK workload do kompilacji)
 - [ ] (P0) Widok Biblioteki (lista + siatka + filtry + detail panel)
 - [ ] (P1) Import, Duplikaty, Konwerter XML, Ustawienia
 - [ ] (P1) Dialog Porównania Tagów + Smart Tagger
@@ -257,7 +257,7 @@
 |---|---------|-----------|-----------|
 | 1 | `npm run lint` bez błędów w tagerv2 | tagerv2 | P0 |
 | 2 | Zapis tagów do pliku audio (browser, tagerv2) | tagerv2 | P1 |
-| 3 | Decyzja: model integracji WinUI 3 ↔ logika | Desktop rewrite | P0 |
+| 3 | ~~Decyzja: model integracji WinUI 3 ↔ logika~~ ✓ | Desktop rewrite | P0 |
 | 4 | Integration testy Web API | Web MVP | P1 |
 | 5 | Test na czystym Windows (PyInstaller build) | Desktop | P1 |
 | 6 | Edycja tagów przez Web API | Web MVP | P1 |

@@ -1,0 +1,19 @@
+<Page
+    x:Class="LumbagoWinUI.Pages.ImportPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Background="{StaticResource BgBrush}">
+
+    <Grid>
+        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="16">
+            <FontIcon Glyph="&#xE8B5;" FontSize="64"
+                      Foreground="{StaticResource AccentGreenBrush}"
+                      HorizontalAlignment="Center"/>
+            <TextBlock Text="Import — w budowie" Style="{StaticResource SubtitleText}"
+                       HorizontalAlignment="Center"/>
+            <TextBlock Text="Ta strona zostanie zaimplementowana w Fazie 2"
+                       Style="{StaticResource CaptionText}"
+                       HorizontalAlignment="Center"/>
+        </StackPanel>
+    </Grid>
+</Page>
