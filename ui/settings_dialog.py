@@ -1,7 +1,7 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import requests
-from PyQt6 import QtWidgets, QtGui
+from PyQt6 import QtCore, QtGui, QtWidgets
 
 from core.config import (
     default_musicbrainz_user_agent,
@@ -12,186 +12,433 @@ from core.config import (
 from ui.widgets import apply_dialog_fade, dialog_icon_pixmap
 
 
+def _open_url(url: str) -> None:
+    QtGui.QDesktopServices.openUrl(QtCore.QUrl(url))
+
+
+def _link_button(label: str, url: str) -> QtWidgets.QPushButton:
+    btn = QtWidgets.QPushButton(label)
+    btn.setObjectName("LinkBtn")
+    btn.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+    btn.setFlat(True)
+    btn.setToolTip(url)
+    btn.clicked.connect(lambda: _open_url(url))
+    return btn
+
+
+def _section_label(text: str) -> QtWidgets.QLabel:
+    lbl = QtWidgets.QLabel(text)
+    lbl.setObjectName("SectionLabel")
+    return lbl
+
+
+def _password_field(placeholder: str = "") -> QtWidgets.QLineEdit:
+    field = QtWidgets.QLineEdit()
+    field.setEchoMode(QtWidgets.QLineEdit.EchoMode.Password)
+    if placeholder:
+        field.setPlaceholderText(placeholder)
+    return field
+
+
+def _make_scroll_widget() -> tuple[QtWidgets.QScrollArea, QtWidgets.QVBoxLayout]:
+    """Returns (scroll_area, inner_layout) — add widgets to inner_layout."""
+    inner = QtWidgets.QWidget()
+    inner.setObjectName("ScrollInner")
+    layout = QtWidgets.QVBoxLayout(inner)
+    layout.setContentsMargins(0, 4, 4, 4)
+    layout.setSpacing(0)
+
+    scroll = QtWidgets.QScrollArea()
+    scroll.setWidgetResizable(True)
+    scroll.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
+    scroll.setWidget(inner)
+    return scroll, layout
+
+
+def _group(title: str) -> tuple[QtWidgets.QGroupBox, QtWidgets.QFormLayout]:
+    box = QtWidgets.QGroupBox(title)
+    box.setObjectName("SettingsGroup")
+    form = QtWidgets.QFormLayout(box)
+    form.setContentsMargins(12, 14, 12, 12)
+    form.setSpacing(8)
+    form.setLabelAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
+    return box, form
+
+
+def _key_row(
+    form: QtWidgets.QFormLayout,
+    label: str,
+    field: QtWidgets.QLineEdit,
+    link_label: str,
+    url: str,
+    hint: str = "",
+) -> None:
+    """Add a form row with a password/text field and an 'Uzyskaj klucz →' link."""
+    row_widget = QtWidgets.QWidget()
+    row_layout = QtWidgets.QHBoxLayout(row_widget)
+    row_layout.setContentsMargins(0, 0, 0, 0)
+    row_layout.setSpacing(6)
+    row_layout.addWidget(field, 1)
+    row_layout.addWidget(_link_button(link_label, url))
+    if hint:
+        field.setToolTip(hint)
+    form.addRow(label, row_widget)
+
+
 class SettingsDialog(QtWidgets.QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Ustawienia / Klucze API")
-        self.setMinimumWidth(520)
+        self.setMinimumSize(620, 520)
+        self.setSizeGripEnabled(True)
         apply_dialog_fade(self)
         self._syncing_validation_controls = False
         self._build_ui()
         self._load()
 
-    def _build_ui(self):
-        layout = QtWidgets.QVBoxLayout(self)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(12)
+    # ------------------------------------------------------------------
+    # UI construction
+    # ------------------------------------------------------------------
 
-        card = QtWidgets.QFrame()
-        card.setObjectName("DialogCard")
-        card_layout = QtWidgets.QVBoxLayout(card)
-        card_layout.setContentsMargins(16, 14, 16, 16)
-        card_layout.setSpacing(10)
-        layout.addWidget(card)
-        layout = card_layout
+    def _build_ui(self) -> None:
+        root = QtWidgets.QVBoxLayout(self)
+        root.setContentsMargins(12, 12, 12, 12)
+        root.setSpacing(10)
 
+        # Title row
         title_row = QtWidgets.QHBoxLayout()
-        title_icon = QtWidgets.QLabel()
-        title_icon.setPixmap(dialog_icon_pixmap(18))
-        title_icon.setFixedSize(20, 20)
-        title = QtWidgets.QLabel(self.windowTitle())
-        title.setObjectName("DialogTitle")
-        title_row.addWidget(title_icon)
-        title_row.addWidget(title)
+        icon_lbl = QtWidgets.QLabel()
+        icon_lbl.setPixmap(dialog_icon_pixmap(18))
+        icon_lbl.setFixedSize(22, 22)
+        title_lbl = QtWidgets.QLabel(self.windowTitle())
+        title_lbl.setObjectName("DialogTitle")
+        title_row.addWidget(icon_lbl)
+        title_row.addWidget(title_lbl)
         title_row.addStretch(1)
-        layout.addLayout(title_row)
+        root.addLayout(title_row)
 
-        form = QtWidgets.QFormLayout()
+        # Tabs
+        self._tabs = QtWidgets.QTabWidget()
+        self._tabs.setDocumentMode(True)
+        root.addWidget(self._tabs, 1)
 
-        self.musicbrainz_app = QtWidgets.QLineEdit()
-        self.cloud_provider = QtWidgets.QComboBox()
-        self.cloud_provider.addItems(["", "openai", "gemini", "grok", "deepseek"])
-        self.cloud_api_key = QtWidgets.QLineEdit()
-        self.gemini_api_key = QtWidgets.QLineEdit()
-        self.gemini_base_url = QtWidgets.QLineEdit()
-        self.gemini_model = QtWidgets.QLineEdit()
-        self.grok_api_key = QtWidgets.QLineEdit()
-        self.deepseek_api_key = QtWidgets.QLineEdit()
-        self.openai_api_key = QtWidgets.QLineEdit()
-        self.openai_base_url = QtWidgets.QLineEdit()
-        self.openai_model = QtWidgets.QLineEdit()
-        self.grok_base_url = QtWidgets.QLineEdit()
-        self.grok_model = QtWidgets.QLineEdit()
-        self.deepseek_base_url = QtWidgets.QLineEdit()
-        self.deepseek_model = QtWidgets.QLineEdit()
-        self.filename_patterns = QtWidgets.QTextEdit()
-        self.filename_patterns.setPlaceholderText(
-            "Przykład: (?P<artist>.+) - (?P<title>.+)"
-        )
-        self.overwrite_existing_tags = QtWidgets.QCheckBox("Nadpisuj istniejące tagi")
-        self.overwrite_existing_tags.setToolTip(
-            "Włącza agresywne nadpisywanie lokalnych tagów lepszymi danymi z internetu."
-        )
-        self.validation_policy = QtWidgets.QComboBox()
-        self.validation_policy.addItems(["strict", "balanced", "lenient", "aggressive"])
-        self.metadata_cache_ttl = QtWidgets.QSpinBox()
-        self.metadata_cache_ttl.setRange(0, 365)
-        self.metadata_cache_ttl.setSuffix(" dni")
-        self.autotag_parallel_workers = QtWidgets.QSpinBox()
-        self.autotag_parallel_workers.setRange(1, 16)
-        self.provider_parallel_workers = QtWidgets.QSpinBox()
-        self.provider_parallel_workers.setRange(2, 12)
+        self._tabs.addTab(self._build_tab_metadata(), "Metadata")
+        self._tabs.addTab(self._build_tab_ai(), "Cloud AI")
+        self._tabs.addTab(self._build_tab_tagging(), "Tagowanie")
+        self._tabs.addTab(self._build_tab_performance(), "Wydajność")
 
-        for field in [
-            self.cloud_api_key,
-            self.gemini_api_key,
-            self.grok_api_key,
-            self.deepseek_api_key,
-            self.openai_api_key,
-        ]:
-            field.setEchoMode(QtWidgets.QLineEdit.EchoMode.Password)
-
-        form.addRow("Nazwa aplikacji MusicBrainz", self.musicbrainz_app)
-        form.addRow("Dostawca AI (chmura)", self.cloud_provider)
-        form.addRow("Klucz AI (chmura)", self.cloud_api_key)
-        form.addRow("Klucz Gemini API", self.gemini_api_key)
-        form.addRow("Adres bazowy Gemini (URL)", self.gemini_base_url)
-        form.addRow("Model Gemini", self.gemini_model)
-        form.addRow("Klucz Grok API", self.grok_api_key)
-        form.addRow("Adres bazowy Grok (URL)", self.grok_base_url)
-        form.addRow("Model Grok", self.grok_model)
-        form.addRow("Klucz DeepSeek API", self.deepseek_api_key)
-        form.addRow("Adres bazowy DeepSeek (URL)", self.deepseek_base_url)
-        form.addRow("Model DeepSeek", self.deepseek_model)
-        form.addRow("Klucz OpenAI API", self.openai_api_key)
-        form.addRow("Adres bazowy OpenAI (URL)", self.openai_base_url)
-        form.addRow("Model OpenAI", self.openai_model)
-        form.addRow("Wzorce nazw plików (regex, 1 na linię)", self.filename_patterns)
-        form.addRow("", self.overwrite_existing_tags)
-        form.addRow("Walidacja metadanych", self.validation_policy)
-        form.addRow("Cache metadanych (TTL)", self.metadata_cache_ttl)
-        form.addRow("Równoległe pliki (autotag)", self.autotag_parallel_workers)
-        form.addRow("Równoległe źródła (API)", self.provider_parallel_workers)
-
-        layout.addLayout(form)
-
-        self.overwrite_existing_tags.toggled.connect(self._on_overwrite_existing_tags_toggled)
-        self.validation_policy.currentTextChanged.connect(self._on_validation_policy_changed)
-
-        test_row = QtWidgets.QGridLayout()
-        self.test_musicbrainz_btn = QtWidgets.QPushButton("Test MusicBrainz")
-        self.test_musicbrainz_btn.clicked.connect(self._test_musicbrainz)
-        self.test_cloud_btn = QtWidgets.QPushButton("Test Cloud (provider)")
-        self.test_cloud_btn.clicked.connect(self._test_cloud_provider)
-        self.test_gemini_btn = QtWidgets.QPushButton("Test Gemini")
-        self.test_gemini_btn.clicked.connect(self._test_gemini)
-        self.test_openai_btn = QtWidgets.QPushButton("Test OpenAI")
-        self.test_openai_btn.clicked.connect(self._test_openai)
-        self.test_grok_btn = QtWidgets.QPushButton("Test Grok")
-        self.test_grok_btn.clicked.connect(self._test_grok)
-        self.test_deepseek_btn = QtWidgets.QPushButton("Test DeepSeek")
-        self.test_deepseek_btn.clicked.connect(self._test_deepseek)
-        test_row.addWidget(self.test_musicbrainz_btn, 0, 0)
-        test_row.addWidget(self.test_cloud_btn, 0, 1)
-        test_row.addWidget(self.test_gemini_btn, 1, 0)
-        test_row.addWidget(self.test_openai_btn, 1, 1)
-        test_row.addWidget(self.test_grok_btn, 1, 2)
-        test_row.addWidget(self.test_deepseek_btn, 1, 3)
-        layout.addLayout(test_row)
-
+        # Bottom buttons
         btn_row = QtWidgets.QHBoxLayout()
         btn_row.addStretch(1)
         save_btn = QtWidgets.QPushButton("Zapisz")
+        save_btn.setObjectName("PrimaryBtn")
         save_btn.clicked.connect(self._save)
         cancel_btn = QtWidgets.QPushButton("Anuluj")
         cancel_btn.clicked.connect(self.reject)
         btn_row.addWidget(save_btn)
         btn_row.addWidget(cancel_btn)
-        layout.addLayout(btn_row)
+        root.addLayout(btn_row)
 
-    def _load(self):
-        settings = load_settings()
-        self.musicbrainz_app.setText(settings.musicbrainz_app_name or default_musicbrainz_user_agent())
-        self.cloud_provider.setCurrentText(settings.cloud_ai_provider or "")
-        self.cloud_api_key.setText(settings.cloud_ai_api_key or "")
-        self.gemini_api_key.setText(settings.gemini_api_key or "")
-        self.gemini_base_url.setText(settings.gemini_base_url or "")
-        self.gemini_model.setText(settings.gemini_model or "")
-        self.grok_api_key.setText(settings.grok_api_key or "")
-        self.grok_base_url.setText(settings.grok_base_url or "")
-        self.grok_model.setText(settings.grok_model or "")
-        self.deepseek_api_key.setText(settings.deepseek_api_key or "")
-        self.deepseek_base_url.setText(settings.deepseek_base_url or "")
-        self.deepseek_model.setText(settings.deepseek_model or "")
-        self.openai_api_key.setText(settings.openai_api_key or "")
-        self.openai_base_url.setText(settings.openai_base_url or "")
-        self.openai_model.setText(settings.openai_model or "")
-        self.filename_patterns.setPlainText("\n".join(settings.filename_patterns or []))
-        policy = settings.validation_policy or "aggressive"
-        self._set_validation_policy(policy)
-        self.metadata_cache_ttl.setValue(settings.metadata_cache_ttl_days)
-        self.autotag_parallel_workers.setValue(settings.autotag_parallel_workers)
-        self.provider_parallel_workers.setValue(settings.provider_parallel_workers)
+    # ---- Tab: Metadata -----------------------------------------------
 
-    def _save(self):
-        musicbrainz_user_agent = normalize_musicbrainz_user_agent(self.musicbrainz_app.text())
+    def _build_tab_metadata(self) -> QtWidgets.QWidget:
+        scroll, layout = _make_scroll_widget()
+
+        # MusicBrainz
+        mb_box, mb_form = _group("MusicBrainz")
+        self.musicbrainz_app = QtWidgets.QLineEdit()
+        self.musicbrainz_app.setToolTip(
+            "User-Agent wysyłany do MusicBrainz API.\n"
+            "Format: NazwaAplikacji/wersja (kontakt@email.com)"
+        )
+        mb_row = QtWidgets.QWidget()
+        mb_row_layout = QtWidgets.QHBoxLayout(mb_row)
+        mb_row_layout.setContentsMargins(0, 0, 0, 0)
+        mb_row_layout.setSpacing(6)
+        mb_row_layout.addWidget(self.musicbrainz_app, 1)
+        mb_row_layout.addWidget(
+            _link_button("Rejestracja →", "https://musicbrainz.org/register")
+        )
+        mb_form.addRow("Nazwa aplikacji / User-Agent", mb_row)
+
+        self.test_musicbrainz_btn = QtWidgets.QPushButton("Test połączenia")
+        self.test_musicbrainz_btn.clicked.connect(self._test_musicbrainz)
+        mb_form.addRow("", self.test_musicbrainz_btn)
+        layout.addWidget(mb_box)
+
+        # AcoustID
+        ac_box, ac_form = _group("AcoustID  (rozpoznawanie nagrań z odcisku palca)")
+        self.acoustid_api_key = _password_field("ak_xxxxxxxxxxxxxxxxxxxxxxxx")
+        _key_row(
+            ac_form,
+            "Klucz API",
+            self.acoustid_api_key,
+            "Uzyskaj klucz →",
+            "https://acoustid.org/api-key",
+            "Wymagany do rozpoznawania plików audio po odcisku palca (fpcalc).",
+        )
+        layout.addWidget(ac_box)
+
+        # Discogs
+        dc_box, dc_form = _group("Discogs  (metadane winyli / wydawnictw)")
+        self.discogs_token = _password_field("token tutaj")
+        _key_row(
+            dc_form,
+            "Token osobisty",
+            self.discogs_token,
+            "Utwórz token →",
+            "https://www.discogs.com/settings/developers",
+            "Discogs Personal Access Token. Nie wymaga OAuth dla odczytu.",
+        )
+        layout.addWidget(dc_box)
+
+        layout.addStretch(1)
+        return scroll
+
+    # ---- Tab: Cloud AI -----------------------------------------------
+
+    def _build_tab_ai(self) -> QtWidgets.QWidget:
+        scroll, layout = _make_scroll_widget()
+
+        # Active provider
+        prov_box, prov_form = _group("Aktywny dostawca AI")
+        self.cloud_provider = QtWidgets.QComboBox()
+        self.cloud_provider.addItems(["", "gemini", "openai", "grok", "deepseek"])
+        self.cloud_provider.setToolTip(
+            "Dostawca używany domyślnie przez Smart Tagger i inne funkcje AI.\n"
+            "Każdy dostawca ma osobne pole klucza poniżej."
+        )
+        prov_form.addRow("Aktywny dostawca", self.cloud_provider)
+        layout.addWidget(prov_box)
+
+        # Gemini
+        gem_box, gem_form = _group("Google Gemini")
+        self.gemini_api_key = _password_field("AIzaSy…")
+        _key_row(
+            gem_form,
+            "Klucz API",
+            self.gemini_api_key,
+            "Google AI Studio →",
+            "https://aistudio.google.com/app/apikey",
+        )
+        self.gemini_base_url = QtWidgets.QLineEdit()
+        self.gemini_base_url.setPlaceholderText("https://generativelanguage.googleapis.com/v1beta")
+        gem_form.addRow("Base URL", self.gemini_base_url)
+        self.gemini_model = QtWidgets.QLineEdit()
+        self.gemini_model.setPlaceholderText("gemini-2.0-flash")
+        gem_form.addRow("Model", self.gemini_model)
+        self.test_gemini_btn = QtWidgets.QPushButton("Test Gemini")
+        self.test_gemini_btn.clicked.connect(self._test_gemini)
+        gem_form.addRow("", self.test_gemini_btn)
+        layout.addWidget(gem_box)
+
+        # OpenAI
+        oai_box, oai_form = _group("OpenAI")
+        self.openai_api_key = _password_field("sk-proj-…")
+        _key_row(
+            oai_form,
+            "Klucz API",
+            self.openai_api_key,
+            "platform.openai.com →",
+            "https://platform.openai.com/api-keys",
+        )
+        self.openai_base_url = QtWidgets.QLineEdit()
+        self.openai_base_url.setPlaceholderText("https://api.openai.com/v1")
+        oai_form.addRow("Base URL", self.openai_base_url)
+        self.openai_model = QtWidgets.QLineEdit()
+        self.openai_model.setPlaceholderText("gpt-4.1-mini")
+        oai_form.addRow("Model", self.openai_model)
+        self.test_openai_btn = QtWidgets.QPushButton("Test OpenAI")
+        self.test_openai_btn.clicked.connect(self._test_openai)
+        oai_form.addRow("", self.test_openai_btn)
+        layout.addWidget(oai_box)
+
+        # Grok
+        grok_box, grok_form = _group("xAI Grok")
+        self.grok_api_key = _password_field("xai-…")
+        _key_row(
+            grok_form,
+            "Klucz API",
+            self.grok_api_key,
+            "console.x.ai →",
+            "https://console.x.ai/",
+        )
+        self.grok_base_url = QtWidgets.QLineEdit()
+        self.grok_base_url.setPlaceholderText("https://api.x.ai/v1")
+        grok_form.addRow("Base URL", self.grok_base_url)
+        self.grok_model = QtWidgets.QLineEdit()
+        self.grok_model.setPlaceholderText("grok-2-latest")
+        grok_form.addRow("Model", self.grok_model)
+        self.test_grok_btn = QtWidgets.QPushButton("Test Grok")
+        self.test_grok_btn.clicked.connect(self._test_grok)
+        grok_form.addRow("", self.test_grok_btn)
+        layout.addWidget(grok_box)
+
+        # DeepSeek
+        ds_box, ds_form = _group("DeepSeek")
+        self.deepseek_api_key = _password_field("sk-…")
+        _key_row(
+            ds_form,
+            "Klucz API",
+            self.deepseek_api_key,
+            "platform.deepseek.com →",
+            "https://platform.deepseek.com/api_keys",
+        )
+        self.deepseek_base_url = QtWidgets.QLineEdit()
+        self.deepseek_base_url.setPlaceholderText("https://api.deepseek.com/v1")
+        ds_form.addRow("Base URL", self.deepseek_base_url)
+        self.deepseek_model = QtWidgets.QLineEdit()
+        self.deepseek_model.setPlaceholderText("deepseek-chat")
+        ds_form.addRow("Model", self.deepseek_model)
+        self.test_deepseek_btn = QtWidgets.QPushButton("Test DeepSeek")
+        self.test_deepseek_btn.clicked.connect(self._test_deepseek)
+        ds_form.addRow("", self.test_deepseek_btn)
+        layout.addWidget(ds_box)
+
+        # Generic "cloud_api_key" fallback
+        gen_box, gen_form = _group("Klucz ogólny (fallback dla aktywnego dostawcy)")
+        self.cloud_api_key = _password_field("Używany gdy brak klucza dedykowanego")
+        gen_form.addRow("Klucz API (ogólny)", self.cloud_api_key)
+        layout.addWidget(gen_box)
+
+        layout.addStretch(1)
+        return scroll
+
+    # ---- Tab: Tagowanie ----------------------------------------------
+
+    def _build_tab_tagging(self) -> QtWidgets.QWidget:
+        scroll, layout = _make_scroll_widget()
+
+        pat_box, pat_form = _group("Wzorce nazw plików (regex)")
+        self.filename_patterns = QtWidgets.QTextEdit()
+        self.filename_patterns.setPlaceholderText(
+            "Jeden wzorzec na linię. Przykład:\n"
+            "(?P<artist>.+) - (?P<title>.+)\n"
+            "(?P<artist>.+) — (?P<title>.+) \\[(?P<year>\\d{4})\\]"
+        )
+        self.filename_patterns.setMinimumHeight(100)
+        pat_form.addRow("Wzorce (1/linię)", self.filename_patterns)
+        layout.addWidget(pat_box)
+
+        pol_box, pol_form = _group("Polityka walidacji metadanych")
+        self.validation_policy = QtWidgets.QComboBox()
+        self.validation_policy.addItems(["strict", "balanced", "lenient", "aggressive"])
+        self.validation_policy.setToolTip(
+            "strict — odrzuca wątpliwe dopasowania\n"
+            "balanced — umiarkowana tolerancja\n"
+            "lenient — przyjmuje więcej wyników\n"
+            "aggressive — nadpisuje wszystko najlepszą znalezioną wartością"
+        )
+        pol_form.addRow("Polityka", self.validation_policy)
+
+        self.overwrite_existing_tags = QtWidgets.QCheckBox(
+            "Nadpisuj istniejące tagi (tryb aggressive)"
+        )
+        self.overwrite_existing_tags.setToolTip(
+            "Odpowiednik polityki 'aggressive' — agresywne nadpisywanie\n"
+            "lokalnych tagów lepszymi danymi z internetu."
+        )
+        pol_form.addRow("", self.overwrite_existing_tags)
+        layout.addWidget(pol_box)
+
+        self.overwrite_existing_tags.toggled.connect(self._on_overwrite_existing_tags_toggled)
+        self.validation_policy.currentTextChanged.connect(self._on_validation_policy_changed)
+
+        layout.addStretch(1)
+        return scroll
+
+    # ---- Tab: Wydajność ----------------------------------------------
+
+    def _build_tab_performance(self) -> QtWidgets.QWidget:
+        scroll, layout = _make_scroll_widget()
+
+        par_box, par_form = _group("Równoległość")
+        self.autotag_parallel_workers = QtWidgets.QSpinBox()
+        self.autotag_parallel_workers.setRange(1, 16)
+        self.autotag_parallel_workers.setToolTip(
+            "Ile plików jest tagowanych jednocześnie (Smart Tagger)."
+        )
+        par_form.addRow("Równoległe pliki (autotag)", self.autotag_parallel_workers)
+
+        self.provider_parallel_workers = QtWidgets.QSpinBox()
+        self.provider_parallel_workers.setRange(2, 12)
+        self.provider_parallel_workers.setToolTip(
+            "Ile źródeł metadanych (MusicBrainz, Discogs…) jest odpytywanych równolegle."
+        )
+        par_form.addRow("Równoległe źródła (API)", self.provider_parallel_workers)
+        layout.addWidget(par_box)
+
+        cache_box, cache_form = _group("Cache metadanych")
+        self.metadata_cache_ttl = QtWidgets.QSpinBox()
+        self.metadata_cache_ttl.setRange(0, 365)
+        self.metadata_cache_ttl.setSuffix("  dni")
+        self.metadata_cache_ttl.setToolTip(
+            "Jak długo przechowywać wyniki zapytań do zewnętrznych API.\n"
+            "0 = wyłącz cache."
+        )
+        cache_form.addRow("Czas życia cache (TTL)", self.metadata_cache_ttl)
+        layout.addWidget(cache_box)
+
+        layout.addStretch(1)
+        return scroll
+
+    # ------------------------------------------------------------------
+    # Load / Save
+    # ------------------------------------------------------------------
+
+    def _load(self) -> None:
+        s = load_settings()
+        self.musicbrainz_app.setText(s.musicbrainz_app_name or default_musicbrainz_user_agent())
+        self.acoustid_api_key.setText(s.acoustid_api_key or "")
+        self.discogs_token.setText(s.discogs_token or "")
+
+        self.cloud_provider.setCurrentText(s.cloud_ai_provider or "")
+        self.cloud_api_key.setText(s.cloud_ai_api_key or "")
+
+        self.gemini_api_key.setText(s.gemini_api_key or "")
+        self.gemini_base_url.setText(s.gemini_base_url or "")
+        self.gemini_model.setText(s.gemini_model or "")
+
+        self.openai_api_key.setText(s.openai_api_key or "")
+        self.openai_base_url.setText(s.openai_base_url or "")
+        self.openai_model.setText(s.openai_model or "")
+
+        self.grok_api_key.setText(s.grok_api_key or "")
+        self.grok_base_url.setText(s.grok_base_url or "")
+        self.grok_model.setText(s.grok_model or "")
+
+        self.deepseek_api_key.setText(s.deepseek_api_key or "")
+        self.deepseek_base_url.setText(s.deepseek_base_url or "")
+        self.deepseek_model.setText(s.deepseek_model or "")
+
+        self.filename_patterns.setPlainText("\n".join(s.filename_patterns or []))
+        self._set_validation_policy(s.validation_policy or "aggressive")
+        self.metadata_cache_ttl.setValue(s.metadata_cache_ttl_days)
+        self.autotag_parallel_workers.setValue(s.autotag_parallel_workers)
+        self.provider_parallel_workers.setValue(s.provider_parallel_workers)
+
+    def _save(self) -> None:
         save_settings(
             {
-                "MUSICBRAINZ_APP_NAME": musicbrainz_user_agent,
+                "MUSICBRAINZ_APP_NAME": normalize_musicbrainz_user_agent(
+                    self.musicbrainz_app.text()
+                ),
+                "ACOUSTID_API_KEY": self.acoustid_api_key.text().strip(),
+                "DISCOGS_TOKEN": self.discogs_token.text().strip(),
                 "CLOUD_AI_PROVIDER": self.cloud_provider.currentText().strip(),
                 "CLOUD_AI_API_KEY": self.cloud_api_key.text().strip(),
                 "GEMINI_API_KEY": self.gemini_api_key.text().strip(),
                 "GEMINI_BASE_URL": self.gemini_base_url.text().strip(),
                 "GEMINI_MODEL": self.gemini_model.text().strip(),
+                "OPENAI_API_KEY": self.openai_api_key.text().strip(),
+                "OPENAI_BASE_URL": self.openai_base_url.text().strip(),
+                "OPENAI_MODEL": self.openai_model.text().strip(),
                 "GROK_API_KEY": self.grok_api_key.text().strip(),
                 "GROK_BASE_URL": self.grok_base_url.text().strip(),
                 "GROK_MODEL": self.grok_model.text().strip(),
                 "DEEPSEEK_API_KEY": self.deepseek_api_key.text().strip(),
                 "DEEPSEEK_BASE_URL": self.deepseek_base_url.text().strip(),
                 "DEEPSEEK_MODEL": self.deepseek_model.text().strip(),
-                "OPENAI_API_KEY": self.openai_api_key.text().strip(),
-                "OPENAI_BASE_URL": self.openai_base_url.text().strip(),
-                "OPENAI_MODEL": self.openai_model.text().strip(),
                 "FILENAME_PATTERNS": self.filename_patterns.toPlainText().strip(),
                 "VALIDATION_POLICY": self.validation_policy.currentText().strip() or "aggressive",
                 "METADATA_CACHE_TTL_DAYS": str(self.metadata_cache_ttl.value()),
@@ -201,14 +448,19 @@ class SettingsDialog(QtWidgets.QDialog):
         )
         self.accept()
 
+    # ------------------------------------------------------------------
+    # Validation policy sync
+    # ------------------------------------------------------------------
+
     def _on_overwrite_existing_tags_toggled(self, checked: bool) -> None:
         if self._syncing_validation_controls:
             return
-        desired_policy = "aggressive" if checked else "balanced"
-        if checked and self.validation_policy.currentText() != desired_policy:
-            self._set_validation_policy(desired_policy)
-        elif not checked and self.validation_policy.currentText() == "aggressive":
-            self._set_validation_policy(desired_policy)
+        desired = "aggressive" if checked else "balanced"
+        current = self.validation_policy.currentText()
+        if checked and current != desired:
+            self._set_validation_policy(desired)
+        elif not checked and current == "aggressive":
+            self._set_validation_policy(desired)
 
     def _on_validation_policy_changed(self, policy: str) -> None:
         if self._syncing_validation_controls:
@@ -229,6 +481,10 @@ class SettingsDialog(QtWidgets.QDialog):
         finally:
             self._syncing_validation_controls = False
 
+    # ------------------------------------------------------------------
+    # API tests
+    # ------------------------------------------------------------------
+
     def _show_test_result(self, title: str, ok: bool, detail: str = "") -> None:
         text = "Połączenie OK." if ok else "Test nieudany."
         if detail:
@@ -240,43 +496,30 @@ class SettingsDialog(QtWidgets.QDialog):
 
     def _test_musicbrainz(self) -> None:
         app_name = normalize_musicbrainz_user_agent(self.musicbrainz_app.text())
-        url = "https://musicbrainz.org/ws/2/recording"
-        headers = {"User-Agent": app_name}
-        params = {"query": "recording:test", "fmt": "json", "limit": "1"}
         try:
-            response = requests.get(url, headers=headers, params=params, timeout=12)
-            if response.status_code == 200:
+            resp = requests.get(
+                "https://musicbrainz.org/ws/2/recording",
+                headers={"User-Agent": app_name},
+                params={"query": "recording:test", "fmt": "json", "limit": "1"},
+                timeout=12,
+            )
+            if resp.status_code == 200:
                 self._show_test_result("MusicBrainz", True, "Zapytanie działa poprawnie.")
-                return
-            self._show_test_result("MusicBrainz", False, f"HTTP {response.status_code}")
+            else:
+                self._show_test_result("MusicBrainz", False, f"HTTP {resp.status_code}")
         except Exception as exc:
             self._show_test_result("MusicBrainz", False, str(exc))
 
-    def _test_cloud_provider(self) -> None:
-        provider = self.cloud_provider.currentText().strip()
-        if provider == "gemini":
-            self._test_gemini()
-            return
-        if provider == "openai":
-            self._test_openai()
-            return
-        if provider == "grok":
-            self._test_grok()
-            return
-        if provider == "deepseek":
-            self._test_deepseek()
-            return
-        self._show_test_result("Cloud AI", False, "Wybierz dostawcę chmurowego.")
-
     def _test_gemini(self) -> None:
         api_key = self.gemini_api_key.text().strip() or self.cloud_api_key.text().strip()
-        base_url = self.gemini_base_url.text().strip() or "https://generativelanguage.googleapis.com/v1beta"
+        base_url = (
+            self.gemini_base_url.text().strip()
+            or "https://generativelanguage.googleapis.com/v1beta"
+        )
         if not api_key:
             self._show_test_result("Gemini", False, "Brak klucza API.")
             return
-        url = f"{base_url.rstrip('/')}/models"
-        headers = {"x-goog-api-key": api_key}
-        self._test_http_get("Gemini", url, headers=headers)
+        self._test_http_get("Gemini", f"{base_url.rstrip('/')}/models", {"x-goog-api-key": api_key})
 
     def _test_openai(self) -> None:
         api_key = self.openai_api_key.text().strip() or self.cloud_api_key.text().strip()
@@ -284,7 +527,7 @@ class SettingsDialog(QtWidgets.QDialog):
         if not api_key:
             self._show_test_result("OpenAI", False, "Brak klucza API.")
             return
-        self._test_openai_like_api("OpenAI", base_url, api_key)
+        self._test_http_get("OpenAI", f"{base_url.rstrip('/')}/models", {"Authorization": f"Bearer {api_key}"})
 
     def _test_grok(self) -> None:
         api_key = self.grok_api_key.text().strip() or self.cloud_api_key.text().strip()
@@ -292,7 +535,7 @@ class SettingsDialog(QtWidgets.QDialog):
         if not api_key:
             self._show_test_result("Grok", False, "Brak klucza API.")
             return
-        self._test_openai_like_api("Grok", base_url, api_key)
+        self._test_http_get("Grok", f"{base_url.rstrip('/')}/models", {"Authorization": f"Bearer {api_key}"})
 
     def _test_deepseek(self) -> None:
         api_key = self.deepseek_api_key.text().strip() or self.cloud_api_key.text().strip()
@@ -300,39 +543,34 @@ class SettingsDialog(QtWidgets.QDialog):
         if not api_key:
             self._show_test_result("DeepSeek", False, "Brak klucza API.")
             return
-        self._test_openai_like_api("DeepSeek", base_url, api_key)
+        self._test_http_get("DeepSeek", f"{base_url.rstrip('/')}/models", {"Authorization": f"Bearer {api_key}"})
 
-    def _test_openai_like_api(self, title: str, base_url: str, api_key: str) -> None:
-        url = f"{base_url.rstrip('/')}/models"
-        headers = {"Authorization": f"Bearer {api_key}"}
-        self._test_http_get(title, url, headers=headers)
-
-    def _test_http_get(
-        self,
-        title: str,
-        url: str,
-        headers: dict[str, str] | None = None,
-        params: dict[str, str] | None = None,
-    ) -> None:
+    def _test_http_get(self, title: str, url: str, headers: dict[str, str]) -> None:
         try:
-            response = requests.get(url, headers=headers or {}, params=params or {}, timeout=12)
-            if response.status_code == 200:
+            resp = requests.get(url, headers=headers, timeout=12)
+            if resp.status_code == 200:
                 self._show_test_result(title, True, "Połączenie i autoryzacja działają.")
                 return
-            detail = f"HTTP {response.status_code}"
+            detail = f"HTTP {resp.status_code}"
             try:
-                payload = response.json()
+                payload = resp.json()
                 error = payload.get("error")
                 if isinstance(error, dict):
-                    message = str(error.get("message", "")).strip()
-                    detail = f"{detail}: {message}" if message else detail
-                elif isinstance(error, str):
+                    msg = str(error.get("message", "")).strip()
+                    if msg:
+                        detail = f"{detail}: {msg}"
+                elif isinstance(error, str) and error:
                     detail = f"{detail}: {error}"
             except Exception:
                 pass
             self._show_test_result(title, False, detail)
         except Exception as exc:
             self._show_test_result(title, False, str(exc))
+
+
+# ---------------------------------------------------------------------------
+# ApiKeyCheckDialog — unchanged logic, kept for main_window compatibility
+# ---------------------------------------------------------------------------
 
 
 class ApiKeyCheckDialog(QtWidgets.QDialog):
@@ -342,6 +580,7 @@ class ApiKeyCheckDialog(QtWidgets.QDialog):
         super().__init__(parent)
         self.setWindowTitle("Sprawdzanie kluczy API")
         self.setMinimumWidth(560)
+        self.setSizeGripEnabled(True)
         apply_dialog_fade(self)
         self._results: dict[str, QtWidgets.QLabel] = {}
         self._build_ui()
@@ -369,7 +608,10 @@ class ApiKeyCheckDialog(QtWidgets.QDialog):
         title_row.addStretch(1)
         card_layout.addLayout(title_row)
 
-        desc = QtWidgets.QLabel("Kliknij <b>Testuj wszystko</b> aby zweryfikować poprawność wszystkich skonfigurowanych kluczy API.")
+        desc = QtWidgets.QLabel(
+            "Kliknij <b>Testuj wszystko</b> aby zweryfikować poprawność wszystkich "
+            "skonfigurowanych kluczy API."
+        )
         desc.setWordWrap(True)
         card_layout.addWidget(desc)
 
@@ -377,6 +619,8 @@ class ApiKeyCheckDialog(QtWidgets.QDialog):
         self._grid.setSpacing(6)
         services = [
             ("MusicBrainz", "musicbrainz"),
+            ("AcoustID", "acoustid"),
+            ("Discogs", "discogs"),
             ("Gemini", "gemini"),
             ("OpenAI", "openai"),
             ("Grok", "grok"),
@@ -406,15 +650,14 @@ class ApiKeyCheckDialog(QtWidgets.QDialog):
         label = self._results.get(key)
         if label is None:
             return
-        if ok:
-            label.setText(f'<span style="color:#00E676;">OK</span> — {detail}')
-        else:
-            label.setText(f'<span style="color:#FF5252;">BŁĄD</span> — {detail}')
+        color = "#00E676" if ok else "#FF5252"
+        word = "OK" if ok else "BŁĄD"
+        label.setText(f'<span style="color:{color};">{word}</span> — {detail}')
 
     def _set_pending(self, key: str) -> None:
         label = self._results.get(key)
         if label is not None:
-            label.setText('<span style="color:#FFD700;">Testowanie...</span>')
+            label.setText('<span style="color:#FFD700;">Testowanie…</span>')
 
     def _set_skipped(self, key: str) -> None:
         label = self._results.get(key)
@@ -423,20 +666,34 @@ class ApiKeyCheckDialog(QtWidgets.QDialog):
 
     def _run_all_tests(self) -> None:
         self._test_all_btn.setEnabled(False)
-        settings = load_settings()
+        s = load_settings()
         QtWidgets.QApplication.processEvents()
 
-        # MusicBrainz
         self._set_pending("musicbrainz")
         QtWidgets.QApplication.processEvents()
-        self._test_musicbrainz(settings.musicbrainz_app_name or "LumbagoMusicAI")
+        self._test_musicbrainz(s.musicbrainz_app_name or "LumbagoMusicAI")
 
-        # Cloud providers
+        # AcoustID — simple reachability check (no key validation endpoint)
+        if s.acoustid_api_key:
+            self._set_pending("acoustid")
+            QtWidgets.QApplication.processEvents()
+            self._test_acoustid(s.acoustid_api_key)
+        else:
+            self._set_skipped("acoustid")
+
+        # Discogs
+        if s.discogs_token:
+            self._set_pending("discogs")
+            QtWidgets.QApplication.processEvents()
+            self._test_discogs(s.discogs_token)
+        else:
+            self._set_skipped("discogs")
+
         provider_configs = {
-            "gemini": (settings.gemini_api_key, settings.gemini_base_url or "https://generativelanguage.googleapis.com/v1beta"),
-            "openai": (settings.openai_api_key, settings.openai_base_url or "https://api.openai.com/v1"),
-            "grok": (settings.grok_api_key, settings.grok_base_url or "https://api.x.ai/v1"),
-            "deepseek": (settings.deepseek_api_key, settings.deepseek_base_url or "https://api.deepseek.com/v1"),
+            "gemini": (s.gemini_api_key, s.gemini_base_url or "https://generativelanguage.googleapis.com/v1beta"),
+            "openai": (s.openai_api_key, s.openai_base_url or "https://api.openai.com/v1"),
+            "grok": (s.grok_api_key, s.grok_base_url or "https://api.x.ai/v1"),
+            "deepseek": (s.deepseek_api_key, s.deepseek_base_url or "https://api.deepseek.com/v1"),
         }
         for provider, (api_key, base_url) in provider_configs.items():
             if not api_key:
@@ -465,6 +722,44 @@ class ApiKeyCheckDialog(QtWidgets.QDialog):
                 self._set_status("musicbrainz", False, f"HTTP {resp.status_code}")
         except Exception as exc:
             self._set_status("musicbrainz", False, str(exc))
+
+    def _test_acoustid(self, api_key: str) -> None:
+        try:
+            resp = requests.get(
+                "https://api.acoustid.org/v2/lookup",
+                params={"client": api_key, "meta": "recordings", "duration": "1", "fingerprint": "test"},
+                timeout=12,
+            )
+            # AcoustID returns 400 for invalid fingerprint but 200/non-401 confirms key is accepted
+            if resp.status_code in (200, 400):
+                self._set_status("acoustid", True, "Klucz zaakceptowany przez API")
+            elif resp.status_code == 401:
+                self._set_status("acoustid", False, "Nieautoryzowany klucz API")
+            else:
+                self._set_status("acoustid", False, f"HTTP {resp.status_code}")
+        except Exception as exc:
+            self._set_status("acoustid", False, str(exc))
+
+    def _test_discogs(self, token: str) -> None:
+        try:
+            resp = requests.get(
+                "https://api.discogs.com/oauth/identity",
+                headers={
+                    "Authorization": f"Discogs token={token}",
+                    "User-Agent": "LumbagoMusicAI/1.0",
+                },
+                timeout=12,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                username = data.get("username", "?")
+                self._set_status("discogs", True, f"Zalogowany jako: {username}")
+            elif resp.status_code == 401:
+                self._set_status("discogs", False, "Nieprawidłowy token")
+            else:
+                self._set_status("discogs", False, f"HTTP {resp.status_code}")
+        except Exception as exc:
+            self._set_status("discogs", False, str(exc))
 
     def _test_gemini_api(self, api_key: str, base_url: str) -> None:
         try:
@@ -509,4 +804,3 @@ class ApiKeyCheckDialog(QtWidgets.QDialog):
         except Exception:
             pass
         return detail
-

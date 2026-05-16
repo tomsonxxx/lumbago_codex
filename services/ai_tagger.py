@@ -25,7 +25,7 @@ _ISRC_RE = re.compile(r"^[A-Z]{2}[A-Z0-9]{3}\d{7}$")
 _YEAR_MIN = 1900
 _YEAR_MAX = int(time.strftime("%Y")) + 1
 _BATCH_MAX_CHUNK = 25
-_BATCH_COOLDOWN_SECONDS = 3.5
+_BATCH_CONCURRENT_CHUNKS = 2  # parallel API calls per provider — keeps rate limits sane
 _MUSIC_ARCHIVIST_SYSTEM_PROMPT = (
     "You are an expert music archivist with access to a vast database of music "
     "information, equivalent to searching across MusicBrainz, Discogs, AllMusic, "
@@ -263,7 +263,7 @@ class CloudAiTagger:
         base_url, model = self._resolved_base_url, self._resolved_model
         return f"{self.provider_name}|{base_url or ''}|{model or ''}"
 
-    def analyze_batch(self, tracks: list[Track], chunk_size: int = 20) -> list[AnalysisResult]:
+    def analyze_batch(self, tracks: list[Track], chunk_size: int = 25) -> list[AnalysisResult]:
         safe_chunk = max(1, min(_BATCH_MAX_CHUNK, int(chunk_size)))
         result_map: dict[str, AnalysisResult] = {}
 
@@ -274,13 +274,22 @@ class CloudAiTagger:
             for start in range(0, len(folder_group), safe_chunk):
                 all_chunks.append(folder_group[start : start + safe_chunk])
 
-        for idx, chunk in enumerate(all_chunks):
+        import threading
+
+        lock = threading.Lock()
+
+        def _process_chunk(chunk: list[Track]) -> None:
             chunk_results = self._analyze_batch_chunk(chunk)
             harmonized = _harmonize_batch_results(list(zip(chunk, chunk_results)))
-            for track, result in harmonized:
-                result_map[track.path] = result
-            if idx < len(all_chunks) - 1:
-                time.sleep(_BATCH_COOLDOWN_SECONDS)
+            with lock:
+                for track, result in harmonized:
+                    result_map[track.path] = result
+
+        workers = min(_BATCH_CONCURRENT_CHUNKS, len(all_chunks))
+        with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="ai-chunk") as pool:
+            futures = [pool.submit(_process_chunk, chunk) for chunk in all_chunks]
+            for future in as_completed(futures):
+                future.result()  # propagate exceptions
 
         # Preserve original caller order.
         return [
@@ -349,51 +358,6 @@ def _group_tracks_by_folder(tracks: list[Track]) -> list[list[Track]]:
     for track in tracks:
         folder_map[str(Path(track.path).parent)].append(track)
     return list(folder_map.values())
-
-    def _analyze_batch_chunk(self, tracks: list[Track]) -> list[AnalysisResult]:
-        if not tracks:
-            return []
-        if not self.provider or not self.api_key:
-            return [
-                AnalysisResult(description="Cloud AI not configured", confidence=0.0)
-                for _track in tracks
-            ]
-        base_url, model = self._resolved_base_url, self._resolved_model
-        if not base_url or not model:
-            return [
-                AnalysisResult(description="Cloud AI missing base URL or model", confidence=0.0)
-                for _track in tracks
-            ]
-
-        prompt = _build_batch_prompt(tracks)
-        last_exc: Exception | None = None
-        for attempt in range(self.retries + 1):
-            try:
-                if self.provider == "gemini":
-                    text = _call_gemini_generate_batch_content(
-                        base_url, self.api_key, model, prompt, self.timeout
-                    )
-                else:
-                    text = _call_openai_compatible_batch_chat(
-                        base_url, self.api_key, model, prompt, self.timeout
-                    )
-                parsed = _safe_json(text)
-                return _batch_payload_to_results(parsed, tracks)
-            except Exception as exc:
-                last_exc = exc
-                if attempt >= self.retries or not _is_retryable_exception(exc):
-                    break
-                time.sleep(_retry_backoff_seconds(attempt, exc))
-
-        # Preserve a useful degraded mode: if one batch request fails, try the
-        # older per-track path instead of losing the whole album.
-        results: list[AnalysisResult] = []
-        for track in tracks:
-            result = self.analyze(track)
-            if not result.description and last_exc is not None and not result.confidence:
-                result = _dc_replace(result, description=f"Cloud AI batch fallback: {last_exc}")
-            results.append(result)
-        return results
 
 
 class MultiAiTagger:
