@@ -198,11 +198,7 @@
 
 ### 3.4 Jakość kodu i testy
 - [x] (P0) `npm run lint` przechodzi bez ostrzeżeń (max-warnings 0)
-<<<<<<< HEAD
-- [ ] (P1) Unit testy dla kluczowych utilities (aiService, duplicateUtils, djUtils)
-=======
 - [x] (P1) Unit testy dla kluczowych utilities (duplicateUtils, djUtils, stringUtils) — 25 testów vitest
->>>>>>> origin/main
 - [ ] (P1) Testy vitest dla hook `useLibrary` i `useAIProcessing`
 
 ### 3.5 Brakujące funkcje
