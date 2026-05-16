@@ -6,7 +6,7 @@ import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field, replace as _dc_replace
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any
 
 import requests
@@ -426,6 +426,63 @@ class MultiAiTagger:
         merged = _merge_results(results)
         return merged
 
+    def analyze_batch(self, tracks: list[Track], chunk_size: int = 20) -> list[AnalysisResult]:
+        """Run all providers in parallel per-track; batch-capable taggers use analyze_batch."""
+        if not self.taggers:
+            return [AnalysisResult(description="No AI providers", confidence=0.0) for _ in tracks]
+        if not tracks:
+            return []
+
+        batch_taggers = [t for t in self.taggers if hasattr(t, "analyze_batch")]
+        per_track_taggers = [t for t in self.taggers if not hasattr(t, "analyze_batch")]
+
+        # per_track_results[i] = list of (provider_name, AnalysisResult)
+        per_track_results: list[list[tuple[str, AnalysisResult]]] = [[] for _ in tracks]
+        lock = __import__("threading").Lock()
+
+        def _collect(i: int, name: str, result: AnalysisResult) -> None:
+            with lock:
+                per_track_results[i].append((name, result))
+
+        futures: dict[Any, Any] = {}
+        pool = ThreadPoolExecutor(max_workers=max(1, len(self.taggers) * 2))
+        try:
+            for tagger in batch_taggers:
+                name = getattr(tagger, "provider_name", tagger.__class__.__name__)
+                futures[pool.submit(tagger.analyze_batch, tracks, chunk_size)] = ("batch", name)
+            for tagger in per_track_taggers:
+                name = getattr(tagger, "provider_name", tagger.__class__.__name__)
+                for i, track in enumerate(tracks):
+                    futures[pool.submit(tagger.analyze, track)] = ("track", name, i)
+
+            for future in as_completed(futures):
+                meta = futures[future]
+                try:
+                    result = future.result()
+                except Exception as exc:
+                    kind = meta[0]
+                    name = meta[1]
+                    if kind == "batch":
+                        result = [AnalysisResult(description=f"{name}: {exc}", confidence=0.0) for _ in tracks]
+                    else:
+                        result = AnalysisResult(description=f"{name}: {exc}", confidence=0.0)
+                    meta = (kind, name) if kind == "batch" else (kind, name, meta[2])
+
+                kind = meta[0]
+                name = meta[1]
+                if kind == "batch":
+                    for i, r in enumerate(result):
+                        _collect(i, name, r)
+                else:
+                    _collect(meta[2], name, result)
+        finally:
+            pool.shutdown(wait=False)
+
+        return [
+            _merge_results(per_track) if per_track else AnalysisResult(confidence=0.0)
+            for per_track in per_track_results
+        ]
+
     def cache_key(self) -> str:
         keys: list[str] = []
         for tagger in self.taggers:
@@ -701,12 +758,21 @@ def _build_batch_prompt(tracks: list[Track]) -> str:
 
 
 def _track_batch_context(track: Track) -> dict[str, Any]:
-    path = Path(track.path)
+    raw = track.path
+    # On Linux, Windows-style paths (backslash or drive letter) must be parsed
+    # with PureWindowsPath; otherwise Path().name returns the whole string.
+    if "\\" in raw or (len(raw) > 1 and raw[1] == ":"):
+        pure = PureWindowsPath(raw)
+        filename = pure.name
+        folder = pure.parent.name
+    else:
+        path = Path(raw)
+        filename = path.name
+        folder = path.parent.name
     data: dict[str, Any] = {
-        "originalFilename": path.name,
-        "filename": path.name,
+        "originalFilename": filename,
+        "filename": filename,
     }
-    folder = path.parent.name
     if folder and folder not in {".", ".."}:
         data["folder"] = _sanitize_prompt_value(folder)
     mapping = {
