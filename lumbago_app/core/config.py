@@ -183,7 +183,7 @@ def load_settings() -> Settings:
             payload.get("GEMINI_MODEL"),
             os.getenv("GEMINI_MODEL"),
         )
-        or "gemini-2.5-flash",
+        or "gemini-2.0-flash",
         openai_base_url=_first_value(
             payload.get("OPENAI_BASE_URL"),
             os.getenv("OPENAI_BASE_URL"),

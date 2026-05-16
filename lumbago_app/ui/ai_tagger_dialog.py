@@ -869,7 +869,7 @@ class _PipelineWorker(QtCore.QRunnable):
         self._stop = True
 
     def run(self) -> None:
-        if isinstance(self.tagger, CloudAiTagger):
+        if _supports_batch_ai(self.tagger):
             self._run_cloud_chunked()
             return
         if self.max_workers <= 1:
@@ -906,59 +906,107 @@ class _PipelineWorker(QtCore.QRunnable):
         total = len(self.states)
         for start in range(0, total, chunk_size):
             end = min(total, start + chunk_size)
+            pending: list[tuple[int, Track, Track, Path]] = []
             for idx in range(start, end):
                 if self._stop:
                     self.states[idx].status = TrackStatus.SKIPPED
                     self.signals.track_done.emit(idx)
                     continue
                 self.signals.track_started.emit(idx)
-                self._process_track(idx)
-                if self.states[idx].status == TrackStatus.ERROR:
-                    self.states[idx].error_msg = self.states[idx].error_msg or "Błąd AI"
-                self.signals.track_done.emit(idx)
+                try:
+                    working, ai_input, path_obj = self._prepare_track_for_ai(idx)
+                    cached = self._load_cached_ai_result(path_obj)
+                    if cached is not None:
+                        self._finish_track_with_ai(idx, working, cached)
+                        self.signals.track_done.emit(idx)
+                    else:
+                        pending.append((idx, working, ai_input, path_obj))
+                except Exception as exc:
+                    self._mark_track_error(idx, exc)
+                    self.signals.track_done.emit(idx)
+            if pending and self.tagger is not None:
+                try:
+                    ai_inputs = [item[2] for item in pending]
+                    results = self.tagger.analyze_batch(ai_inputs, chunk_size=chunk_size)
+                except Exception as exc:
+                    results = [
+                        AnalysisResult(description=f"AI batch error: {exc}", confidence=0.0)
+                        for _ in pending
+                    ]
+                for pos, (idx, working, _ai_input, path_obj) in enumerate(pending):
+                    result = (
+                        results[pos]
+                        if pos < len(results)
+                        else AnalysisResult(description="AI batch error: missing result", confidence=0.0)
+                    )
+                    self._save_cached_ai_result(path_obj, result)
+                    self._finish_track_with_ai(idx, working, result)
+                    if self.states[idx].status == TrackStatus.ERROR:
+                        self.states[idx].error_msg = self.states[idx].error_msg or "AI error"
+                    self.signals.track_done.emit(idx)
             # Mandatory cooldown between chunks to reduce API pressure / 429.
             if end < total:
                 QtCore.QThread.msleep(3500)
         self.signals.finished.emit()
 
     def _process_track(self, idx: int) -> None:
-        state = self.states[idx]
         try:
-            working = deepcopy(state.track)
-            path_obj = Path(working.path)
-            state.decisions.clear()
-            state.metadata_report = None
-            state.ai_result = None
-            state.audio_result = None
-            state.error_msg = ""
-            if self.auto_filler is not None:
-                state.metadata_report = self.auto_filler.fill_missing_with_report(working, self.method)
-            ai_input = deepcopy(working)
-            if self.do_audio:
-                state.audio_result = self._load_or_extract_audio(path_obj, working)
-                detected_key = None if working.key else self._load_or_detect_key(path_obj)
-                enrich_track_with_analysis(
-                    working,
-                    detected_bpm=_safe_tempo(state.audio_result),
-                    detected_key=detected_key,
-                    detected_energy=_audio_energy(state.audio_result),
-                )
-                self._persist_audio_features(working.path, state.audio_result)
+            working, ai_input, path_obj = self._prepare_track_for_ai(idx)
+            ai_result = None
             if self.tagger is not None:
-                state.ai_result = self._load_cached_ai_result(path_obj)
-                if state.ai_result is None:
-                    state.ai_result = self.tagger.analyze(ai_input)
-                    self._save_cached_ai_result(path_obj, state.ai_result)
-                _merge_analysis_into_track(working, state.ai_result)
-            state.proposed_track = working
-            for field_name in _default_accept_fields(state):
-                if _field_confidence(state, field_name) >= self.accept_threshold:
-                    state.decisions[field_name] = True
-            state.status = TrackStatus.DONE
+                ai_result = self._load_cached_ai_result(path_obj)
+                if ai_result is None:
+                    ai_result = self.tagger.analyze(ai_input)
+                    self._save_cached_ai_result(path_obj, ai_result)
+            self._finish_track_with_ai(idx, working, ai_result)
         except Exception as exc:
-            state.status = TrackStatus.ERROR
-            state.error_msg = str(exc)
-            state.proposed_track = deepcopy(state.track)
+            self._mark_track_error(idx, exc)
+
+    def _prepare_track_for_ai(self, idx: int) -> tuple[Track, Track, Path]:
+        state = self.states[idx]
+        working = deepcopy(state.track)
+        path_obj = Path(working.path)
+        state.decisions.clear()
+        state.metadata_report = None
+        state.ai_result = None
+        state.audio_result = None
+        state.error_msg = ""
+        if self.auto_filler is not None:
+            state.metadata_report = self.auto_filler.fill_missing_with_report(working, self.method)
+        ai_input = deepcopy(working)
+        if self.do_audio:
+            state.audio_result = self._load_or_extract_audio(path_obj, working)
+            detected_key = None if working.key else self._load_or_detect_key(path_obj)
+            enrich_track_with_analysis(
+                working,
+                detected_bpm=_safe_tempo(state.audio_result),
+                detected_key=detected_key,
+                detected_energy=_audio_energy(state.audio_result),
+            )
+            self._persist_audio_features(working.path, state.audio_result)
+        return working, ai_input, path_obj
+
+    def _finish_track_with_ai(
+        self,
+        idx: int,
+        working: Track,
+        ai_result: AnalysisResult | None,
+    ) -> None:
+        state = self.states[idx]
+        state.ai_result = ai_result
+        if ai_result is not None:
+            _merge_analysis_into_track(working, ai_result)
+        state.proposed_track = working
+        for field_name in _default_accept_fields(state):
+            if _field_confidence(state, field_name) >= self.accept_threshold:
+                state.decisions[field_name] = True
+        state.status = TrackStatus.DONE
+
+    def _mark_track_error(self, idx: int, exc: Exception) -> None:
+        state = self.states[idx]
+        state.status = TrackStatus.ERROR
+        state.error_msg = str(exc)
+        state.proposed_track = deepcopy(state.track)
 
     def _load_or_extract_audio(self, path_obj: Path, working: Track):
         needs_audio_features = working.bpm is None or working.energy is None
@@ -1001,6 +1049,7 @@ class _PipelineWorker(QtCore.QRunnable):
         merged["detected_key"] = detected
         save_analysis_cache(path_obj, merged)
         return detected
+
     def _persist_audio_features(self, track_path: str, audio_result: Any) -> None:
         if audio_result is None:
             return
@@ -1024,6 +1073,7 @@ class _PipelineWorker(QtCore.QRunnable):
             upsert_audio_features(track_path, af)
         except Exception:
             return
+
     @staticmethod
     def _audio_signature(path_obj: Path) -> str:
         try:
@@ -1098,6 +1148,10 @@ class _PipelineWorker(QtCore.QRunnable):
             save_analysis_cache(path_obj, payload)
         except Exception:
             pass
+
+
+def _supports_batch_ai(tagger: Any) -> bool:
+    return callable(getattr(tagger, "analyze_batch", None))
 
 
 def _resolve_provider_config(provider: str, settings) -> tuple[str | None, str | None, str | None]:

@@ -49,6 +49,7 @@ def test_gemini_default_base_url_and_model(monkeypatch):
 
     assert calls["api_key"] == "secret-key"
     assert calls["url"].startswith("https://generativelanguage.googleapis.com/v1beta/models/")
+    assert "/models/gemini-2.0-flash:generateContent" in calls["url"]
     assert ":generateContent" in calls["url"]
     assert result.genre == "house"
     assert result.confidence == 0.8
