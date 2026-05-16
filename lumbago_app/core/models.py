@@ -40,6 +40,7 @@ class AnalysisResult:
     tracknumber: str | None = None
     discnumber: str | None = None
     composer: str | None = None
+    originalartist: str | None = None
     isrc: str | None = None
     publisher: str | None = None
     lyrics: str | None = None
@@ -77,6 +78,7 @@ class Track:
     mood: str | None = None
     comment: str | None = None
     lyrics: str | None = None
+    originalartist: str | None = None
     isrc: str | None = None
     publisher: str | None = None
     grouping: str | None = None
