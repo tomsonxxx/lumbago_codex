@@ -210,6 +210,14 @@ def _parse_mb_recording(recording: dict) -> dict:
         if albumartist_str:
             meta["albumartist"] = albumartist_str
 
+        disambiguation_parts = [
+            str(recording.get("disambiguation") or "").strip(),
+            str(earliest.get("disambiguation") or "").strip(),
+        ]
+        comment = " / ".join(part for part in dict.fromkeys(disambiguation_parts) if part)
+        if comment:
+            meta["comment"] = comment
+
     return meta
 
 
