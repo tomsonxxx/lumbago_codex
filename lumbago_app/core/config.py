@@ -84,6 +84,8 @@ class Settings:
     filename_patterns: list[str]
     validation_policy: str | None
     metadata_cache_ttl_days: int
+    autotag_parallel_workers: int
+    provider_parallel_workers: int
 
 
 def default_musicbrainz_user_agent() -> str:
@@ -226,6 +228,32 @@ def load_settings() -> Settings:
                 os.getenv("METADATA_CACHE_TTL_DAYS"),
             ),
             default=30,
+        ),
+        autotag_parallel_workers=max(
+            1,
+            min(
+                16,
+                _to_int(
+                    _first_value(
+                        payload.get("AUTOTAG_PARALLEL_WORKERS"),
+                        os.getenv("AUTOTAG_PARALLEL_WORKERS"),
+                    ),
+                    default=4,
+                ),
+            ),
+        ),
+        provider_parallel_workers=max(
+            2,
+            min(
+                12,
+                _to_int(
+                    _first_value(
+                        payload.get("PROVIDER_PARALLEL_WORKERS"),
+                        os.getenv("PROVIDER_PARALLEL_WORKERS"),
+                    ),
+                    default=6,
+                ),
+            ),
         ),
     )
 

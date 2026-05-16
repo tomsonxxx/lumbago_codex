@@ -5,7 +5,8 @@ from hashlib import md5
 from pathlib import Path, PureWindowsPath
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Any
+from time import perf_counter
+from typing import Any, Callable
 
 import requests
 
@@ -71,8 +72,9 @@ class EnrichmentResult:
 
 
 class UnifiedAutoTagger:
-    def __init__(self, settings):
+    def __init__(self, settings, logger: Callable[[str], None] | None = None):
         self.settings = settings
+        self._logger = logger
 
     def enrich_track(self, track: Track) -> EnrichmentResult:
         candidates: list[Candidate] = []
@@ -88,7 +90,7 @@ class UnifiedAutoTagger:
         max_workers = int(getattr(self.settings, "provider_parallel_workers", 6) or 6)
         max_workers = max(2, min(max_workers, len(providers)))
         with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="autotag-src") as pool:
-            future_map = {pool.submit(fn, track): fn for fn in providers}
+            future_map = {pool.submit(self._timed_provider_call, fn, track): fn for fn in providers}
             for future in as_completed(future_map):
                 fn = future_map[future]
                 try:
@@ -100,7 +102,29 @@ class UnifiedAutoTagger:
 
         valid = [candidate for candidate in candidates if candidate.error is None and candidate.score > 0]
         valid.sort(key=lambda candidate: candidate.score, reverse=True)
+        if self._logger is not None:
+            top = valid[0] if valid else None
+            if top is not None:
+                self._logger(f"[autotag] source_summary best={top.source} score={top.score} total_candidates={len(candidates)}")
+            else:
+                self._logger(f"[autotag] source_summary best=none total_candidates={len(candidates)}")
         return EnrichmentResult(candidates=candidates, best_match=(valid[0] if valid else None))
+
+    def _timed_provider_call(self, fn, track: Track) -> Candidate | None:
+        start = perf_counter()
+        name = fn.__name__
+        if self._logger is not None:
+            self._logger(f"[autotag] source={name} stage=start file={Path(track.path).name}")
+        result = fn(track)
+        elapsed_ms = int((perf_counter() - start) * 1000)
+        if self._logger is not None:
+            if result is None:
+                self._logger(f"[autotag] source={name} stage=done elapsed_ms={elapsed_ms} status=miss")
+            elif result.error:
+                self._logger(f"[autotag] source={name} stage=done elapsed_ms={elapsed_ms} status=error error={result.error}")
+            else:
+                self._logger(f"[autotag] source={name} stage=done elapsed_ms={elapsed_ms} status=hit score={result.score}")
+        return result
 
     def apply_best_match(self, track: Track, result: EnrichmentResult) -> bool:
         raw_candidates = getattr(result, "candidates", []) or []

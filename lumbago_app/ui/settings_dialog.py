@@ -77,6 +77,10 @@ class SettingsDialog(QtWidgets.QDialog):
         self.metadata_cache_ttl = QtWidgets.QSpinBox()
         self.metadata_cache_ttl.setRange(0, 365)
         self.metadata_cache_ttl.setSuffix(" dni")
+        self.autotag_parallel_workers = QtWidgets.QSpinBox()
+        self.autotag_parallel_workers.setRange(1, 16)
+        self.provider_parallel_workers = QtWidgets.QSpinBox()
+        self.provider_parallel_workers.setRange(2, 12)
 
         for field in [
             self.cloud_api_key,
@@ -106,6 +110,8 @@ class SettingsDialog(QtWidgets.QDialog):
         form.addRow("", self.overwrite_existing_tags)
         form.addRow("Walidacja metadanych", self.validation_policy)
         form.addRow("Cache metadanych (TTL)", self.metadata_cache_ttl)
+        form.addRow("Równoległe pliki (autotag)", self.autotag_parallel_workers)
+        form.addRow("Równoległe źródła (API)", self.provider_parallel_workers)
 
         layout.addLayout(form)
 
@@ -164,6 +170,8 @@ class SettingsDialog(QtWidgets.QDialog):
         policy = settings.validation_policy or "aggressive"
         self._set_validation_policy(policy)
         self.metadata_cache_ttl.setValue(settings.metadata_cache_ttl_days)
+        self.autotag_parallel_workers.setValue(settings.autotag_parallel_workers)
+        self.provider_parallel_workers.setValue(settings.provider_parallel_workers)
 
     def _save(self):
         musicbrainz_user_agent = normalize_musicbrainz_user_agent(self.musicbrainz_app.text())
@@ -187,6 +195,8 @@ class SettingsDialog(QtWidgets.QDialog):
                 "FILENAME_PATTERNS": self.filename_patterns.toPlainText().strip(),
                 "VALIDATION_POLICY": self.validation_policy.currentText().strip() or "aggressive",
                 "METADATA_CACHE_TTL_DAYS": str(self.metadata_cache_ttl.value()),
+                "AUTOTAG_PARALLEL_WORKERS": str(self.autotag_parallel_workers.value()),
+                "PROVIDER_PARALLEL_WORKERS": str(self.provider_parallel_workers.value()),
             }
         )
         self.accept()
