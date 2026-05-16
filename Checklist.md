@@ -153,7 +153,7 @@
 
 ### 2.3 Testy Web
 - [x] `web/tests/camelot.test.ts` — unit test mapowań Camelot (vitest)
-- [ ] (P1) Integration test: import → zapis → odczyt przez API
+- [x] (P1) Integration test: import → zapis → odczyt przez API
 - [ ] (P1) Test przepływu UI (Import Wizard krok 1→4)
 - [ ] (P2) Test `DuplicateFinderModal` (UI + API)
 
@@ -197,8 +197,8 @@
 - [x] `utils/sortingUtils.ts`, `utils/stringUtils.ts`
 
 ### 3.4 Jakość kodu i testy
-- [ ] (P0) `npm run lint` przechodzi bez ostrzeżeń (max-warnings 0)
-- [ ] (P1) Unit testy dla kluczowych utilities (aiService, duplicateUtils, djUtils)
+- [x] (P0) `npm run lint` przechodzi bez ostrzeżeń (max-warnings 0)
+- [x] (P1) Unit testy dla kluczowych utilities (duplicateUtils, djUtils, stringUtils) — 25 testów vitest
 - [ ] (P1) Testy vitest dla hook `useLibrary` i `useAIProcessing`
 
 ### 3.5 Brakujące funkcje
@@ -234,7 +234,7 @@
 - [ ] (P1) Testy UI kluczowych flow
 - [ ] (P1) Testy dostępności (WCAG)
 - [ ] (P2) Testy wydajności listy przy >10k tracks
-- [ ] (P1) Aktualizacja `Build2.md`
+- [x] (P1) Aktualizacja `Build2.md` — historia w `docs/HISTORY.md` (wpisy 16-20)
 - [ ] (P2) Checklist testu na czystym Windows (nowy UI)
 
 ---
@@ -255,9 +255,9 @@
 
 | # | Zadanie | Komponent | Priorytet |
 |---|---------|-----------|-----------|
-| 1 | `npm run lint` bez błędów w tagerv2 | tagerv2 | P0 |
+| 1 | ~~`npm run lint` bez błędów w tagerv2~~ ✓ | tagerv2 | P0 |
 | 2 | Zapis tagów do pliku audio (browser, tagerv2) | tagerv2 | P1 |
 | 3 | ~~Decyzja: model integracji WinUI 3 ↔ logika~~ ✓ | Desktop rewrite | P0 |
-| 4 | Integration testy Web API | Web MVP | P1 |
+| 4 | ~~Integration testy Web API~~ ✓ | Web MVP | P1 |
 | 5 | Test na czystym Windows (PyInstaller build) | Desktop | P1 |
-| 6 | Edycja tagów przez Web API | Web MVP | P1 |
+| 6 | ~~Edycja tagów przez Web API~~ ✓ | Web MVP | P1 |
