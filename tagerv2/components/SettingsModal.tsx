@@ -36,6 +36,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   currentProvider,
   currentAnalysisSettings,
 }) => {
+  const [geminiApiKey, setGeminiApiKey] = useState("");
   const [grokApiKey, setGrokApiKey] = useState("");
   const [openAIApiKey, setOpenAIApiKey] = useState("");
   const [provider, setProvider] = useState<AIProvider>(currentProvider);
@@ -64,6 +65,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
+      setGeminiApiKey(currentKeys.gemini || "");
       setGrokApiKey(currentKeys.grok || "");
       setOpenAIApiKey(currentKeys.openai || "");
       setProvider(currentProvider);
@@ -77,6 +79,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   const handleSave = () => {
     onSave(
       {
+        gemini: geminiApiKey.trim(),
         grok: grokApiKey.trim(),
         openai: openAIApiKey.trim(),
       },
@@ -167,6 +170,25 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
             <div className="space-y-3 p-4 bg-[var(--bg-panel)] dark:bg-[var(--bg-panel)] rounded-none border border-[var(--border-color)] dark:border-[var(--border-color)]">
               <div>
                 <label
+                  htmlFor="geminiApiKey"
+                  className="block text-xs font-medium text-[var(--text-secondary)] dark:text-[var(--text-secondary)] mb-1"
+                >
+                  Klucz API Google Gemini
+                </label>
+                <input
+                  type="password"
+                  id="geminiApiKey"
+                  value={geminiApiKey}
+                  onChange={(e) => setGeminiApiKey(e.target.value)}
+                  className="block w-full bg-[var(--bg-surface)] dark:bg-[var(--bg-panel)] border border-[var(--border-color)] dark:border-[var(--border-color)] rounded-none py-1.5 px-3 text-sm text-[var(--text-secondary)] text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary)]"
+                  placeholder="AIza..."
+                />
+                <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" className="text-xs text-indigo-500 hover:underline mt-1 inline-block">
+                  Zdobądź klucz API Gemini (bezpłatny)
+                </a>
+              </div>
+              <div>
+                <label
                   htmlFor="grokApiKey"
                   className="block text-xs font-medium text-[var(--text-secondary)] dark:text-[var(--text-secondary)] mb-1"
                 >
@@ -198,8 +220,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                 />
               </div>
               <p className="text-xs text-[var(--text-secondary)] italic mt-2">
-                * Gemini używa wbudowanego klucza systemowego, chyba że podasz
-                własny w zmiennych środowiskowych.
+                Klucze są przechowywane tylko w pamięci przeglądarki i nigdy nie opuszczają Twojego urządzenia.
               </p>
             </div>
           </div>
