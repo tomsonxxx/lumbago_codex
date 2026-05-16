@@ -78,6 +78,7 @@ class UnifiedAutoTagger:
 
     def enrich_track(self, track: Track) -> EnrichmentResult:
         candidates: list[Candidate] = []
+        supplemental_only_sources = {"LRCLIB", "Lyrics.ovh"}
         providers = (
             self._search_musicbrainz,
             self._search_itunes,
@@ -102,13 +103,15 @@ class UnifiedAutoTagger:
 
         valid = [candidate for candidate in candidates if candidate.error is None and candidate.score > 0]
         valid.sort(key=lambda candidate: candidate.score, reverse=True)
+        valid_for_best = [candidate for candidate in valid if candidate.source not in supplemental_only_sources]
+        best_match = valid_for_best[0] if valid_for_best else (valid[0] if valid else None)
         if self._logger is not None:
-            top = valid[0] if valid else None
+            top = best_match
             if top is not None:
                 self._logger(f"[autotag] source_summary best={top.source} score={top.score} total_candidates={len(candidates)}")
             else:
                 self._logger(f"[autotag] source_summary best=none total_candidates={len(candidates)}")
-        return EnrichmentResult(candidates=candidates, best_match=(valid[0] if valid else None))
+        return EnrichmentResult(candidates=candidates, best_match=best_match)
 
     def _timed_provider_call(self, fn, track: Track) -> Candidate | None:
         start = perf_counter()
