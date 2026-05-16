@@ -17,6 +17,7 @@ class BackgroundTask:
     name: str
     total: int
     current: int = 0
+    detail: str = ""
     started_at: float = field(default_factory=time.monotonic)
     finished: bool = False
     finished_at: float | None = None
@@ -32,20 +33,28 @@ class BackgroundTaskManager(QtCore.QObject):
         self._tasks: dict[str, BackgroundTask] = {}
         self._counter = 0
 
-    def add_task(self, name: str, total: int) -> str:
+    def add_task(self, name: str, total: int, detail: str = "") -> str:
         self._counter += 1
         task_id = f"task_{self._counter}"
-        self._tasks[task_id] = BackgroundTask(task_id=task_id, name=name, total=total)
+        self._tasks[task_id] = BackgroundTask(task_id=task_id, name=name, total=total, detail=detail)
         self.task_added.emit(task_id)
         return task_id
 
-    def update_task(self, task_id: str, current: int, total: int | None = None):
+    def update_task(
+        self,
+        task_id: str,
+        current: int,
+        total: int | None = None,
+        detail: str | None = None,
+    ):
         task = self._tasks.get(task_id)
         if task is None or task.finished:
             return
         task.current = current
         if total is not None:
             task.total = total
+        if detail is not None:
+            task.detail = detail
         self.task_updated.emit(task_id)
 
     def finish_task(self, task_id: str):
@@ -204,6 +213,11 @@ class _TaskRow(QtWidgets.QFrame):
         )
         vl.addWidget(self._bar)
 
+        self._lbl_detail = QtWidgets.QLabel()
+        self._lbl_detail.setStyleSheet("color:#88a8c8;font-size:10px;")
+        self._lbl_detail.setWordWrap(True)
+        vl.addWidget(self._lbl_detail)
+
         # Bottom: count + eta
         bot = QtWidgets.QHBoxLayout()
         self._lbl_count = QtWidgets.QLabel()
@@ -225,6 +239,9 @@ class _TaskRow(QtWidgets.QFrame):
         self._pie.set_progress(pct)
         self._lbl_count.setText(f"{task.current} / {task.total}")
         self._lbl_eta.setText(_eta_str(task))
+        detail = task.detail.strip()
+        self._lbl_detail.setText(detail)
+        self._lbl_detail.setVisible(bool(detail))
 
         if task.finished:
             self.setStyleSheet(

@@ -28,6 +28,7 @@ from lumbago_app.core.waveform import generate_waveform, generate_waveform_threa
 from lumbago_app.services.autotag_rewrite import UnifiedAutoTagger
 from lumbago_app.services.beatgrid import auto_cue_points, compute_beatgrid
 from lumbago_app.services.key_detection import detect_key
+from lumbago_app.services.metadata_enricher import AutoMetadataFiller, MetadataFillReport
 from lumbago_app.services.loudness import analyze_loudness, normalize_loudness
 from lumbago_app.services.recognizer import AcoustIdRecognizer
 from lumbago_app.services.metadata_writeback import PendingTrackWrite, apply_track_writes
@@ -134,6 +135,30 @@ _AUTOTAG_FIELDS = [
     "remixer",
 ]
 
+_AUTOTAG_FIELD_LABELS = {
+    "title": "Tytuł",
+    "artist": "Artysta",
+    "album": "Album",
+    "albumartist": "Artysta albumu",
+    "year": "Rok",
+    "genre": "Gatunek",
+    "tracknumber": "Nr utworu",
+    "discnumber": "Nr dysku",
+    "composer": "Kompozytor",
+    "bpm": "BPM",
+    "key": "Tonacja",
+    "rating": "Ocena",
+    "mood": "Nastrój",
+    "energy": "Energia",
+    "comment": "Komentarz",
+    "lyrics": "Tekst",
+    "isrc": "ISRC",
+    "publisher": "Wydawca",
+    "grouping": "Grupa",
+    "copyright": "Prawa autorskie",
+    "remixer": "Remikser",
+}
+
 
 def _merge_missing_from_source(target: Track, source: Track) -> None:
     for field_name in _AUTOTAG_FIELDS:
@@ -174,6 +199,54 @@ def _validate_track_metadata(track: Track) -> None:
     if _has_value(track.key):
         key = str(track.key).strip()
         track.key = key if _is_valid_key(key) else None
+
+
+def _format_field_labels(fields: list[str], limit: int = 5) -> str:
+    if not fields:
+        return ""
+    labels = [_AUTOTAG_FIELD_LABELS.get(name, name) for name in fields]
+    if len(labels) <= limit:
+        return ", ".join(labels)
+    head = ", ".join(labels[:limit])
+    return f"{head} +{len(labels) - limit}"
+
+
+def _missing_autotag_fields(track: Track) -> list[str]:
+    return [field_name for field_name in _AUTOTAG_FIELDS if not _has_value(getattr(track, field_name, None))]
+
+
+def _build_autotag_detail(
+    *,
+    metadata_report: MetadataFillReport | None,
+    best_source: str | None,
+    best_score: int | None,
+    changed_fields: list[str],
+    sync_fields: list[str],
+    remaining_missing: list[str],
+) -> str:
+    parts: list[str] = []
+
+    if metadata_report is not None:
+        hit_sources = [source.label for source in metadata_report.sources if source.status == "hit"]
+        if hit_sources:
+            parts.append(f"Źródła: {_format_field_labels(hit_sources, limit=4)}")
+        if metadata_report.changed_fields:
+            parts.append(f"Fill: {_format_field_labels(metadata_report.changed_fields)}")
+
+    if best_source:
+        if best_score is not None:
+            parts.append(f"AI/MB: {best_source} ({best_score}%)")
+        else:
+            parts.append(f"AI/MB: {best_source}")
+
+    if changed_fields:
+        parts.append(f"Zmiany: {_format_field_labels(changed_fields)}")
+    if sync_fields:
+        parts.append(f"Zapis: {_format_field_labels(sync_fields)}")
+    if remaining_missing:
+        parts.append(f"Braki: {_format_field_labels(remaining_missing)}")
+
+    return " | ".join(parts)
 
 
 def _changed_fields(before: Track, after: Track) -> list[str]:
@@ -466,7 +539,7 @@ class NormalizeWorker(QtCore.QRunnable):
 
 
 class AutoTagWorkerSignals(QtCore.QObject):
-    progress = QtCore.pyqtSignal(int, int, str)
+    progress = QtCore.pyqtSignal(int, int, str, str)
     finished = QtCore.pyqtSignal(int, int, int)
 
 
@@ -488,15 +561,26 @@ class AutoTagWorker(QtCore.QRunnable):
         total = len(self.tracks)
 
         autotagger = UnifiedAutoTagger(self.settings)
+        metadata_filler = AutoMetadataFiller(
+            getattr(self.settings, "musicbrainz_app_name", None),
+            validation_policy=getattr(self.settings, "validation_policy", None),
+            cache_ttl_days=getattr(self.settings, "metadata_cache_ttl_days", 30),
+        )
 
         _LOCAL_FIELDS = ("loudness_lufs", "cue_in_ms", "cue_out_ms", "fingerprint", "waveform_path", "artwork_path")
 
         for track in self.tracks:
             if self._stop_requested:
                 break
+            metadata_report: MetadataFillReport | None = None
+            autotag_summary: dict[str, int | str | None] = {}
             try:
                 before = deepcopy(track)
-                self._run_single_track(track, autotagger)
+                try:
+                    metadata_report = metadata_filler.fill_missing_with_report(track, "mix")
+                except Exception:
+                    metadata_report = None
+                autotag_summary = self._run_single_track(track, autotagger)
                 changed_fields = _changed_fields(before, track)
                 sync_fields = self._fields_requiring_file_sync(track)
                 fields_to_write = sorted(set(changed_fields) | set(sync_fields))
@@ -534,10 +618,19 @@ class AutoTagWorker(QtCore.QRunnable):
                         source="genre_tags",
                         confidence=None,
                     )
+                detail = _build_autotag_detail(
+                    metadata_report=metadata_report,
+                    best_source=str(autotag_summary.get("best_source") or "") or None,
+                    best_score=autotag_summary.get("best_score") if isinstance(autotag_summary.get("best_score"), int) else None,
+                    changed_fields=changed_fields,
+                    sync_fields=sync_fields,
+                    remaining_missing=_missing_autotag_fields(track),
+                )
             except Exception:
                 errors += 1
+                detail = "Wystąpił błąd podczas autotagowania tego utworu."
             processed += 1
-            self.signals.progress.emit(processed, total, Path(track.path).name)
+            self.signals.progress.emit(processed, total, Path(track.path).name, detail)
 
         self.signals.finished.emit(processed, updated, errors)
 
@@ -545,7 +638,7 @@ class AutoTagWorker(QtCore.QRunnable):
         self,
         track: Track,
         autotagger: UnifiedAutoTagger,
-    ) -> None:
+    ) -> dict[str, int | str | None]:
         refreshed = extract_metadata(Path(track.path))
         _merge_missing_from_source(track, refreshed)
         _repair_identity_from_filename(track)
@@ -612,6 +705,15 @@ class AutoTagWorker(QtCore.QRunnable):
                     track.waveform_path = str(wave_path)
             except Exception:
                 pass
+
+        best = getattr(enriched, "best_match", None)
+        return {
+            "best_source": getattr(best, "source", None),
+            "best_score": getattr(best, "score", None),
+            "candidate_count": len(
+                [candidate for candidate in getattr(enriched, "candidates", []) if getattr(candidate, "error", None) is None and getattr(candidate, "score", 0) > 0]
+            ),
+        }
 
     def _fields_requiring_file_sync(self, track: Track) -> list[str]:
         try:
@@ -1246,9 +1348,12 @@ class MainWindow(QtWidgets.QMainWindow):
             if not path.exists():
                 return
             hidden: list[int] = json.loads(path.read_text(encoding="utf-8"))
+            visible_cols = len(self.table_model.headers)
             for col in hidden:
                 if 0 <= col < len(self.table_model.headers):
                     self.table_view.setColumnHidden(col, True)
+            if visible_cols > 0 and all(self.table_view.isColumnHidden(col) for col in range(visible_cols)):
+                self.table_view.setColumnHidden(0, False)
         except Exception:
             pass
 
@@ -1625,14 +1730,24 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.table_view.setColumnHidden(col, False)
             self._save_column_state()
         elif action == hide_all_col:
-            for _, col in col_actions:
-                self.table_view.setColumnHidden(col, True)
+            self._hide_all_but_anchor([col for _, col in col_actions])
             self._save_column_state()
         else:
             for act, col in col_actions:
                 if action == act:
-                    self.table_view.setColumnHidden(col, not act.isChecked())
-                    self._save_column_state()
+                    if act.isChecked():
+                        self.table_view.setColumnHidden(col, False)
+                        self._save_column_state()
+                    else:
+                        visible = sum(
+                            1 for _, c in col_actions if not self.table_view.isColumnHidden(c)
+                        )
+                        if visible <= 1:
+                            act.setChecked(True)
+                            self.status.showMessage("Musi pozostać co najmniej jedna widoczna kolumna.", 3000)
+                        else:
+                            self.table_view.setColumnHidden(col, True)
+                            self._save_column_state()
                     break
 
     def _show_table_column_menu(self, pos):
@@ -1654,15 +1769,30 @@ class MainWindow(QtWidgets.QMainWindow):
             self._save_column_state()
             return
         if chosen == hide_all:
-            for _, col in actions:
-                self.table_view.setColumnHidden(col, True)
+            self._hide_all_but_anchor([col for _, col in actions])
             self._save_column_state()
             return
         for action, col in actions:
             if chosen == action:
-                self.table_view.setColumnHidden(col, not action.isChecked())
-                self._save_column_state()
+                if action.isChecked():
+                    self.table_view.setColumnHidden(col, False)
+                    self._save_column_state()
+                else:
+                    visible = sum(1 for _, c in actions if not self.table_view.isColumnHidden(c))
+                    if visible <= 1:
+                        action.setChecked(True)
+                        self.status.showMessage("Musi pozostać co najmniej jedna widoczna kolumna.", 3000)
+                    else:
+                        self.table_view.setColumnHidden(col, True)
+                        self._save_column_state()
                 break
+
+    def _hide_all_but_anchor(self, columns: list[int]) -> None:
+        if not columns:
+            return
+        anchor = columns[0]
+        for col in columns:
+            self.table_view.setColumnHidden(col, col != anchor)
     def _fill_detail_fields(self, track: Track):
         self.detail_title.setText(track.title or "")
         self.detail_artist.setText(track.artist or "")
@@ -1860,11 +1990,14 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         settings = load_settings()
         self._autotag_worker = AutoTagWorker(tracks, settings)
-        task_id = self.task_manager.add_task("Autotagowanie", len(tracks))
+        task_id = self.task_manager.add_task("Autotagowanie", len(tracks), "Przygotowanie analizy i źródeł...")
 
-        def on_progress(current: int, total: int, name: str):
-            self.task_manager.update_task(task_id, current, total)
-            self.status.showMessage(f"Autotag {current}/{total}: {name}")
+        def on_progress(current: int, total: int, name: str, detail: str):
+            self.task_manager.update_task(task_id, current, total, detail)
+            message = f"Autotag {current}/{total}: {name}"
+            if detail:
+                message = f"{message} — {detail}"
+            self.status.showMessage(message)
 
         def on_finished(processed: int, updated: int, errors: int):
             self.task_manager.finish_task(task_id)

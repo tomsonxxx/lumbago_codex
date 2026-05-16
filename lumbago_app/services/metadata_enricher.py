@@ -346,6 +346,26 @@ def _apply_musicbrainz_metadata(
                     source_confidence=0.93,
                     policy=policy,
                 )
+        disambiguation = str(payload.get("disambiguation") or "").strip()
+        release_disambiguation = str(release.get("disambiguation") or "").strip()
+        comment_parts = [part for part in (disambiguation, release_disambiguation) if part]
+        if comment_parts:
+            _apply_preferred_remote_value(
+                track,
+                "comment",
+                " / ".join(dict.fromkeys(comment_parts)),
+                source_confidence=0.93,
+                policy=policy,
+            )
+        remixer = _extract_remixer_name(payload.get("title")) or _extract_remixer_name(release.get("title"))
+        if remixer:
+            _apply_preferred_remote_value(
+                track,
+                "remixer",
+                remixer,
+                source_confidence=0.93,
+                policy=policy,
+            )
     tags = payload.get("tags", [])
     if tags:
         top = max(tags, key=lambda item: item.get("count", 0))

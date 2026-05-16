@@ -123,6 +123,8 @@ def _mb_meta_to_result(meta: dict, confidence: float, source: str) -> AnalysisRe
         isrc=meta.get("isrc"),
         publisher=meta.get("publisher"),
         tracknumber=meta.get("tracknumber"),
+        comment=meta.get("comment"),
+        remixer=meta.get("remixer"),
         confidence=confidence,
         description=source,
     )

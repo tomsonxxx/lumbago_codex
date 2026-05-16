@@ -223,6 +223,9 @@ class UnifiedAutoTagger:
 
         genre = None
         tags: list[str] = []
+        albumartist = None
+        publisher = None
+        comment_parts: list[str] = []
         mbid = best.get("id")
         if mbid:
             detail = self._musicbrainz_detail(mbid)
@@ -241,6 +244,29 @@ class UnifiedAutoTagger:
                         genre = rg_genres[0]
                     elif rg_tags:
                         genre = rg_tags[0]
+        release_artists = release.get("artist-credit", [])
+        if release_artists:
+            albumartist = ", ".join(
+                entry.get("name") or (entry.get("artist") or {}).get("name") or ""
+                for entry in release_artists
+                if isinstance(entry, dict)
+            ).strip(", ") or None
+        label_info = release.get("label-info", [])
+        if label_info and isinstance(label_info, list):
+            first_label = label_info[0] if isinstance(label_info[0], dict) else {}
+            label_name = None
+            if isinstance(first_label, dict):
+                label = first_label.get("label")
+                if isinstance(label, dict):
+                    label_name = label.get("name")
+            publisher = str(label_name).strip() if label_name else None
+        disambiguation = str(best.get("disambiguation") or "").strip()
+        release_disambiguation = str(release.get("disambiguation") or "").strip()
+        if disambiguation:
+            comment_parts.append(disambiguation)
+        if release_disambiguation and release_disambiguation not in comment_parts:
+            comment_parts.append(release_disambiguation)
+        remixer = _extract_remixer_name(rec_title) or _extract_remixer_name(track.title)
 
         sim = _similarity_bonus(track, rec_title, rec_artist)
         final_score = max(0, min(100, score + sim))
@@ -254,8 +280,12 @@ class UnifiedAutoTagger:
             title=rec_title or track.title,
             artist=rec_artist or track.artist,
             album=release.get("title") or None,
+            albumartist=albumartist,
             year=year,
             genre=genre,
+            comment=" / ".join(comment_parts) or None,
+            publisher=publisher,
+            remixer=remixer,
             tags=tags,
             artwork_url=mb_artwork_url,
         )
@@ -295,6 +325,7 @@ class UnifiedAutoTagger:
             title=_to_clean_str(best.get("trackName")) or track.title,
             artist=_to_clean_str(best.get("artistName")) or track.artist,
             album=_to_clean_str(best.get("collectionName")),
+            albumartist=_to_clean_str(best.get("collectionArtistName")) or _to_clean_str(best.get("artistName")),
             year=year,
             genre=_to_clean_str(best.get("primaryGenreName")),
             artwork_url=artwork_url,
@@ -634,6 +665,16 @@ def _strip_download_quality_suffix(value: str | None) -> str | None:
             flags=re.IGNORECASE,
         ).strip(" .-_")
     return text or None
+
+
+def _extract_remixer_name(title: str | None) -> str | None:
+    if not title:
+        return None
+    match = re.search(r"\((?P<name>[^()]{2,60}?)\s+remix\)", title, re.IGNORECASE)
+    if not match:
+        return None
+    raw = match.group("name").strip(" -_/")
+    return raw or None
 
 
 def _track_with_filename_identity(track: Track) -> Track:
