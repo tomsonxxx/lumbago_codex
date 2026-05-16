@@ -57,7 +57,6 @@ from lumbago_app.data.repository import (
 from lumbago_app.ui.bulk_edit_dialog import BulkEditDialog
 from lumbago_app.ui.change_history_dialog import ChangeHistoryDialog
 from lumbago_app.ui.duplicates_dialog import DuplicatesDialog
-from lumbago_app.ui.import_wizard import ImportWizard
 from lumbago_app.ui.models import TrackGridDelegate, TrackTableModel
 from lumbago_app.ui.playlist_dialog import PlaylistEditorDialog
 from lumbago_app.ui.playlist_order_dialog import PlaylistOrderDialog
@@ -895,7 +894,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.main_splitter.addWidget(self._main_column_widget)
         self.main_splitter.setStretchFactor(0, 0)
         self.main_splitter.setStretchFactor(1, 1)
-        self.main_splitter.setSizes([200, 1000])
+        self.main_splitter.setSizes([320, 980])
         layout.addWidget(self.main_splitter)
 
         toolbar = self._build_toolbar()
@@ -984,6 +983,8 @@ class MainWindow(QtWidgets.QMainWindow):
     def _build_sidebar(self) -> QtWidgets.QFrame:
         frame = QtWidgets.QFrame()
         frame.setObjectName("Sidebar")
+        frame.setMinimumWidth(300)
+        frame.setMaximumWidth(420)
         layout = QtWidgets.QVBoxLayout(frame)
         layout.setContentsMargins(12, 12, 12, 12)
         title = QtWidgets.QLabel("Tools")
@@ -1473,7 +1474,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def _toggle_sidebar(self):
         visible = self.sidebar_toggle_btn.isChecked()
         if visible:
-            self.main_splitter.setSizes([200, self.main_splitter.width() - 200])
+            self.main_splitter.setSizes([320, max(200, self.main_splitter.width() - 320)])
         else:
             self.main_splitter.setSizes([0, self.main_splitter.width()])
 
@@ -1511,8 +1512,31 @@ class MainWindow(QtWidgets.QMainWindow):
         animation.start(QtCore.QAbstractAnimation.DeletionPolicy.DeleteWhenStopped)
 
     def _open_import_wizard(self):
-        wizard = ImportWizard(self, on_complete=self._load_tracks)
-        wizard.exec()
+        folder = QtWidgets.QFileDialog.getExistingDirectory(self, "Wybierz folder z muzyka")
+        if not folder:
+            return
+        folder_path = Path(folder)
+        if not folder_path.exists():
+            self._show_message("Wybrany folder nie istnieje.")
+            return
+
+        worker = ScanWorker(folder_path)
+        task_id = self.task_manager.add_task("Skanowanie biblioteki", 1, "Przygotowanie listy plikow...")
+
+        def on_progress(current: int, total: int):
+            total_safe = max(total, 1)
+            self.task_manager.update_task(task_id, current, total_safe, f"Pliki: {current}/{total_safe}")
+            self.status.showMessage(f"Skanowanie {current}/{total_safe} plikow")
+            _process_log(f"[scan] {current}/{total_safe}")
+
+        def on_finished(tracks: list[Track]):
+            self.task_manager.finish_task(task_id)
+            self._scan_finished(tracks)
+            _process_log(f"[scan] done | tracks={len(tracks)}")
+
+        worker.signals.progress.connect(on_progress)
+        worker.signals.finished.connect(on_finished)
+        self.thread_pool.start(worker)
 
     def _update_scan_progress(self, current: int, total: int):
         self.status.showMessage(f"Scanning {current}/{total} files")
