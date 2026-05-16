@@ -147,7 +147,8 @@ def test_analyze_batch_harmonizes_album_fields_within_chunk(monkeypatch) -> None
     assert all(result.albumartist == "Daft Punk" for result in results)
 
 
-def test_analyze_batch_enforces_cooldown_between_chunks(monkeypatch) -> None:
+def test_analyze_batch_processes_chunks_in_parallel(monkeypatch) -> None:
+    """Chunks are now processed concurrently — no proactive cooldown sleep between them."""
     tagger = CloudAiTagger(
         provider="openai",
         api_key="x",
@@ -157,11 +158,11 @@ def test_analyze_batch_enforces_cooldown_between_chunks(monkeypatch) -> None:
     tracks = [Track(path=f"{idx:02d}.mp3") for idx in range(30)]
     sleep_calls: list[float] = []
 
-    # Mock at chunk level to avoid HTTP retries polluting the sleep trace.
     monkeypatch.setattr(tagger, "_analyze_batch_chunk", lambda chunk: [AnalysisResult() for _ in chunk])
     monkeypatch.setattr("services.ai_tagger.time.sleep", lambda s: sleep_calls.append(float(s)))
 
     results = tagger.analyze_batch(tracks, chunk_size=100)
 
     assert len(results) == 30
-    assert sleep_calls == [3.5]
+    # No proactive cooldown sleep — retry backoff only fires on real API errors.
+    assert sleep_calls == []
