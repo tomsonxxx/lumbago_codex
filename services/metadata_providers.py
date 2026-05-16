@@ -20,7 +20,7 @@ class MusicBrainzProvider:
         url = "https://musicbrainz.org/ws/2/recording/"
         params = {"query": query, "fmt": "json", "limit": max(1, limit)}
         try:
-            resp = requests.get(url, params=params, headers=self._headers(), timeout=15)
+            resp = requests.get(url, params=params, headers=self._headers(), timeout=8)
             resp.raise_for_status()
             return resp.json()
         except Exception:
@@ -35,12 +35,27 @@ class MusicBrainzProvider:
 
     def get_recording(self, mbid: str) -> dict | None:
         """Full recording lookup by MBID — returns ISRC, releases, labels."""
+        _CACHE_TTL = 30 * 24 * 3600
+        cache_key = f"mb_rec:{mbid}"
+        try:
+            from data.repository import get_metadata_cache, set_metadata_cache
+            cached = get_metadata_cache(cache_key, max_age_seconds=_CACHE_TTL)
+            if cached:
+                return cached
+        except Exception:
+            set_metadata_cache = None  # type: ignore[assignment]
+
         url = f"https://musicbrainz.org/ws/2/recording/{mbid}"
         params = {"inc": "artist-credits+releases+isrcs+label-info", "fmt": "json"}
         try:
-            resp = requests.get(url, params=params, headers=self._headers(), timeout=10)
+            resp = requests.get(url, params=params, headers=self._headers(), timeout=6)
             resp.raise_for_status()
-            return resp.json()
+            result = resp.json()
+            try:
+                set_metadata_cache(cache_key, result, source="musicbrainz")
+            except Exception:
+                pass
+            return result
         except Exception:
             return None
 

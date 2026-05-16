@@ -81,6 +81,9 @@ class Settings:
     grok_model: str | None
     deepseek_base_url: str | None
     deepseek_model: str | None
+    lastfm_api_key: str | None
+    musixmatch_api_key: str | None
+    genius_api_key: str | None
     filename_patterns: list[str]
     validation_policy: str | None
     metadata_cache_ttl_days: int
@@ -214,6 +217,21 @@ def load_settings() -> Settings:
             os.getenv("DEEPSEEK_MODEL"),
         )
         or "deepseek-chat",
+        lastfm_api_key=_first_value(
+            payload.get("LASTFM_API_KEY"),
+            os.getenv("LASTFM_API_KEY"),
+            auto.get("LASTFM_API_KEY"),
+        ),
+        musixmatch_api_key=_first_value(
+            payload.get("MUSIXMATCH_API_KEY"),
+            os.getenv("MUSIXMATCH_API_KEY"),
+            auto.get("MUSIXMATCH_API_KEY"),
+        ),
+        genius_api_key=_first_value(
+            payload.get("GENIUS_API_KEY"),
+            os.getenv("GENIUS_API_KEY"),
+            auto.get("GENIUS_API_KEY"),
+        ),
         filename_patterns=_parse_patterns(payload.get("FILENAME_PATTERNS")),
         validation_policy=_normalize_validation_policy(
             _first_value(
