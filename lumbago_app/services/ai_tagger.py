@@ -265,16 +265,31 @@ class CloudAiTagger:
 
     def analyze_batch(self, tracks: list[Track], chunk_size: int = 20) -> list[AnalysisResult]:
         safe_chunk = max(1, min(_BATCH_MAX_CHUNK, int(chunk_size)))
-        output: list[AnalysisResult] = []
-        total = len(tracks)
-        for start in range(0, total, safe_chunk):
-            chunk = tracks[start : start + safe_chunk]
+        result_map: dict[str, AnalysisResult] = {}
+
+        # Group by parent folder so album files stay in the same batch chunk,
+        # which lets the AI enforce consistent artist/album across the album.
+        all_chunks: list[list[Track]] = []
+        for folder_group in _group_tracks_by_folder(tracks):
+            for start in range(0, len(folder_group), safe_chunk):
+                all_chunks.append(folder_group[start : start + safe_chunk])
+
+        for idx, chunk in enumerate(all_chunks):
             chunk_results = self._analyze_batch_chunk(chunk)
             harmonized = _harmonize_batch_results(list(zip(chunk, chunk_results)))
-            output.extend(result for _, result in harmonized)
-            if start + safe_chunk < total:
+            for track, result in harmonized:
+                result_map[track.path] = result
+            if idx < len(all_chunks) - 1:
                 time.sleep(_BATCH_COOLDOWN_SECONDS)
-        return output
+
+        # Preserve original caller order.
+        return [
+            result_map.get(
+                track.path,
+                AnalysisResult(description="Batch result missing", confidence=0.0),
+            )
+            for track in tracks
+        ]
 
     def _analyze_batch_chunk(self, tracks: list[Track]) -> list[AnalysisResult]:
         if not tracks:
@@ -320,6 +335,20 @@ class CloudAiTagger:
                 result = _dc_replace(result, description=f"Cloud AI batch fallback: {last_exc}")
             results.append(result)
         return results
+
+
+def _group_tracks_by_folder(tracks: list[Track]) -> list[list[Track]]:
+    """Return tracks grouped by parent folder, preserving per-folder order.
+
+    Keeping album files in the same batch chunk lets the AI enforce consistent
+    artist/album values across the whole album in one inference call.
+    """
+    from collections import defaultdict
+
+    folder_map: defaultdict[str, list[Track]] = defaultdict(list)
+    for track in tracks:
+        folder_map[str(Path(track.path).parent)].append(track)
+    return list(folder_map.values())
 
 
 class MultiAiTagger:
