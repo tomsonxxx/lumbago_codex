@@ -129,11 +129,10 @@ public sealed class ApiClient
     // ── Analiza AI ───────────────────────────────────────────────────────────
 
     public async Task<string> CreateAnalysisJobAsync(
-        IEnumerable<int>? trackIds = null, CancellationToken ct = default)
+        IEnumerable<int> trackIds, CancellationToken ct = default)
     {
-        var payload = trackIds is null
-            ? new { track_ids = (List<int>?)null }
-            : new { track_ids = (List<int>?)trackIds.ToList() };
+        // Backend wymaga track_ids jako non-null list[int] — FastAPI zwraca 422 dla null.
+        var payload = new { track_ids = trackIds.ToList(), policy = "aggressive" };
         var resp = await _http.PostAsJsonAsync("/analysis/jobs", payload, _json, ct);
         resp.EnsureSuccessStatusCode();
         var result = await resp.Content.ReadFromJsonAsync<AnalysisJobCreatedResponse>(_json, ct);

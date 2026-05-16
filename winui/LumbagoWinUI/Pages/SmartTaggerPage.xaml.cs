@@ -54,7 +54,19 @@ public sealed partial class SmartTaggerPage : Page
 
         try
         {
-            _currentJobId = await App.Api.CreateAnalysisJobAsync();
+            // Pobierz IDs wszystkich tracków z biblioteki — backend wymaga non-null list[int]
+            var tracks = await App.Api.GetTracksAsync();
+            var trackIds = tracks.Select(t => t.Id).ToList();
+
+            if (trackIds.Count == 0)
+            {
+                BtnRunTagger.IsEnabled = true;
+                HideProgress();
+                ShowStatus("Biblioteka jest pusta — zaimportuj pliki przed uruchomieniem analizy.", isError: true);
+                return;
+            }
+
+            _currentJobId = await App.Api.CreateAnalysisJobAsync(trackIds);
         }
         catch (Exception ex)
         {

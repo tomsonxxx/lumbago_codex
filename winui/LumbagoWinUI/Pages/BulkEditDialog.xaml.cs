@@ -87,14 +87,19 @@ public sealed partial class BulkEditDialog : ContentDialog
         ChkEnergy.IsChecked  == true;
 
     /// <summary>Mapa: field name → new value (tylko zaznaczone pola).</summary>
+    /// <remarks>
+    /// Dla pól tekstowych wysyłamy pusty string "" zamiast null — backend używa
+    /// exclude_none=True, więc null zostałby pominięty i wartość nie zostałaby wyczyszczona.
+    /// Pusty string jest akceptowany i faktycznie usuwa wartość z bazy i pliku audio.
+    /// </remarks>
     public Dictionary<string, object?> GetChanges()
     {
         var changes = new Dictionary<string, object?>();
-        if (ChkGenre.IsChecked   == true) changes["genre"]   = NullIfEmpty(TxtGenre.Text);
-        if (ChkYear.IsChecked    == true) changes["year"]    = NullIfEmpty(TxtYear.Text);
-        if (ChkKey.IsChecked     == true) changes["key"]     = NullIfEmpty(TxtKey.Text);
-        if (ChkMood.IsChecked    == true) changes["mood"]    = NullIfEmpty(TxtMood.Text);
-        if (ChkComment.IsChecked == true) changes["comment"] = NullIfEmpty(TxtComment.Text);
+        if (ChkGenre.IsChecked   == true) changes["genre"]   = TxtGenre.Text.Trim();
+        if (ChkYear.IsChecked    == true) changes["year"]    = TxtYear.Text.Trim();
+        if (ChkKey.IsChecked     == true) changes["key"]     = TxtKey.Text.Trim();
+        if (ChkMood.IsChecked    == true) changes["mood"]    = TxtMood.Text.Trim();
+        if (ChkComment.IsChecked == true) changes["comment"] = TxtComment.Text.Trim();
         if (ChkBpm.IsChecked     == true && !double.IsNaN(NumBpm.Value))
             changes["bpm"] = NumBpm.Value;
         if (ChkEnergy.IsChecked  == true)
