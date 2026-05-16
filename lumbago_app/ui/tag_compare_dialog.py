@@ -156,13 +156,26 @@ class TagCompareDialog(QtWidgets.QDialog):
                 self.table.setColumnHidden(col, False)
             return
         if chosen == hide_all:
-            for _, col in actions:
-                self.table.setColumnHidden(col, True)
+            self._hide_all_but_anchor([col for _, col in actions])
             return
         for action, col in actions:
             if chosen == action:
-                self.table.setColumnHidden(col, not action.isChecked())
+                if action.isChecked():
+                    self.table.setColumnHidden(col, False)
+                else:
+                    visible = sum(1 for _, c in actions if not self.table.isColumnHidden(c))
+                    if visible > 1:
+                        self.table.setColumnHidden(col, True)
+                    else:
+                        action.setChecked(True)
                 break
+
+    def _hide_all_but_anchor(self, columns: list[int]) -> None:
+        if not columns:
+            return
+        anchor = columns[0]
+        for col in columns:
+            self.table.setColumnHidden(col, col != anchor)
 
     def _copy_new(self, row: int):
         old_item = self.table.item(row, 1)

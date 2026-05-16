@@ -45,6 +45,16 @@ def waveform_cache_path(audio_path: Path) -> Path:
     return cache_dir() / f"{safe_name}_waveform.png"
 
 
+def generate_waveform_threadsafe(audio_path: Path, width: int = 600, height: int = 120) -> Path | None:
+    """Thread-safe waveform generation using ffmpeg only — no Qt."""
+    path = waveform_cache_path(audio_path)
+    if path.exists():
+        return path
+    if _try_ffmpeg_waveform(audio_path, path, width, height):
+        return path
+    return None
+
+
 def generate_waveform(audio_path: Path, width: int = 600, height: int = 120) -> Path:
     path = waveform_cache_path(audio_path)
     if path.exists():

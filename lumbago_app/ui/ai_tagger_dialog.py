@@ -864,13 +864,14 @@ class _PipelineWorker(QtCore.QRunnable):
         self.accept_threshold = max(0.5, min(0.95, float(accept_threshold)))
         self.signals = _WorkerSignals()
         self._stop = False
-        self._batch_ai_results: dict[str, AnalysisResult] = {}
 
     def stop(self) -> None:
         self._stop = True
 
     def run(self) -> None:
-        self._prepare_batch_ai_results()
+        if isinstance(self.tagger, CloudAiTagger):
+            self._run_cloud_chunked()
+            return
         if self.max_workers <= 1:
             for idx, _ in enumerate(self.states):
                 if self._stop:
@@ -900,6 +901,26 @@ class _PipelineWorker(QtCore.QRunnable):
                 self.signals.track_done.emit(idx)
         self.signals.finished.emit()
 
+    def _run_cloud_chunked(self) -> None:
+        chunk_size = 20
+        total = len(self.states)
+        for start in range(0, total, chunk_size):
+            end = min(total, start + chunk_size)
+            for idx in range(start, end):
+                if self._stop:
+                    self.states[idx].status = TrackStatus.SKIPPED
+                    self.signals.track_done.emit(idx)
+                    continue
+                self.signals.track_started.emit(idx)
+                self._process_track(idx)
+                if self.states[idx].status == TrackStatus.ERROR:
+                    self.states[idx].error_msg = self.states[idx].error_msg or "Błąd AI"
+                self.signals.track_done.emit(idx)
+            # Mandatory cooldown between chunks to reduce API pressure / 429.
+            if end < total:
+                QtCore.QThread.msleep(3500)
+        self.signals.finished.emit()
+
     def _process_track(self, idx: int) -> None:
         state = self.states[idx]
         try:
@@ -924,9 +945,7 @@ class _PipelineWorker(QtCore.QRunnable):
                 )
                 self._persist_audio_features(working.path, state.audio_result)
             if self.tagger is not None:
-                state.ai_result = self._batch_ai_results.get(working.path)
-                if state.ai_result is None:
-                    state.ai_result = self._load_cached_ai_result(path_obj)
+                state.ai_result = self._load_cached_ai_result(path_obj)
                 if state.ai_result is None:
                     state.ai_result = self.tagger.analyze(ai_input)
                     self._save_cached_ai_result(path_obj, state.ai_result)
@@ -940,35 +959,6 @@ class _PipelineWorker(QtCore.QRunnable):
             state.status = TrackStatus.ERROR
             state.error_msg = str(exc)
             state.proposed_track = deepcopy(state.track)
-
-    def _prepare_batch_ai_results(self) -> None:
-        if self.tagger is None:
-            return
-        batch_fn = getattr(self.tagger, "analyze_batch", None)
-        if not callable(batch_fn):
-            return
-        pending: list[Track] = []
-        for state in self.states:
-            cached = self._load_cached_ai_result(Path(state.track.path))
-            if cached is not None:
-                self._batch_ai_results[state.track.path] = cached
-            else:
-                pending.append(deepcopy(state.track))
-        if not pending:
-            return
-        try:
-            batch_results = batch_fn(pending, chunk_size=20)
-        except Exception:
-            return
-        if not isinstance(batch_results, dict):
-            return
-        for path, result in batch_results.items():
-            if isinstance(result, AnalysisResult):
-                self._batch_ai_results[path] = result
-                try:
-                    self._save_cached_ai_result(Path(path), result)
-                except Exception:
-                    pass
 
     def _load_or_extract_audio(self, path_obj: Path, working: Track):
         needs_audio_features = working.bpm is None or working.energy is None

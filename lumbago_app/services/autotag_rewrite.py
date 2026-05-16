@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
+from hashlib import md5
 from pathlib import Path, PureWindowsPath
 import re
-from typing import Any
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from time import perf_counter
+from typing import Any, Callable
 
 import requests
 
-from lumbago_app.core.models import Track
+from lumbago_app.core.config import cache_dir
+from lumbago_app.core.models import Tag, Track
 from lumbago_app.core.renamer import parse_filename_tags
 from lumbago_app.services.ai_tagger import CloudAiTagger, MultiAiTagger
 
@@ -29,30 +33,6 @@ _SEARCH_STOPWORDS = {
     "remastered",
     "live",
 }
-
-# Wzorce do ekstrakcji remixera z tytułu/artysty
-_REMIX_PATTERNS = [
-    re.compile(r"\(([^)]+?)\s+remix\)", re.IGNORECASE),
-    re.compile(r"\(([^)]+?)\s+mix\)", re.IGNORECASE),
-    re.compile(r"\(([^)]+?)\s+edit\)", re.IGNORECASE),
-    re.compile(r"\[([^\]]+?)\s+remix\]", re.IGNORECASE),
-    re.compile(r"\[([^\]]+?)\s+mix\]", re.IGNORECASE),
-    re.compile(r"remixed\s+by\s+([^,\(]+)", re.IGNORECASE),
-]
-
-
-def _extract_remixer(title: str | None, artist: str | None) -> str | None:
-    """Wyodrębnij nazwę remixera z tytułu lub artysty."""
-    for source in (title, artist):
-        if not source:
-            continue
-        for pat in _REMIX_PATTERNS:
-            m = pat.search(source)
-            if m:
-                name = m.group(1).strip().strip("'\"")
-                if name and len(name) > 1:
-                    return name
-    return None
 
 
 @dataclass
@@ -81,6 +61,7 @@ class Candidate:
     copyright: str | None = None
     remixer: str | None = None
     tags: list[str] = field(default_factory=list)
+    artwork_url: str | None = None
     error: str | None = None
 
 
@@ -91,29 +72,59 @@ class EnrichmentResult:
 
 
 class UnifiedAutoTagger:
-    def __init__(self, settings):
+    def __init__(self, settings, logger: Callable[[str], None] | None = None):
         self.settings = settings
+        self._logger = logger
 
     def enrich_track(self, track: Track) -> EnrichmentResult:
         candidates: list[Candidate] = []
-
-        for fn in (
+        providers = (
             self._search_musicbrainz,
             self._search_itunes,
             self._search_deezer,
             self._search_discogs,
+            self._search_lrclib,
+            self._search_lyrics_ovh,
             self._search_ai,
-        ):
-            try:
-                candidate = fn(track)
-                if candidate is not None:
-                    candidates.append(candidate)
-            except Exception as exc:
-                candidates.append(Candidate(source=fn.__name__, score=0, error=str(exc)))
+        )
+        max_workers = int(getattr(self.settings, "provider_parallel_workers", 6) or 6)
+        max_workers = max(2, min(max_workers, len(providers)))
+        with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="autotag-src") as pool:
+            future_map = {pool.submit(self._timed_provider_call, fn, track): fn for fn in providers}
+            for future in as_completed(future_map):
+                fn = future_map[future]
+                try:
+                    candidate = future.result()
+                    if candidate is not None:
+                        candidates.append(candidate)
+                except Exception as exc:
+                    candidates.append(Candidate(source=fn.__name__, score=0, error=str(exc)))
 
         valid = [candidate for candidate in candidates if candidate.error is None and candidate.score > 0]
         valid.sort(key=lambda candidate: candidate.score, reverse=True)
+        if self._logger is not None:
+            top = valid[0] if valid else None
+            if top is not None:
+                self._logger(f"[autotag] source_summary best={top.source} score={top.score} total_candidates={len(candidates)}")
+            else:
+                self._logger(f"[autotag] source_summary best=none total_candidates={len(candidates)}")
         return EnrichmentResult(candidates=candidates, best_match=(valid[0] if valid else None))
+
+    def _timed_provider_call(self, fn, track: Track) -> Candidate | None:
+        start = perf_counter()
+        name = fn.__name__
+        if self._logger is not None:
+            self._logger(f"[autotag] source={name} stage=start file={Path(track.path).name}")
+        result = fn(track)
+        elapsed_ms = int((perf_counter() - start) * 1000)
+        if self._logger is not None:
+            if result is None:
+                self._logger(f"[autotag] source={name} stage=done elapsed_ms={elapsed_ms} status=miss")
+            elif result.error:
+                self._logger(f"[autotag] source={name} stage=done elapsed_ms={elapsed_ms} status=error error={result.error}")
+            else:
+                self._logger(f"[autotag] source={name} stage=done elapsed_ms={elapsed_ms} status=hit score={result.score}")
+        return result
 
     def apply_best_match(self, track: Track, result: EnrichmentResult) -> bool:
         raw_candidates = getattr(result, "candidates", []) or []
@@ -153,26 +164,46 @@ class UnifiedAutoTagger:
             if incoming is None:
                 continue
             current = getattr(track, field_name, None)
+            if (
+                field_name == "album"
+                and _has_value(current)
+                and _has_value(incoming)
+                and _normalize(str(current)) != _normalize(str(incoming))
+            ):
+                # Protect existing album values from weak/untrusted replacements.
+                winning_album = _candidate_for_field(candidates, "album")
+                if winning_album is None or winning_album.score < 72:
+                    continue
             if field_name in _LOCALLY_MEASURED and _has_value(current):
                 continue
             if current != incoming:
                 setattr(track, field_name, incoming)
                 changed = True
 
-        # albumartist fallback: zawsze uzupełnij z głównego artysty jeśli puste
-        if not _has_value(track.albumartist) and _has_value(track.artist):
-            track.albumartist = track.artist
-            changed = True
-        elif best is not None and best.artist and not track.albumartist:
+        if best is not None and best.artist and not track.albumartist:
             track.albumartist = best.artist
             changed = True
 
-        # remixer: spróbuj wyodrębnić z tytułu jeśli jeszcze nie ustawiony
-        if not _has_value(track.remixer):
-            extracted = _extract_remixer(track.title, track.artist)
-            if extracted:
-                track.remixer = extracted
-                changed = True
+        if not _has_value(track.artwork_path):
+            artwork_url = _best_artwork_url(candidates)
+            if artwork_url:
+                path_hash = md5(track.path.encode()).hexdigest()[:12]
+                dest = cache_dir() / f"cover_{path_hash}.jpg"
+                if _download_artwork(artwork_url, dest):
+                    track.artwork_path = str(dest)
+                    changed = True
+
+        genre_tags: list[str] = []
+        seen: set[str] = set()
+        for candidate in candidates:
+            for tag_value in candidate.tags:
+                clean = str(tag_value).strip()
+                if clean and clean.lower() not in seen:
+                    seen.add(clean.lower())
+                    genre_tags.append(clean)
+        if genre_tags:
+            track.tags = [Tag(value=t, source="genre_tags") for t in genre_tags[:20]]
+            changed = True
 
         return changed
 
@@ -234,6 +265,9 @@ class UnifiedAutoTagger:
 
         genre = None
         tags: list[str] = []
+        albumartist = None
+        publisher = None
+        comment_parts: list[str] = []
         mbid = best.get("id")
         if mbid:
             detail = self._musicbrainz_detail(mbid)
@@ -252,20 +286,50 @@ class UnifiedAutoTagger:
                         genre = rg_genres[0]
                     elif rg_tags:
                         genre = rg_tags[0]
+        release_artists = release.get("artist-credit", [])
+        if release_artists:
+            albumartist = ", ".join(
+                entry.get("name") or (entry.get("artist") or {}).get("name") or ""
+                for entry in release_artists
+                if isinstance(entry, dict)
+            ).strip(", ") or None
+        label_info = release.get("label-info", [])
+        if label_info and isinstance(label_info, list):
+            first_label = label_info[0] if isinstance(label_info[0], dict) else {}
+            label_name = None
+            if isinstance(first_label, dict):
+                label = first_label.get("label")
+                if isinstance(label, dict):
+                    label_name = label.get("name")
+            publisher = str(label_name).strip() if label_name else None
+        disambiguation = str(best.get("disambiguation") or "").strip()
+        release_disambiguation = str(release.get("disambiguation") or "").strip()
+        if disambiguation:
+            comment_parts.append(disambiguation)
+        if release_disambiguation and release_disambiguation not in comment_parts:
+            comment_parts.append(release_disambiguation)
+        remixer = _extract_remixer_name(rec_title) or _extract_remixer_name(track.title)
 
         sim = _similarity_bonus(track, rec_title, rec_artist)
         final_score = max(0, min(100, score + sim))
         if not artist:
             final_score = min(final_score, 68)
+        release_mbid = release.get("id")
+        mb_artwork_url = f"https://coverartarchive.org/release/{release_mbid}/front-500" if release_mbid else None
         return Candidate(
             source="MusicBrainz",
             score=final_score,
             title=rec_title or track.title,
             artist=rec_artist or track.artist,
             album=release.get("title") or None,
+            albumartist=albumartist,
             year=year,
             genre=genre,
+            comment=" / ".join(comment_parts) or None,
+            publisher=publisher,
+            remixer=remixer,
             tags=tags,
+            artwork_url=mb_artwork_url,
         )
 
     def _search_itunes(self, track: Track) -> Candidate | None:
@@ -295,14 +359,18 @@ class UnifiedAutoTagger:
             score = min(score, 72)
         release_date = str(best.get("releaseDate") or "")
         year = release_date[:4] if release_date[:4].isdigit() else None
+        raw_artwork = _to_clean_str(best.get("artworkUrl100"))
+        artwork_url = raw_artwork.replace("100x100bb", "600x600bb") if raw_artwork else None
         return Candidate(
             source="Apple Music",
             score=max(1, min(95, score)),
             title=_to_clean_str(best.get("trackName")) or track.title,
             artist=_to_clean_str(best.get("artistName")) or track.artist,
             album=_to_clean_str(best.get("collectionName")),
+            albumartist=_to_clean_str(best.get("collectionArtistName")) or _to_clean_str(best.get("artistName")),
             year=year,
             genre=_to_clean_str(best.get("primaryGenreName")),
+            artwork_url=artwork_url,
         )
 
     def _musicbrainz_detail(self, mbid: str) -> dict[str, list[str]]:
@@ -451,6 +519,7 @@ class UnifiedAutoTagger:
             year=str(best.get("year") or "") or None,
             genre=((best.get("genre") or [None])[0]),
             tags=[str(tag).strip() for tag in tags[:8] if str(tag).strip()],
+            artwork_url=_to_clean_str(best.get("cover_image")) or _to_clean_str(best.get("thumb")),
         )
 
     def _search_ai(self, track: Track) -> Candidate | None:
@@ -510,6 +579,85 @@ class UnifiedAutoTagger:
             tags=tags,
         )
 
+    def _search_lrclib(self, track: Track) -> Candidate | None:
+        track = _track_with_filename_identity(track)
+        artist = _clean_text(track.artist)
+        title = _clean_text(track.title)
+        if not artist or not title:
+            return None
+        try:
+            response = requests.get(
+                "https://lrclib.net/api/search",
+                params={
+                    "track_name": title[:120],
+                    "artist_name": artist[:120],
+                    "album_name": (_clean_text(track.album) or "")[:120],
+                },
+                headers={"Accept": "application/json", "User-Agent": _USER_AGENT},
+                timeout=12,
+            )
+            response.raise_for_status()
+            payload = response.json()
+        except Exception:
+            return None
+        if not isinstance(payload, list) or not payload:
+            return None
+        best = None
+        best_score = -1.0
+        for item in payload[:10]:
+            if not isinstance(item, dict):
+                continue
+            item_title = _to_clean_str(item.get("trackName"))
+            item_artist = _to_clean_str(item.get("artistName"))
+            local_score = _token_similarity(_normalize(title), _normalize(item_title))
+            local_score = (local_score * 0.7) + (_token_similarity(_normalize(artist), _normalize(item_artist)) * 0.3)
+            if local_score > best_score:
+                best = item
+                best_score = local_score
+        if not isinstance(best, dict) or best_score < 0.45:
+            return None
+        lyrics = _to_clean_str(best.get("plainLyrics")) or _to_clean_str(best.get("syncedLyrics"))
+        if not lyrics:
+            return None
+        comment = "Lyrics source: LRCLIB"
+        score = int(min(90, max(35, round(best_score * 100))))
+        return Candidate(
+            source="LRCLIB",
+            score=score,
+            title=_to_clean_str(best.get("trackName")) or track.title,
+            artist=_to_clean_str(best.get("artistName")) or track.artist,
+            album=_to_clean_str(best.get("albumName")) or track.album,
+            lyrics=lyrics,
+            comment=comment,
+        )
+
+    def _search_lyrics_ovh(self, track: Track) -> Candidate | None:
+        track = _track_with_filename_identity(track)
+        artist = _clean_text(track.artist)
+        title = _clean_text(track.title)
+        if not artist or not title:
+            return None
+        try:
+            response = requests.get(
+                f"https://api.lyrics.ovh/v1/{requests.utils.quote(artist)}/{requests.utils.quote(title)}",
+                headers={"Accept": "application/json", "User-Agent": _USER_AGENT},
+                timeout=10,
+            )
+            if response.status_code >= 400:
+                return None
+            payload = response.json()
+        except Exception:
+            return None
+        lyrics = _to_clean_str(payload.get("lyrics")) if isinstance(payload, dict) else None
+        if not lyrics:
+            return None
+        return Candidate(
+            source="Lyrics.ovh",
+            score=48,
+            lyrics=lyrics,
+            comment="Lyrics source: lyrics.ovh",
+        )
+
     def _build_multi_ai_tagger(self) -> MultiAiTagger | None:
         taggers: list[CloudAiTagger] = []
         for provider in ("openai", "gemini", "grok", "deepseek"):
@@ -529,6 +677,34 @@ class UnifiedAutoTagger:
         if not taggers:
             return None
         return MultiAiTagger(taggers, max_workers=min(4, len(taggers)))
+
+
+def _best_artwork_url(candidates: list[Candidate]) -> str | None:
+    source_priority = ("Apple Music", "Discogs", "MusicBrainz")
+    for source in source_priority:
+        for candidate in candidates:
+            if candidate.source == source and candidate.artwork_url:
+                return candidate.artwork_url
+    for candidate in candidates:
+        if candidate.artwork_url:
+            return candidate.artwork_url
+    return None
+
+
+def _download_artwork(url: str, dest: Path) -> bool:
+    if dest.exists():
+        return True
+    try:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        resp = requests.get(url, timeout=15, allow_redirects=True)
+        resp.raise_for_status()
+        content_type = resp.headers.get("content-type", "")
+        if not content_type.startswith("image/"):
+            return False
+        dest.write_bytes(resp.content)
+        return True
+    except Exception:
+        return False
 
 
 def _resolve_provider_config(provider: str, settings) -> tuple[str | None, str | None, str | None]:
@@ -612,6 +788,16 @@ def _strip_download_quality_suffix(value: str | None) -> str | None:
     return text or None
 
 
+def _extract_remixer_name(title: str | None) -> str | None:
+    if not title:
+        return None
+    match = re.search(r"\((?P<name>[^()]{2,60}?)\s+remix\)", title, re.IGNORECASE)
+    if not match:
+        return None
+    raw = match.group("name").strip(" -_/")
+    return raw or None
+
+
 def _track_with_filename_identity(track: Track) -> Track:
     artist_from_file, title_from_file = parse_filename_tags(track.path)
     cleaned_current_title = _strip_download_quality_suffix(track.title)
@@ -678,6 +864,14 @@ def _best_field_value(candidates: list[Candidate], field_name: str) -> Any:
         value = getattr(candidate, field_name, None)
         if _has_meaningful_candidate_value(field_name, value):
             return value
+    return None
+
+
+def _candidate_for_field(candidates: list[Candidate], field_name: str) -> Candidate | None:
+    for candidate in candidates:
+        value = getattr(candidate, field_name, None)
+        if _has_meaningful_candidate_value(field_name, value):
+            return candidate
     return None
 
 

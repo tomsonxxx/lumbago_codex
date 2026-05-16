@@ -143,6 +143,60 @@ class ChangeLogOrm(Base):
     changed_at = Column(DateTime, default=func.now())
 
 
+class MetadataFieldEvidenceOrm(Base):
+    __tablename__ = "metadata_field_evidence"
+    __table_args__ = (
+        Index("ix_metadata_field_evidence_track_field", "track_id", "field_name"),
+        Index("ix_metadata_field_evidence_source", "source"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    track_id = Column(Integer, ForeignKey("tracks.id", ondelete="CASCADE"), nullable=False)
+    field_name = Column(Text, nullable=False)
+    value = Column(Text)
+    source = Column(Text, nullable=False)
+    confidence = Column(Float, nullable=False, default=0.0)
+    verified = Column(Boolean, nullable=False, default=False)
+    observed_at = Column(DateTime, default=func.now())
+    version = Column(Integer, nullable=False, default=1)
+
+
+class MetadataConflictOrm(Base):
+    __tablename__ = "metadata_conflicts"
+    __table_args__ = (
+        Index("ix_metadata_conflicts_track_field", "track_id", "field_name"),
+        Index("ix_metadata_conflicts_status", "status"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    track_id = Column(Integer, ForeignKey("tracks.id", ondelete="CASCADE"), nullable=False)
+    field_name = Column(Text, nullable=False)
+    chosen_value = Column(Text)
+    chosen_source = Column(Text)
+    reason = Column(Text, nullable=False)
+    status = Column(Text, nullable=False, default="open")
+    variants_json = Column(Text, nullable=False, default="[]")
+    detected_at = Column(DateTime, default=func.now())
+    resolved_at = Column(DateTime)
+
+
+class MetadataHistoryOrm(Base):
+    __tablename__ = "metadata_history"
+    __table_args__ = (Index("ix_metadata_history_track_field", "track_id", "field_name"),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    track_id = Column(Integer, ForeignKey("tracks.id", ondelete="CASCADE"), nullable=False)
+    field_name = Column(Text, nullable=False)
+    old_value = Column(Text)
+    new_value = Column(Text)
+    source = Column(Text, nullable=False)
+    confidence = Column(Float, nullable=False, default=0.0)
+    verified = Column(Boolean, nullable=False, default=False)
+    version = Column(Integer, nullable=False, default=1)
+    operation = Column(Text, nullable=False, default="consensus")
+    changed_at = Column(DateTime, default=func.now())
+
+
 class MetadataCacheOrm(Base):
     __tablename__ = "metadata_cache"
     __table_args__ = (Index("ix_metadata_cache_created", "created_at"),)

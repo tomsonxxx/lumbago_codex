@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using LumbagoWinUI.Models;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Navigation;
 
 namespace LumbagoWinUI.Pages;
@@ -142,12 +143,48 @@ public sealed partial class LibraryPage : Page
 
     private void TrackList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (e.AddedItems.FirstOrDefault() is Track t) SelectTrack(t);
+        var selected = TrackList.SelectedItems.OfType<Track>().ToList();
+        UpdateSelectionState(selected);
     }
 
     private void TrackGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (e.AddedItems.FirstOrDefault() is Track t) SelectTrack(t);
+    }
+
+    private void TrackList_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
+    {
+        if (_selectedTrack is not null) PlayTrackFromLibrary(_selectedTrack);
+    }
+
+    private void UpdateSelectionState(List<Track> selected)
+    {
+        if (selected.Count == 1)
+        {
+            _selectedTrack = selected[0];
+            FillDetailPanel(_selectedTrack);
+            DetailPanel.Visibility = Visibility.Visible;
+            App.Window?.UpdatePlayerInfo(
+                _selectedTrack.DisplayTitle, _selectedTrack.DisplayArtist,
+                _selectedTrack.DisplayBpm, _selectedTrack.DisplayKey);
+        }
+        else if (selected.Count > 1)
+        {
+            _selectedTrack = selected[^1];
+            // Ukryj detail panel przy multi-zaznaczeniu — użytkownik i tak użyje Bulk Edit
+            DetailPanel.Visibility = Visibility.Collapsed;
+        }
+        else
+        {
+            _selectedTrack = null;
+            DetailPanel.Visibility = Visibility.Collapsed;
+        }
+
+        var count = selected.Count;
+        BtnBulkEdit.IsEnabled = count >= 2;
+        BtnBulkEditLabel.Text = count >= 2
+            ? $"Edytuj zaznaczone ({count})"
+            : "Edytuj zaznaczone";
     }
 
     private void SelectTrack(Track track)
@@ -158,6 +195,24 @@ public sealed partial class LibraryPage : Page
 
         App.Window?.UpdatePlayerInfo(
             track.DisplayTitle, track.DisplayArtist, track.DisplayBpm, track.DisplayKey);
+    }
+
+    /// <summary>Wołana z LibraryPage (double-click) lub z MainWindow (BtnPlay bez aktywnego tracka).</summary>
+    public void PlayFirstTrack()
+    {
+        var list = FilteredTracks.ToList();
+        if (list.Count == 0) return;
+        var track = list[0];
+        SelectTrack(track);
+        App.Window?.PlayTrack(track, list, 0);
+    }
+
+    public void PlayTrackFromLibrary(Track track)
+    {
+        var list = FilteredTracks.ToList();
+        var idx = list.IndexOf(track);
+        SelectTrack(track);
+        App.Window?.PlayTrack(track, list, idx >= 0 ? idx : 0);
     }
 
     // ── Panel szczegółów ────────────────────────────────────────────────────
@@ -257,6 +312,68 @@ public sealed partial class LibraryPage : Page
         _selectedTrack = null;
         DetailPanel.Visibility = Visibility.Collapsed;
         await LoadTracksAsync();
+    }
+
+    private async void BtnBulkEdit_Click(object sender, RoutedEventArgs e)
+    {
+        var selected = TrackList.SelectedItems.OfType<Track>().ToList();
+        if (selected.Count < 2) return;
+
+        var dlg = new BulkEditDialog(selected, XamlRoot);
+        var result = await dlg.ShowAsync();
+        if (result != ContentDialogResult.Primary) return;
+
+        var changes = dlg.GetChanges();
+        if (changes.Count == 0) return;
+
+        BtnBulkEdit.IsEnabled = false;
+
+        // Buduj TrackUpdate tylko z zaznaczonych pól
+        int updated = 0;
+        int errors = 0;
+        foreach (var track in selected)
+        {
+            var update = new TrackUpdate
+            {
+                Genre   = changes.TryGetValue("genre",   out var g) ? g as string : null,
+                Year    = changes.TryGetValue("year",    out var y) ? y as string : null,
+                Key     = changes.TryGetValue("key",     out var k) ? k as string : null,
+                Mood    = changes.TryGetValue("mood",    out var m) ? m as string : null,
+                Comment = changes.TryGetValue("comment", out var c) ? c as string : null,
+                Bpm     = changes.TryGetValue("bpm",     out var b) && b is double bpmVal ? bpmVal : null,
+                Energy  = changes.TryGetValue("energy",  out var en) && en is double enVal ? enVal : null,
+            };
+
+            try
+            {
+                var upd = await App.Api.UpdateTrackAsync(track.Path, update);
+                if (upd is not null)
+                {
+                    var idx = _allTracks.FindIndex(t => t.Path == upd.Path);
+                    if (idx >= 0) _allTracks[idx] = upd;
+                }
+                updated++;
+            }
+            catch
+            {
+                errors++;
+            }
+        }
+
+        ApplyAllFilters();
+        BtnBulkEdit.IsEnabled = selected.Count >= 2;
+
+        // Krótka informacja zwrotna przez dialog
+        var info = new ContentDialog
+        {
+            Title = "Edycja zbiorcza zakończona",
+            Content = errors == 0
+                ? $"Zaktualizowano {updated} tracków."
+                : $"Zaktualizowano {updated} tracków, {errors} błędów.",
+            CloseButtonText = "OK",
+            XamlRoot = XamlRoot,
+        };
+        await info.ShowAsync();
     }
 
     private void BtnGoImport_Click(object sender, RoutedEventArgs e) =>

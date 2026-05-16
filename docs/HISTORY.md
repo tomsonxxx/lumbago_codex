@@ -140,3 +140,8 @@
 13. 2026-03-17 — Zaktualizowano `Theme.xaml` pod styl neon glass (kolory, Acrylic, NeonCardBorder).
 14. 2026-03-17 — Podmieniono karty stron na NeonCardBorder w Start/Library/Import/Duplicates/Settings/Converter.
 15. 2026-03-17 — Ujednolicono polskie etykiety i teksty w stronach WinUI 3.
+16. 2026-05-16 — Dodano SmartTaggerPage: kolejka AI (POST /analysis/jobs), polling co 2s, podgląd decyzji per pole z CheckBox Accept/Reject, zbiorowe zatwierdzanie i zapis (apply endpoint).
+17. 2026-05-16 — Dodano AnalysisModels.cs + AnalysisViewModels.cs (INotifyPropertyChanged DecisionViewModel) oraz metody API w ApiClient: CreateAnalysisJobAsync, GetAnalysisJobAsync, ApplyAnalysisJobAsync.
+18. 2026-05-16 — Podpięto odtwarzacz audio (Windows.Media.Playback.MediaPlayer) w MainWindow: play/pause/seek/prev/next, DispatcherTimer pozycji, autoplay kolejki, double-click w LibraryPage uruchamia odtwarzanie.
+19. 2026-05-16 — Dodano Smart Tagger do nawigacji NavView (między Import a Duplikaty).
+20. 2026-05-16 — Dodano BulkEditDialog: multi-select (Ctrl+klik) w LibraryPage, dialog z checkboxami per pole (Genre/Year/Key/Mood/Energy/BPM/Comment), batch PUT /tracks dla każdego zaznaczonego tracka.

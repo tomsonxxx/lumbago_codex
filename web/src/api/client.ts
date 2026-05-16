@@ -6,6 +6,7 @@ import type {
   ImportPreviewResult,
   ProviderConfig,
   Track,
+  TrackUpdate,
 } from "../types";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000";
@@ -83,5 +84,14 @@ export async function applyAnalysisJob(jobId: string): Promise<AnalysisApplyResu
   return request<AnalysisApplyResult>(`/analysis/jobs/${jobId}/apply`, {
     method: "POST",
     body: JSON.stringify({ overrides: {}, source_prefix: "ai" }),
+  });
+}
+
+export type TrackUpdateResult = { track: Track; warning?: string };
+
+export async function updateTrack(path: string, update: TrackUpdate): Promise<TrackUpdateResult> {
+  return request<TrackUpdateResult>(`/tracks/${encodeURIComponent(path)}`, {
+    method: "PUT",
+    body: JSON.stringify(update),
   });
 }

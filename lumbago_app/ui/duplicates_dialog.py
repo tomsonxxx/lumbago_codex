@@ -173,13 +173,26 @@ class DuplicatesDialog(QtWidgets.QDialog):
                 self.tree.setColumnHidden(col, False)
             return
         if chosen == hide_all:
-            for _, col in actions:
-                self.tree.setColumnHidden(col, True)
+            self._hide_all_but_anchor([col for _, col in actions])
             return
         for action, col in actions:
             if chosen == action:
-                self.tree.setColumnHidden(col, not action.isChecked())
+                if action.isChecked():
+                    self.tree.setColumnHidden(col, False)
+                else:
+                    visible = sum(1 for _, c in actions if not self.tree.isColumnHidden(c))
+                    if visible > 1:
+                        self.tree.setColumnHidden(col, True)
+                    else:
+                        action.setChecked(True)
                 break
+
+    def _hide_all_but_anchor(self, columns: list[int]) -> None:
+        if not columns:
+            return
+        anchor = columns[0]
+        for col in columns:
+            self.tree.setColumnHidden(col, col != anchor)
 
     def _populate_tree(self, result):
         self._groups = []

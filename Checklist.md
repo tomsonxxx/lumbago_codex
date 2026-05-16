@@ -1,6 +1,6 @@
 # Checklist — Lumbago Music AI (Stan projektu)
 
-> Wygenerowano: 2026-04-28. Obejmuje wszystkie trzy aplikacje: Desktop, Web MVP i tagerv2.
+> Wygenerowano: 2026-04-28. Aktualizacja: 2026-05-16. Obejmuje wszystkie cztery aplikacje: Desktop, Web MVP, tagerv2 i WinUI 3.
 
 ## Legenda
 - [x] zrobione
@@ -153,13 +153,13 @@
 
 ### 2.3 Testy Web
 - [x] `web/tests/camelot.test.ts` — unit test mapowań Camelot (vitest)
-- [ ] (P1) Integration test: import → zapis → odczyt przez API
-- [ ] (P1) Test przepływu UI (Import Wizard krok 1→4)
+- [x] (P1) Integration test: import → zapis → odczyt przez API
+- [x] (P1) Test przepływu UI — filterTracks unit tests (vitest)
 - [ ] (P2) Test `DuplicateFinderModal` (UI + API)
 
 ### 2.4 Brakujące funkcje Web MVP
-- [ ] (P1) Edycja tagów bezpośrednio przez API webowy
-- [ ] (P1) Zapis tagów do pliku audio (przez backend)
+- [x] (P1) Edycja tagów przez API webowy — TrackEditPanel (kliknięcie na track, pola edycji, PUT /tracks)
+- [x] (P1) Zapis tagów do pliku audio przez backend — PUT /tracks/{path} wywołuje write_tags() w Mutagen
 - [ ] (P2) Paginacja wyników `/tracks` (przy dużych bibliotekach)
 - [ ] (P2) Autoryzacja / zabezpieczenie API
 
@@ -197,8 +197,12 @@
 - [x] `utils/sortingUtils.ts`, `utils/stringUtils.ts`
 
 ### 3.4 Jakość kodu i testy
-- [ ] (P0) `npm run lint` przechodzi bez ostrzeżeń (max-warnings 0)
+- [x] (P0) `npm run lint` przechodzi bez ostrzeżeń (max-warnings 0)
+<<<<<<< HEAD
 - [ ] (P1) Unit testy dla kluczowych utilities (aiService, duplicateUtils, djUtils)
+=======
+- [x] (P1) Unit testy dla kluczowych utilities (duplicateUtils, djUtils, stringUtils) — 25 testów vitest
+>>>>>>> origin/main
 - [ ] (P1) Testy vitest dla hook `useLibrary` i `useAIProcessing`
 
 ### 3.5 Brakujące funkcje
@@ -224,17 +228,17 @@
 - [x] Szkielet aplikacji WinUI 3 (shell, nawigacja, routing) — `winui/LumbagoWinUI/` (18 plików; wymaga VS 2022 + Windows App SDK workload do kompilacji)
 - [x] Widok Biblioteki (lista + siatka + filtry + detail panel) — przełącznik lista↔siatka, filtry Gatunek/Tonacja/BPM, panel edycji tagów, PUT /tracks/{path} w backend
 - [x] (P1) Import, Duplikaty, Konwerter XML — ImportPage (FolderPicker + podgląd + commit), DuplicatesPage (3 tryby + karty grup + usuwanie), ConverterPage (Rekordbox→VirtualDJ); backend: DELETE /tracks/{path} + POST /convert/rekordbox-to-virtualdj
-- [ ] (P1) Dialog Porównania Tagów + Smart Tagger
-- [ ] (P1) Globalny odtwarzacz (dock) + pasek akcji
-- [ ] (P1) Podłączenie danych z logiką (tracki, playlisty, tagi)
-- [ ] (P1) Akcje masowe i edycje w UI
-- [ ] (P1) Integracja AI Taggera i kolejek
+- [x] (P1) Smart Tagger — strona AI z kolejką analizy, podglądem decyzji per pole i zatwierdzaniem (POST /analysis/jobs, polling, apply)
+- [x] (P1) Globalny odtwarzacz (dock) — play/pause/seek/prev/next, autoplay kolejki, czas pozycji
+- [x] (P1) Podłączenie danych z logiką (tracki, playlisty, tagi)
+- [x] (P1) Akcje masowe i edycje w UI — BulkEditDialog (multi-select Ctrl+klik, checkboxy per pole, batch PUT /tracks)
+- [x] (P1) Integracja AI Taggera i kolejek
 
 ### 4.3 Testy i dokumentacja WinUI 3
 - [ ] (P1) Testy UI kluczowych flow
 - [ ] (P1) Testy dostępności (WCAG)
 - [ ] (P2) Testy wydajności listy przy >10k tracks
-- [ ] (P1) Aktualizacja `Build2.md`
+- [x] (P1) Aktualizacja `Build2.md` — historia w `docs/HISTORY.md` (wpisy 16-20)
 - [ ] (P2) Checklist testu na czystym Windows (nowy UI)
 
 ---
@@ -253,11 +257,14 @@
 
 ## 6. Priorytety natychmiastowe (P0/P1 pending)
 
-| # | Zadanie | Komponent | Priorytet |
-|---|---------|-----------|-----------|
-| 1 | `npm run lint` bez błędów w tagerv2 | tagerv2 | P0 |
-| 2 | Zapis tagów do pliku audio (browser, tagerv2) | tagerv2 | P1 |
-| 3 | ~~Decyzja: model integracji WinUI 3 ↔ logika~~ ✓ | Desktop rewrite | P0 |
-| 4 | Integration testy Web API | Web MVP | P1 |
-| 5 | Test na czystym Windows (PyInstaller build) | Desktop | P1 |
-| 6 | Edycja tagów przez Web API | Web MVP | P1 |
+> Stan na 2026-05-16. Testy: 95 passed / 1 failed (`test_autotag_rewrite::test_unified_autotagger_picks_best_candidate`) / 1 skipped.
+
+| # | Zadanie | Komponent | Priorytet | Stan |
+|---|---------|-----------|-----------|------|
+| 1 | `npm run lint` bez błędów w tagerv2 | tagerv2 | P0 | ⏳ |
+| 2 | Zapis tagów do pliku audio (browser, tagerv2) | tagerv2 | P1 | ⏳ |
+| 3 | ~~Decyzja: model integracji WinUI 3 ↔ logika~~ | Desktop rewrite | P0 | ✅ |
+| 4 | Integration testy Web API | Web MVP | P1 | ⏳ |
+| 5 | Test na czystym Windows (PyInstaller build) | Desktop | P1 | ⏳ |
+| 6 | ~~Edycja tagów przez Web API~~ | Web MVP | P1 | ✅ |
+| 7 | Naprawić failing test: `test_unified_autotagger_picks_best_candidate` | Desktop | P1 | ⏳ |

@@ -1,4 +1,4 @@
-"""Background task monitor — animated widget shown at the bottom of the sidebar."""
+﻿"""Background task monitor â€” animated widget shown at the bottom of the sidebar."""
 from __future__ import annotations
 
 import time
@@ -33,21 +33,27 @@ class BackgroundTaskManager(QtCore.QObject):
         self._tasks: dict[str, BackgroundTask] = {}
         self._counter = 0
 
-    def add_task(self, name: str, total: int) -> str:
+    def add_task(self, name: str, total: int, detail: str = "") -> str:
         self._counter += 1
         task_id = f"task_{self._counter}"
-        self._tasks[task_id] = BackgroundTask(task_id=task_id, name=name, total=total)
+        self._tasks[task_id] = BackgroundTask(task_id=task_id, name=name, total=total, detail=detail)
         self.task_added.emit(task_id)
         return task_id
 
-    def update_task(self, task_id: str, current: int, total: int | None = None, detail: str = ""):
+    def update_task(
+        self,
+        task_id: str,
+        current: int,
+        total: int | None = None,
+        detail: str | None = None,
+    ):
         task = self._tasks.get(task_id)
         if task is None or task.finished:
             return
         task.current = current
         if total is not None:
             task.total = total
-        if detail:
+        if detail is not None:
             task.detail = detail
         self.task_updated.emit(task_id)
 
@@ -91,7 +97,7 @@ class _PieWidget(QtWidgets.QWidget):
         self._value = 0.0
         self._spin = 0
         self._indeterminate = False
-        self.setFixedSize(26, 26)
+        self.setFixedSize(30, 30)
         t = QtCore.QTimer(self)
         t.timeout.connect(self._tick)
         t.start(40)
@@ -143,12 +149,12 @@ class _PieWidget(QtWidgets.QWidget):
 
 def _eta_str(task: BackgroundTask) -> str:
     if task.finished:
-        return "Ukończono"
+        return "Ukonczono"
     if task.current <= 0:
-        return "obliczanie…"
+        return "obliczanie..."
     elapsed = time.monotonic() - task.started_at
     if elapsed < 0.5:
-        return "obliczanie…"
+        return "obliczanie..."
     rate = task.current / elapsed
     remaining = task.total - task.current
     if rate <= 0 or remaining <= 0:
@@ -168,27 +174,27 @@ class _TaskRow(QtWidgets.QFrame):
         self.setObjectName("BgTaskRow")
         self.setStyleSheet(
             "QFrame#BgTaskRow{background:#0a1018;border:1px solid #1e2d42;"
-            "border-radius:4px;margin:1px 0;}"
+            "border-radius:6px;margin:2px 0;}"
         )
 
         vl = QtWidgets.QVBoxLayout(self)
-        vl.setContentsMargins(6, 4, 6, 4)
-        vl.setSpacing(3)
+        vl.setContentsMargins(8, 6, 8, 6)
+        vl.setSpacing(4)
 
-        # Top: pie + name + ×
+        # Top: pie + name + close
         top = QtWidgets.QHBoxLayout()
         top.setSpacing(5)
         self._pie = _PieWidget()
         top.addWidget(self._pie)
 
         self._lbl_name = QtWidgets.QLabel(task.name)
-        self._lbl_name.setStyleSheet("color:#8fb8d8;font-size:11px;font-weight:bold;")
-        self._lbl_name.setWordWrap(False)
+        self._lbl_name.setStyleSheet("color:#8fb8d8;font-size:12px;font-weight:bold;")
+        self._lbl_name.setWordWrap(True)
         top.addWidget(self._lbl_name, 1)
 
-        btn_x = QtWidgets.QPushButton("×")
-        btn_x.setFixedSize(14, 14)
-        btn_x.setToolTip("Anuluj / usuń")
+        btn_x = QtWidgets.QPushButton("x")
+        btn_x.setFixedSize(16, 16)
+        btn_x.setToolTip("Anuluj / usun")
         btn_x.setStyleSheet(
             "QPushButton{color:#4a6080;background:transparent;border:none;font-size:13px;}"
             "QPushButton:hover{color:#ff5555;}"
@@ -200,19 +206,21 @@ class _TaskRow(QtWidgets.QFrame):
         # Progress bar
         self._bar = QtWidgets.QProgressBar()
         self._bar.setTextVisible(False)
-        self._bar.setFixedHeight(4)
+        self._bar.setFixedHeight(6)
         self._bar.setStyleSheet(
-            "QProgressBar{background:#1e2d42;border:none;border-radius:2px;}"
-            "QProgressBar::chunk{background:#4a9eff;border-radius:2px;}"
+            "QProgressBar{background:#1e2d42;border:none;border-radius:3px;}"
+            "QProgressBar::chunk{background:#4a9eff;border-radius:3px;}"
         )
         vl.addWidget(self._bar)
 
-        # Detail: current file/action label
         self._lbl_detail = QtWidgets.QLabel()
-        self._lbl_detail.setStyleSheet("color:#3a6080;font-size:9px;")
-        self._lbl_detail.setWordWrap(False)
-        self._lbl_detail.setMaximumWidth(230)
+        self._lbl_detail.setStyleSheet("color:#88a8c8;font-size:11px;")
+        self._lbl_detail.setWordWrap(True)
         vl.addWidget(self._lbl_detail)
+        self._lbl_meta = QtWidgets.QLabel()
+        self._lbl_meta.setStyleSheet("color:#6f8bab;font-size:10px;")
+        self._lbl_meta.setWordWrap(True)
+        vl.addWidget(self._lbl_meta)
 
         # Bottom: count + eta
         bot = QtWidgets.QHBoxLayout()
@@ -235,25 +243,21 @@ class _TaskRow(QtWidgets.QFrame):
         self._pie.set_progress(pct)
         self._lbl_count.setText(f"{task.current} / {task.total}")
         self._lbl_eta.setText(_eta_str(task))
+        detail = task.detail.strip()
+        self._lbl_detail.setText(detail)
+        self._lbl_detail.setVisible(bool(detail))
+        elapsed = max(0.0, time.monotonic() - task.started_at)
+        self._lbl_meta.setText(f"Czas: {int(elapsed)}s | ID: {task.task_id}")
 
         if task.finished:
-            self._lbl_detail.setText("✔ Ukończono")
-            self._lbl_detail.setStyleSheet("color:#22c55e;font-size:9px;")
             self.setStyleSheet(
                 "QFrame#BgTaskRow{background:#071208;border:1px solid #1a3020;"
-                "border-radius:4px;margin:1px 0;}"
+                "border-radius:6px;margin:2px 0;}"
             )
             self._bar.setStyleSheet(
-                "QProgressBar{background:#1e2d42;border:none;border-radius:2px;}"
-                "QProgressBar::chunk{background:#22c55e;border-radius:2px;}"
+                "QProgressBar{background:#1e2d42;border:none;border-radius:3px;}"
+                "QProgressBar::chunk{background:#22c55e;border-radius:3px;}"
             )
-        elif task.detail:
-            # Obetnij długą nazwę pliku z wielokropkiem na środku
-            detail = task.detail
-            if len(detail) > 34:
-                detail = detail[:16] + "…" + detail[-16:]
-            self._lbl_detail.setText(f"▶ {detail}")
-            self._lbl_detail.setStyleSheet("color:#3a6080;font-size:9px;")
 
 
 # ---------------------------------------------------------------------------
@@ -278,7 +282,7 @@ class BackgroundTaskMonitorWidget(QtWidgets.QWidget):
 
         # Header
         hdr = QtWidgets.QHBoxLayout()
-        lbl = QtWidgets.QLabel("⚙ Procesy w tle")
+        lbl = QtWidgets.QLabel("Procesy w tle")
         lbl.setStyleSheet("color:#4a9eff;font-size:11px;font-weight:bold;")
         self._badge = QtWidgets.QLabel("")
         self._badge.setStyleSheet("color:#4a6080;font-size:10px;")
@@ -292,7 +296,8 @@ class BackgroundTaskMonitorWidget(QtWidgets.QWidget):
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         scroll.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        scroll.setMaximumHeight(220)
+        scroll.setMinimumHeight(180)
+        scroll.setMaximumHeight(460)
         scroll.setStyleSheet("QScrollArea{border:none;background:transparent;}")
         self._container = QtWidgets.QWidget()
         self._vl = QtWidgets.QVBoxLayout(self._container)
@@ -357,3 +362,4 @@ class BackgroundTaskMonitorWidget(QtWidgets.QWidget):
         n = len(self._rows)
         self.setVisible(n > 0)
         self._badge.setText(f"({n})" if n > 0 else "")
+
