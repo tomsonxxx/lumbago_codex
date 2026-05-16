@@ -6,7 +6,7 @@ from datetime import datetime
 import os
 import re
 from copy import deepcopy
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError, as_completed
 
 from PyQt6 import QtCore, QtGui, QtWidgets
 
@@ -655,80 +655,121 @@ class AutoTagWorker(QtCore.QRunnable):
 
         _LOCAL_FIELDS = ("loudness_lufs", "cue_in_ms", "cue_out_ms", "fingerprint", "waveform_path", "artwork_path")
 
-        for track in self.tracks:
-            if self._stop_requested:
-                break
-            metadata_report: MetadataFillReport | None = None
-            autotag_summary: dict[str, int | str | None] = {}
-            try:
-                before = deepcopy(track)
-                try:
-                    metadata_report = metadata_filler.fill_missing_with_report(track, "mix")
-                except Exception:
-                    metadata_report = None
-                autotag_summary = self._run_single_track(
+        parallel_workers = int(getattr(self.settings, "autotag_parallel_workers", 4) or 4)
+        parallel_workers = max(1, min(parallel_workers, max(1, total)))
+
+        with ThreadPoolExecutor(max_workers=parallel_workers, thread_name_prefix="autotag-track") as pool:
+            futures = [
+                pool.submit(
+                    self._process_track_task,
                     track,
                     autotagger,
-                    metadata_pipeline=metadata_pipeline,
-                    recognition_pipeline=recognition_pipeline,
-                    baseline_track=before,
-                    metadata_report=metadata_report,
-                    refresh_existing=_should_refresh_existing_metadata(track.path),
+                    metadata_filler,
+                    metadata_pipeline,
+                    recognition_pipeline,
                 )
-                changed_fields = _changed_fields(before, track)
-                sync_fields = self._fields_requiring_file_sync(track)
-                fields_to_write = sorted(set(changed_fields) | set(sync_fields))
-                local_changed = any(getattr(before, f, None) != getattr(track, f, None) for f in _LOCAL_FIELDS)
-                tags_changed = before.tags != track.tags
-                if fields_to_write:
-                    old_values = {
-                        name: (None if getattr(before, name, None) is None else str(getattr(before, name, None)))
-                        for name in fields_to_write
-                    }
-                    result = apply_track_writes(
-                        [
-                            PendingTrackWrite(
-                                track=track,
-                                fields=_track_to_tag_dict(track, fields_to_write),
-                                source="autotag:file_sync",
-                                confidence=None,
-                                change_log_source="autotag:file_sync",
-                                old_values=old_values,
-                            )
-                        ],
-                        max_workers=1,
-                        update_mode="single",
+                for track in self.tracks
+            ]
+            for future in as_completed(futures):
+                if self._stop_requested:
+                    break
+                try:
+                    payload = future.result()
+                    track = payload["track"]
+                    before = payload["before"]
+                    metadata_report = payload["metadata_report"]
+                    autotag_summary = payload["autotag_summary"]
+
+                    changed_fields = _changed_fields(before, track)
+                    sync_fields = self._fields_requiring_file_sync(track)
+                    fields_to_write = sorted(set(changed_fields) | set(sync_fields))
+                    local_changed = any(getattr(before, f, None) != getattr(track, f, None) for f in _LOCAL_FIELDS)
+                    tags_changed = before.tags != track.tags
+
+                    if fields_to_write:
+                        old_values = {
+                            name: (None if getattr(before, name, None) is None else str(getattr(before, name, None)))
+                            for name in fields_to_write
+                        }
+                        result = apply_track_writes(
+                            [
+                                PendingTrackWrite(
+                                    track=track,
+                                    fields=_track_to_tag_dict(track, fields_to_write),
+                                    source="autotag:file_sync",
+                                    confidence=None,
+                                    change_log_source="autotag:file_sync",
+                                    old_values=old_values,
+                                )
+                            ],
+                            max_workers=1,
+                            update_mode="single",
+                        )
+                        if result.file_write_errors:
+                            raise RuntimeError("; ".join(result.file_write_errors))
+                        updated += result.track_count
+                    elif local_changed:
+                        update_track(track)
+                        updated += 1
+
+                    if tags_changed and track.tags:
+                        replace_track_tags(
+                            track.path,
+                            [t.value for t in track.tags],
+                            source="genre_tags",
+                            confidence=None,
+                        )
+
+                    detail = _build_autotag_detail(
+                        metadata_report=metadata_report,
+                        recognition_result=autotag_summary.get("recognition_result"),
+                        refresh_existing=bool(autotag_summary.get("refresh_existing")),
+                        best_source=str(autotag_summary.get("best_source") or "") or None,
+                        best_score=autotag_summary.get("best_score") if isinstance(autotag_summary.get("best_score"), int) else None,
+                        changed_fields=changed_fields,
+                        sync_fields=sync_fields,
+                        remaining_missing=_missing_autotag_fields(track),
                     )
-                    if result.file_write_errors:
-                        raise RuntimeError("; ".join(result.file_write_errors))
-                    updated += result.track_count
-                elif local_changed:
-                    update_track(track)
-                    updated += 1
-                if tags_changed and track.tags:
-                    replace_track_tags(
-                        track.path,
-                        [t.value for t in track.tags],
-                        source="genre_tags",
-                        confidence=None,
-                    )
-                detail = _build_autotag_detail(
-                    metadata_report=metadata_report,
-                    recognition_result=autotag_summary.get("recognition_result"),
-                    refresh_existing=bool(autotag_summary.get("refresh_existing")),
-                    best_source=str(autotag_summary.get("best_source") or "") or None,
-                    best_score=autotag_summary.get("best_score") if isinstance(autotag_summary.get("best_score"), int) else None,
-                    changed_fields=changed_fields,
-                    sync_fields=sync_fields,
-                    remaining_missing=_missing_autotag_fields(track),
-                )
-            except Exception:
-                errors += 1
-                detail = "Wystąpił błąd podczas autotagowania tego utworu."
-            processed += 1
-            self.signals.progress.emit(processed, total, Path(track.path).name, detail)
+                except Exception:
+                    errors += 1
+                    track = None
+                    detail = "Wystąpił błąd podczas autotagowania tego utworu."
+
+                processed += 1
+                track_name = Path(track.path).name if track is not None else "-"
+                self.signals.progress.emit(processed, total, track_name, detail)
 
         self.signals.finished.emit(processed, updated, errors)
+
+    def _process_track_task(
+        self,
+        track: Track,
+        autotagger: UnifiedAutoTagger,
+        metadata_filler: AutoMetadataFiller,
+        metadata_pipeline: MetadataPipelineV2,
+        recognition_pipeline: RecognitionPipelineV2,
+    ) -> dict[str, object]:
+        before = deepcopy(track)
+        metadata_report: MetadataFillReport | None = None
+        try:
+            metadata_report = metadata_filler.fill_missing_with_report(track, "mix")
+        except Exception:
+            metadata_report = None
+        autotag_summary = self._run_single_track(
+            track,
+            autotagger,
+            metadata_pipeline=metadata_pipeline,
+            recognition_pipeline=recognition_pipeline,
+            baseline_track=before,
+            metadata_report=metadata_report,
+            refresh_existing=_should_refresh_existing_metadata(track.path),
+        )
+        return {
+            "track": track,
+            "before": before,
+            "metadata_report": metadata_report,
+            "autotag_summary": autotag_summary,
+        }
 
     def _run_single_track(
         self,

@@ -4,6 +4,7 @@ from dataclasses import dataclass, field, replace
 from hashlib import md5
 from pathlib import Path, PureWindowsPath
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 import requests
@@ -75,20 +76,27 @@ class UnifiedAutoTagger:
 
     def enrich_track(self, track: Track) -> EnrichmentResult:
         candidates: list[Candidate] = []
-
-        for fn in (
+        providers = (
             self._search_musicbrainz,
             self._search_itunes,
             self._search_deezer,
             self._search_discogs,
+            self._search_lrclib,
+            self._search_lyrics_ovh,
             self._search_ai,
-        ):
-            try:
-                candidate = fn(track)
-                if candidate is not None:
-                    candidates.append(candidate)
-            except Exception as exc:
-                candidates.append(Candidate(source=fn.__name__, score=0, error=str(exc)))
+        )
+        max_workers = int(getattr(self.settings, "provider_parallel_workers", 6) or 6)
+        max_workers = max(2, min(max_workers, len(providers)))
+        with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="autotag-src") as pool:
+            future_map = {pool.submit(fn, track): fn for fn in providers}
+            for future in as_completed(future_map):
+                fn = future_map[future]
+                try:
+                    candidate = future.result()
+                    if candidate is not None:
+                        candidates.append(candidate)
+                except Exception as exc:
+                    candidates.append(Candidate(source=fn.__name__, score=0, error=str(exc)))
 
         valid = [candidate for candidate in candidates if candidate.error is None and candidate.score > 0]
         valid.sort(key=lambda candidate: candidate.score, reverse=True)
@@ -132,6 +140,16 @@ class UnifiedAutoTagger:
             if incoming is None:
                 continue
             current = getattr(track, field_name, None)
+            if (
+                field_name == "album"
+                and _has_value(current)
+                and _has_value(incoming)
+                and _normalize(str(current)) != _normalize(str(incoming))
+            ):
+                # Protect existing album values from weak/untrusted replacements.
+                winning_album = _candidate_for_field(candidates, "album")
+                if winning_album is None or winning_album.score < 72:
+                    continue
             if field_name in _LOCALLY_MEASURED and _has_value(current):
                 continue
             if current != incoming:
@@ -537,6 +555,85 @@ class UnifiedAutoTagger:
             tags=tags,
         )
 
+    def _search_lrclib(self, track: Track) -> Candidate | None:
+        track = _track_with_filename_identity(track)
+        artist = _clean_text(track.artist)
+        title = _clean_text(track.title)
+        if not artist or not title:
+            return None
+        try:
+            response = requests.get(
+                "https://lrclib.net/api/search",
+                params={
+                    "track_name": title[:120],
+                    "artist_name": artist[:120],
+                    "album_name": (_clean_text(track.album) or "")[:120],
+                },
+                headers={"Accept": "application/json", "User-Agent": _USER_AGENT},
+                timeout=12,
+            )
+            response.raise_for_status()
+            payload = response.json()
+        except Exception:
+            return None
+        if not isinstance(payload, list) or not payload:
+            return None
+        best = None
+        best_score = -1.0
+        for item in payload[:10]:
+            if not isinstance(item, dict):
+                continue
+            item_title = _to_clean_str(item.get("trackName"))
+            item_artist = _to_clean_str(item.get("artistName"))
+            local_score = _token_similarity(_normalize(title), _normalize(item_title))
+            local_score = (local_score * 0.7) + (_token_similarity(_normalize(artist), _normalize(item_artist)) * 0.3)
+            if local_score > best_score:
+                best = item
+                best_score = local_score
+        if not isinstance(best, dict) or best_score < 0.45:
+            return None
+        lyrics = _to_clean_str(best.get("plainLyrics")) or _to_clean_str(best.get("syncedLyrics"))
+        if not lyrics:
+            return None
+        comment = "Lyrics source: LRCLIB"
+        score = int(min(90, max(35, round(best_score * 100))))
+        return Candidate(
+            source="LRCLIB",
+            score=score,
+            title=_to_clean_str(best.get("trackName")) or track.title,
+            artist=_to_clean_str(best.get("artistName")) or track.artist,
+            album=_to_clean_str(best.get("albumName")) or track.album,
+            lyrics=lyrics,
+            comment=comment,
+        )
+
+    def _search_lyrics_ovh(self, track: Track) -> Candidate | None:
+        track = _track_with_filename_identity(track)
+        artist = _clean_text(track.artist)
+        title = _clean_text(track.title)
+        if not artist or not title:
+            return None
+        try:
+            response = requests.get(
+                f"https://api.lyrics.ovh/v1/{requests.utils.quote(artist)}/{requests.utils.quote(title)}",
+                headers={"Accept": "application/json", "User-Agent": _USER_AGENT},
+                timeout=10,
+            )
+            if response.status_code >= 400:
+                return None
+            payload = response.json()
+        except Exception:
+            return None
+        lyrics = _to_clean_str(payload.get("lyrics")) if isinstance(payload, dict) else None
+        if not lyrics:
+            return None
+        return Candidate(
+            source="Lyrics.ovh",
+            score=48,
+            lyrics=lyrics,
+            comment="Lyrics source: lyrics.ovh",
+        )
+
     def _build_multi_ai_tagger(self) -> MultiAiTagger | None:
         taggers: list[CloudAiTagger] = []
         for provider in ("openai", "gemini", "grok", "deepseek"):
@@ -743,6 +840,14 @@ def _best_field_value(candidates: list[Candidate], field_name: str) -> Any:
         value = getattr(candidate, field_name, None)
         if _has_meaningful_candidate_value(field_name, value):
             return value
+    return None
+
+
+def _candidate_for_field(candidates: list[Candidate], field_name: str) -> Candidate | None:
+    for candidate in candidates:
+        value = getattr(candidate, field_name, None)
+        if _has_meaningful_candidate_value(field_name, value):
+            return candidate
     return None
 
 
