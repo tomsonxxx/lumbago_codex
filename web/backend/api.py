@@ -13,7 +13,7 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from lumbago_app.core.audio import apply_local_metadata, extract_metadata, iter_audio_files
+from lumbago_app.core.audio import apply_local_metadata, extract_metadata, file_hash as compute_file_hash, iter_audio_files
 from lumbago_app.core.config import load_settings
 from lumbago_app.core.models import Track
 from lumbago_app.data.db import get_session_factory
@@ -191,6 +191,11 @@ def _extract_track(path: Path) -> Track:
         stat = path.stat()
         track = Track(path=str(path), file_size=stat.st_size, file_mtime=stat.st_mtime)
     apply_local_metadata(track, path)
+    if not track.file_hash:
+        try:
+            track.file_hash = compute_file_hash(path)
+        except Exception:
+            pass
     return track
 
 

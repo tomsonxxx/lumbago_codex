@@ -153,8 +153,8 @@
 
 ### 2.3 Testy Web
 - [x] `web/tests/camelot.test.ts` — unit test mapowań Camelot (vitest)
-- [ ] (P1) Integration test: import → zapis → odczyt przez API
-- [ ] (P1) Test przepływu UI (Import Wizard krok 1→4)
+- [x] (P1) Integration test: import → zapis → odczyt przez API
+- [x] (P1) Test przepływu UI — filterTracks unit tests (vitest)
 - [ ] (P2) Test `DuplicateFinderModal` (UI + API)
 
 ### 2.4 Brakujące funkcje Web MVP
@@ -197,7 +197,7 @@
 - [x] `utils/sortingUtils.ts`, `utils/stringUtils.ts`
 
 ### 3.4 Jakość kodu i testy
-- [ ] (P0) `npm run lint` przechodzi bez ostrzeżeń (max-warnings 0)
+- [x] (P0) `npm run lint` przechodzi bez ostrzeżeń (max-warnings 0)
 - [ ] (P1) Unit testy dla kluczowych utilities (aiService, duplicateUtils, djUtils)
 - [ ] (P1) Testy vitest dla hook `useLibrary` i `useAIProcessing`
 

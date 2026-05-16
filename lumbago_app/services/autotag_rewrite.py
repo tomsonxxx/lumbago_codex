@@ -7,7 +7,8 @@ from typing import Any
 
 import requests
 
-from lumbago_app.core.models import Track
+from lumbago_app.core.config import cache_dir
+from lumbago_app.core.models import Tag, Track
 from lumbago_app.core.renamer import parse_filename_tags
 from lumbago_app.services.ai_tagger import CloudAiTagger, MultiAiTagger
 
@@ -57,6 +58,7 @@ class Candidate:
     copyright: str | None = None
     remixer: str | None = None
     tags: list[str] = field(default_factory=list)
+    artwork_url: str | None = None
     error: str | None = None
 
 
@@ -138,6 +140,27 @@ class UnifiedAutoTagger:
         if best is not None and best.artist and not track.albumartist:
             track.albumartist = best.artist
             changed = True
+
+        if not _has_value(track.artwork_path):
+            artwork_url = _best_artwork_url(candidates)
+            if artwork_url:
+                dest = cache_dir() / f"cover_{Path(track.path).stem}.jpg"
+                if _download_artwork(artwork_url, dest):
+                    track.artwork_path = str(dest)
+                    changed = True
+
+        genre_tags: list[str] = []
+        seen: set[str] = set()
+        for candidate in candidates:
+            for tag_value in candidate.tags:
+                clean = str(tag_value).strip()
+                if clean and clean.lower() not in seen:
+                    seen.add(clean.lower())
+                    genre_tags.append(clean)
+        if genre_tags:
+            track.tags = [Tag(value=t, source="genre_tags") for t in genre_tags[:20]]
+            changed = True
+
         return changed
 
     def _search_musicbrainz(self, track: Track) -> Candidate | None:
@@ -221,6 +244,8 @@ class UnifiedAutoTagger:
         final_score = max(0, min(100, score + sim))
         if not artist:
             final_score = min(final_score, 68)
+        release_mbid = release.get("id")
+        mb_artwork_url = f"https://coverartarchive.org/release/{release_mbid}/front-500" if release_mbid else None
         return Candidate(
             source="MusicBrainz",
             score=final_score,
@@ -230,6 +255,7 @@ class UnifiedAutoTagger:
             year=year,
             genre=genre,
             tags=tags,
+            artwork_url=mb_artwork_url,
         )
 
     def _search_itunes(self, track: Track) -> Candidate | None:
@@ -259,6 +285,8 @@ class UnifiedAutoTagger:
             score = min(score, 72)
         release_date = str(best.get("releaseDate") or "")
         year = release_date[:4] if release_date[:4].isdigit() else None
+        raw_artwork = _to_clean_str(best.get("artworkUrl100"))
+        artwork_url = raw_artwork.replace("100x100bb", "600x600bb") if raw_artwork else None
         return Candidate(
             source="Apple Music",
             score=max(1, min(95, score)),
@@ -267,6 +295,7 @@ class UnifiedAutoTagger:
             album=_to_clean_str(best.get("collectionName")),
             year=year,
             genre=_to_clean_str(best.get("primaryGenreName")),
+            artwork_url=artwork_url,
         )
 
     def _musicbrainz_detail(self, mbid: str) -> dict[str, list[str]]:
@@ -415,6 +444,7 @@ class UnifiedAutoTagger:
             year=str(best.get("year") or "") or None,
             genre=((best.get("genre") or [None])[0]),
             tags=[str(tag).strip() for tag in tags[:8] if str(tag).strip()],
+            artwork_url=_to_clean_str(best.get("cover_image")) or _to_clean_str(best.get("thumb")),
         )
 
     def _search_ai(self, track: Track) -> Candidate | None:
@@ -493,6 +523,34 @@ class UnifiedAutoTagger:
         if not taggers:
             return None
         return MultiAiTagger(taggers, max_workers=min(4, len(taggers)))
+
+
+def _best_artwork_url(candidates: list[Candidate]) -> str | None:
+    source_priority = ("Apple Music", "Discogs", "MusicBrainz")
+    for source in source_priority:
+        for candidate in candidates:
+            if candidate.source == source and candidate.artwork_url:
+                return candidate.artwork_url
+    for candidate in candidates:
+        if candidate.artwork_url:
+            return candidate.artwork_url
+    return None
+
+
+def _download_artwork(url: str, dest: Path) -> bool:
+    if dest.exists():
+        return True
+    try:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        resp = requests.get(url, timeout=15, allow_redirects=True)
+        resp.raise_for_status()
+        content_type = resp.headers.get("content-type", "")
+        if not content_type.startswith("image/"):
+            return False
+        dest.write_bytes(resp.content)
+        return True
+    except Exception:
+        return False
 
 
 def _resolve_provider_config(provider: str, settings) -> tuple[str | None, str | None, str | None]:

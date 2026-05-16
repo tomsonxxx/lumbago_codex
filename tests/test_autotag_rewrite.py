@@ -45,6 +45,7 @@ def test_unified_autotagger_picks_best_candidate(monkeypatch):
 
     monkeypatch.setattr(service, "_search_musicbrainz", lambda _track: Candidate(source="MusicBrainz", score=74, title="Take Me Away", artist="4 Strings"))
     monkeypatch.setattr(service, "_search_itunes", lambda _track: None)
+    monkeypatch.setattr(service, "_search_deezer", lambda _track: None)
     monkeypatch.setattr(service, "_search_discogs", lambda _track: Candidate(source="Discogs", score=81, title="Take Me Away", artist="4 Strings"))
     monkeypatch.setattr(service, "_search_ai", lambda _track: Candidate(source="AI", score=69, title="Take Me Away", artist="4 Strings"))
 
