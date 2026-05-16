@@ -5,10 +5,10 @@ from datetime import datetime, timedelta
 import json
 
 from sqlalchemy import delete, select, update, text
+from sqlalchemy.orm import selectinload
 
-from lumbago_app.core.models import Playlist, Track
+from lumbago_app.core.models import AudioFeatures, Playlist, Tag, Track
 from lumbago_app.data.db import get_session_factory, get_engine
-from lumbago_app.core.models import AudioFeatures
 from lumbago_app.data.schema import (
     AudioFeaturesOrm,
     Base,
@@ -65,7 +65,7 @@ _TRACK_META_FIELDS = [
     "loudness_lufs", "duration", "file_size", "file_mtime", "file_hash",
     "format", "bitrate", "sample_rate", "energy", "mood",
     "comment", "lyrics", "isrc", "publisher", "grouping", "copyright", "remixer",
-    "cue_in_ms", "cue_out_ms", "artwork_path", "fingerprint",
+    "cue_in_ms", "cue_out_ms", "artwork_path", "fingerprint", "waveform_path",
 ]
 
 
@@ -101,7 +101,7 @@ def upsert_tracks(tracks: Iterable[Track]) -> None:
 
 
 _TRACK_READ_FIELDS = _TRACK_META_FIELDS + [
-    "play_count", "rating", "waveform_path", "date_added", "date_modified",
+    "play_count", "rating", "date_added", "date_modified",
 ]
 
 
@@ -109,16 +109,22 @@ def _orm_to_track(row: TrackOrm) -> Track:
     kwargs = {"path": row.path}
     for field in _TRACK_READ_FIELDS:
         kwargs[field] = getattr(row, field, None)
-    # Ensure int defaults
     kwargs["play_count"] = kwargs.get("play_count") or 0
     kwargs["rating"] = kwargs.get("rating") or 0
-    return Track(**kwargs)
+    tags = [
+        Tag(value=t.tag, source=t.source or "user", confidence=t.confidence)
+        for t in (row.tags or [])
+        if t.source != "autotag:file_sync"
+    ]
+    return Track(**kwargs, tags=tags)
 
 
 def list_tracks() -> list[Track]:
     Session = get_session_factory()
     with Session() as session:
-        rows = session.scalars(select(TrackOrm).order_by(TrackOrm.id)).all()
+        rows = session.scalars(
+            select(TrackOrm).order_by(TrackOrm.id).options(selectinload(TrackOrm.tags))
+        ).all()
         return [_orm_to_track(row) for row in rows]
 
 
@@ -409,6 +415,7 @@ def list_playlist_tracks(playlist_id: int) -> list[Track]:
             .join(PlaylistTrackOrm, TrackOrm.id == PlaylistTrackOrm.track_id)
             .where(PlaylistTrackOrm.playlist_id == playlist_id)
             .order_by(PlaylistTrackOrm.position, PlaylistTrackOrm.track_id)
+            .options(selectinload(TrackOrm.tags))
         ).all()
         return [_orm_to_track(row[0]) for row in rows]
 

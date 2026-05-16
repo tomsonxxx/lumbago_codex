@@ -24,11 +24,12 @@ from lumbago_app.core.config import cache_dir, load_settings, save_settings
 from lumbago_app.core.models import Track
 from lumbago_app.core.renamer import parse_filename_tags
 from lumbago_app.core.services import enrich_track_with_analysis, heuristic_analysis
-from lumbago_app.core.waveform import generate_waveform
+from lumbago_app.core.waveform import generate_waveform, generate_waveform_threadsafe
 from lumbago_app.services.autotag_rewrite import UnifiedAutoTagger
 from lumbago_app.services.beatgrid import auto_cue_points, compute_beatgrid
 from lumbago_app.services.key_detection import detect_key
 from lumbago_app.services.loudness import analyze_loudness, normalize_loudness
+from lumbago_app.services.recognizer import AcoustIdRecognizer
 from lumbago_app.services.metadata_writeback import PendingTrackWrite, apply_track_writes
 from lumbago_app.services.xml_converter import XmlTrack, export_virtualdj_xml
 from lumbago_app.data.repository import (
@@ -488,6 +489,8 @@ class AutoTagWorker(QtCore.QRunnable):
 
         autotagger = UnifiedAutoTagger(self.settings)
 
+        _LOCAL_FIELDS = ("loudness_lufs", "cue_in_ms", "cue_out_ms", "fingerprint", "waveform_path", "artwork_path")
+
         for track in self.tracks:
             if self._stop_requested:
                 break
@@ -497,6 +500,8 @@ class AutoTagWorker(QtCore.QRunnable):
                 changed_fields = _changed_fields(before, track)
                 sync_fields = self._fields_requiring_file_sync(track)
                 fields_to_write = sorted(set(changed_fields) | set(sync_fields))
+                local_changed = any(getattr(before, f, None) != getattr(track, f, None) for f in _LOCAL_FIELDS)
+                tags_changed = before.tags != track.tags
                 if fields_to_write:
                     old_values = {
                         name: (None if getattr(before, name, None) is None else str(getattr(before, name, None)))
@@ -519,6 +524,16 @@ class AutoTagWorker(QtCore.QRunnable):
                     if result.file_write_errors:
                         raise RuntimeError("; ".join(result.file_write_errors))
                     updated += result.track_count
+                elif local_changed:
+                    update_track(track)
+                    updated += 1
+                if tags_changed and track.tags:
+                    replace_track_tags(
+                        track.path,
+                        [t.value for t in track.tags],
+                        source="genre_tags",
+                        confidence=None,
+                    )
             except Exception:
                 errors += 1
             processed += 1
@@ -567,6 +582,36 @@ class AutoTagWorker(QtCore.QRunnable):
         )
 
         _validate_track_metadata(track)
+
+        path_obj = Path(track.path)
+
+        if track.loudness_lufs is None:
+            try:
+                track.loudness_lufs = analyze_loudness(path_obj)
+            except Exception:
+                pass
+
+        if track.cue_in_ms is None and track.duration:
+            try:
+                track.cue_in_ms, track.cue_out_ms = auto_cue_points(track.duration)
+            except Exception:
+                pass
+
+        if track.fingerprint is None:
+            try:
+                fp_result = AcoustIdRecognizer(None).fingerprint(path_obj)
+                if fp_result:
+                    track.fingerprint = fp_result[1]
+            except Exception:
+                pass
+
+        if track.waveform_path is None:
+            try:
+                wave_path = generate_waveform_threadsafe(path_obj)
+                if wave_path:
+                    track.waveform_path = str(wave_path)
+            except Exception:
+                pass
 
     def _fields_requiring_file_sync(self, track: Track) -> list[str]:
         try:
