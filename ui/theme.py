@@ -439,6 +439,50 @@ QMessageBox {
 QMessageBox QLabel {
     color: #e8f3ff;
 }
+
+/* Settings dialog — grouped sections */
+QGroupBox#SettingsGroup {
+    border: 1px solid #1e2f47;
+    border-radius: 10px;
+    margin-top: 14px;
+    margin-bottom: 6px;
+    padding: 6px 8px 10px 8px;
+    background-color: rgba(16, 22, 38, 200);
+}
+QGroupBox#SettingsGroup::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    padding: 2px 8px;
+    color: #63f2ff;
+    font-weight: bold;
+    font-size: 12px;
+    left: 10px;
+}
+
+/* Inline link button next to API key fields */
+QPushButton#LinkBtn {
+    background: transparent;
+    border: none;
+    color: #63f2ff;
+    font-size: 11px;
+    padding: 0 2px;
+    text-decoration: underline;
+}
+QPushButton#LinkBtn:hover {
+    color: #ffffff;
+}
+QPushButton#LinkBtn:pressed {
+    color: #b0e8ff;
+}
+
+/* Scroll area inner widget background */
+QWidget#ScrollInner {
+    background: transparent;
+}
+QScrollArea {
+    background: transparent;
+    border: none;
+}
 """
 
 
