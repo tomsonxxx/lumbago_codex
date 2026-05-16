@@ -6,6 +6,7 @@ import { getCachedAnalysis, cacheAnalysisResult } from './cacheService';
 export type AIProvider = 'gemini' | 'grok' | 'openai';
 
 export interface ApiKeys {
+  gemini: string;
   grok: string;
   openai: string;
 }
@@ -71,7 +72,9 @@ export const smartBatchAnalyze = async (
     forceUpdate: boolean = false,
     analysisSettings?: any
 ): Promise<ID3Tags[]> => {
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    const geminiKey = apiKeys.gemini || import.meta.env.VITE_GEMINI_API_KEY || '';
+    if (!geminiKey) throw new Error("Brak klucza API Gemini. Ustaw go w Ustawieniach.");
+    const ai = new GoogleGenAI({ apiKey: geminiKey });
     // Use analysisSettings to inform the prompt if needed, here just logging to avoid lint error
     if (analysisSettings) console.log("Applying analysis settings:", Object.keys(analysisSettings.fields).filter(k => analysisSettings.fields[k]));
     
@@ -122,13 +125,12 @@ ${JSON.stringify(filesContext, null, 2)}
 Return the results as a JSON array corresponding to the order of files provided.`;
 
         try {
-            const response = await callGeminiWithRetry(() => 
+            const response = await callGeminiWithRetry(() =>
                 ai.models.generateContent({
-                    model: "gemini-3-flash-preview",
+                    model: "gemini-2.5-flash-preview-05-20",
                     contents: prompt,
                     config: {
                         systemInstruction: getSystemInstruction(),
-                        tools: [{ googleSearch: {} }],
                         responseMimeType: "application/json"
                     }
                 })
@@ -184,9 +186,10 @@ export const generateSmartPlaylist = async (
     files: AudioFile[],
     userPrompt: string
 ): Promise<{ name: string; ids: string[] }> => {
-    if (!process.env.API_KEY) throw new Error("Brak klucza API Gemini.");
+    const geminiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
+    if (!geminiKey) throw new Error("Brak klucza API Gemini.");
 
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = new GoogleGenAI({ apiKey: geminiKey });
 
     const libraryContext = files.map(f => {
         const t = f.fetchedTags || f.originalTags;
@@ -210,12 +213,11 @@ export const generateSmartPlaylist = async (
     `;
 
     try {
-        const response = await callGeminiWithRetry(() => 
+        const response = await callGeminiWithRetry(() =>
             ai.models.generateContent({
-                model: 'gemini-3-pro-preview',
+                model: 'gemini-2.5-flash-preview-05-20',
                 contents: prompt,
                 config: {
-                    thinkingConfig: { thinkingBudget: 32768 },
                     responseMimeType: "application/json",
                 }
             })
@@ -237,11 +239,12 @@ export const generateSmartPlaylist = async (
 
 // --- IMAGE GENERATION ---
 export const generateCoverArt = async (prompt: string, size: '1K' | '2K'): Promise<string> => {
-    if (!process.env.API_KEY) throw new Error("Brak klucza API Gemini.");
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const geminiKey2 = import.meta.env.VITE_GEMINI_API_KEY || '';
+    if (!geminiKey2) throw new Error("Brak klucza API Gemini.");
+    const ai = new GoogleGenAI({ apiKey: geminiKey2 });
     try {
         const response = await ai.models.generateContent({
-            model: 'gemini-3-pro-image-preview',
+            model: 'gemini-2.0-flash-preview-image-generation',
             contents: { parts: [{ text: prompt }] },
             config: { imageConfig: { aspectRatio: "1:1", imageSize: size } },
         });

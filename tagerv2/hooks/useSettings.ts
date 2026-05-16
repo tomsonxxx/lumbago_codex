@@ -26,7 +26,7 @@ export const useSettings = () => {
   
   // API keys are kept in memory only — never written to any browser storage
   // to avoid persisting credentials in cleartext.
-  const [apiKeys, setApiKeys] = useState<ApiKeys>({ grok: '', openai: '' });
+  const [apiKeys, setApiKeys] = useState<ApiKeys>({ gemini: '', grok: '', openai: '' });
 
   // AI Provider
   const [aiProvider, setAiProvider] = useState<AIProvider>(() => (localStorage.getItem('aiProvider') as AIProvider) || 'gemini');
