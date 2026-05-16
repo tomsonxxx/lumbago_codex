@@ -33,7 +33,6 @@ from services.metadata_enricher import AutoMetadataFiller, MetadataFillReport
 from services.metadata_pipeline_v2 import MetadataPipelineV2
 from services.recognition_pipeline_v2 import RecognitionPipelineResult, RecognitionPipelineV2
 from services.loudness import analyze_loudness, normalize_loudness
-from services.recognizer import AcoustIdRecognizer
 from services.metadata_writeback import PendingTrackWrite, apply_track_writes
 from services.xml_converter import XmlTrack, export_virtualdj_xml
 from data.repository import (
@@ -124,6 +123,21 @@ def _looks_like_track_number(value: str | None) -> bool:
     if not value:
         return False
     return bool(re.fullmatch(r"\d{1,3}", value.strip()))
+
+
+# Wspólna pula wątków dla analizy cech audio (key, BPM, loudness, waveform).
+# Uruchamiana równolegle z pipeline'em metadanych, żeby nie tracić czasu na
+# sekwencyjne oczekiwanie. Rozmiar 6 pozwala na 6 równoczesnych analiz.
+_AUDIO_ANALYSIS_POOL = ThreadPoolExecutor(max_workers=6, thread_name_prefix="audio-pool")
+
+
+def _run_audio_features_task(path: Path) -> object | None:
+    """Wyodrębnia cechy audio (BPM, energia) — helper do puli wątków."""
+    try:
+        from services.audio_features import AudioFeatureExtractor
+        return AudioFeatureExtractor().extract(path, duration_s=20)
+    except Exception:
+        return None
 
 
 _AUTOTAG_FIELDS = [
@@ -652,11 +666,18 @@ class AutoTagWorker(QtCore.QRunnable):
         metadata_pipeline = MetadataPipelineV2()
         recognition_pipeline = RecognitionPipelineV2(
             acoustid_api_key=getattr(self.settings, "acoustid_api_key", None),
+            musicbrainz_app_name=getattr(self.settings, "musicbrainz_app_name", None),
+            discogs_token=getattr(self.settings, "discogs_token", None),
+            lastfm_api_key=getattr(self.settings, "lastfm_api_key", None),
+            musixmatch_api_key=getattr(self.settings, "musixmatch_api_key", None),
+            genius_api_key=getattr(self.settings, "genius_api_key", None),
         )
 
         _LOCAL_FIELDS = ("loudness_lufs", "cue_in_ms", "cue_out_ms", "fingerprint", "waveform_path", "artwork_path")
 
-        parallel_workers = int(getattr(self.settings, "autotag_parallel_workers", 4) or 4)
+        # Domyślnie 6 workerów — każdy może być w innej fazie pipeline (fpcalc,
+        # AcoustID, MusicBrainz, AI, features), co daje przeplatanie zapytań.
+        parallel_workers = int(getattr(self.settings, "autotag_parallel_workers", 6) or 6)
         parallel_workers = max(1, min(parallel_workers, max(1, total)))
 
         with ThreadPoolExecutor(max_workers=parallel_workers, thread_name_prefix="autotag-track") as pool:
@@ -796,6 +817,37 @@ class AutoTagWorker(QtCore.QRunnable):
         refreshed = extract_metadata(path_obj)
         _merge_missing_from_source(track, refreshed)
         _repair_identity_from_filename(track)
+
+        # Krok 1: pre-compute fingerprint przez instancję recognition_pipeline (cache'uje wynik).
+        # Dzięki temu recognize_track() poniżej trafia w cache zamiast uruchamiać fpcalc drugi raz.
+        if track.fingerprint is None:
+            try:
+                _fp = recognition_pipeline.recognizer.fingerprint(path_obj)
+                if _fp:
+                    track.fingerprint = _fp[1]
+            except Exception:
+                pass
+
+        # Krok 2: uruchom analizę cech audio RÓWNOLEGLE z pipeline'em metadanych.
+        # Każde zadanie trafia do współdzielonej puli; wyniki zbieramy po metadanych.
+        _key_future = (
+            _AUDIO_ANALYSIS_POOL.submit(detect_key, path_obj)
+            if not _has_value(track.key) else None
+        )
+        _features_future = (
+            _AUDIO_ANALYSIS_POOL.submit(_run_audio_features_task, path_obj)
+            if (track.bpm is None or track.energy is None) else None
+        )
+        _loudness_future = (
+            _AUDIO_ANALYSIS_POOL.submit(analyze_loudness, path_obj)
+            if track.loudness_lufs is None else None
+        )
+        _waveform_future = (
+            _AUDIO_ANALYSIS_POOL.submit(generate_waveform_threadsafe, path_obj)
+            if track.waveform_path is None else None
+        )
+
+        # Krok 3: pipeline metadanych (korzysta z cache fingerprint z kroku 1).
         _process_log(f"[autotag] file={path_obj.name} | fn=_run_single_track | stage=recognition_pipeline")
         recognition_result = recognition_pipeline.recognize_track(
             track,
@@ -817,27 +869,31 @@ class AutoTagWorker(QtCore.QRunnable):
         for field_name in _AUTOTAG_FIELDS:
             setattr(track, field_name, getattr(resolved.track, field_name, None))
 
-        detected_key = None if _has_value(track.key) else detect_key(Path(track.path))
+        # Krok 4: zbierz wyniki analizy audio (zazwyczaj już gotowe, bo pipeline trwał dłużej).
+        detected_key = None
         detected_bpm = None
         detected_energy = None
-        if track.bpm is None or track.energy is None:
-            try:
-                from services.audio_features import AudioFeatureExtractor
 
-                audio_result = AudioFeatureExtractor().extract(Path(track.path), duration_s=45)
-                detected_bpm = getattr(audio_result, "tempo", None)
-                brightness = getattr(audio_result, "brightness", None)
-                roughness = getattr(audio_result, "roughness", None)
-                numeric_parts = [
-                    value
-                    for value in (brightness, roughness)
-                    if isinstance(value, (int, float))
-                ]
-                if numeric_parts:
-                    detected_energy = float(sum(numeric_parts) / len(numeric_parts))
+        if _key_future is not None:
+            try:
+                detected_key = _key_future.result(timeout=45)
             except Exception:
-                detected_bpm = None
-                detected_energy = None
+                pass
+
+        if _features_future is not None:
+            try:
+                audio_result = _features_future.result(timeout=45)
+                if audio_result:
+                    detected_bpm = getattr(audio_result, "tempo", None)
+                    brightness = getattr(audio_result, "brightness", None)
+                    roughness = getattr(audio_result, "roughness", None)
+                    numeric_parts = [
+                        v for v in (brightness, roughness) if isinstance(v, (int, float))
+                    ]
+                    if numeric_parts:
+                        detected_energy = float(sum(numeric_parts) / len(numeric_parts))
+            except Exception:
+                pass
 
         enrich_track_with_analysis(
             track,
@@ -848,12 +904,11 @@ class AutoTagWorker(QtCore.QRunnable):
         _process_log(f"[autotag] file={path_obj.name} | fn=_run_single_track | stage=analysis_enrichment_done")
 
         _validate_track_metadata(track)
-
         path_obj = Path(track.path)
 
-        if track.loudness_lufs is None:
+        if _loudness_future is not None:
             try:
-                track.loudness_lufs = analyze_loudness(path_obj)
+                track.loudness_lufs = _loudness_future.result(timeout=45)
             except Exception:
                 pass
 
@@ -863,17 +918,9 @@ class AutoTagWorker(QtCore.QRunnable):
             except Exception:
                 pass
 
-        if track.fingerprint is None:
+        if _waveform_future is not None:
             try:
-                fp_result = AcoustIdRecognizer(None).fingerprint(path_obj)
-                if fp_result:
-                    track.fingerprint = fp_result[1]
-            except Exception:
-                pass
-
-        if track.waveform_path is None:
-            try:
-                wave_path = generate_waveform_threadsafe(path_obj)
+                wave_path = _waveform_future.result(timeout=45)
                 if wave_path:
                     track.waveform_path = str(wave_path)
             except Exception:
@@ -885,7 +932,8 @@ class AutoTagWorker(QtCore.QRunnable):
             "best_score": getattr(best, "score", None),
             "refresh_existing": refresh_existing,
             "candidate_count": len(
-                [candidate for candidate in getattr(enriched, "candidates", []) if getattr(candidate, "error", None) is None and getattr(candidate, "score", 0) > 0]
+                [c for c in getattr(enriched, "candidates", [])
+                 if getattr(c, "error", None) is None and getattr(c, "score", 0) > 0]
             ),
             "recognition_result": recognition_result,
         }

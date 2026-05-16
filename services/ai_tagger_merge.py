@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import replace
+from pathlib import Path as _Path
 
 from core.models import AnalysisResult, Track
 
@@ -23,6 +24,22 @@ def _is_garbage(value: str | None) -> bool:
     if text in _UNKNOWN_VALUES:
         return True
     return any(token in text for token in _TRASH_SNIPPETS)
+
+
+def _is_folder_name(value: str | None, track_path: str | None) -> bool:
+    """Zwraca True jeśli wartość albumu jest identyczna z nazwą folderu nadrzędnego.
+
+    Programy do ripowania często ustawiają album = nazwa folderu, co jest
+    artefaktem, a nie prawdziwymi metadanymi. Traktujemy to jako „śmieci"
+    i pozwalamy AI nadpisać tę wartość nawet przy niskim confidence.
+    """
+    if not value or not track_path:
+        return False
+    try:
+        parent = _Path(track_path).parent.name
+        return value.strip().lower() == parent.strip().lower()
+    except Exception:
+        return False
 
 
 _AI_ANALYSIS_TEXT_FIELDS = ("key", "genre", "mood")
@@ -82,6 +99,7 @@ def _merge_analysis_into_track(track: Track, result: AnalysisResult) -> Track:
                 track.rating = rating_int
 
     ai_conf = result.confidence
+    track_path = getattr(track, "path", None)
     for field in _META_OVERWRITE_FIELDS:
         incoming = getattr(result, field, None)
         if incoming is None or (isinstance(incoming, str) and _is_unknown(incoming)):
@@ -89,9 +107,11 @@ def _merge_analysis_into_track(track: Track, result: AnalysisResult) -> Track:
         current = getattr(track, field, None)
         if current == incoming:
             continue
-        # Keep good local metadata when AI explicitly reports low confidence.
+        # Keep good local metadata when AI explicitly reports low confidence —
+        # unless the current value is just the parent folder name (ripper artifact).
         if isinstance(current, str) and not _is_garbage(current):
-            if ai_conf is not None and float(ai_conf) < 0.88:
+            is_folder_artifact = field == "album" and _is_folder_name(current, track_path)
+            if not is_folder_artifact and ai_conf is not None and float(ai_conf) < 0.88:
                 continue
         if current is not None:
             setattr(track, field, incoming)

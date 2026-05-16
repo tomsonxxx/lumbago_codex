@@ -49,19 +49,24 @@ RECOGNITION_FIELDS = (
 SOURCE_CONFIDENCE = {
     "acoustid": 0.98,
     "musicbrainz": 0.90,
+    "listenbrainz": 0.89,   # dane MusicBrainz przez prostszy endpoint
     "musicbrainz_portal": 0.88,
     "discogs_portal": 0.86,
     "deezer": 0.82,
     "itunes": 0.80,
-    "youtube": 0.72,
+    "theaudiodb": 0.76,     # dobre dane gatunkowo/nastrój/BPM
+    "lastfm": 0.74,
     "soundcloud": 0.74,
     "bandcamp": 0.74,
+    "musixmatch": 0.72,
+    "youtube": 0.72,
     "audius": 0.72,
-    "archiveorg": 0.70,
+    "existing_tags": 0.72,
     "jiosaavn": 0.71,
+    "archiveorg": 0.70,
+    "genius": 0.68,
     "filename": 0.52,
     "folder_structure": 0.45,
-    "existing_tags": 0.72,
 }
 
 
@@ -93,10 +98,23 @@ class RecognitionPipelineV2:
         portal_search: FreeMusicPortalSearch | None = None,
         musicbrainz_provider: MusicBrainzProvider | None = None,
         portal_query_limit: int = 3,
+        musicbrainz_app_name: str | None = None,
+        discogs_token: str | None = None,
+        lastfm_api_key: str | None = None,
+        musixmatch_api_key: str | None = None,
+        genius_api_key: str | None = None,
     ) -> None:
         self.recognizer = recognizer or AcoustIdRecognizer(acoustid_api_key)
-        self.portal_search = portal_search or FreeMusicPortalSearch()
-        self.musicbrainz_provider = musicbrainz_provider or MusicBrainzProvider()
+        self.portal_search = portal_search or FreeMusicPortalSearch(
+            musicbrainz_app_name=musicbrainz_app_name,
+            discogs_token=discogs_token,
+            lastfm_api_key=lastfm_api_key,
+            musixmatch_api_key=musixmatch_api_key,
+            genius_api_key=genius_api_key,
+        )
+        self.musicbrainz_provider = musicbrainz_provider or MusicBrainzProvider(
+            app_name=musicbrainz_app_name
+        )
         self.portal_query_limit = max(1, portal_query_limit)
 
     def recognize_track(

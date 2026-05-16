@@ -34,16 +34,21 @@ class FreeMusicPortalSearch:
     """Search music metadata in popular free portals without paid plans."""
 
     PORTALS: tuple[tuple[str, str], ...] = (
+        ("deezer", "Deezer"),
+        ("itunes", "Apple Music/iTunes"),
+        ("listenbrainz", "ListenBrainz"),
+        ("theaudiodb", "TheAudioDB"),
+        ("lastfm", "Last.fm"),
+        ("musixmatch", "Musixmatch"),
+        ("genius", "Genius"),
+        ("musicbrainz_portal", "MusicBrainz"),
+        ("discogs_portal", "Discogs"),
         ("youtube", "YouTube"),
         ("soundcloud", "SoundCloud"),
         ("bandcamp", "Bandcamp"),
-        ("deezer", "Deezer"),
-        ("itunes", "Apple Music/iTunes"),
         ("audius", "Audius"),
         ("archiveorg", "Internet Archive"),
         ("jiosaavn", "JioSaavn"),
-        ("musicbrainz_portal", "MusicBrainz"),
-        ("discogs_portal", "Discogs"),
     )
 
     _SOUNDCLOUD_CLIENT_ID: str | None = None
@@ -52,24 +57,35 @@ class FreeMusicPortalSearch:
         self,
         musicbrainz_app_name: str | None = None,
         discogs_token: str | None = None,
-        timeout: float = 12.0,
+        lastfm_api_key: str | None = None,
+        musixmatch_api_key: str | None = None,
+        genius_api_key: str | None = None,
+        timeout: float = 7.0,
     ) -> None:
         self.musicbrainz_app_name = musicbrainz_app_name or "LumbagoMusicAI"
         self.discogs_token = discogs_token
+        self.lastfm_api_key = lastfm_api_key
+        self.musixmatch_api_key = musixmatch_api_key
+        self.genius_api_key = genius_api_key
         self.timeout = timeout
         self.session = requests.Session()
         self.user_agent = "LumbagoMusicAI/1.0"
         self._providers: dict[str, Callable[[str], PortalProbe]] = {
+            "deezer": self._search_deezer,
+            "itunes": self._search_itunes,
+            "listenbrainz": self._search_listenbrainz,
+            "theaudiodb": self._search_theaudiodb,
+            "lastfm": self._search_lastfm,
+            "musixmatch": self._search_musixmatch,
+            "genius": self._search_genius,
+            "musicbrainz_portal": self._search_musicbrainz,
+            "discogs_portal": self._search_discogs,
             "youtube": self._search_youtube,
             "soundcloud": self._search_soundcloud,
             "bandcamp": self._search_bandcamp,
-            "deezer": self._search_deezer,
-            "itunes": self._search_itunes,
             "audius": self._search_audius,
             "archiveorg": self._search_archiveorg,
             "jiosaavn": self._search_jiosaavn,
-            "musicbrainz_portal": self._search_musicbrainz,
-            "discogs_portal": self._search_discogs,
         }
 
     def search_all(self, query: str) -> list[PortalProbe]:
@@ -85,6 +101,262 @@ class FreeMusicPortalSearch:
                 probe = PortalProbe(key, label, None, f"Error: {exc}")
             probes.append(probe)
         return probes
+
+    # ------------------------------------------------------------------
+    # Nowe źródła
+    # ------------------------------------------------------------------
+
+    def _search_listenbrainz(self, query: str) -> PortalProbe:
+        """ListenBrainz metadata lookup — bezpłatne, bez klucza API.
+
+        Używa endpointu /1/metadata/lookup, który agreguje dane
+        MusicBrainz w jednym żądaniu (tytuł, wykonawca, album, rok, label).
+        """
+        key, label = "listenbrainz", "ListenBrainz"
+        artist, title = _split_query(query)
+        if not title:
+            return PortalProbe(key, label, None, "Nie można podzielić zapytania")
+        try:
+            resp = self.session.get(
+                "https://api.listenbrainz.org/1/metadata/lookup",
+                params={"artist_name": artist or "", "recording_name": title, "inc": "artist release"},
+                timeout=self.timeout,
+                headers={"User-Agent": self.user_agent},
+            )
+        except Exception as exc:
+            return PortalProbe(key, label, None, f"Błąd: {exc}")
+        if resp.status_code != 200:
+            return PortalProbe(key, label, None, f"HTTP {resp.status_code}")
+        data = resp.json()
+        recording = data.get("recording") or {}
+        release = recording.get("release") or data.get("release") or {}
+        artist_data = recording.get("artist") or data.get("artist") or {}
+        rec_title = recording.get("name") or data.get("recording_name")
+        artist_name = (
+            artist_data.get("name")
+            or (artist_data.get("artists") or [{}])[0].get("name")
+        )
+        release_date = str(release.get("date") or release.get("release_date") or "")
+        year = release_date[:4] if release_date[:4].isdigit() else None
+        if not rec_title and not artist_name:
+            return PortalProbe(key, label, None, "Brak wyników")
+        candidate = PortalCandidate(
+            source_key=key,
+            source_label=label,
+            title=rec_title,
+            artist=artist_name,
+            album=release.get("name") or release.get("title"),
+            year=year,
+            publisher=(release.get("label") or {}).get("name"),
+            url=(
+                f"https://musicbrainz.org/recording/{recording.get('mbid')}"
+                if recording.get("mbid") else None
+            ),
+        )
+        return PortalProbe(key, label, candidate, "OK")
+
+    def _search_theaudiodb(self, query: str) -> PortalProbe:
+        """TheAudioDB — bezpłatny klucz publiczny '2'.
+
+        Zwraca gatunek, nastrój (mood), BPM i rok — dane bardzo
+        cenne dla DJ-ów. Endpoint: searchtrack.php?s=artist&t=track.
+        """
+        key, label = "theaudiodb", "TheAudioDB"
+        artist, title = _split_query(query)
+        params: dict[str, str] = {}
+        if artist and title:
+            params = {"s": artist, "t": title}
+        elif title:
+            params = {"s": "", "t": title}
+        else:
+            params = {"s": query}
+        try:
+            resp = self.session.get(
+                "https://www.theaudiodb.com/api/v1/json/2/searchtrack.php",
+                params=params,
+                timeout=self.timeout,
+                headers={"User-Agent": self.user_agent},
+            )
+        except Exception as exc:
+            return PortalProbe(key, label, None, f"Błąd: {exc}")
+        if resp.status_code != 200:
+            return PortalProbe(key, label, None, f"HTTP {resp.status_code}")
+        tracks = (resp.json() or {}).get("track") or []
+        if not tracks:
+            return PortalProbe(key, label, None, "Brak wyników")
+        item = tracks[0]
+        # Jeśli genre jest puste, użyj mood jako uzupełnienie (oba są przydatne dla DJ-ów)
+        genre = item.get("strGenre") or item.get("strMood")
+        candidate = PortalCandidate(
+            source_key=key,
+            source_label=label,
+            title=item.get("strTrack"),
+            artist=item.get("strArtist"),
+            album=item.get("strAlbum"),
+            genre=genre,
+            year=str(item.get("intYearReleased") or "") or None,
+            publisher=item.get("strLabel"),
+            url=item.get("strMusicVid") or item.get("strTrackThumb"),
+        )
+        return PortalProbe(key, label, candidate, "OK")
+
+    def _search_lastfm(self, query: str) -> PortalProbe:
+        """Last.fm Track Search — bezpłatny klucz API (rejestracja na last.fm).
+
+        Zwraca gatunek (tagi), album, rok i liczbę odsłuchań.
+        Jeśli klucz nie jest skonfigurowany, portal jest pomijany.
+        """
+        key, label = "lastfm", "Last.fm"
+        if not self.lastfm_api_key:
+            return PortalProbe(key, label, None, "Brak klucza LASTFM_API_KEY")
+        artist, title = _split_query(query)
+        method = "track.getInfo" if (artist and title) else "track.search"
+        params: dict[str, str] = {
+            "api_key": self.lastfm_api_key,
+            "format": "json",
+            "limit": "1",
+        }
+        if method == "track.getInfo":
+            params.update({"method": "track.getInfo", "artist": artist, "track": title})
+        else:
+            params.update({"method": "track.search", "track": query})
+        try:
+            resp = self.session.get(
+                "https://ws.audioscrobbler.com/2.0/",
+                params=params,
+                timeout=self.timeout,
+                headers={"User-Agent": self.user_agent},
+            )
+        except Exception as exc:
+            return PortalProbe(key, label, None, f"Błąd: {exc}")
+        if resp.status_code != 200:
+            return PortalProbe(key, label, None, f"HTTP {resp.status_code}")
+        data = resp.json()
+        if method == "track.getInfo":
+            item = data.get("track") or {}
+            if not item:
+                return PortalProbe(key, label, None, "Brak wyników")
+            album_data = item.get("album") or {}
+            tags = [t.get("name") for t in (item.get("toptags") or {}).get("tag", []) if t.get("name")]
+            genre = tags[0] if tags else None
+            year = str(album_data.get("@attr", {}).get("position") or "")[:4] or None
+            candidate = PortalCandidate(
+                source_key=key, source_label=label,
+                title=item.get("name"),
+                artist=(item.get("artist") or {}).get("name") or item.get("artist"),
+                album=album_data.get("title"),
+                genre=genre,
+                url=item.get("url"),
+            )
+        else:
+            matches = data.get("results", {}).get("trackmatches", {}).get("track", [])
+            if not matches:
+                return PortalProbe(key, label, None, "Brak wyników")
+            item = matches[0] if isinstance(matches, list) else matches
+            candidate = PortalCandidate(
+                source_key=key, source_label=label,
+                title=item.get("name"),
+                artist=item.get("artist"),
+                url=item.get("url"),
+            )
+        return PortalProbe(key, label, candidate, "OK")
+
+    def _search_musixmatch(self, query: str) -> PortalProbe:
+        """Musixmatch Track Search — bezpłatny klucz API (2000 req/dzień).
+
+        Zwraca tytuł, artystę, album, gatunek i rok. Bezpłatna rejestracja
+        na developer.musixmatch.com.
+        """
+        key, label = "musixmatch", "Musixmatch"
+        if not self.musixmatch_api_key:
+            return PortalProbe(key, label, None, "Brak klucza MUSIXMATCH_API_KEY")
+        artist, title = _split_query(query)
+        params: dict[str, str] = {
+            "apikey": self.musixmatch_api_key,
+            "page_size": "1",
+            "page": "1",
+            "s_track_rating": "desc",
+        }
+        if artist and title:
+            params.update({"q_track": title, "q_artist": artist})
+        else:
+            params["q_track"] = query
+        try:
+            resp = self.session.get(
+                "https://api.musixmatch.com/ws/1.1/track.search",
+                params=params,
+                timeout=self.timeout,
+                headers={"User-Agent": self.user_agent},
+            )
+        except Exception as exc:
+            return PortalProbe(key, label, None, f"Błąd: {exc}")
+        if resp.status_code != 200:
+            return PortalProbe(key, label, None, f"HTTP {resp.status_code}")
+        body = resp.json()
+        track_list = (
+            (body.get("message") or {})
+            .get("body", {})
+            .get("track_list", [])
+        )
+        if not track_list:
+            return PortalProbe(key, label, None, "Brak wyników")
+        item = track_list[0].get("track", {})
+        date_str = str(item.get("first_release_date") or "")
+        year = date_str[:4] if date_str[:4].isdigit() else None
+        genres = item.get("primary_genres", {}).get("music_genre_list", [])
+        genre = (genres[0].get("music_genre", {}).get("music_genre_name")) if genres else None
+        candidate = PortalCandidate(
+            source_key=key, source_label=label,
+            title=item.get("track_name"),
+            artist=item.get("artist_name"),
+            album=item.get("album_name"),
+            genre=genre,
+            year=year,
+            url=item.get("track_share_url"),
+        )
+        return PortalProbe(key, label, candidate, "OK")
+
+    def _search_genius(self, query: str) -> PortalProbe:
+        """Genius Track Search — bezpłatny token API (rejestracja na genius.com/api-clients).
+
+        Zwraca tytuł, artystę i URL z bogatymi danymi tekstowymi.
+        Jeśli token nie jest skonfigurowany, portal jest pomijany.
+        """
+        key, label = "genius", "Genius"
+        if not self.genius_api_key:
+            return PortalProbe(key, label, None, "Brak klucza GENIUS_API_KEY")
+        try:
+            resp = self.session.get(
+                "https://api.genius.com/search",
+                params={"q": query, "per_page": "1"},
+                timeout=self.timeout,
+                headers={
+                    "User-Agent": self.user_agent,
+                    "Authorization": f"Bearer {self.genius_api_key}",
+                },
+            )
+        except Exception as exc:
+            return PortalProbe(key, label, None, f"Błąd: {exc}")
+        if resp.status_code != 200:
+            return PortalProbe(key, label, None, f"HTTP {resp.status_code}")
+        hits = (
+            (resp.json().get("response") or {})
+            .get("hits", [])
+        )
+        if not hits:
+            return PortalProbe(key, label, None, "Brak wyników")
+        result = hits[0].get("result") or {}
+        primary = result.get("primary_artist") or {}
+        date_str = str(result.get("release_date_for_display") or result.get("release_date") or "")
+        year = date_str[-4:] if len(date_str) >= 4 and date_str[-4:].isdigit() else None
+        candidate = PortalCandidate(
+            source_key=key, source_label=label,
+            title=result.get("title") or result.get("full_title"),
+            artist=primary.get("name"),
+            year=year,
+            url=result.get("url"),
+        )
+        return PortalProbe(key, label, candidate, "OK")
 
     def _search_youtube(self, query: str) -> PortalProbe:
         key, label = "youtube", "YouTube"
@@ -462,3 +734,14 @@ def _split_artist_title(value: str | None) -> tuple[str | None, str | None]:
         left, right = value.split(" - ", 1)
         return left.strip() or None, right.strip() or None
     return None, value.strip() or None
+
+
+def _split_query(query: str) -> tuple[str, str]:
+    """Rozdziela query na (artysta, tytuł) na podstawie separatora ' - '.
+
+    Jeśli brak separatora, zwraca ("", query) — tytuł = cała fraza.
+    """
+    if " - " in query:
+        left, right = query.split(" - ", 1)
+        return left.strip(), right.strip()
+    return "", query.strip()
