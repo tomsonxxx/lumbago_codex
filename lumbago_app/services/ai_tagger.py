@@ -23,6 +23,7 @@ from lumbago_app.services.metadata_providers import (
 _ISRC_RE = re.compile(r"^[A-Z]{2}[A-Z0-9]{3}\d{7}$")
 _YEAR_MIN = 1900
 _YEAR_MAX = int(time.strftime("%Y")) + 1
+_DEFAULT_CHUNK_SIZE = 20
 
 
 def _validate_result(result: AnalysisResult) -> AnalysisResult:
@@ -178,7 +179,13 @@ class CloudAiTagger:
         for attempt in range(self.retries + 1):
             try:
                 if self.provider == "gemini":
-                    text = _call_gemini_generate_content(base_url, self.api_key, model, prompt, self.timeout)
+                    text = _call_gemini_generate_content(
+                        base_url,
+                        self.api_key,
+                        model,
+                        prompt,
+                        self.timeout,
+                    )
                 else:
                     text = _call_openai_compatible_chat(
                         base_url, self.api_key, model, prompt, self.timeout
@@ -220,8 +227,79 @@ class CloudAiTagger:
                 last_exc = exc
                 if attempt >= self.retries or not _is_retryable_exception(exc):
                     break
-                time.sleep(0.3 * (attempt + 1))
+                _sleep_for_retry(exc, attempt)
         return AnalysisResult(description=f"Cloud AI error: {last_exc}", confidence=0.0)
+
+    def analyze_batch(
+        self,
+        tracks: list[Track],
+        *,
+        chunk_size: int = _DEFAULT_CHUNK_SIZE,
+        forced_pause_s: float = 4.0,
+    ) -> dict[str, AnalysisResult]:
+        results: dict[str, AnalysisResult] = {}
+        if not tracks:
+            return results
+        if not self.provider or not self.api_key:
+            err = AnalysisResult(description="Cloud AI not configured", confidence=0.0)
+            return {track.path: err for track in tracks}
+        base_url, model = self._resolved_base_url, self._resolved_model
+        if not base_url or not model:
+            err = AnalysisResult(description="Cloud AI missing base URL or model", confidence=0.0)
+            return {track.path: err for track in tracks}
+
+        size = max(1, int(chunk_size))
+        for start in range(0, len(tracks), size):
+            chunk = tracks[start:start + size]
+            try:
+                chunk_results = self._analyze_chunk(chunk, base_url, model)
+                results.update(chunk_results)
+            except Exception as exc:
+                # Graceful failure: mark only this chunk as failed and continue.
+                for track in chunk:
+                    results[track.path] = AnalysisResult(
+                        description=f"AI chunk error: {exc}",
+                        confidence=0.0,
+                        comment="Błąd AI",
+                    )
+            time.sleep(max(0.0, forced_pause_s))
+        return results
+
+    def _analyze_chunk(
+        self,
+        chunk: list[Track],
+        base_url: str,
+        model: str,
+    ) -> dict[str, AnalysisResult]:
+        prompt = _build_batch_prompt(chunk)
+        last_exc: Exception | None = None
+        for attempt in range(self.retries + 1):
+            try:
+                if self.provider == "gemini":
+                    text = _call_gemini_generate_content(
+                        base_url,
+                        self.api_key or "",
+                        model,
+                        prompt,
+                        self.timeout,
+                        schema=_batch_response_schema(),
+                    )
+                else:
+                    text = _call_openai_compatible_chat(
+                        base_url,
+                        self.api_key or "",
+                        model,
+                        prompt,
+                        self.timeout,
+                    )
+                payload = _safe_json(text)
+                return _decode_batch_payload(chunk, payload)
+            except Exception as exc:
+                last_exc = exc
+                if attempt >= self.retries or not _is_retryable_exception(exc):
+                    break
+                _sleep_for_retry(exc, attempt)
+        raise RuntimeError(last_exc or "Unknown AI chunk error")
 
     def cache_key(self) -> str:
         base_url, model = self._resolved_base_url, self._resolved_model
@@ -257,6 +335,23 @@ class MultiAiTagger:
 
         merged = _merge_results(results)
         return merged
+
+    def analyze_batch(
+        self,
+        tracks: list[Track],
+        *,
+        chunk_size: int = _DEFAULT_CHUNK_SIZE,
+    ) -> dict[str, AnalysisResult]:
+        if not self.taggers:
+            return {
+                track.path: AnalysisResult(description="No AI providers selected", confidence=0.0)
+                for track in tracks
+            }
+        if len(self.taggers) == 1 and hasattr(self.taggers[0], "analyze_batch"):
+            fn = getattr(self.taggers[0], "analyze_batch", None)
+            if callable(fn):
+                return fn(tracks, chunk_size=chunk_size)
+        return {track.path: self.analyze(track) for track in tracks}
 
     def cache_key(self) -> str:
         keys: list[str] = []
@@ -474,8 +569,16 @@ def _build_prompt(
                 + "; ".join(noisy_current)
             )
 
+    field_hints = (
+        "\nWskazowki dla konkretnych pol:"
+        "\n- albumartist: jesli puste, ustaw na glownego wykonawce/artysty lub nazwe zespolu."
+        "\n- comment: wygeneruj krotki (2-5 slow) opis stylu lub charakteru utworu, np. 'Deep house z wokalem', 'Techno anthem z syntezatorami'."
+        "\n- remixer: jesli w tytule/artyscie jest wzorzec '(X Remix)', '(X Mix)', 'remixed by X' — wyodrebnij X; w przeciwnym razie null."
+        "\n- key: podaj tonacje w formacie Camelot (np. '8A', '11B') lub standardowym (np. 'Am', 'C#m'); jesli brak pewnosci — null."
+        "\n- bpm, energy, mood: szacuj na podstawie gatunku i kontekstu jesli brak danych audio."
+    )
     return (
-        "Jestes ekspertem metadanych muzycznych. Na podstawie ponizszych danych ZWERYFIKUJ i POPRAW wszystkie pola"
+        "Jestes ekspertem ds. archiwizacji muzyki. Na podstawie ponizszych danych ZWERYFIKUJ i POPRAW wszystkie pola"
         " uzywajac swojej wiedzy o tym utworze (artysta, wydanie, rok premiery, itp.)."
         " Jesli aktualna wartosc jest bledna lub niepelna — popraw ja na wiarygodna."
         " Jesli aktualna wartosc jest poprawna — zachowaj ja.\n"
@@ -483,10 +586,45 @@ def _build_prompt(
         + fields_list
         + "."
         + clean_note
+        + field_hints
         + "\nDla ratingu zwracaj liczbe calkowita 0-5.\n"
         + "\nJesli danego pola absolutnie nie mozna ustalic, uzyj null. Nie dodawaj zadnych komentarzy poza JSON.\n\n"
         "Znane dane utworu:\n"
         + known_section
+    )
+
+
+def _sanitize_track_for_ai(track: Track) -> dict[str, Any]:
+    banned = {"albumCoverUrl", "comments", "lyrics", "artwork_path", "waveform_path"}
+    payload: dict[str, Any] = {"originalFilename": Path(track.path).name}
+    for fname in _ALL_AI_FIELDS:
+        if fname in banned:
+            continue
+        value = getattr(track, fname, None)
+        if value is None:
+            continue
+        if isinstance(value, str):
+            value = value.strip()
+            if not value or len(value) > 240:
+                continue
+        payload[fname] = value
+    stem = Path(track.path).stem
+    if stem:
+        payload["filenameStem"] = stem
+    return payload
+
+
+def _build_batch_prompt(tracks: list[Track]) -> str:
+    sanitized = [_sanitize_track_for_ai(track) for track in tracks]
+    return (
+        "Rola: Ekspert ds. Archiwizacji Muzyki.\n"
+        "Zidentyfikuj utwory po nazwie pliku i fragmentarycznych tagach.\n"
+        "Utrzymuj spojnosc kontekstu: pliki o podobnych nazwach i kolejnosci (np. 01-, 02-) traktuj jako jedno wydawnictwo.\n"
+        "Dla utworow z jednego wydawnictwa pola album, artist i albumArtist musza byc identyczne.\n"
+        "Zwracaj TYLKO JSON jako tablice obiektow. Bez markdown.\n"
+        "Wymagane pola kazdego obiektu: originalFilename, title, artist, album, year, genre, trackNumber, bpm, key, albumArtist.\n"
+        "Nie modyfikuj zadnych pol technicznych/immutables (np. sciezki, kodowania).\n"
+        f"Wejscie (kolejnosc istotna): {json.dumps(sanitized, ensure_ascii=False)}"
     )
 
 
@@ -548,7 +686,13 @@ def _call_openai_compatible_chat(
 
 
 def _call_gemini_generate_content(
-    base_url: str, api_key: str, model: str, prompt: str, timeout: int
+    base_url: str,
+    api_key: str,
+    model: str,
+    prompt: str,
+    timeout: int,
+    *,
+    schema: dict[str, Any] | None = None,
 ) -> str:
     url = f"{base_url.rstrip('/')}/models/{model}:generateContent"
     headers = {
@@ -566,6 +710,8 @@ def _call_gemini_generate_content(
             "temperature": 0.2,
         },
     }
+    if schema is not None:
+        payload["generationConfig"]["responseSchema"] = schema
     resp = requests.post(url, headers=headers, json=payload, timeout=timeout)
     resp.raise_for_status()
     data = resp.json()
@@ -736,8 +882,78 @@ def _is_retryable_exception(exc: Exception) -> bool:
         response = getattr(exc, "response", None)
         if response is None:
             return True
-        return response.status_code >= 500
+        return response.status_code >= 500 or response.status_code == 429
     return False
+
+
+def _sleep_for_retry(exc: Exception, attempt: int) -> None:
+    # Exponential backoff: 2s, 4s, 8s, 16s...
+    wait = float(2 ** (attempt + 1))
+    if isinstance(exc, requests.HTTPError):
+        resp = getattr(exc, "response", None)
+        if resp is not None and resp.status_code == 429:
+            wait *= 2.0
+    time.sleep(wait)
+
+
+def _batch_response_schema() -> dict[str, Any]:
+    item_props = {
+        "originalFilename": {"type": "string"},
+        "title": {"type": "string"},
+        "artist": {"type": "string"},
+        "album": {"type": "string"},
+        "year": {"type": "string"},
+        "genre": {"type": "string"},
+        "trackNumber": {"type": "string"},
+        "bpm": {"type": "number"},
+        "key": {"type": "string"},
+        "albumArtist": {"type": "string"},
+    }
+    return {
+        "type": "array",
+        "items": {
+            "type": "object",
+            "properties": item_props,
+            "required": list(item_props.keys()),
+        },
+    }
+
+
+def _decode_batch_payload(chunk: list[Track], payload: Any) -> dict[str, AnalysisResult]:
+    by_name = {Path(track.path).name: track for track in chunk}
+    out: dict[str, AnalysisResult] = {}
+    rows: list[dict[str, Any]] = []
+    if isinstance(payload, list):
+        rows = [row for row in payload if isinstance(row, dict)]
+    elif isinstance(payload, dict):
+        maybe = payload.get("tracks")
+        if isinstance(maybe, list):
+            rows = [row for row in maybe if isinstance(row, dict)]
+    for row in rows:
+        original = _to_str(row.get("originalFilename"))
+        if not original or original not in by_name:
+            continue
+        track = by_name[original]
+        raw = AnalysisResult(
+            title=_to_str(row.get("title")),
+            artist=_to_str(row.get("artist")),
+            album=_to_str(row.get("album")),
+            albumartist=_to_str(row.get("albumArtist")),
+            year=_to_str(row.get("year")),
+            genre=_to_str(row.get("genre")),
+            tracknumber=_to_str(row.get("trackNumber")),
+            bpm=_to_float(row.get("bpm")),
+            key=_to_str(row.get("key")),
+            description="Cloud AI batch",
+            confidence=0.85,
+        )
+        out[track.path] = _validate_result(raw)
+    for track in chunk:
+        out.setdefault(
+            track.path,
+            AnalysisResult(description="AI chunk: missing row", confidence=0.0, comment="Błąd AI"),
+        )
+    return out
 
 
 # ---------------------------------------------------------------------------

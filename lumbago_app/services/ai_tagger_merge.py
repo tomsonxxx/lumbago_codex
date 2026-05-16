@@ -7,6 +7,7 @@ from lumbago_app.core.models import AnalysisResult, Track
 
 
 _UNKNOWN_VALUES = {"", "unknown", "n/a", "none", "null", "-", "\u2014", "â€”"}
+_JUNK_SUBSTRINGS = ("www.", "http://", "https://", "track ", "untitled", "audio track")
 
 
 def _is_unknown(value: str | None) -> bool:
@@ -15,11 +16,27 @@ def _is_unknown(value: str | None) -> bool:
     return value.strip().lower() in _UNKNOWN_VALUES
 
 
-# AI always overwrites these (audio analysis fields)
+def _is_junk(value: str | None) -> bool:
+    if value is None:
+        return True
+    text = value.strip().lower()
+    if text in _UNKNOWN_VALUES:
+        return True
+    return any(token in text for token in _JUNK_SUBSTRINGS)
+
+
+def _prefer_incoming(local_value: str | None, incoming_value: str | None) -> bool:
+    if incoming_value is None or _is_unknown(incoming_value):
+        return False
+    if local_value is None or _is_unknown(local_value) or _is_junk(local_value):
+        return True
+    local_len = len(local_value.strip())
+    incoming_len = len(incoming_value.strip())
+    return incoming_len >= max(local_len + 4, int(local_len * 1.3))
+
+
 _AI_ANALYSIS_TEXT_FIELDS = ("key", "genre", "mood")
 _AI_ANALYSIS_FLOAT_FIELDS = ("bpm", "energy")
-
-# Always overwrite with AI-verified values
 _META_OVERWRITE_FIELDS = (
     "title", "artist",
     "album", "albumartist", "year",
@@ -29,12 +46,13 @@ _META_OVERWRITE_FIELDS = (
 
 
 def _merge_analysis_into_track(track: Track, result: AnalysisResult) -> Track:
-    """Merge AI analysis into a track, overwriting all fields with verified values."""
+    """Non-destructive merge: keep good local values, fill blanks, replace junk."""
     for field in _AI_ANALYSIS_TEXT_FIELDS:
         incoming = getattr(result, field, None)
-        if incoming is None:
+        if incoming is None or (isinstance(incoming, str) and _is_unknown(incoming)):
             continue
-        if isinstance(incoming, str) and _is_unknown(incoming):
+        local_value = getattr(track, field, None)
+        if isinstance(local_value, str) and not _prefer_incoming(local_value, incoming):
             continue
         if field == "genre" and isinstance(incoming, str):
             incoming = _normalize_genre(incoming)
@@ -42,7 +60,8 @@ def _merge_analysis_into_track(track: Track, result: AnalysisResult) -> Track:
 
     for field in _AI_ANALYSIS_FLOAT_FIELDS:
         incoming = getattr(result, field, None)
-        if incoming is not None:
+        local_value = getattr(track, field, None)
+        if incoming is not None and local_value is None:
             setattr(track, field, incoming)
 
     rating = getattr(result, "rating", None)
@@ -51,17 +70,20 @@ def _merge_analysis_into_track(track: Track, result: AnalysisResult) -> Track:
             rating_int = int(rating)
         except (TypeError, ValueError):
             rating_int = None
-        if rating_int is not None:
-            if rating_int > 5:
-                rating_int = max(0, min(5, round(rating_int / 2)))
-            if 0 <= rating_int <= 5:
+        if rating_int is not None and 0 <= rating_int <= 5:
+            if track.rating in (None, 0):
                 track.rating = rating_int
 
     for field in _META_OVERWRITE_FIELDS:
         incoming = getattr(result, field, None)
-        if incoming is None:
+        if incoming is None or (isinstance(incoming, str) and _is_unknown(incoming)):
             continue
-        if isinstance(incoming, str) and _is_unknown(incoming):
+        local_value = getattr(track, field, None)
+        if isinstance(incoming, str):
+            local_text = str(local_value) if local_value is not None else None
+            if not _prefer_incoming(local_text, incoming):
+                continue
+        elif local_value not in (None, ""):
             continue
         setattr(track, field, incoming)
 

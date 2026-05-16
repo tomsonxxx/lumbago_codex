@@ -1202,6 +1202,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 return
             hidden: list[int] = json.loads(path.read_text(encoding="utf-8"))
             for col in hidden:
+                if col == 0:
+                    continue  # kolumna Tytuł zawsze widoczna
                 if 0 <= col < len(self.table_model.headers):
                     self.table_view.setColumnHidden(col, True)
         except Exception:
@@ -1581,6 +1583,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self._save_column_state()
         elif action == hide_all_col:
             for _, col in col_actions:
+                if col == 0:
+                    continue  # nigdy nie chowaj kolumny Tytuł
                 self.table_view.setColumnHidden(col, True)
             self._save_column_state()
         else:
@@ -1593,13 +1597,15 @@ class MainWindow(QtWidgets.QMainWindow):
     def _show_table_column_menu(self, pos):
         menu = QtWidgets.QMenu(self)
         show_all = menu.addAction("Pokaż wszystkie")
-        hide_all = menu.addAction("Ukryj wszystkie")
+        hide_all = menu.addAction("Ukryj wszystkie (poza Tytułem)")
         menu.addSeparator()
         actions = []
         for col, name in enumerate(self.table_model.headers):
             action = QtGui.QAction(name, menu)
             action.setCheckable(True)
             action.setChecked(not self.table_view.isColumnHidden(col))
+            if col == 0:
+                action.setEnabled(False)  # kolumna Tytuł zawsze widoczna
             actions.append((action, col))
             menu.addAction(action)
         chosen = menu.exec(self.table_view.horizontalHeader().mapToGlobal(pos))
@@ -1610,11 +1616,13 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         if chosen == hide_all:
             for _, col in actions:
+                if col == 0:
+                    continue  # nigdy nie chowaj kolumny Tytuł
                 self.table_view.setColumnHidden(col, True)
             self._save_column_state()
             return
         for action, col in actions:
-            if chosen == action:
+            if chosen == action and col != 0:
                 self.table_view.setColumnHidden(col, not action.isChecked())
                 self._save_column_state()
                 break
@@ -1818,7 +1826,7 @@ class MainWindow(QtWidgets.QMainWindow):
         task_id = self.task_manager.add_task("Autotagowanie", len(tracks))
 
         def on_progress(current: int, total: int, name: str):
-            self.task_manager.update_task(task_id, current, total)
+            self.task_manager.update_task(task_id, current, total, detail=name)
             self.status.showMessage(f"Autotag {current}/{total}: {name}")
 
         def on_finished(processed: int, updated: int, errors: int):

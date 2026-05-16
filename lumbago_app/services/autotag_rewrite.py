@@ -30,6 +30,30 @@ _SEARCH_STOPWORDS = {
     "live",
 }
 
+# Wzorce do ekstrakcji remixera z tytułu/artysty
+_REMIX_PATTERNS = [
+    re.compile(r"\(([^)]+?)\s+remix\)", re.IGNORECASE),
+    re.compile(r"\(([^)]+?)\s+mix\)", re.IGNORECASE),
+    re.compile(r"\(([^)]+?)\s+edit\)", re.IGNORECASE),
+    re.compile(r"\[([^\]]+?)\s+remix\]", re.IGNORECASE),
+    re.compile(r"\[([^\]]+?)\s+mix\]", re.IGNORECASE),
+    re.compile(r"remixed\s+by\s+([^,\(]+)", re.IGNORECASE),
+]
+
+
+def _extract_remixer(title: str | None, artist: str | None) -> str | None:
+    """Wyodrębnij nazwę remixera z tytułu lub artysty."""
+    for source in (title, artist):
+        if not source:
+            continue
+        for pat in _REMIX_PATTERNS:
+            m = pat.search(source)
+            if m:
+                name = m.group(1).strip().strip("'\"")
+                if name and len(name) > 1:
+                    return name
+    return None
+
 
 @dataclass
 class Candidate:
@@ -135,9 +159,21 @@ class UnifiedAutoTagger:
                 setattr(track, field_name, incoming)
                 changed = True
 
-        if best is not None and best.artist and not track.albumartist:
+        # albumartist fallback: zawsze uzupełnij z głównego artysty jeśli puste
+        if not _has_value(track.albumartist) and _has_value(track.artist):
+            track.albumartist = track.artist
+            changed = True
+        elif best is not None and best.artist and not track.albumartist:
             track.albumartist = best.artist
             changed = True
+
+        # remixer: spróbuj wyodrębnić z tytułu jeśli jeszcze nie ustawiony
+        if not _has_value(track.remixer):
+            extracted = _extract_remixer(track.title, track.artist)
+            if extracted:
+                track.remixer = extracted
+                changed = True
+
         return changed
 
     def _search_musicbrainz(self, track: Track) -> Candidate | None:

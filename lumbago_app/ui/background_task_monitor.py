@@ -17,6 +17,7 @@ class BackgroundTask:
     name: str
     total: int
     current: int = 0
+    detail: str = ""
     started_at: float = field(default_factory=time.monotonic)
     finished: bool = False
     finished_at: float | None = None
@@ -39,13 +40,15 @@ class BackgroundTaskManager(QtCore.QObject):
         self.task_added.emit(task_id)
         return task_id
 
-    def update_task(self, task_id: str, current: int, total: int | None = None):
+    def update_task(self, task_id: str, current: int, total: int | None = None, detail: str = ""):
         task = self._tasks.get(task_id)
         if task is None or task.finished:
             return
         task.current = current
         if total is not None:
             task.total = total
+        if detail:
+            task.detail = detail
         self.task_updated.emit(task_id)
 
     def finish_task(self, task_id: str):
@@ -204,6 +207,13 @@ class _TaskRow(QtWidgets.QFrame):
         )
         vl.addWidget(self._bar)
 
+        # Detail: current file/action label
+        self._lbl_detail = QtWidgets.QLabel()
+        self._lbl_detail.setStyleSheet("color:#3a6080;font-size:9px;")
+        self._lbl_detail.setWordWrap(False)
+        self._lbl_detail.setMaximumWidth(230)
+        vl.addWidget(self._lbl_detail)
+
         # Bottom: count + eta
         bot = QtWidgets.QHBoxLayout()
         self._lbl_count = QtWidgets.QLabel()
@@ -227,6 +237,8 @@ class _TaskRow(QtWidgets.QFrame):
         self._lbl_eta.setText(_eta_str(task))
 
         if task.finished:
+            self._lbl_detail.setText("✔ Ukończono")
+            self._lbl_detail.setStyleSheet("color:#22c55e;font-size:9px;")
             self.setStyleSheet(
                 "QFrame#BgTaskRow{background:#071208;border:1px solid #1a3020;"
                 "border-radius:4px;margin:1px 0;}"
@@ -235,6 +247,13 @@ class _TaskRow(QtWidgets.QFrame):
                 "QProgressBar{background:#1e2d42;border:none;border-radius:2px;}"
                 "QProgressBar::chunk{background:#22c55e;border-radius:2px;}"
             )
+        elif task.detail:
+            # Obetnij długą nazwę pliku z wielokropkiem na środku
+            detail = task.detail
+            if len(detail) > 34:
+                detail = detail[:16] + "…" + detail[-16:]
+            self._lbl_detail.setText(f"▶ {detail}")
+            self._lbl_detail.setStyleSheet("color:#3a6080;font-size:9px;")
 
 
 # ---------------------------------------------------------------------------

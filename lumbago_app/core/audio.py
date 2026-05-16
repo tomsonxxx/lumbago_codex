@@ -42,6 +42,22 @@ _MP4_EXTENSIONS = {".m4a", ".mp4"}
 _MP4_FREEFORM_PREFIX = "----:com.apple.iTunes:"
 
 
+def _fix_cp1250_mojibake(value: str) -> str:
+    """Fix strings where Windows-1250 bytes were decoded as Latin-1.
+
+    Old Polish MP3 tags often use encoding=0 (Latin-1) but store CP1250 bytes.
+    This produces C1 control characters (U+0080–U+009F) for chars like ś, Ś, ź, Ź.
+    """
+    if not value:
+        return value
+    if any("\x80" <= ch <= "\x9f" for ch in value):
+        try:
+            return value.encode("latin-1").decode("cp1250")
+        except (UnicodeDecodeError, UnicodeEncodeError):
+            pass
+    return value
+
+
 def iter_audio_files(
     folder: Path, recursive: bool = True, extensions: set[str] | None = None
 ) -> Iterable[Path]:
@@ -78,10 +94,12 @@ def extract_metadata(path: Path) -> Track:
         if value is None:
             return None
         if hasattr(value, "text"):
-            return ", ".join(str(v) for v in value.text)
-        if isinstance(value, list):
-            return ", ".join(str(v) for v in value)
-        return str(value)
+            raw = ", ".join(str(v) for v in value.text)
+        elif isinstance(value, list):
+            raw = ", ".join(str(v) for v in value)
+        else:
+            raw = str(value)
+        return _fix_cp1250_mojibake(raw)
 
     track.title = tag_value("TIT2") or tag_value("title")
     track.artist = tag_value("TPE1") or tag_value("artist")
@@ -181,9 +199,10 @@ def read_tags(path: Path) -> dict[str, str]:
     for key, value in audio.tags.items():
         normalized = _normalize_map.get(key, key)
         if isinstance(value, list):
-            tags[normalized] = ", ".join(str(v) for v in value)
+            raw = ", ".join(str(v) for v in value)
         else:
-            tags[normalized] = str(value)
+            raw = str(value)
+        tags[normalized] = _fix_cp1250_mojibake(raw)
     return tags
 
 
