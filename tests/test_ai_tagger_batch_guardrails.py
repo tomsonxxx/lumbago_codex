@@ -57,9 +57,7 @@ def test_analyze_batch_enforces_cooldown_between_chunks(monkeypatch) -> None:
     sleep_calls: list[float] = []
 
     # Mock at chunk level to avoid HTTP retries polluting the sleep trace.
-    monkeypatch.setattr(
-        tagger, "_analyze_batch_chunk", lambda chunk: [AnalysisResult() for _ in chunk]
-    )
+    monkeypatch.setattr(tagger, "_analyze_batch_chunk", lambda chunk: [AnalysisResult() for _ in chunk])
     monkeypatch.setattr("lumbago_app.services.ai_tagger.time.sleep", lambda s: sleep_calls.append(float(s)))
 
     results = tagger.analyze_batch(tracks, chunk_size=100)

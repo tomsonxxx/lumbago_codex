@@ -350,6 +350,51 @@ def _group_tracks_by_folder(tracks: list[Track]) -> list[list[Track]]:
         folder_map[str(Path(track.path).parent)].append(track)
     return list(folder_map.values())
 
+    def _analyze_batch_chunk(self, tracks: list[Track]) -> list[AnalysisResult]:
+        if not tracks:
+            return []
+        if not self.provider or not self.api_key:
+            return [
+                AnalysisResult(description="Cloud AI not configured", confidence=0.0)
+                for _track in tracks
+            ]
+        base_url, model = self._resolved_base_url, self._resolved_model
+        if not base_url or not model:
+            return [
+                AnalysisResult(description="Cloud AI missing base URL or model", confidence=0.0)
+                for _track in tracks
+            ]
+
+        prompt = _build_batch_prompt(tracks)
+        last_exc: Exception | None = None
+        for attempt in range(self.retries + 1):
+            try:
+                if self.provider == "gemini":
+                    text = _call_gemini_generate_batch_content(
+                        base_url, self.api_key, model, prompt, self.timeout
+                    )
+                else:
+                    text = _call_openai_compatible_batch_chat(
+                        base_url, self.api_key, model, prompt, self.timeout
+                    )
+                parsed = _safe_json(text)
+                return _batch_payload_to_results(parsed, tracks)
+            except Exception as exc:
+                last_exc = exc
+                if attempt >= self.retries or not _is_retryable_exception(exc):
+                    break
+                time.sleep(_retry_backoff_seconds(attempt, exc))
+
+        # Preserve a useful degraded mode: if one batch request fails, try the
+        # older per-track path instead of losing the whole album.
+        results: list[AnalysisResult] = []
+        for track in tracks:
+            result = self.analyze(track)
+            if not result.description and last_exc is not None and not result.confidence:
+                result = _dc_replace(result, description=f"Cloud AI batch fallback: {last_exc}")
+            results.append(result)
+        return results
+
 
 class MultiAiTagger:
     """Runs multiple AI providers in parallel and merges best field-level values."""
