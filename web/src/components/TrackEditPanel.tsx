@@ -67,19 +67,36 @@ export function TrackEditPanel({ track, onSaved, onClose }: Props) {
     if (draft.comment !== (track.comment ?? "")) update.comment = draft.comment;
 
     const bpmNum = draft.bpm.trim() !== "" ? parseFloat(draft.bpm) : null;
-    if (bpmNum !== (track.bpm ?? null)) update.bpm = bpmNum;
+    let bpmClearWarning = false;
+    if (bpmNum !== (track.bpm ?? null)) {
+      if (bpmNum !== null) {
+        // Nowa wartość BPM — wyślij ją
+        update.bpm = bpmNum;
+      } else {
+        // Użytkownik wyczyścił BPM — backend ignoruje null (exclude_none=True),
+        // pomijamy pole w payloadzie i informujemy użytkownika.
+        bpmClearWarning = true;
+      }
+    }
 
     if (Object.keys(update).length === 0) {
-      setStatus({ ok: true, msg: "Brak zmian." });
+      const msg = bpmClearWarning
+        ? "Brak zmian. BPM nie może być wyzerowane przez API (wymagana wartość liczbowa)."
+        : "Brak zmian.";
+      setStatus({ ok: true, msg });
       return;
     }
 
     setSaving(true);
     setStatus(null);
     try {
-      const updated = await updateTrack(track.path, update);
-      onSaved(updated);
-      setStatus({ ok: true, msg: "✓ Zapisano i zaktualizowano plik audio." });
+      const result = await updateTrack(track.path, update);
+      onSaved(result.track);
+      const baseMsg = "✓ Zapisano i zaktualizowano plik audio.";
+      const parts = [baseMsg];
+      if (result.warning) parts.push(`⚠ ${result.warning}`);
+      if (bpmClearWarning) parts.push("⚠ BPM nie może być wyzerowane — pominięto.");
+      setStatus({ ok: !result.warning, msg: parts.join(" ") });
     } catch (err) {
       setStatus({ ok: false, msg: err instanceof Error ? err.message : "Błąd zapisu." });
     } finally {

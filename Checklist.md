@@ -198,7 +198,11 @@
 
 ### 3.4 Jakość kodu i testy
 - [x] (P0) `npm run lint` przechodzi bez ostrzeżeń (max-warnings 0)
+<<<<<<< HEAD
 - [ ] (P1) Unit testy dla kluczowych utilities (aiService, duplicateUtils, djUtils)
+=======
+- [x] (P1) Unit testy dla kluczowych utilities (duplicateUtils, djUtils, stringUtils) — 25 testów vitest
+>>>>>>> origin/main
 - [ ] (P1) Testy vitest dla hook `useLibrary` i `useAIProcessing`
 
 ### 3.5 Brakujące funkcje
@@ -234,7 +238,7 @@
 - [ ] (P1) Testy UI kluczowych flow
 - [ ] (P1) Testy dostępności (WCAG)
 - [ ] (P2) Testy wydajności listy przy >10k tracks
-- [ ] (P1) Aktualizacja `Build2.md`
+- [x] (P1) Aktualizacja `Build2.md` — historia w `docs/HISTORY.md` (wpisy 16-20)
 - [ ] (P2) Checklist testu na czystym Windows (nowy UI)
 
 ---
@@ -255,9 +259,9 @@
 
 | # | Zadanie | Komponent | Priorytet |
 |---|---------|-----------|-----------|
-| 1 | `npm run lint` bez błędów w tagerv2 | tagerv2 | P0 |
+| 1 | ~~`npm run lint` bez błędów w tagerv2~~ ✓ | tagerv2 | P0 |
 | 2 | Zapis tagów do pliku audio (browser, tagerv2) | tagerv2 | P1 |
 | 3 | ~~Decyzja: model integracji WinUI 3 ↔ logika~~ ✓ | Desktop rewrite | P0 |
-| 4 | Integration testy Web API | Web MVP | P1 |
+| 4 | ~~Integration testy Web API~~ ✓ | Web MVP | P1 |
 | 5 | Test na czystym Windows (PyInstaller build) | Desktop | P1 |
-| 6 | Edycja tagów przez Web API | Web MVP | P1 |
+| 6 | ~~Edycja tagów przez Web API~~ ✓ | Web MVP | P1 |
