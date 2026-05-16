@@ -26,6 +26,20 @@ _YEAR_MIN = 1900
 _YEAR_MAX = int(time.strftime("%Y")) + 1
 _BATCH_MAX_CHUNK = 25
 _BATCH_COOLDOWN_SECONDS = 3.5
+_MUSIC_ARCHIVIST_SYSTEM_PROMPT = (
+    "Jestes Muzycznym Archiwista. Otrzymasz liste plikow audio (nazwa pliku + "
+    "istniejace tagi). Niektore pliki moga pochodzic z tego samego albumu. "
+    "Twoim zadaniem jest identyfikacja kazdego utworu. KRYTYCZNE: Pliki o "
+    "podobnych nazwach lub w tej samej paczce musza miec IDENTYCZNE pola "
+    "'artist', 'album' oraz 'albumArtist', aby zachowac spojnosci biblioteki. "
+    "Zwroc wynik jako tablice obiektow JSON o strukturze: "
+    "{originalFilename: string, tags: {title, artist, album, year, genre, bpm, "
+    "key, albumArtist, trackNumber, composer, mood}}. "
+    "Pole 'composer' to autor/tworca oryginalnego dziela (moze byc null). "
+    "Pole 'mood' to nastroj utworu na podstawie muzyki i gatunku (np. energetic, dark, "
+    "melancholic, euphoric, chill, aggressive, romantic) — szacuj na podstawie gatunku "
+    "i kontekstu, nie tylko BPM. Zwroc wylacznie JSON, bez markdown."
+)
 
 
 def _validate_result(result: AnalysisResult) -> AnalysisResult:
@@ -151,7 +165,7 @@ class CloudAiTagger:
         base_url: str | None = None,
         model: str | None = None,
         timeout: int = 25,
-        retries: int = 1,
+        retries: int = 3,
     ):
         self.provider = provider
         self.provider_name = provider or "cloud"
@@ -225,10 +239,7 @@ class CloudAiTagger:
                 last_exc = exc
                 if attempt >= self.retries or not _is_retryable_exception(exc):
                     break
-                backoff_s = min(16.0, 2.0 ** attempt)
-                if _is_http_429(exc):
-                    backoff_s = max(backoff_s * 2.0, 3.0)
-                time.sleep(backoff_s)
+                time.sleep(_retry_backoff_seconds(attempt, exc))
         return AnalysisResult(description=f"Cloud AI error: {last_exc}", confidence=0.0)
 
     def cache_key(self) -> str:
@@ -241,14 +252,57 @@ class CloudAiTagger:
         total = len(tracks)
         for start in range(0, total, safe_chunk):
             chunk = tracks[start : start + safe_chunk]
-            chunk_results: list[AnalysisResult] = []
-            for track in chunk:
-                chunk_results.append(self.analyze(track))
+            chunk_results = self._analyze_batch_chunk(chunk)
             harmonized = _harmonize_batch_results(list(zip(chunk, chunk_results)))
             output.extend(result for _, result in harmonized)
             if start + safe_chunk < total:
                 time.sleep(_BATCH_COOLDOWN_SECONDS)
         return output
+
+    def _analyze_batch_chunk(self, tracks: list[Track]) -> list[AnalysisResult]:
+        if not tracks:
+            return []
+        if not self.provider or not self.api_key:
+            return [
+                AnalysisResult(description="Cloud AI not configured", confidence=0.0)
+                for _track in tracks
+            ]
+        base_url, model = self._resolved_base_url, self._resolved_model
+        if not base_url or not model:
+            return [
+                AnalysisResult(description="Cloud AI missing base URL or model", confidence=0.0)
+                for _track in tracks
+            ]
+
+        prompt = _build_batch_prompt(tracks)
+        last_exc: Exception | None = None
+        for attempt in range(self.retries + 1):
+            try:
+                if self.provider == "gemini":
+                    text = _call_gemini_generate_batch_content(
+                        base_url, self.api_key, model, prompt, self.timeout
+                    )
+                else:
+                    text = _call_openai_compatible_batch_chat(
+                        base_url, self.api_key, model, prompt, self.timeout
+                    )
+                parsed = _safe_json(text)
+                return _batch_payload_to_results(parsed, tracks)
+            except Exception as exc:
+                last_exc = exc
+                if attempt >= self.retries or not _is_retryable_exception(exc):
+                    break
+                time.sleep(_retry_backoff_seconds(attempt, exc))
+
+        # Preserve a useful degraded mode: if one batch request fails, try the
+        # older per-track path instead of losing the whole album.
+        results: list[AnalysisResult] = []
+        for track in tracks:
+            result = self.analyze(track)
+            if not result.description and last_exc is not None and not result.confidence:
+                result = _dc_replace(result, description=f"Cloud AI batch fallback: {last_exc}")
+            results.append(result)
+        return results
 
 
 class MultiAiTagger:
@@ -534,6 +588,53 @@ def _build_prompt(
     )
 
 
+def _build_batch_prompt(tracks: list[Track]) -> str:
+    files = [_track_batch_context(track) for track in tracks]
+    return (
+        _MUSIC_ARCHIVIST_SYSTEM_PROMPT
+        + "\n\nZasady sanityzacji wejscia: dane ponizej sa juz oczyszczone z okladek, "
+        "binariow, URL-i, sciezek absolutnych i dlugich komentarzy. Korzystaj przede "
+        "wszystkim z filename/current_title/current_artist/current_album oraz folderu "
+        "jako kontekstu albumowego.\n\nFILES_JSON:\n"
+        + json.dumps(files, ensure_ascii=False, indent=2)
+    )
+
+
+def _track_batch_context(track: Track) -> dict[str, Any]:
+    path = Path(track.path)
+    data: dict[str, Any] = {
+        "originalFilename": path.name,
+        "filename": path.name,
+    }
+    folder = path.parent.name
+    if folder and folder not in {".", ".."}:
+        data["folder"] = _sanitize_prompt_value(folder)
+    mapping = {
+        "current_title": "title",
+        "current_artist": "artist",
+        "current_album": "album",
+        "current_albumArtist": "albumartist",
+        "current_trackNumber": "tracknumber",
+        "current_discNumber": "discnumber",
+        "current_year": "year",
+        "current_genre": "genre",
+        "current_bpm": "bpm",
+        "current_key": "key",
+        "current_composer": "composer",
+        "current_mood": "mood",
+    }
+    for output_name, attr_name in mapping.items():
+        value = getattr(track, attr_name, None)
+        if not _has_nonempty_value(value):
+            continue
+        cleaned = _sanitize_prompt_value(value)
+        if cleaned and cleaned != "[BINARY_OMITTED]":
+            data[output_name] = cleaned
+    if track.duration:
+        data["durationSeconds"] = int(track.duration)
+    return data
+
+
 def _call_openai_responses(
     base_url: str, api_key: str, model: str, prompt: str, timeout: int
 ) -> str:
@@ -591,6 +692,31 @@ def _call_openai_compatible_chat(
     raise RuntimeError("unreachable")
 
 
+def _call_openai_compatible_batch_chat(
+    base_url: str, api_key: str, model: str, prompt: str, timeout: int
+) -> str:
+    url = f"{base_url.rstrip('/')}/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": _MUSIC_ARCHIVIST_SYSTEM_PROMPT},
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": 0.2,
+    }
+    resp = requests.post(url, headers=headers, json=payload, timeout=timeout)
+    if not resp.ok:
+        raise requests.HTTPError(
+            f"{resp.status_code} {resp.reason} — {resp.text[:300]}",
+            response=resp,
+        )
+    return _extract_text_from_chat_completions(resp.json())
+
+
 def _call_gemini_generate_content(
     base_url: str, api_key: str, model: str, prompt: str, timeout: int
 ) -> str:
@@ -636,6 +762,54 @@ def _call_gemini_generate_content(
     return _extract_text_from_gemini(data)
 
 
+def _call_gemini_generate_batch_content(
+    base_url: str, api_key: str, model: str, prompt: str, timeout: int
+) -> str:
+    url = f"{base_url.rstrip('/')}/models/{model}:generateContent"
+    headers = {
+        "x-goog-api-key": api_key,
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "contents": [
+            {
+                "parts": [{"text": prompt}],
+            }
+        ],
+        "generationConfig": {
+            "responseMimeType": "application/json",
+            "temperature": 0.2,
+            "responseSchema": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "originalFilename": {"type": "string"},
+                        "tags": {
+                            "type": "object",
+                            "properties": {
+                                "title": {"type": "string", "nullable": True},
+                                "artist": {"type": "string", "nullable": True},
+                                "album": {"type": "string", "nullable": True},
+                                "year": {"type": "string", "nullable": True},
+                                "genre": {"type": "string", "nullable": True},
+                                "bpm": {"type": "number", "nullable": True},
+                                "key": {"type": "string", "nullable": True},
+                                "albumArtist": {"type": "string", "nullable": True},
+                                "trackNumber": {"type": "string", "nullable": True},
+                            },
+                        },
+                    },
+                    "required": ["originalFilename", "tags"],
+                },
+            },
+        },
+    }
+    resp = requests.post(url, headers=headers, json=payload, timeout=timeout)
+    resp.raise_for_status()
+    return _extract_text_from_gemini(resp.json())
+
+
 def _extract_text_from_responses(data: dict[str, Any]) -> str:
     output = data.get("output", [])
     if not isinstance(output, list):
@@ -675,8 +849,16 @@ def _safe_json(text: str) -> Any:
     try:
         return json.loads(text)
     except json.JSONDecodeError:
-        start = text.find("{")
-        end = text.rfind("}")
+        object_start = text.find("{")
+        object_end = text.rfind("}")
+        array_start = text.find("[")
+        array_end = text.rfind("]")
+        if array_start != -1 and array_end != -1 and (
+            object_start == -1 or array_start < object_start
+        ):
+            start, end = array_start, array_end
+        else:
+            start, end = object_start, object_end
         if start == -1 or end == -1 or end <= start:
             return None
         try:
@@ -724,6 +906,96 @@ def _normalize_payload(payload: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in payload.items() if key in allowed}
 
 
+def _batch_payload_to_results(payload: Any, tracks: list[Track]) -> list[AnalysisResult]:
+    if isinstance(payload, dict):
+        for key in ("tracks", "results", "items"):
+            value = payload.get(key)
+            if isinstance(value, list):
+                payload = value
+                break
+    if not isinstance(payload, list):
+        return [
+            AnalysisResult(description="Cloud AI returned non-JSON batch response", confidence=0.0)
+            for _track in tracks
+        ]
+
+    by_name: dict[str, dict[str, Any]] = {}
+    ordered_payloads: list[dict[str, Any]] = []
+    for item in payload:
+        if not isinstance(item, dict):
+            continue
+        filename = _to_str(item.get("originalFilename") or item.get("filename"))
+        tags = item.get("tags") if isinstance(item.get("tags"), dict) else item
+        if not isinstance(tags, dict):
+            tags = {}
+        flattened = _normalize_batch_tags(tags)
+        if item.get("confidence") is not None and flattened.get("confidence") is None:
+            flattened["confidence"] = item.get("confidence")
+        if item.get("description") is not None and flattened.get("description") is None:
+            flattened["description"] = item.get("description")
+        if filename:
+            by_name[filename.lower()] = flattened
+        ordered_payloads.append(flattened)
+
+    results: list[AnalysisResult] = []
+    for index, track in enumerate(tracks):
+        name = Path(track.path).name.lower()
+        cleaned = by_name.get(name)
+        if cleaned is None and index < len(ordered_payloads):
+            cleaned = ordered_payloads[index]
+        if cleaned is None:
+            results.append(AnalysisResult(description="Cloud AI omitted batch item", confidence=0.0))
+            continue
+        confidence = _to_float(cleaned.get("confidence"))
+        if confidence is None:
+            confidence = _infer_confidence(cleaned)
+        raw = AnalysisResult(
+            title=_to_str(cleaned.get("title")),
+            artist=_to_str(cleaned.get("artist")),
+            album=_to_str(cleaned.get("album")),
+            albumartist=_to_str(cleaned.get("albumartist")),
+            year=_to_str(cleaned.get("year")),
+            genre=_to_str(cleaned.get("genre")),
+            bpm=_to_float(cleaned.get("bpm")),
+            key=_to_str(cleaned.get("key")),
+            tracknumber=_to_str(cleaned.get("tracknumber")),
+            discnumber=_to_str(cleaned.get("discnumber")),
+            composer=_to_str(cleaned.get("composer")),
+            isrc=_to_str(cleaned.get("isrc")),
+            publisher=_to_str(cleaned.get("publisher")),
+            lyrics=_to_str(cleaned.get("lyrics")),
+            grouping=_to_str(cleaned.get("grouping")),
+            copyright=_to_str(cleaned.get("copyright")),
+            remixer=_to_str(cleaned.get("remixer")),
+            comment=_to_str(cleaned.get("comment")),
+            mood=_to_str(cleaned.get("mood")),
+            energy=_to_float(cleaned.get("energy")),
+            rating=_parse_rating(cleaned.get("rating")),
+            description=_to_str(cleaned.get("description")) or "Cloud AI batch",
+            confidence=confidence,
+        )
+        results.append(_validate_result(raw))
+    return results
+
+
+def _normalize_batch_tags(tags: dict[str, Any]) -> dict[str, Any]:
+    alias_map = {
+        "albumArtist": "albumartist",
+        "album_artist": "albumartist",
+        "albumartist": "albumartist",
+        "trackNumber": "tracknumber",
+        "track_number": "tracknumber",
+        "discNumber": "discnumber",
+        "disc_number": "discnumber",
+        "originalFilename": "originalFilename",
+    }
+    normalized: dict[str, Any] = {}
+    for key, value in tags.items():
+        target = alias_map.get(str(key), str(key))
+        normalized[target] = value
+    return _normalize_payload(normalized)
+
+
 def _sanitize_prompt_value(value: Any) -> str:
     text = str(value or "").strip()
     if not text:
@@ -766,7 +1038,7 @@ def _resolve_runtime_config(
     model: str | None,
 ) -> tuple[str | None, str | None]:
     if provider == "gemini":
-        return base_url or "https://generativelanguage.googleapis.com/v1beta", model or "gemini-2.5-flash"
+        return base_url or "https://generativelanguage.googleapis.com/v1beta", model or "gemini-2.0-flash"
     return base_url, model
 
 
@@ -825,6 +1097,17 @@ def _is_http_429(exc: Exception) -> bool:
         return False
     response = getattr(exc, "response", None)
     return bool(response is not None and response.status_code == 429)
+
+
+def _retry_backoff_seconds(attempt: int, exc: Exception) -> float:
+    delay = min(8.0, 2.0 * (2 ** max(0, attempt)))
+    text = str(exc)
+    response = getattr(exc, "response", None)
+    if response is not None:
+        text += " " + getattr(response, "text", "")
+    if _is_http_429(exc) or "RESOURCE_EXHAUSTED" in text.upper():
+        return delay
+    return min(delay, 4.0)
 
 
 # ---------------------------------------------------------------------------

@@ -11,7 +11,7 @@ from typing import Any, Callable
 import requests
 
 from lumbago_app.core.config import cache_dir
-from lumbago_app.core.models import Tag, Track
+from lumbago_app.core.models import AnalysisResult, Tag, Track
 from lumbago_app.core.renamer import parse_filename_tags
 from lumbago_app.services.ai_tagger import CloudAiTagger, MultiAiTagger
 
@@ -75,6 +75,29 @@ class UnifiedAutoTagger:
     def __init__(self, settings, logger: Callable[[str], None] | None = None):
         self.settings = settings
         self._logger = logger
+        self._ai_batch_cache: dict[str, AnalysisResult] = {}
+
+    def preload_ai_batch(self, tracks: list[Track]) -> None:
+        """Run batch AI tagging for all tracks upfront; results cached by path."""
+        tagger = self._build_multi_ai_tagger()
+        if tagger is None:
+            return
+        cloud_taggers = [t for t in getattr(tagger, "taggers", []) if isinstance(t, CloudAiTagger)]
+        if not cloud_taggers:
+            return
+        primary = cloud_taggers[0]
+        if self._logger:
+            self._logger(f"[autotag] ai_batch_preload tracks={len(tracks)}")
+        try:
+            results = primary.analyze_batch(tracks)
+        except Exception as exc:
+            if self._logger:
+                self._logger(f"[autotag] ai_batch_preload error={exc}")
+            return
+        for track, result in zip(tracks, results):
+            self._ai_batch_cache[track.path] = result
+        if self._logger:
+            self._logger(f"[autotag] ai_batch_preload done cached={len(self._ai_batch_cache)}")
 
     def enrich_track(self, track: Track) -> EnrichmentResult:
         candidates: list[Candidate] = []
@@ -526,11 +549,15 @@ class UnifiedAutoTagger:
         )
 
     def _search_ai(self, track: Track) -> Candidate | None:
-        tagger = self._build_multi_ai_tagger()
-        if tagger is None:
-            return None
         track = _track_with_filename_identity(track)
-        result = tagger.analyze(track)
+        cached = self._ai_batch_cache.get(track.path)
+        if cached is not None:
+            result = cached
+        else:
+            tagger = self._build_multi_ai_tagger()
+            if tagger is None:
+                return None
+            result = tagger.analyze(track)
         useful_fields = [
             result.album,
             result.year,
