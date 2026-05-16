@@ -4,8 +4,10 @@ from copy import deepcopy
 
 from lumbago_app.core.models import Track
 from lumbago_app.services.autotag_rewrite import Candidate, EnrichmentResult
+from lumbago_app.services.metadata_consensus import FieldEvidence
 from lumbago_app.services.metadata_enricher import MetadataFillReport, SourceProbe
 from lumbago_app.services.metadata_pipeline_v2 import MetadataPipelineV2
+from lumbago_app.services.recognition_pipeline_v2 import RecognitionPipelineResult
 
 
 def test_pipeline_preserves_existing_artist_against_ai_and_keeps_conflict():
@@ -66,3 +68,59 @@ def test_pipeline_accepts_verified_extra_evidence_over_unverified_remote_match()
     )
 
     assert result.track.artist == "Armin van Buuren"
+
+
+def test_pipeline_uses_recognition_result_evidence():
+    baseline = Track(path="demo.mp3", title="Wrong", artist="Wrong Artist")
+    candidate_track = deepcopy(baseline)
+
+    recognition_result = RecognitionPipelineResult(
+        track=deepcopy(baseline),
+        evidence_by_field={
+            "title": [
+                FieldEvidence(
+                    field_name="title",
+                    value="Correct Title",
+                    source="acoustid",
+                    confidence=0.98,
+                    verified=True,
+                )
+            ],
+            "artist": [
+                FieldEvidence(
+                    field_name="artist",
+                    value="Correct Artist",
+                    source="acoustid",
+                    confidence=0.98,
+                    verified=True,
+                )
+            ],
+        },
+        attempts=[],
+        summary="sources: acoustid",
+        primary_source="acoustid",
+        filename_query="Correct Artist Correct Title",
+    )
+
+    result = MetadataPipelineV2().resolve_track(
+        baseline_track=baseline,
+        candidate_track=candidate_track,
+        recognition_result=recognition_result,
+    )
+
+    assert result.track.title == "Correct Title"
+    assert result.track.artist == "Correct Artist"
+
+
+def test_pipeline_can_skip_baseline_evidence_when_refreshing():
+    baseline = Track(path="demo.mp3", title="Old Title", artist="Old Artist")
+    candidate_track = Track(path="demo.mp3")
+
+    result = MetadataPipelineV2().resolve_track(
+        baseline_track=baseline,
+        candidate_track=candidate_track,
+        include_baseline_evidence=False,
+    )
+
+    assert result.track.title is None
+    assert result.track.artist is None

@@ -30,6 +30,7 @@ from lumbago_app.services.beatgrid import auto_cue_points, compute_beatgrid
 from lumbago_app.services.key_detection import detect_key
 from lumbago_app.services.metadata_enricher import AutoMetadataFiller, MetadataFillReport
 from lumbago_app.services.metadata_pipeline_v2 import MetadataPipelineV2
+from lumbago_app.services.recognition_pipeline_v2 import RecognitionPipelineResult, RecognitionPipelineV2
 from lumbago_app.services.loudness import analyze_loudness, normalize_loudness
 from lumbago_app.services.recognizer import AcoustIdRecognizer
 from lumbago_app.services.metadata_writeback import PendingTrackWrite, apply_track_writes
@@ -43,6 +44,7 @@ from lumbago_app.data.repository import (
     list_playlist_tracks,
     list_playlists,
     list_playlists_full,
+    list_metadata_history,
     list_tracks,
     replace_track_tags,
     reset_library,
@@ -70,11 +72,23 @@ from lumbago_app.ui.player_widget import PlayerWidget as DJPlayerWidget
 from lumbago_app.ui.library_widget import LibraryWidget
 from lumbago_app.ui.background_task_monitor import BackgroundTaskManager, BackgroundTaskMonitorWidget
 from lumbago_app.ui.health_dashboard import HealthReportDashboard
+from lumbago_app.ui.process_log_dialog import ProcessLogDialog
 
 
 def _debug_log(message: str) -> None:
     try:
         target = Path.cwd() / ".lumbago_data" / "startup.log"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with target.open("a", encoding="utf-8", errors="ignore") as handle:
+            handle.write(f"{timestamp} {message}\n")
+    except Exception:
+        pass
+
+
+def _process_log(message: str) -> None:
+    try:
+        target = Path.cwd() / ".lumbago_data" / "process.log"
         target.parent.mkdir(parents=True, exist_ok=True)
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         with target.open("a", encoding="utf-8", errors="ignore") as handle:
@@ -219,6 +233,8 @@ def _missing_autotag_fields(track: Track) -> list[str]:
 def _build_autotag_detail(
     *,
     metadata_report: MetadataFillReport | None,
+    recognition_result: RecognitionPipelineResult | None,
+    refresh_existing: bool,
     best_source: str | None,
     best_score: int | None,
     changed_fields: list[str],
@@ -234,11 +250,20 @@ def _build_autotag_detail(
         if metadata_report.changed_fields:
             parts.append(f"Fill: {_format_field_labels(metadata_report.changed_fields)}")
 
+    if recognition_result is not None:
+        if recognition_result.primary_source:
+            parts.append(f"Rozpoznanie: {recognition_result.primary_source}")
+        if recognition_result.summary:
+            parts.append(f"Diag: {recognition_result.summary}")
+
     if best_source:
         if best_score is not None:
             parts.append(f"AI/MB: {best_source} ({best_score}%)")
         else:
             parts.append(f"AI/MB: {best_source}")
+
+    if refresh_existing:
+        parts.append("Tryb: odswiezenie od zera")
 
     if changed_fields:
         parts.append(f"Zmiany: {_format_field_labels(changed_fields)}")
@@ -320,6 +345,44 @@ def _repair_identity_from_filename(track: Track) -> None:
             track.title = title_from_file
     elif _has_value(title_from_file) and not _has_value(artist_from_file) and not _has_value(track.artist):
         track.title = title_from_file
+
+
+def _merge_recognition_repairs(target: Track, source: Track) -> None:
+    if _has_value(source.title) and (
+        not _has_value(target.title)
+        or _looks_like_download_quality_title(target.title)
+        or _looks_like_track_number(target.title)
+    ):
+        target.title = source.title
+    if _has_value(source.artist) and (
+        not _has_value(target.artist)
+        or (_normalize_text(target.artist) == _normalize_text(source.artist))
+    ):
+        target.artist = source.artist
+    if _has_value(source.fingerprint) and not _has_value(target.fingerprint):
+        target.fingerprint = source.fingerprint
+
+
+def _reset_track_for_refresh(track: Track) -> None:
+    for field_name in _AUTOTAG_FIELDS:
+        setattr(track, field_name, None if field_name != "rating" else 0)
+    track.tags = []
+    track.fingerprint = None
+    track.artwork_path = None
+    track.waveform_path = None
+
+
+def _should_refresh_existing_metadata(track_path: str) -> bool:
+    try:
+        return bool(list_metadata_history(track_path))
+    except Exception:
+        return False
+
+
+def _normalize_text(value: str | None) -> str:
+    if not value:
+        return ""
+    return "".join(ch.lower() for ch in str(value) if ch.isalnum() or ch.isspace()).strip()
 
 
 class TrackFilterProxy(QtCore.QSortFilterProxyModel):
@@ -568,6 +631,9 @@ class AutoTagWorker(QtCore.QRunnable):
             cache_ttl_days=getattr(self.settings, "metadata_cache_ttl_days", 30),
         )
         metadata_pipeline = MetadataPipelineV2()
+        recognition_pipeline = RecognitionPipelineV2(
+            acoustid_api_key=getattr(self.settings, "acoustid_api_key", None),
+        )
 
         _LOCAL_FIELDS = ("loudness_lufs", "cue_in_ms", "cue_out_ms", "fingerprint", "waveform_path", "artwork_path")
 
@@ -586,8 +652,10 @@ class AutoTagWorker(QtCore.QRunnable):
                     track,
                     autotagger,
                     metadata_pipeline=metadata_pipeline,
+                    recognition_pipeline=recognition_pipeline,
                     baseline_track=before,
                     metadata_report=metadata_report,
+                    refresh_existing=_should_refresh_existing_metadata(track.path),
                 )
                 changed_fields = _changed_fields(before, track)
                 sync_fields = self._fields_requiring_file_sync(track)
@@ -628,6 +696,8 @@ class AutoTagWorker(QtCore.QRunnable):
                     )
                 detail = _build_autotag_detail(
                     metadata_report=metadata_report,
+                    recognition_result=autotag_summary.get("recognition_result"),
+                    refresh_existing=bool(autotag_summary.get("refresh_existing")),
                     best_source=str(autotag_summary.get("best_source") or "") or None,
                     best_score=autotag_summary.get("best_score") if isinstance(autotag_summary.get("best_score"), int) else None,
                     changed_fields=changed_fields,
@@ -648,18 +718,36 @@ class AutoTagWorker(QtCore.QRunnable):
         autotagger: UnifiedAutoTagger,
         *,
         metadata_pipeline: MetadataPipelineV2,
+        recognition_pipeline: RecognitionPipelineV2,
         baseline_track: Track,
         metadata_report: MetadataFillReport | None,
+        refresh_existing: bool,
     ) -> dict[str, int | str | None]:
-        refreshed = extract_metadata(Path(track.path))
+        path_obj = Path(track.path)
+        if refresh_existing:
+            try:
+                clear_tags(path_obj)
+            except Exception:
+                pass
+            _reset_track_for_refresh(track)
+
+        refreshed = extract_metadata(path_obj)
         _merge_missing_from_source(track, refreshed)
         _repair_identity_from_filename(track)
+        recognition_result = recognition_pipeline.recognize_track(
+            track,
+            refresh_existing=refresh_existing,
+            query_track=baseline_track,
+        )
+        _merge_recognition_repairs(track, recognition_result.track)
         enriched = autotagger.enrich_track(track)
         resolved = metadata_pipeline.resolve_track(
             baseline_track=baseline_track,
             candidate_track=track,
+            recognition_result=recognition_result,
             metadata_report=metadata_report,
             enrichment_result=enriched,
+            include_baseline_evidence=not refresh_existing,
         )
         for field_name in _AUTOTAG_FIELDS:
             setattr(track, field_name, getattr(resolved.track, field_name, None))
@@ -729,9 +817,11 @@ class AutoTagWorker(QtCore.QRunnable):
         return {
             "best_source": getattr(best, "source", None),
             "best_score": getattr(best, "score", None),
+            "refresh_existing": refresh_existing,
             "candidate_count": len(
                 [candidate for candidate in getattr(enriched, "candidates", []) if getattr(candidate, "error", None) is None and getattr(candidate, "score", 0) > 0]
             ),
+            "recognition_result": recognition_result,
         }
 
     def _fields_requiring_file_sync(self, track: Track) -> list[str]:
@@ -931,6 +1021,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.btn_settings.setToolTip("Ustaw klucze API i konfigurację")
         self.btn_settings.clicked.connect(self._open_settings)
         layout.addWidget(self.btn_settings)
+        self.btn_process_log = AnimatedButton("Log procesow")
+        self.btn_process_log.setToolTip("Pokaz log procesow aplikacji")
+        self.btn_process_log.clicked.connect(self._open_process_log)
+        layout.addWidget(self.btn_process_log)
 
         playlists_title = QtWidgets.QLabel("Playlisty")
         playlists_title.setObjectName("SectionTitle")
@@ -2010,6 +2104,7 @@ class MainWindow(QtWidgets.QMainWindow):
         settings = load_settings()
         self._autotag_worker = AutoTagWorker(tracks, settings)
         task_id = self.task_manager.add_task("Autotagowanie", len(tracks), "Przygotowanie analizy i źródeł...")
+        _process_log(f"[autotag] start | tracks={len(tracks)}")
 
         def on_progress(current: int, total: int, name: str, detail: str):
             self.task_manager.update_task(task_id, current, total, detail)
@@ -2017,6 +2112,7 @@ class MainWindow(QtWidgets.QMainWindow):
             if detail:
                 message = f"{message} — {detail}"
             self.status.showMessage(message)
+            _process_log(f"[autotag] {current}/{total} | {name} | {detail}")
 
         def on_finished(processed: int, updated: int, errors: int):
             self.task_manager.finish_task(task_id)
@@ -2024,6 +2120,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.status.showMessage(
                 f"Autotagowanie zakończone. Przetworzono: {processed}, zapisano: {updated}, błędy: {errors}"
             )
+            _process_log(f"[autotag] done | processed={processed} updated={updated} errors={errors}")
 
         self._autotag_worker.signals.progress.connect(on_progress)
         self._autotag_worker.signals.finished.connect(on_finished)
@@ -2188,15 +2285,18 @@ class MainWindow(QtWidgets.QMainWindow):
             acoustid_api_key=getattr(settings, "acoustid_api_key", None),
         )
         task_id = self.task_manager.add_task("Rozpoznawanie metadanych", len(tracks))
+        _process_log(f"[recognition] start | tracks={len(tracks)}")
 
         def on_progress(current: int, total: int):
             self.task_manager.update_task(task_id, current, total)
             self.status.showMessage(f"Rozpoznano {current}/{total} utworów")
+            _process_log(f"[recognition] {current}/{total}")
 
         def on_finished(processed: int, errors: int):
             self.task_manager.finish_task(task_id)
             self._load_tracks()
             self.status.showMessage(f"Rozpoznawanie zakończone. Błędy: {errors}")
+            _process_log(f"[recognition] done | processed={processed} errors={errors}")
 
         self._recognition_worker.signals.progress.connect(on_progress)
         self._recognition_worker.signals.finished.connect(on_finished)
@@ -2230,6 +2330,10 @@ class MainWindow(QtWidgets.QMainWindow):
         tracks = getattr(self, "_all_tracks", None) or list_tracks()
         dialog = HealthReportDashboard(tracks, self)
         dialog.action_requested.connect(self._on_health_action)
+        dialog.exec()
+
+    def _open_process_log(self):
+        dialog = ProcessLogDialog(self)
         dialog.exec()
 
     def _on_health_action(self, action: str):
@@ -2435,6 +2539,7 @@ class MainWindow(QtWidgets.QMainWindow):
         tools.addAction("Konwerter XML", self._open_xml_converter)
         tools.addAction("Eksport playlisty → VirtualDJ XML", self._export_playlist_virtualdj)
         tools.addAction("Ustawienia", self._open_settings)
+        tools.addAction("Log procesow", self._open_process_log)
         tools.addSeparator()
         tools.addAction("Sprawdź klucze API", self._open_api_key_check)
 

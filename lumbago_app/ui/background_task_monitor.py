@@ -174,12 +174,12 @@ class _TaskRow(QtWidgets.QFrame):
         self.setObjectName("BgTaskRow")
         self.setStyleSheet(
             "QFrame#BgTaskRow{background:#0a1018;border:1px solid #1e2d42;"
-            "border-radius:4px;margin:1px 0;}"
+            "border-radius:6px;margin:2px 0;}"
         )
 
         vl = QtWidgets.QVBoxLayout(self)
-        vl.setContentsMargins(6, 4, 6, 4)
-        vl.setSpacing(3)
+        vl.setContentsMargins(8, 6, 8, 6)
+        vl.setSpacing(4)
 
         # Top: pie + name + ×
         top = QtWidgets.QHBoxLayout()
@@ -188,12 +188,12 @@ class _TaskRow(QtWidgets.QFrame):
         top.addWidget(self._pie)
 
         self._lbl_name = QtWidgets.QLabel(task.name)
-        self._lbl_name.setStyleSheet("color:#8fb8d8;font-size:11px;font-weight:bold;")
+        self._lbl_name.setStyleSheet("color:#8fb8d8;font-size:12px;font-weight:bold;")
         self._lbl_name.setWordWrap(False)
         top.addWidget(self._lbl_name, 1)
 
         btn_x = QtWidgets.QPushButton("×")
-        btn_x.setFixedSize(14, 14)
+        btn_x.setFixedSize(16, 16)
         btn_x.setToolTip("Anuluj / usuń")
         btn_x.setStyleSheet(
             "QPushButton{color:#4a6080;background:transparent;border:none;font-size:13px;}"
@@ -206,17 +206,21 @@ class _TaskRow(QtWidgets.QFrame):
         # Progress bar
         self._bar = QtWidgets.QProgressBar()
         self._bar.setTextVisible(False)
-        self._bar.setFixedHeight(4)
+        self._bar.setFixedHeight(6)
         self._bar.setStyleSheet(
-            "QProgressBar{background:#1e2d42;border:none;border-radius:2px;}"
-            "QProgressBar::chunk{background:#4a9eff;border-radius:2px;}"
+            "QProgressBar{background:#1e2d42;border:none;border-radius:3px;}"
+            "QProgressBar::chunk{background:#4a9eff;border-radius:3px;}"
         )
         vl.addWidget(self._bar)
 
         self._lbl_detail = QtWidgets.QLabel()
-        self._lbl_detail.setStyleSheet("color:#88a8c8;font-size:10px;")
+        self._lbl_detail.setStyleSheet("color:#88a8c8;font-size:11px;")
         self._lbl_detail.setWordWrap(True)
         vl.addWidget(self._lbl_detail)
+        self._lbl_meta = QtWidgets.QLabel()
+        self._lbl_meta.setStyleSheet("color:#6f8bab;font-size:10px;")
+        self._lbl_meta.setWordWrap(True)
+        vl.addWidget(self._lbl_meta)
 
         # Bottom: count + eta
         bot = QtWidgets.QHBoxLayout()
@@ -242,15 +246,17 @@ class _TaskRow(QtWidgets.QFrame):
         detail = task.detail.strip()
         self._lbl_detail.setText(detail)
         self._lbl_detail.setVisible(bool(detail))
+        elapsed = max(0.0, time.monotonic() - task.started_at)
+        self._lbl_meta.setText(f"Czas: {int(elapsed)}s | Zadanie: {task.task_id}")
 
         if task.finished:
             self.setStyleSheet(
                 "QFrame#BgTaskRow{background:#071208;border:1px solid #1a3020;"
-                "border-radius:4px;margin:1px 0;}"
+                "border-radius:6px;margin:2px 0;}"
             )
             self._bar.setStyleSheet(
-                "QProgressBar{background:#1e2d42;border:none;border-radius:2px;}"
-                "QProgressBar::chunk{background:#22c55e;border-radius:2px;}"
+                "QProgressBar{background:#1e2d42;border:none;border-radius:3px;}"
+                "QProgressBar::chunk{background:#22c55e;border-radius:3px;}"
             )
 
 
@@ -290,7 +296,7 @@ class BackgroundTaskMonitorWidget(QtWidgets.QWidget):
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         scroll.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        scroll.setMaximumHeight(220)
+        scroll.setMaximumHeight(360)
         scroll.setStyleSheet("QScrollArea{border:none;background:transparent;}")
         self._container = QtWidgets.QWidget()
         self._vl = QtWidgets.QVBoxLayout(self._container)

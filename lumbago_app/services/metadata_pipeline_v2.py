@@ -13,6 +13,7 @@ from lumbago_app.services.metadata_consensus import (
     MetadataConsensusReport,
 )
 from lumbago_app.services.metadata_enricher import MetadataFillReport
+from lumbago_app.services.recognition_pipeline_v2 import RecognitionPipelineResult
 
 
 TRACK_METADATA_FIELDS = (
@@ -66,19 +67,23 @@ class MetadataPipelineV2:
         *,
         baseline_track: Track,
         candidate_track: Track,
+        recognition_result: RecognitionPipelineResult | None = None,
         metadata_report: MetadataFillReport | None = None,
         enrichment_result: EnrichmentResult | None = None,
         extra_evidence_by_field: dict[str, list[dict[str, Any]]] | None = None,
+        include_baseline_evidence: bool = True,
     ) -> MetadataPipelineResult:
         evidence_by_field = self._collect_evidence(
             baseline_track=baseline_track,
             candidate_track=candidate_track,
+            recognition_result=recognition_result,
             metadata_report=metadata_report,
             enrichment_result=enrichment_result,
             extra_evidence_by_field=extra_evidence_by_field,
+            include_baseline_evidence=include_baseline_evidence,
         )
         consensus = self.consensus_engine.resolve(evidence_by_field)
-        resolved_track = deepcopy(baseline_track)
+        resolved_track = deepcopy(baseline_track if include_baseline_evidence else candidate_track)
         for field_name, field_result in consensus.fields.items():
             if field_result.resolved is None:
                 continue
@@ -94,26 +99,34 @@ class MetadataPipelineV2:
         *,
         baseline_track: Track,
         candidate_track: Track,
+        recognition_result: RecognitionPipelineResult | None,
         metadata_report: MetadataFillReport | None,
         enrichment_result: EnrichmentResult | None,
         extra_evidence_by_field: dict[str, list[dict[str, Any]]] | None,
+        include_baseline_evidence: bool,
     ) -> dict[str, list[FieldEvidence]]:
         observed_at = datetime.utcnow()
         evidence_by_field: dict[str, list[FieldEvidence]] = {}
 
-        for field_name in TRACK_METADATA_FIELDS:
-            baseline_value = getattr(baseline_track, field_name, None)
-            if _has_value(baseline_value):
-                evidence_by_field.setdefault(field_name, []).append(
-                    FieldEvidence(
-                        field_name=field_name,
-                        value=baseline_value,
-                        source="existing_tags",
-                        confidence=0.72,
-                        verified=False,
-                        timestamp=observed_at,
+        if include_baseline_evidence:
+            for field_name in TRACK_METADATA_FIELDS:
+                baseline_value = getattr(baseline_track, field_name, None)
+                if _has_value(baseline_value):
+                    evidence_by_field.setdefault(field_name, []).append(
+                        FieldEvidence(
+                            field_name=field_name,
+                            value=baseline_value,
+                            source="existing_tags",
+                            confidence=0.72,
+                            verified=False,
+                            timestamp=observed_at,
+                        )
                     )
-                )
+
+        if recognition_result is not None:
+            for field_name, items in recognition_result.evidence_by_field.items():
+                for evidence in items:
+                    evidence_by_field.setdefault(field_name, []).append(evidence)
 
         if metadata_report is not None:
             field_sources = _field_sources_from_report(metadata_report)

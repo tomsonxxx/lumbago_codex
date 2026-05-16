@@ -7,4 +7,5 @@ __all__ = [
     "bulk_edit_dialog",
     "widgets",
     "tag_compare_dialog",
+    "process_log_dialog",
 ]
