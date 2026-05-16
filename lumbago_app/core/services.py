@@ -10,6 +10,26 @@ from lumbago_app.core.models import AnalysisResult, DuplicateGroup, Track
 from lumbago_app.core.renamer import parse_filename_tags
 
 
+def _rapidfuzz_propose(from_file: str | None, current: str) -> str | None:
+    """Propose a clean value by fuzzy-comparing the filename-derived text with the current tag.
+
+    High similarity (≥85) means the current tag already matches the filename well — keep it.
+    Lower similarity suggests the current tag has been polluted (YouTube suffixes, quality
+    markers, etc.) and the filename version is the cleaner candidate.
+    """
+    if not from_file:
+        return None
+    if not current:
+        return from_file
+    try:
+        from rapidfuzz import fuzz
+        ratio = fuzz.token_sort_ratio(from_file.lower(), current.lower())
+    except ImportError:
+        # rapidfuzz unavailable — fall back to simple inequality check
+        return from_file if from_file != current else None
+    return None if ratio >= 85 else from_file
+
+
 def heuristic_analysis(track: Track) -> AnalysisResult:
     bpm = track.bpm
     energy = None
@@ -24,12 +44,13 @@ def heuristic_analysis(track: Track) -> AnalysisResult:
         else:
             energy, mood = 0.9, "peak"
 
-    # Parse filename to propose clean artist/title
+    # Use rapidfuzz to detect when the current tag differs meaningfully from the
+    # filename-derived value — the filename is usually the cleaner source.
     artist_from_file, title_from_file = parse_filename_tags(track.path)
     current_artist = (track.artist or "").strip()
     current_title = (track.title or "").strip()
-    proposed_artist = artist_from_file if artist_from_file and artist_from_file != current_artist else None
-    proposed_title = title_from_file if title_from_file and title_from_file != current_title else None
+    proposed_artist = _rapidfuzz_propose(artist_from_file, current_artist)
+    proposed_title = _rapidfuzz_propose(title_from_file, current_title)
 
     return AnalysisResult(
         bpm=bpm,

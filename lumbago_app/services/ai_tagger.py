@@ -27,18 +27,35 @@ _YEAR_MAX = int(time.strftime("%Y")) + 1
 _BATCH_MAX_CHUNK = 25
 _BATCH_COOLDOWN_SECONDS = 3.5
 _MUSIC_ARCHIVIST_SYSTEM_PROMPT = (
-    "Jestes Muzycznym Archiwista. Otrzymasz liste plikow audio (nazwa pliku + "
-    "istniejace tagi). Niektore pliki moga pochodzic z tego samego albumu. "
-    "Twoim zadaniem jest identyfikacja kazdego utworu. KRYTYCZNE: Pliki o "
-    "podobnych nazwach lub w tej samej paczce musza miec IDENTYCZNE pola "
-    "'artist', 'album' oraz 'albumArtist', aby zachowac spojnosci biblioteki. "
-    "Zwroc wynik jako tablice obiektow JSON o strukturze: "
-    "{originalFilename: string, tags: {title, artist, album, year, genre, bpm, "
-    "key, albumArtist, trackNumber, composer, mood}}. "
-    "Pole 'composer' to autor/tworca oryginalnego dziela (moze byc null). "
-    "Pole 'mood' to nastroj utworu na podstawie muzyki i gatunku (np. energetic, dark, "
-    "melancholic, euphoric, chill, aggressive, romantic) — szacuj na podstawie gatunku "
-    "i kontekstu, nie tylko BPM. Zwroc wylacznie JSON, bez markdown."
+    "You are an expert music archivist with access to a vast database of music "
+    "information, equivalent to searching across MusicBrainz, Discogs, AllMusic, "
+    "Spotify, and Apple Music. You receive a batch of audio files (filename + existing "
+    "tags). Some files may belong to the same album or artist.\n\n"
+    "YOUR TASK: Identify each track and return complete, accurate ID3 metadata.\n\n"
+    "CRITICAL RULES:\n"
+    "1. ALBUM CONSISTENCY: Files with sequential numbers (e.g. '01-song.mp3', "
+    "'02-another.mp3') or the same folder must have IDENTICAL 'artist', 'album', "
+    "and 'albumArtist' fields.\n"
+    "2. STUDIO FIRST: Always prefer the original studio album over Greatest Hits, "
+    "Best Of, DJ mixes, compilations, or re-releases. Correct the album if the "
+    "existing tag points to a compilation.\n"
+    "3. TITLE CLEANING: Remove YouTube/download suffixes from titles: "
+    "'(Official Video)', '(Official Music Video)', '[4K]', 'HD', 'HQ', 'tekst', "
+    "'lyrics', 'prod. X' (move producer to composer field), 'feat.' stays in artist.\n"
+    "4. ARTIST FORMATTING: Correct 'ArtistA ArtistB' to 'ArtistA feat. ArtistB' "
+    "when applicable. Use '&' for equal collaborations, 'feat.' for features.\n"
+    "5. PRODUCER TO COMPOSER: If the filename contains 'prod. X', 'prod X', or "
+    "similar — put the producer name in the 'composer' field, not the title.\n"
+    "6. ORIGINAL ARTIST: For cover versions, put the original artist in 'originalArtist'.\n"
+    "7. NO PLACEHOLDERS: Never return 'Unknown', 'Various', empty strings. "
+    "Return null if uncertain.\n"
+    "8. COMMENTS: Add a short factual comment (1 sentence) about the track.\n"
+    "9. COPYRIGHT: Return label and year, e.g. '2007 Universal Records'.\n"
+    "10. Latin alphabet only in all text fields.\n\n"
+    "Return ONLY a JSON array. Each item: "
+    "{originalFilename, tags: {title, artist, albumArtist, album, year, genre, "
+    "trackNumber, discNumber, composer, originalArtist, mood, copyright, comment, "
+    "bpm, key}}. No markdown, no explanation."
 )
 
 
@@ -248,16 +265,90 @@ class CloudAiTagger:
 
     def analyze_batch(self, tracks: list[Track], chunk_size: int = 20) -> list[AnalysisResult]:
         safe_chunk = max(1, min(_BATCH_MAX_CHUNK, int(chunk_size)))
-        output: list[AnalysisResult] = []
-        total = len(tracks)
-        for start in range(0, total, safe_chunk):
-            chunk = tracks[start : start + safe_chunk]
+        result_map: dict[str, AnalysisResult] = {}
+
+        # Group by parent folder so album files stay in the same batch chunk,
+        # which lets the AI enforce consistent artist/album across the album.
+        all_chunks: list[list[Track]] = []
+        for folder_group in _group_tracks_by_folder(tracks):
+            for start in range(0, len(folder_group), safe_chunk):
+                all_chunks.append(folder_group[start : start + safe_chunk])
+
+        for idx, chunk in enumerate(all_chunks):
             chunk_results = self._analyze_batch_chunk(chunk)
             harmonized = _harmonize_batch_results(list(zip(chunk, chunk_results)))
-            output.extend(result for _, result in harmonized)
-            if start + safe_chunk < total:
+            for track, result in harmonized:
+                result_map[track.path] = result
+            if idx < len(all_chunks) - 1:
                 time.sleep(_BATCH_COOLDOWN_SECONDS)
-        return output
+
+        # Preserve original caller order.
+        return [
+            result_map.get(
+                track.path,
+                AnalysisResult(description="Batch result missing", confidence=0.0),
+            )
+            for track in tracks
+        ]
+
+    def _analyze_batch_chunk(self, tracks: list[Track]) -> list[AnalysisResult]:
+        if not tracks:
+            return []
+        if not self.provider or not self.api_key:
+            return [
+                AnalysisResult(description="Cloud AI not configured", confidence=0.0)
+                for _track in tracks
+            ]
+        base_url, model = self._resolved_base_url, self._resolved_model
+        if not base_url or not model:
+            return [
+                AnalysisResult(description="Cloud AI missing base URL or model", confidence=0.0)
+                for _track in tracks
+            ]
+
+        prompt = _build_batch_prompt(tracks)
+        last_exc: Exception | None = None
+        for attempt in range(self.retries + 1):
+            try:
+                if self.provider == "gemini":
+                    text = _call_gemini_generate_batch_content(
+                        base_url, self.api_key, model, prompt, self.timeout
+                    )
+                else:
+                    text = _call_openai_compatible_batch_chat(
+                        base_url, self.api_key, model, prompt, self.timeout
+                    )
+                parsed = _safe_json(text)
+                return _batch_payload_to_results(parsed, tracks)
+            except Exception as exc:
+                last_exc = exc
+                if attempt >= self.retries or not _is_retryable_exception(exc):
+                    break
+                time.sleep(_retry_backoff_seconds(attempt, exc))
+
+        # Preserve a useful degraded mode: if one batch request fails, try the
+        # older per-track path instead of losing the whole album.
+        results: list[AnalysisResult] = []
+        for track in tracks:
+            result = self.analyze(track)
+            if not result.description and last_exc is not None and not result.confidence:
+                result = _dc_replace(result, description=f"Cloud AI batch fallback: {last_exc}")
+            results.append(result)
+        return results
+
+
+def _group_tracks_by_folder(tracks: list[Track]) -> list[list[Track]]:
+    """Return tracks grouped by parent folder, preserving per-folder order.
+
+    Keeping album files in the same batch chunk lets the AI enforce consistent
+    artist/album values across the whole album in one inference call.
+    """
+    from collections import defaultdict
+
+    folder_map: defaultdict[str, list[Track]] = defaultdict(list)
+    for track in tracks:
+        folder_map[str(Path(track.path).parent)].append(track)
+    return list(folder_map.values())
 
     def _analyze_batch_chunk(self, tracks: list[Track]) -> list[AnalysisResult]:
         if not tracks:
@@ -448,6 +539,7 @@ _ALL_AI_FIELDS: list[str] = [
     "tracknumber",
     "discnumber",
     "composer",
+    "originalartist",
     "isrc",
     "publisher",
     "lyrics",
@@ -565,25 +657,33 @@ def _build_prompt(
             )
 
     return (
-        "System instruction: ROLE: Expert Music Archivist & ID3 Metadata Specialist. "
-        "Identyfikujesz utwory po nazwie pliku i szczątkowych tagach. "
-        "AI nie jest źródłem prawdy i nie może wymyślać danych.\n"
-        "Wymagania:\n"
-        "1) Zwróć WYŁĄCZNIE JSON zgodny ze schematem.\n"
-        "2) Pola: title, artist, album, year, genre, tracknumber, bpm, key, albumartist, "
-        "comment, lyrics, originalFilename, confidence, description.\n"
-        "3) originalFilename musi równać się nazwie wejściowej.\n"
-        "4) Jeśli nie wiesz pola, zwróć null.\n"
-        "5) Nigdy nie zwracaj placeholderów: Unknown/Undefined/Various.\n"
-        "6) Dla ratingu nie zwracaj wartości (pole nie jest częścią schematu).\n"
-        "7) Dbaj o spójność artist/album/albumartist dla sekwencyjnych numerowanych plików.\n"
-        "8) Preferuj wydania studyjne zamiast składanek typu Greatest Hits/Best Of.\n"
-        "9) BPM i key oszacuj ostrożnie; nie zgaduj agresywnie.\n"
-        "10) Wszystkie odpowiedzi tekstowe tylko alfabet łaciński.\n"
+        "You are an expert music archivist with access to a vast database equivalent "
+        "to MusicBrainz, Discogs, AllMusic, Spotify, and Apple Music. "
+        "Identify the track from the filename and existing tags, then return complete "
+        "accurate ID3 metadata.\n\n"
+        "RULES:\n"
+        "1) Return ONLY valid JSON matching the schema.\n"
+        "2) Fields: title, artist, album, year, genre, tracknumber, discnumber, bpm, "
+        "key, albumartist, originalArtist, composer, mood, copyright, comment, "
+        "lyrics, originalFilename, confidence, description.\n"
+        "3) originalFilename must equal the input filename exactly.\n"
+        "4) Return null for any field you cannot determine with confidence.\n"
+        "5) Never return placeholders: Unknown/Undefined/Various.\n"
+        "6) STUDIO FIRST: Prefer original studio album over Greatest Hits/compilations/"
+        "DJ mixes. Correct wrong album tags.\n"
+        "7) TITLE CLEANING: Remove '(Official Video)', '[4K]', 'HD', 'HQ', 'tekst', "
+        "'lyrics' from titles. Move 'prod. X' to composer field.\n"
+        "8) ARTIST FORMAT: Fix 'ArtistA ArtistB' to 'ArtistA feat. ArtistB'. "
+        "Use '&' for collaborations, 'feat.' for features.\n"
+        "9) COMPOSER: For hip-hop/electronic, extract producer name (prod. X) as composer.\n"
+        "10) ORIGINAL ARTIST: For covers, put original performer in originalArtist.\n"
+        "11) COMMENT: One short factual sentence about the track.\n"
+        "12) COPYRIGHT: Label and year, e.g. '2007 Universal Records'.\n"
+        "13) Latin alphabet only.\n"
         + clean_note
-        + "\nUzupełnij lub popraw tylko pola niżej: "
+        + "\nFill or correct only these fields: "
         + fields_list
-        + "\n\nZnane dane utworu:\n"
+        + "\n\nKnown track data:\n"
         + known_section
     )
 
@@ -622,6 +722,9 @@ def _track_batch_context(track: Track) -> dict[str, Any]:
         "current_key": "key",
         "current_composer": "composer",
         "current_mood": "mood",
+        "current_comment": "comment",
+        "current_copyright": "copyright",
+        "current_discNumber": "discnumber",
     }
     for output_name, attr_name in mapping.items():
         value = getattr(track, attr_name, None)
@@ -961,6 +1064,7 @@ def _batch_payload_to_results(payload: Any, tracks: list[Track]) -> list[Analysi
             tracknumber=_to_str(cleaned.get("tracknumber")),
             discnumber=_to_str(cleaned.get("discnumber")),
             composer=_to_str(cleaned.get("composer")),
+            originalartist=_to_str(cleaned.get("originalartist")),
             isrc=_to_str(cleaned.get("isrc")),
             publisher=_to_str(cleaned.get("publisher")),
             lyrics=_to_str(cleaned.get("lyrics")),
@@ -987,6 +1091,8 @@ def _normalize_batch_tags(tags: dict[str, Any]) -> dict[str, Any]:
         "track_number": "tracknumber",
         "discNumber": "discnumber",
         "disc_number": "discnumber",
+        "originalArtist": "originalartist",
+        "original_artist": "originalartist",
         "originalFilename": "originalFilename",
     }
     normalized: dict[str, Any] = {}

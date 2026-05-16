@@ -36,6 +36,7 @@ _META_OVERWRITE_FIELDS = (
     "tracknumber",
     "discnumber",
     "composer",
+    "originalartist",
     "isrc",
     "publisher",
     "lyrics",

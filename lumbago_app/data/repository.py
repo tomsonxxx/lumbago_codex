@@ -52,6 +52,7 @@ def _ensure_track_columns(engine) -> None:
         "grouping": "TEXT",
         "copyright": "TEXT",
         "remixer": "TEXT",
+        "originalartist": "TEXT",
     }
     with engine.connect() as conn:
         rows = conn.execute(text("PRAGMA table_info(tracks)")).fetchall()
@@ -68,7 +69,7 @@ _TRACK_META_FIELDS = [
     "tracknumber", "discnumber", "composer", "bpm", "key",
     "loudness_lufs", "duration", "file_size", "file_mtime", "file_hash",
     "format", "bitrate", "sample_rate", "energy", "mood",
-    "comment", "lyrics", "isrc", "publisher", "grouping", "copyright", "remixer",
+    "comment", "lyrics", "isrc", "publisher", "grouping", "copyright", "remixer", "originalartist",
     "cue_in_ms", "cue_out_ms", "artwork_path", "fingerprint", "waveform_path",
 ]
 

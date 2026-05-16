@@ -18,6 +18,7 @@ from mutagen.id3 import (
     TIT1,
     TIT2,
     TKEY,
+    TOPE,
     TPE1,
     TPE2,
     TPE4,
@@ -141,6 +142,7 @@ def extract_metadata(path: Path) -> Track:
     track.grouping = tag_value("TIT1") or tag_value("grouping") or tag_value("contentgroup")
     track.copyright = tag_value("TCOP") or tag_value("copyright")
     track.remixer = tag_value("TPE4") or tag_value("remixer")
+    track.originalartist = tag_value("TOPE") or tag_value("originalartist") or tag_value("original_artist")
     # MP4/M4A uses a different tagging scheme; normalize through read_tags to fill gaps.
     canonical_tags = read_tags(path)
     if canonical_tags:
@@ -261,6 +263,7 @@ def _write_id3_tags(path: Path, tags: dict[str, str]) -> None:
         "grouping": TIT1,
         "copyright": TCOP,
         "remixer": TPE4,
+        "originalartist": TOPE,
     }
 
     for field_name, frame_cls in frame_map.items():

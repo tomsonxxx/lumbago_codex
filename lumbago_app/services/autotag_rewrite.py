@@ -551,13 +551,20 @@ class UnifiedAutoTagger:
     def _search_ai(self, track: Track) -> Candidate | None:
         track = _track_with_filename_identity(track)
         cached = self._ai_batch_cache.get(track.path)
-        if cached is not None:
+        # Use the batch cache only when the result is confident enough.
+        # Low-confidence or failed batch results should still benefit from the
+        # full multi-provider path so secondary providers are not silently skipped.
+        if cached is not None and (cached.confidence or 0.0) >= 0.5:
             result = cached
         else:
             tagger = self._build_multi_ai_tagger()
             if tagger is None:
-                return None
-            result = tagger.analyze(track)
+                if cached is None:
+                    return None
+                # No providers configured — use whatever the batch returned.
+                result = cached
+            else:
+                result = tagger.analyze(track)
         useful_fields = [
             result.album,
             result.year,
