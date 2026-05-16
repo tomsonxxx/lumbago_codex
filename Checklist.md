@@ -1,6 +1,6 @@
 # Checklist — Lumbago Music AI (Stan projektu)
 
-> Wygenerowano: 2026-04-28. Obejmuje wszystkie trzy aplikacje: Desktop, Web MVP i tagerv2.
+> Wygenerowano: 2026-04-28. Aktualizacja: 2026-05-16. Obejmuje wszystkie cztery aplikacje: Desktop, Web MVP, tagerv2 i WinUI 3.
 
 ## Legenda
 - [x] zrobione
@@ -253,11 +253,14 @@
 
 ## 6. Priorytety natychmiastowe (P0/P1 pending)
 
-| # | Zadanie | Komponent | Priorytet |
-|---|---------|-----------|-----------|
-| 1 | `npm run lint` bez błędów w tagerv2 | tagerv2 | P0 |
-| 2 | Zapis tagów do pliku audio (browser, tagerv2) | tagerv2 | P1 |
-| 3 | ~~Decyzja: model integracji WinUI 3 ↔ logika~~ ✓ | Desktop rewrite | P0 |
-| 4 | Integration testy Web API | Web MVP | P1 |
-| 5 | Test na czystym Windows (PyInstaller build) | Desktop | P1 |
-| 6 | Edycja tagów przez Web API | Web MVP | P1 |
+> Stan na 2026-05-16. Testy: 95 passed / 1 failed (`test_autotag_rewrite::test_unified_autotagger_picks_best_candidate`) / 1 skipped.
+
+| # | Zadanie | Komponent | Priorytet | Stan |
+|---|---------|-----------|-----------|------|
+| 1 | `npm run lint` bez błędów w tagerv2 | tagerv2 | P0 | ⏳ |
+| 2 | Zapis tagów do pliku audio (browser, tagerv2) | tagerv2 | P1 | ⏳ |
+| 3 | ~~Decyzja: model integracji WinUI 3 ↔ logika~~ | Desktop rewrite | P0 | ✅ |
+| 4 | Integration testy Web API | Web MVP | P1 | ⏳ |
+| 5 | Test na czystym Windows (PyInstaller build) | Desktop | P1 | ⏳ |
+| 6 | ~~Edycja tagów przez Web API~~ | Web MVP | P1 | ✅ |
+| 7 | Naprawić failing test: `test_unified_autotagger_picks_best_candidate` | Desktop | P1 | ⏳ |
