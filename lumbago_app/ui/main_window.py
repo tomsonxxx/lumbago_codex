@@ -29,6 +29,7 @@ from lumbago_app.services.autotag_rewrite import UnifiedAutoTagger
 from lumbago_app.services.beatgrid import auto_cue_points, compute_beatgrid
 from lumbago_app.services.key_detection import detect_key
 from lumbago_app.services.metadata_enricher import AutoMetadataFiller, MetadataFillReport
+from lumbago_app.services.metadata_pipeline_v2 import MetadataPipelineV2
 from lumbago_app.services.loudness import analyze_loudness, normalize_loudness
 from lumbago_app.services.recognizer import AcoustIdRecognizer
 from lumbago_app.services.metadata_writeback import PendingTrackWrite, apply_track_writes
@@ -566,6 +567,7 @@ class AutoTagWorker(QtCore.QRunnable):
             validation_policy=getattr(self.settings, "validation_policy", None),
             cache_ttl_days=getattr(self.settings, "metadata_cache_ttl_days", 30),
         )
+        metadata_pipeline = MetadataPipelineV2()
 
         _LOCAL_FIELDS = ("loudness_lufs", "cue_in_ms", "cue_out_ms", "fingerprint", "waveform_path", "artwork_path")
 
@@ -580,7 +582,13 @@ class AutoTagWorker(QtCore.QRunnable):
                     metadata_report = metadata_filler.fill_missing_with_report(track, "mix")
                 except Exception:
                     metadata_report = None
-                autotag_summary = self._run_single_track(track, autotagger)
+                autotag_summary = self._run_single_track(
+                    track,
+                    autotagger,
+                    metadata_pipeline=metadata_pipeline,
+                    baseline_track=before,
+                    metadata_report=metadata_report,
+                )
                 changed_fields = _changed_fields(before, track)
                 sync_fields = self._fields_requiring_file_sync(track)
                 fields_to_write = sorted(set(changed_fields) | set(sync_fields))
@@ -638,12 +646,23 @@ class AutoTagWorker(QtCore.QRunnable):
         self,
         track: Track,
         autotagger: UnifiedAutoTagger,
+        *,
+        metadata_pipeline: MetadataPipelineV2,
+        baseline_track: Track,
+        metadata_report: MetadataFillReport | None,
     ) -> dict[str, int | str | None]:
         refreshed = extract_metadata(Path(track.path))
         _merge_missing_from_source(track, refreshed)
         _repair_identity_from_filename(track)
         enriched = autotagger.enrich_track(track)
-        autotagger.apply_best_match(track, enriched)
+        resolved = metadata_pipeline.resolve_track(
+            baseline_track=baseline_track,
+            candidate_track=track,
+            metadata_report=metadata_report,
+            enrichment_result=enriched,
+        )
+        for field_name in _AUTOTAG_FIELDS:
+            setattr(track, field_name, getattr(resolved.track, field_name, None))
 
         detected_key = None if _has_value(track.key) else detect_key(Path(track.path))
         detected_bpm = None
