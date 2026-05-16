@@ -6,7 +6,8 @@ from dataclasses import replace
 from lumbago_app.core.models import AnalysisResult, Track
 
 
-_UNKNOWN_VALUES = {"", "unknown", "n/a", "none", "null", "-", "\u2014", "â€”"}
+_UNKNOWN_VALUES = {"", "unknown", "n/a", "none", "null", "-", "\u2014"}
+_TRASH_SNIPPETS = ("www.", "http://", "https://", "track ", "unknown")
 
 
 def _is_unknown(value: str | None) -> bool:
@@ -15,34 +16,52 @@ def _is_unknown(value: str | None) -> bool:
     return value.strip().lower() in _UNKNOWN_VALUES
 
 
-# AI always overwrites these (audio analysis fields)
+def _is_garbage(value: str | None) -> bool:
+    if value is None:
+        return True
+    text = value.strip().lower()
+    if text in _UNKNOWN_VALUES:
+        return True
+    return any(token in text for token in _TRASH_SNIPPETS)
+
+
 _AI_ANALYSIS_TEXT_FIELDS = ("key", "genre", "mood")
 _AI_ANALYSIS_FLOAT_FIELDS = ("bpm", "energy")
-
-# Always overwrite with AI-verified values
 _META_OVERWRITE_FIELDS = (
-    "title", "artist",
-    "album", "albumartist", "year",
-    "tracknumber", "discnumber", "composer",
-    "isrc", "publisher", "lyrics", "grouping", "copyright", "remixer", "comment",
+    "title",
+    "artist",
+    "album",
+    "albumartist",
+    "year",
+    "tracknumber",
+    "discnumber",
+    "composer",
+    "isrc",
+    "publisher",
+    "lyrics",
+    "grouping",
+    "copyright",
+    "remixer",
+    "comment",
 )
 
 
 def _merge_analysis_into_track(track: Track, result: AnalysisResult) -> Track:
-    """Merge AI analysis into a track, overwriting all fields with verified values."""
+    """Smart non-destructive merge for AI data."""
     for field in _AI_ANALYSIS_TEXT_FIELDS:
         incoming = getattr(result, field, None)
-        if incoming is None:
-            continue
-        if isinstance(incoming, str) and _is_unknown(incoming):
+        if incoming is None or (isinstance(incoming, str) and _is_unknown(incoming)):
             continue
         if field == "genre" and isinstance(incoming, str):
             incoming = _normalize_genre(incoming)
-        setattr(track, field, incoming)
+        current = getattr(track, field, None)
+        if _is_unknown(current):
+            setattr(track, field, incoming)
 
     for field in _AI_ANALYSIS_FLOAT_FIELDS:
         incoming = getattr(result, field, None)
-        if incoming is not None:
+        current = getattr(track, field, None)
+        if incoming is not None and current is None:
             setattr(track, field, incoming)
 
     rating = getattr(result, "rating", None)
@@ -57,13 +76,22 @@ def _merge_analysis_into_track(track: Track, result: AnalysisResult) -> Track:
             if 0 <= rating_int <= 5:
                 track.rating = rating_int
 
+    ai_conf = float(result.confidence or 0.0)
     for field in _META_OVERWRITE_FIELDS:
         incoming = getattr(result, field, None)
-        if incoming is None:
+        if incoming is None or (isinstance(incoming, str) and _is_unknown(incoming)):
             continue
-        if isinstance(incoming, str) and _is_unknown(incoming):
-            continue
-        setattr(track, field, incoming)
+        current = getattr(track, field, None)
+        if isinstance(current, str):
+            if _is_garbage(current) and not _is_garbage(incoming):
+                setattr(track, field, incoming)
+                continue
+            if not _is_garbage(current):
+                if len(incoming.strip()) > len(current.strip()) + 8 and ai_conf >= 0.88:
+                    setattr(track, field, incoming)
+                continue
+        if current is None:
+            setattr(track, field, incoming)
 
     return track
 
@@ -78,8 +106,7 @@ def _normalize_genre(value: str) -> str:
 def _harmonize_batch_results(
     pairs: list[tuple[Track, AnalysisResult]],
 ) -> list[tuple[Track, AnalysisResult]]:
-    """Harmonize batch AI text fields by enforcing majority values for genre and mood."""
-    text_fields = ("genre", "mood")
+    text_fields = ("genre", "mood", "album", "artist", "albumartist")
 
     majorities: dict[str, str] = {}
     for field in text_fields:

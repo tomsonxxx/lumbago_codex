@@ -222,12 +222,25 @@ class CloudAiTagger:
                 last_exc = exc
                 if attempt >= self.retries or not _is_retryable_exception(exc):
                     break
-                time.sleep(0.3 * (attempt + 1))
+                backoff_s = min(16.0, 2.0 ** attempt)
+                if _is_http_429(exc):
+                    backoff_s = max(backoff_s * 2.0, 3.0)
+                time.sleep(backoff_s)
         return AnalysisResult(description=f"Cloud AI error: {last_exc}", confidence=0.0)
 
     def cache_key(self) -> str:
         base_url, model = self._resolved_base_url, self._resolved_model
         return f"{self.provider_name}|{base_url or ''}|{model or ''}"
+
+    def analyze_batch(self, tracks: list[Track], chunk_size: int = 20) -> list[AnalysisResult]:
+        safe_chunk = max(1, min(50, int(chunk_size)))
+        output: list[AnalysisResult] = []
+        for start in range(0, len(tracks), safe_chunk):
+            chunk = tracks[start : start + safe_chunk]
+            for track in chunk:
+                output.append(self.analyze(track))
+            time.sleep(0.2)
+        return output
 
 
 class MultiAiTagger:
@@ -346,6 +359,13 @@ def _has_nonempty_value(value: Any) -> bool:
 
 
 _MISSING_SENTINEL = {"", "-", "—", "unknown", "n/a", "none", "null"}
+_TRASH_PATTERNS = (
+    "unknown",
+    "track ",
+    "www.",
+    "http://",
+    "https://",
+)
 
 _ALL_AI_FIELDS: list[str] = [
     "title",
@@ -394,7 +414,7 @@ def _noisy_fields(track: Track) -> list[str]:
 
 
 def _missing_fields(track: Track) -> list[str]:
-    # Always check all fields — AI verifies and corrects even existing values
+    # Default: include all fields so AI can verify/repair.
     return list(_ALL_AI_FIELDS)
 
 
@@ -455,8 +475,10 @@ def _build_prompt(
         value = getattr(track, fname, None)
         if value is None:
             continue
+        if fname in {"lyrics", "comment"}:
+            continue
         label = _FIELD_LABELS.get(fname, fname)
-        known_lines.append(f"{label}: {value}")
+        known_lines.append(f"{label}: {_sanitize_prompt_value(value)}")
 
     known_section = "\n".join(known_lines)
     fields_list = ", ".join(missing)
@@ -477,19 +499,23 @@ def _build_prompt(
             )
 
     return (
-        "Jestes ekspertem metadanych muzycznych. Na podstawie ponizszych danych ZWERYFIKUJ i POPRAW wszystkie pola"
-        " uzywajac swojej wiedzy o tym utworze (artysta, wydanie, rok premiery, itp.)."
-        " Jesli aktualna wartosc jest bledna lub niepelna — popraw ja na wiarygodna."
-        " Jesli aktualna wartosc jest poprawna — zachowaj ja.\n"
-        "WAZNE: Wszystkie wartosci tekstowe zwracaj WYLACZNIE w alfabecie lacinskim (transliteracja jesli konieczna)."
-        " Nie uzywaj cyrylicy, arabskiego, chinskiego ani zadnego innego pisma nielacinskiego.\n"
-        "Zwroc TYLKO poprawny JSON z dokladnie tymi polami: "
-        + fields_list
-        + "."
+        "System instruction: Jesteś ekspertem ds. archiwizacji muzyki. "
+        "Identyfikujesz utwory po nazwie pliku i szczątkowych tagach. "
+        "AI nie jest źródłem prawdy i nie może wymyślać danych.\n"
+        "Wymagania:\n"
+        "1) Zwróć WYŁĄCZNIE JSON zgodny ze schematem.\n"
+        "2) Pola: title, artist, album, year, genre, tracknumber, bpm, key, albumartist, "
+        "comment, lyrics, originalFilename, confidence, description.\n"
+        "3) originalFilename musi równać się nazwie wejściowej.\n"
+        "4) Jeśli nie wiesz pola, zwróć null.\n"
+        "5) Dla ratingu nie zwracaj wartości (pole nie jest częścią schematu).\n"
+        "6) Dbaj o spójność artist/album/albumartist dla sekwencyjnych numerowanych plików.\n"
+        "7) BPM i key oszacuj ostrożnie; nie zgaduj agresywnie.\n"
+        "8) Wszystkie odpowiedzi tekstowe tylko alfabet łaciński.\n"
         + clean_note
-        + "\nDla ratingu zwracaj liczbe calkowita 0-5.\n"
-        + "\nJesli danego pola absolutnie nie mozna ustalic, uzyj null. Nie dodawaj zadnych komentarzy poza JSON.\n\n"
-        "Znane dane utworu:\n"
+        + "\nUzupełnij lub popraw tylko pola niżej: "
+        + fields_list
+        + "\n\nZnane dane utworu:\n"
         + known_section
     )
 
@@ -568,6 +594,26 @@ def _call_gemini_generate_content(
         "generationConfig": {
             "responseMimeType": "application/json",
             "temperature": 0.2,
+            "responseSchema": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string", "nullable": True},
+                    "artist": {"type": "string", "nullable": True},
+                    "album": {"type": "string", "nullable": True},
+                    "year": {"type": "string", "nullable": True},
+                    "genre": {"type": "string", "nullable": True},
+                    "tracknumber": {"type": "string", "nullable": True},
+                    "bpm": {"type": "number", "nullable": True},
+                    "key": {"type": "string", "nullable": True},
+                    "albumartist": {"type": "string", "nullable": True},
+                    "comment": {"type": "string", "nullable": True},
+                    "lyrics": {"type": "string", "nullable": True},
+                    "originalFilename": {"type": "string", "nullable": True},
+                    "confidence": {"type": "number", "nullable": True},
+                    "description": {"type": "string", "nullable": True},
+                },
+                "required": ["originalFilename"],
+            },
         },
     }
     resp = requests.post(url, headers=headers, json=payload, timeout=timeout)
@@ -660,8 +706,18 @@ def _infer_confidence(payload: dict[str, Any]) -> float | None:
 
 
 def _normalize_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    allowed = set(_ALL_AI_FIELDS) | {"description", "confidence"}
+    allowed = set(_ALL_AI_FIELDS) | {"description", "confidence", "originalFilename"}
     return {key: value for key, value in payload.items() if key in allowed}
+
+
+def _sanitize_prompt_value(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    text = text.replace("\n", " ").replace("\r", " ")
+    if len(text) > 180:
+        text = text[:180] + "..."
+    return text
 
 
 def _parse_rating(value: Any) -> int | None:
@@ -740,8 +796,15 @@ def _is_retryable_exception(exc: Exception) -> bool:
         response = getattr(exc, "response", None)
         if response is None:
             return True
-        return response.status_code >= 500
+        return response.status_code >= 500 or response.status_code == 429
     return False
+
+
+def _is_http_429(exc: Exception) -> bool:
+    if not isinstance(exc, requests.HTTPError):
+        return False
+    response = getattr(exc, "response", None)
+    return bool(response is not None and response.status_code == 429)
 
 
 # ---------------------------------------------------------------------------

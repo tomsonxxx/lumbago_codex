@@ -869,6 +869,9 @@ class _PipelineWorker(QtCore.QRunnable):
         self._stop = True
 
     def run(self) -> None:
+        if isinstance(self.tagger, CloudAiTagger):
+            self._run_cloud_chunked()
+            return
         if self.max_workers <= 1:
             for idx, _ in enumerate(self.states):
                 if self._stop:
@@ -896,6 +899,26 @@ class _PipelineWorker(QtCore.QRunnable):
                     state.error_msg = str(exc)
                     state.proposed_track = deepcopy(state.track)
                 self.signals.track_done.emit(idx)
+        self.signals.finished.emit()
+
+    def _run_cloud_chunked(self) -> None:
+        chunk_size = 20
+        total = len(self.states)
+        for start in range(0, total, chunk_size):
+            end = min(total, start + chunk_size)
+            for idx in range(start, end):
+                if self._stop:
+                    self.states[idx].status = TrackStatus.SKIPPED
+                    self.signals.track_done.emit(idx)
+                    continue
+                self.signals.track_started.emit(idx)
+                self._process_track(idx)
+                if self.states[idx].status == TrackStatus.ERROR:
+                    self.states[idx].error_msg = self.states[idx].error_msg or "Błąd AI"
+                self.signals.track_done.emit(idx)
+            # Mandatory cooldown between chunks to reduce API pressure / 429.
+            if end < total:
+                QtCore.QThread.msleep(3500)
         self.signals.finished.emit()
 
     def _process_track(self, idx: int) -> None:
