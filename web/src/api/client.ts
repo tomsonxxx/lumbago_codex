@@ -87,10 +87,11 @@ export async function applyAnalysisJob(jobId: string): Promise<AnalysisApplyResu
   });
 }
 
-export async function updateTrack(path: string, update: TrackUpdate): Promise<Track> {
-  const payload = await request<{ track: Track }>(`/tracks/${encodeURIComponent(path)}`, {
+export type TrackUpdateResult = { track: Track; warning?: string };
+
+export async function updateTrack(path: string, update: TrackUpdate): Promise<TrackUpdateResult> {
+  return request<TrackUpdateResult>(`/tracks/${encodeURIComponent(path)}`, {
     method: "PUT",
     body: JSON.stringify(update),
   });
-  return payload.track;
 }
