@@ -56,13 +56,15 @@ export function TrackEditPanel({ track, onSaved, onClose }: Props) {
     }
 
     const update: TrackUpdate = {};
-    if (draft.title   !== (track.title   ?? "")) update.title   = draft.title   || null;
-    if (draft.artist  !== (track.artist  ?? "")) update.artist  = draft.artist  || null;
-    if (draft.album   !== (track.album   ?? "")) update.album   = draft.album   || null;
-    if (draft.year    !== (track.year    ?? "")) update.year    = draft.year    || null;
-    if (draft.genre   !== (track.genre   ?? "")) update.genre   = draft.genre   || null;
-    if (draft.key     !== (track.key     ?? "")) update.key     = draft.key     || null;
-    if (draft.comment !== (track.comment ?? "")) update.comment = draft.comment || null;
+    // Wyślij "" (pusty string) gdy użytkownik wyczyścił pole — backend (exclude_none=True)
+    // ignoruje null, ale akceptuje "", co faktycznie usuwa wartość z bazy i pliku audio.
+    if (draft.title   !== (track.title   ?? "")) update.title   = draft.title;
+    if (draft.artist  !== (track.artist  ?? "")) update.artist  = draft.artist;
+    if (draft.album   !== (track.album   ?? "")) update.album   = draft.album;
+    if (draft.year    !== (track.year    ?? "")) update.year    = draft.year;
+    if (draft.genre   !== (track.genre   ?? "")) update.genre   = draft.genre;
+    if (draft.key     !== (track.key     ?? "")) update.key     = draft.key;
+    if (draft.comment !== (track.comment ?? "")) update.comment = draft.comment;
 
     const bpmNum = draft.bpm.trim() !== "" ? parseFloat(draft.bpm) : null;
     if (bpmNum !== (track.bpm ?? null)) update.bpm = bpmNum;

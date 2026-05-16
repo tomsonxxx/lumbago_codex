@@ -15,9 +15,32 @@ public sealed partial class SmartTaggerPage : Page
     private string? _currentJobId;
     private DispatcherTimer? _pollTimer;
 
+    // Licznik kolejnych błędów polling — po 3 zatrzymujemy timer i pokazujemy błąd
+    private int _pollErrorCount;
+    private const int MaxPollErrors = 3;
+
     public SmartTaggerPage()
     {
         InitializeComponent();
+    }
+
+    // ── Nawigacja — sprzątamy timer przy wyjściu ze strony ───────────────────
+
+    protected override void OnNavigatedFrom(NavigationEventArgs e)
+    {
+        StopPolling();
+        base.OnNavigatedFrom(e);
+    }
+
+    private void StopPolling()
+    {
+        if (_pollTimer is not null)
+        {
+            _pollTimer.Tick -= PollTimer_Tick;
+            _pollTimer.Stop();
+            _pollTimer = null;
+        }
+        _pollErrorCount = 0;
     }
 
     // ── Start analizy ────────────────────────────────────────────────────────
@@ -41,6 +64,9 @@ public sealed partial class SmartTaggerPage : Page
             return;
         }
 
+        // Zatrzymaj poprzedni timer (np. gdy użytkownik uruchamia analizę ponownie)
+        StopPolling();
+
         _pollTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
         _pollTimer.Tick += PollTimer_Tick;
         _pollTimer.Start();
@@ -56,9 +82,18 @@ public sealed partial class SmartTaggerPage : Page
         try
         {
             status = await App.Api.GetAnalysisJobAsync(_currentJobId);
+            _pollErrorCount = 0; // Reset przy każdej udanej odpowiedzi
         }
-        catch
+        catch (Exception ex)
         {
+            _pollErrorCount++;
+            if (_pollErrorCount >= MaxPollErrors)
+            {
+                StopPolling();
+                BtnRunTagger.IsEnabled = true;
+                HideProgress();
+                ShowStatus($"Utracono połączenie z backendem po {MaxPollErrors} próbach: {ex.Message}", isError: true);
+            }
             return;
         }
 
@@ -69,8 +104,7 @@ public sealed partial class SmartTaggerPage : Page
 
         if (status.Status is "completed" or "failed")
         {
-            _pollTimer?.Stop();
-            _pollTimer = null;
+            StopPolling();
             BtnRunTagger.IsEnabled = true;
             HideProgress();
 
