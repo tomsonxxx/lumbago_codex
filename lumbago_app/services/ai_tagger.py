@@ -539,6 +539,7 @@ _ALL_AI_FIELDS: list[str] = [
     "tracknumber",
     "discnumber",
     "composer",
+    "originalartist",
     "isrc",
     "publisher",
     "lyrics",
