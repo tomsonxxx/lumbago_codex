@@ -18,5 +18,10 @@ export default defineConfig({
   server: {
     port: 5173,
     host: true
-  }
+  },
+  test: {
+    environment: 'jsdom',
+    globals: true,
+    exclude: ['**/node_modules/**', '**/lumbago-skeleton/**'],
+  },
 });
