@@ -21,6 +21,23 @@ class _FakeResponse:
         return None
 
 
+class _FakeResponse:
+    status_code = 200
+    ok = True
+    reason = "OK"
+    text = "{}"
+
+    def __init__(self, payload: dict):
+        self._payload = payload
+        self.text = str(payload)
+
+    def json(self) -> dict:
+        return self._payload
+
+    def raise_for_status(self) -> None:
+        return None
+
+
 def test_sanitize_prompt_value_masks_urls_paths_and_binary_blobs() -> None:
     raw = (
         "Artist https://example.com C:\\Music\\set\\track.mp3 /home/user/music/a.mp3 "
