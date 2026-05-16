@@ -224,11 +224,11 @@
 - [x] Szkielet aplikacji WinUI 3 (shell, nawigacja, routing) — `winui/LumbagoWinUI/` (18 plików; wymaga VS 2022 + Windows App SDK workload do kompilacji)
 - [x] Widok Biblioteki (lista + siatka + filtry + detail panel) — przełącznik lista↔siatka, filtry Gatunek/Tonacja/BPM, panel edycji tagów, PUT /tracks/{path} w backend
 - [x] (P1) Import, Duplikaty, Konwerter XML — ImportPage (FolderPicker + podgląd + commit), DuplicatesPage (3 tryby + karty grup + usuwanie), ConverterPage (Rekordbox→VirtualDJ); backend: DELETE /tracks/{path} + POST /convert/rekordbox-to-virtualdj
-- [ ] (P1) Dialog Porównania Tagów + Smart Tagger
-- [ ] (P1) Globalny odtwarzacz (dock) + pasek akcji
-- [ ] (P1) Podłączenie danych z logiką (tracki, playlisty, tagi)
-- [ ] (P1) Akcje masowe i edycje w UI
-- [ ] (P1) Integracja AI Taggera i kolejek
+- [x] (P1) Smart Tagger — strona AI z kolejką analizy, podglądem decyzji per pole i zatwierdzaniem (POST /analysis/jobs, polling, apply)
+- [x] (P1) Globalny odtwarzacz (dock) — play/pause/seek/prev/next, autoplay kolejki, czas pozycji
+- [x] (P1) Podłączenie danych z logiką (tracki, playlisty, tagi)
+- [ ] (P1) Akcje masowe i edycje w UI (BulkEdit dialog)
+- [x] (P1) Integracja AI Taggera i kolejek
 
 ### 4.3 Testy i dokumentacja WinUI 3
 - [ ] (P1) Testy UI kluczowych flow

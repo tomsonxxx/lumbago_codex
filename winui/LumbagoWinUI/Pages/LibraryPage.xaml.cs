@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using LumbagoWinUI.Models;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Navigation;
 
 namespace LumbagoWinUI.Pages;
@@ -150,6 +151,11 @@ public sealed partial class LibraryPage : Page
         if (e.AddedItems.FirstOrDefault() is Track t) SelectTrack(t);
     }
 
+    private void TrackList_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
+    {
+        if (_selectedTrack is not null) PlayTrackFromLibrary(_selectedTrack);
+    }
+
     private void SelectTrack(Track track)
     {
         _selectedTrack = track;
@@ -158,6 +164,24 @@ public sealed partial class LibraryPage : Page
 
         App.Window?.UpdatePlayerInfo(
             track.DisplayTitle, track.DisplayArtist, track.DisplayBpm, track.DisplayKey);
+    }
+
+    /// <summary>Wołana z LibraryPage (double-click) lub z MainWindow (BtnPlay bez aktywnego tracka).</summary>
+    public void PlayFirstTrack()
+    {
+        var list = FilteredTracks.ToList();
+        if (list.Count == 0) return;
+        var track = list[0];
+        SelectTrack(track);
+        App.Window?.PlayTrack(track, list, 0);
+    }
+
+    public void PlayTrackFromLibrary(Track track)
+    {
+        var list = FilteredTracks.ToList();
+        var idx = list.IndexOf(track);
+        SelectTrack(track);
+        App.Window?.PlayTrack(track, list, idx >= 0 ? idx : 0);
     }
 
     // ── Panel szczegółów ────────────────────────────────────────────────────

@@ -126,6 +126,38 @@ public sealed class ApiClient
             .ToList();
     }
 
+    // ── Analiza AI ───────────────────────────────────────────────────────────
+
+    public async Task<string> CreateAnalysisJobAsync(
+        IEnumerable<int>? trackIds = null, CancellationToken ct = default)
+    {
+        var payload = trackIds is null
+            ? new { track_ids = (List<int>?)null }
+            : new { track_ids = (List<int>?)trackIds.ToList() };
+        var resp = await _http.PostAsJsonAsync("/analysis/jobs", payload, _json, ct);
+        resp.EnsureSuccessStatusCode();
+        var result = await resp.Content.ReadFromJsonAsync<AnalysisJobCreatedResponse>(_json, ct);
+        return result?.JobId ?? throw new InvalidOperationException("Brak job_id w odpowiedzi.");
+    }
+
+    public async Task<AnalysisJobStatus> GetAnalysisJobAsync(string jobId, CancellationToken ct = default)
+    {
+        return await _http.GetFromJsonAsync<AnalysisJobStatus>($"/analysis/jobs/{jobId}", _json, ct)
+               ?? throw new InvalidOperationException("Pusta odpowiedź z /analysis/jobs.");
+    }
+
+    public async Task<AnalysisApplyResponse> ApplyAnalysisJobAsync(
+        string jobId,
+        Dictionary<string, Dictionary<string, bool>> overrides,
+        CancellationToken ct = default)
+    {
+        var payload = new { overrides, source_prefix = "winui_smart_tagger" };
+        var resp = await _http.PostAsJsonAsync($"/analysis/jobs/{jobId}/apply", payload, _json, ct);
+        resp.EnsureSuccessStatusCode();
+        return await resp.Content.ReadFromJsonAsync<AnalysisApplyResponse>(_json, ct)
+               ?? new AnalysisApplyResponse();
+    }
+
     private sealed record SettingResponse(string? Value);
     private sealed record TracksResponse(List<Track>? Tracks);
     private sealed record UpdateTrackResponse(Track? Track);

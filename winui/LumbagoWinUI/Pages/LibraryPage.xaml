@@ -184,7 +184,8 @@
                               x:Name="TrackList"
                               ItemsSource="{x:Bind FilteredTracks, Mode=OneWay}"
                               SelectionMode="Single"
-                              SelectionChanged="TrackList_SelectionChanged">
+                              SelectionChanged="TrackList_SelectionChanged"
+                              DoubleTapped="TrackList_DoubleTapped">
                         <ListView.ItemContainerStyle>
                             <Style TargetType="ListViewItem">
                                 <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
