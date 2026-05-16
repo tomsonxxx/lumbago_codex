@@ -643,6 +643,7 @@ class AutoTagWorker(QtCore.QRunnable):
         total = len(self.tracks)
 
         autotagger = UnifiedAutoTagger(self.settings, logger=_process_log)
+        autotagger.preload_ai_batch(self.tracks)
         metadata_filler = AutoMetadataFiller(
             getattr(self.settings, "musicbrainz_app_name", None),
             validation_policy=getattr(self.settings, "validation_policy", None),
