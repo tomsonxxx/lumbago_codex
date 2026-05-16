@@ -1,0 +1,115 @@
+<ContentDialog
+    x:Class="LumbagoWinUI.Pages.BulkEditDialog"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    DefaultButton="Primary"
+    PrimaryButtonText="Zastosuj"
+    CloseButtonText="Anuluj"
+    MinWidth="480">
+
+    <ContentDialog.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="/Themes/Theme.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </ContentDialog.Resources>
+
+    <StackPanel Spacing="0" Width="440">
+
+        <TextBlock x:Name="SubtitleLabel"
+                   Text="Zostaw pole puste, aby nie zmieniać danej wartości."
+                   Style="{StaticResource CaptionText}"
+                   Margin="0,0,0,20"
+                   TextWrapping="Wrap"/>
+
+        <!-- Gatunek -->
+        <Grid ColumnDefinitions="24,120,*" Margin="0,0,0,12" VerticalAlignment="Center">
+            <CheckBox Grid.Column="0" x:Name="ChkGenre" IsChecked="False"
+                      Checked="Chk_Changed" Unchecked="Chk_Changed"/>
+            <TextBlock Grid.Column="1" Text="Gatunek"
+                       Style="{StaticResource BodyText}" VerticalAlignment="Center"/>
+            <TextBox Grid.Column="2" x:Name="TxtGenre"
+                     PlaceholderText="np. Techno"
+                     IsEnabled="False"
+                     TextChanged="Txt_TextChanged"/>
+        </Grid>
+
+        <!-- Rok -->
+        <Grid ColumnDefinitions="24,120,*" Margin="0,0,0,12" VerticalAlignment="Center">
+            <CheckBox Grid.Column="0" x:Name="ChkYear" IsChecked="False"
+                      Checked="Chk_Changed" Unchecked="Chk_Changed"/>
+            <TextBlock Grid.Column="1" Text="Rok"
+                       Style="{StaticResource BodyText}" VerticalAlignment="Center"/>
+            <TextBox Grid.Column="2" x:Name="TxtYear"
+                     PlaceholderText="np. 2024"
+                     IsEnabled="False"
+                     TextChanged="Txt_TextChanged"/>
+        </Grid>
+
+        <!-- Tonacja -->
+        <Grid ColumnDefinitions="24,120,*" Margin="0,0,0,12" VerticalAlignment="Center">
+            <CheckBox Grid.Column="0" x:Name="ChkKey" IsChecked="False"
+                      Checked="Chk_Changed" Unchecked="Chk_Changed"/>
+            <TextBlock Grid.Column="1" Text="Tonacja"
+                       Style="{StaticResource BodyText}" VerticalAlignment="Center"/>
+            <TextBox Grid.Column="2" x:Name="TxtKey"
+                     PlaceholderText="np. 8A"
+                     IsEnabled="False"
+                     TextChanged="Txt_TextChanged"/>
+        </Grid>
+
+        <!-- Nastrój -->
+        <Grid ColumnDefinitions="24,120,*" Margin="0,0,0,12" VerticalAlignment="Center">
+            <CheckBox Grid.Column="0" x:Name="ChkMood" IsChecked="False"
+                      Checked="Chk_Changed" Unchecked="Chk_Changed"/>
+            <TextBlock Grid.Column="1" Text="Nastrój"
+                       Style="{StaticResource BodyText}" VerticalAlignment="Center"/>
+            <TextBox Grid.Column="2" x:Name="TxtMood"
+                     PlaceholderText="np. Dark"
+                     IsEnabled="False"
+                     TextChanged="Txt_TextChanged"/>
+        </Grid>
+
+        <!-- Energia -->
+        <Grid ColumnDefinitions="24,120,*" Margin="0,0,0,12" VerticalAlignment="Center">
+            <CheckBox Grid.Column="0" x:Name="ChkEnergy" IsChecked="False"
+                      Checked="Chk_Changed" Unchecked="Chk_Changed"/>
+            <TextBlock Grid.Column="1" Text="Energia (0-10)"
+                       Style="{StaticResource BodyText}" VerticalAlignment="Center"/>
+            <Slider Grid.Column="2" x:Name="SliderEnergy"
+                    Minimum="0" Maximum="10" StepFrequency="0.5"
+                    IsEnabled="False"
+                    TickPlacement="BottomRight" TickFrequency="1"/>
+        </Grid>
+
+        <!-- BPM -->
+        <Grid ColumnDefinitions="24,120,*" Margin="0,0,0,12" VerticalAlignment="Center">
+            <CheckBox Grid.Column="0" x:Name="ChkBpm" IsChecked="False"
+                      Checked="Chk_Changed" Unchecked="Chk_Changed"/>
+            <TextBlock Grid.Column="1" Text="BPM"
+                       Style="{StaticResource BodyText}" VerticalAlignment="Center"/>
+            <NumberBox Grid.Column="2" x:Name="NumBpm"
+                       PlaceholderText="np. 140"
+                       Minimum="20" Maximum="300"
+                       IsEnabled="False"
+                       SpinButtonPlacementMode="Compact"/>
+        </Grid>
+
+        <!-- Komentarz -->
+        <Grid ColumnDefinitions="24,120,*" Margin="0,0,0,0" VerticalAlignment="Center">
+            <CheckBox Grid.Column="0" x:Name="ChkComment" IsChecked="False"
+                      Checked="Chk_Changed" Unchecked="Chk_Changed"/>
+            <TextBlock Grid.Column="1" Text="Komentarz"
+                       Style="{StaticResource BodyText}" VerticalAlignment="Top"
+                       Margin="0,8,0,0"/>
+            <TextBox Grid.Column="2" x:Name="TxtComment"
+                     PlaceholderText="Komentarz do wszystkich tracków..."
+                     IsEnabled="False"
+                     AcceptsReturn="True"
+                     Height="64"
+                     TextWrapping="Wrap"/>
+        </Grid>
+
+    </StackPanel>
+</ContentDialog>

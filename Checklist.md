@@ -227,7 +227,7 @@
 - [x] (P1) Smart Tagger — strona AI z kolejką analizy, podglądem decyzji per pole i zatwierdzaniem (POST /analysis/jobs, polling, apply)
 - [x] (P1) Globalny odtwarzacz (dock) — play/pause/seek/prev/next, autoplay kolejki, czas pozycji
 - [x] (P1) Podłączenie danych z logiką (tracki, playlisty, tagi)
-- [ ] (P1) Akcje masowe i edycje w UI (BulkEdit dialog)
+- [x] (P1) Akcje masowe i edycje w UI — BulkEditDialog (multi-select Ctrl+klik, checkboxy per pole, batch PUT /tracks)
 - [x] (P1) Integracja AI Taggera i kolejek
 
 ### 4.3 Testy i dokumentacja WinUI 3
