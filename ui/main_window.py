@@ -64,6 +64,7 @@ from ui.recognition_queue import RecognitionBatchWorker
 from ui.renamer_dialog import RenamerDialog
 from ui.settings_dialog import ApiKeyCheckDialog, SettingsDialog
 from ui.tag_compare_dialog import TagCompareDialog
+from ui.theme import get_scale_factor
 from ui.widgets import AnimatedButton
 from ui.xml_converter_dialog import XmlConverterDialog
 from ui.xml_import_dialog import XmlImportDialog
@@ -974,7 +975,8 @@ class MainWindow(QtWidgets.QMainWindow):
         _debug_log("MainWindow: init_db ok")
         perform_backup()
         self.setWindowTitle("Lumbago Music AI")
-        self.setMinimumSize(1200, 720)
+        self._scale = get_scale_factor()
+        self.setMinimumSize(self._s(1000), self._s(660))
         self.thread_pool = QtCore.QThreadPool.globalInstance()
         self.task_manager = BackgroundTaskManager(self)
         self._apply_app_icon()
@@ -1009,7 +1011,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.main_splitter.addWidget(self._main_column_widget)
         self.main_splitter.setStretchFactor(0, 0)
         self.main_splitter.setStretchFactor(1, 1)
-        self.main_splitter.setSizes([320, 980])
+        self.main_splitter.setSizes([self._s(280), self._s(920)])
         layout.addWidget(self.main_splitter)
 
         toolbar = self._build_toolbar()
@@ -1073,7 +1075,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.content_splitter.addWidget(self.detail_panel)
         self.content_splitter.setStretchFactor(0, 3)
         self.content_splitter.setStretchFactor(1, 1)
-        self.content_splitter.setSizes([900, 300])
+        self.content_splitter.setSizes([self._s(820), self._s(280)])
         self.content_splitter.splitterMoved.connect(self._on_splitter_moved)
         main_column.addWidget(self.content_splitter, 1)
 
@@ -1090,6 +1092,10 @@ class MainWindow(QtWidgets.QMainWindow):
         # Przywróć pozycję splittera z poprzedniej sesji
         QtCore.QTimer.singleShot(0, self._restore_ui_state)
 
+    def _s(self, px: int) -> int:
+        """Skaluje wartość pikseli logicznych przez współczynnik DPI."""
+        return max(1, round(px * self._scale))
+
     def _apply_app_icon(self):
         icon_path = Path(__file__).resolve().parents[2] / "assets" / "icon.svg"
         if icon_path.exists():
@@ -1098,8 +1104,8 @@ class MainWindow(QtWidgets.QMainWindow):
     def _build_sidebar(self) -> QtWidgets.QFrame:
         frame = QtWidgets.QFrame()
         frame.setObjectName("Sidebar")
-        frame.setMinimumWidth(300)
-        frame.setMaximumWidth(420)
+        frame.setMinimumWidth(self._s(260))
+        frame.setMaximumWidth(self._s(480))
         layout = QtWidgets.QVBoxLayout(frame)
         layout.setContentsMargins(12, 12, 12, 12)
         title = QtWidgets.QLabel("Tools")
@@ -1171,7 +1177,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         title_row = QtWidgets.QHBoxLayout()
         self.sidebar_toggle_btn = QtWidgets.QPushButton("☰")
-        self.sidebar_toggle_btn.setFixedSize(28, 28)
+        self.sidebar_toggle_btn.setFixedSize(self._s(28), self._s(28))
         self.sidebar_toggle_btn.setCheckable(True)
         self.sidebar_toggle_btn.setChecked(True)
         self.sidebar_toggle_btn.setToolTip("Pokaż / ukryj lewy panel")
@@ -1185,14 +1191,14 @@ class MainWindow(QtWidgets.QMainWindow):
         title_row.addWidget(subtitle)
         title_row.addStretch(1)
         self.filter_toggle_btn = QtWidgets.QPushButton("🔍")
-        self.filter_toggle_btn.setFixedSize(28, 28)
+        self.filter_toggle_btn.setFixedSize(self._s(28), self._s(28))
         self.filter_toggle_btn.setCheckable(True)
         self.filter_toggle_btn.setChecked(True)
         self.filter_toggle_btn.setToolTip("Pokaż / ukryj pasek filtrów")
         self.filter_toggle_btn.clicked.connect(self._toggle_filter_row)
         title_row.addWidget(self.filter_toggle_btn)
         self.dj_player_btn = QtWidgets.QPushButton("🎛")
-        self.dj_player_btn.setFixedSize(28, 28)
+        self.dj_player_btn.setFixedSize(self._s(28), self._s(28))
         self.dj_player_btn.setCheckable(True)
         self.dj_player_btn.setChecked(False)
         self.dj_player_btn.setToolTip("Pokaż / ukryj DJ Player")
@@ -1287,7 +1293,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def _build_detail_panel(self) -> QtWidgets.QFrame:
         frame = QtWidgets.QFrame()
         frame.setObjectName("DetailPanel")
-        frame.setMinimumWidth(60)
+        frame.setMinimumWidth(self._s(60))
         outer = QtWidgets.QVBoxLayout(frame)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
@@ -1295,7 +1301,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # --- Nagłówek z tytułem i przyciskiem collapse ---
         header_bar = QtWidgets.QWidget()
         header_bar.setObjectName("DetailPanelHeader")
-        header_bar.setFixedHeight(32)
+        header_bar.setFixedHeight(self._s(36))
         hb_layout = QtWidgets.QHBoxLayout(header_bar)
         hb_layout.setContentsMargins(10, 0, 4, 0)
         hb_layout.setSpacing(4)
@@ -1305,7 +1311,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.toggle_detail_btn = QtWidgets.QToolButton()
         self.toggle_detail_btn.setText("◀")
         self.toggle_detail_btn.setToolTip("Ukryj/pokaż panel szczegółów  [Ctrl+Shift+D]")
-        self.toggle_detail_btn.setFixedSize(24, 24)
+        self.toggle_detail_btn.setFixedSize(self._s(26), self._s(26))
         self.toggle_detail_btn.clicked.connect(self._toggle_detail_panel)
         hb_layout.addWidget(self.toggle_detail_btn)
         outer.addWidget(header_bar)
@@ -1323,14 +1329,14 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.detail_text = QtWidgets.QTextEdit()
         self.detail_text.setReadOnly(True)
-        self.detail_text.setMaximumHeight(100)
+        self.detail_text.setMaximumHeight(self._s(120))
         layout.addWidget(self.detail_text)
 
         # Okładka wyśrodkowana
         cover_row = QtWidgets.QHBoxLayout()
         cover_row.addStretch()
         self.cover_label = QtWidgets.QLabel()
-        self.cover_label.setFixedSize(140, 140)
+        self.cover_label.setFixedSize(self._s(150), self._s(150))
         self.cover_label.setScaledContents(True)
         self.cover_label.setObjectName("CoverLabel")
         cover_row.addWidget(self.cover_label)
@@ -1401,7 +1407,7 @@ class MainWindow(QtWidgets.QMainWindow):
         layout.addLayout(btn_grid)
 
         self.waveform_label = QtWidgets.QLabel()
-        self.waveform_label.setFixedHeight(32)
+        self.waveform_label.setFixedHeight(self._s(48))
         layout.addWidget(self.waveform_label)
         layout.addStretch()
 
@@ -1588,8 +1594,9 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _toggle_sidebar(self):
         visible = self.sidebar_toggle_btn.isChecked()
+        sidebar_w = self._s(280)
         if visible:
-            self.main_splitter.setSizes([320, max(200, self.main_splitter.width() - 320)])
+            self.main_splitter.setSizes([sidebar_w, max(self._s(200), self.main_splitter.width() - sidebar_w)])
         else:
             self.main_splitter.setSizes([0, self.main_splitter.width()])
 
@@ -2616,15 +2623,25 @@ class MainWindow(QtWidgets.QMainWindow):
     def _save_ui_state(self) -> None:
         qs = QtCore.QSettings("LumbagoMusicAI", "MainWindow")
         qs.setValue("splitter_state", self.content_splitter.saveState())
-        qs.setValue("detail_last_width", getattr(self, "_detail_panel_last_width", 300))
+        qs.setValue("main_splitter_state", self.main_splitter.saveState())
+        qs.setValue("detail_last_width", getattr(self, "_detail_panel_last_width", self._s(280)))
         qs.setValue("detail_visible", self.content_splitter.sizes()[1] > 0)
 
     def _restore_ui_state(self) -> None:
         qs = QtCore.QSettings("LumbagoMusicAI", "MainWindow")
+        main_state = qs.value("main_splitter_state")
+        if main_state:
+            self.main_splitter.restoreState(main_state)
         state = qs.value("splitter_state")
         if state:
             self.content_splitter.restoreState(state)
-        self._detail_panel_last_width = int(qs.value("detail_last_width", 300))
+        else:
+            # Brak zapisanego stanu — ustaw proporcjonalnie do aktualnej szerokości
+            cw = self.content_splitter.width()
+            if cw > 0:
+                detail_w = max(self._s(240), min(self._s(380), int(cw * 0.25)))
+                self.content_splitter.setSizes([cw - detail_w, detail_w])
+        self._detail_panel_last_width = int(qs.value("detail_last_width", self._s(280)))
         # Zsynchronizuj ikonę przycisku z faktycznym stanem
         if self.content_splitter.sizes()[1] == 0:
             self.toggle_detail_btn.setText("▶")
