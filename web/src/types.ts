@@ -90,3 +90,16 @@ export type AnalysisApplyResult = {
   updated_tracks: number;
   applied_changes: number;
 };
+
+export type TrackUpdate = {
+  title?: string | null;
+  artist?: string | null;
+  album?: string | null;
+  year?: string | null;
+  genre?: string | null;
+  bpm?: number | null;
+  key?: string | null;
+  mood?: string | null;
+  energy?: number | null;
+  comment?: string | null;
+};

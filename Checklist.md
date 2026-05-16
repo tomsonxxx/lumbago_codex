@@ -158,8 +158,8 @@
 - [ ] (P2) Test `DuplicateFinderModal` (UI + API)
 
 ### 2.4 Brakujące funkcje Web MVP
-- [ ] (P1) Edycja tagów bezpośrednio przez API webowy
-- [ ] (P1) Zapis tagów do pliku audio (przez backend)
+- [x] (P1) Edycja tagów przez API webowy — TrackEditPanel (kliknięcie na track, pola edycji, PUT /tracks)
+- [x] (P1) Zapis tagów do pliku audio przez backend — PUT /tracks/{path} wywołuje write_tags() w Mutagen
 - [ ] (P2) Paginacja wyników `/tracks` (przy dużych bibliotekach)
 - [ ] (P2) Autoryzacja / zabezpieczenie API
 
@@ -224,11 +224,11 @@
 - [x] Szkielet aplikacji WinUI 3 (shell, nawigacja, routing) — `winui/LumbagoWinUI/` (18 plików; wymaga VS 2022 + Windows App SDK workload do kompilacji)
 - [x] Widok Biblioteki (lista + siatka + filtry + detail panel) — przełącznik lista↔siatka, filtry Gatunek/Tonacja/BPM, panel edycji tagów, PUT /tracks/{path} w backend
 - [x] (P1) Import, Duplikaty, Konwerter XML — ImportPage (FolderPicker + podgląd + commit), DuplicatesPage (3 tryby + karty grup + usuwanie), ConverterPage (Rekordbox→VirtualDJ); backend: DELETE /tracks/{path} + POST /convert/rekordbox-to-virtualdj
-- [ ] (P1) Dialog Porównania Tagów + Smart Tagger
-- [ ] (P1) Globalny odtwarzacz (dock) + pasek akcji
-- [ ] (P1) Podłączenie danych z logiką (tracki, playlisty, tagi)
-- [ ] (P1) Akcje masowe i edycje w UI
-- [ ] (P1) Integracja AI Taggera i kolejek
+- [x] (P1) Smart Tagger — strona AI z kolejką analizy, podglądem decyzji per pole i zatwierdzaniem (POST /analysis/jobs, polling, apply)
+- [x] (P1) Globalny odtwarzacz (dock) — play/pause/seek/prev/next, autoplay kolejki, czas pozycji
+- [x] (P1) Podłączenie danych z logiką (tracki, playlisty, tagi)
+- [x] (P1) Akcje masowe i edycje w UI — BulkEditDialog (multi-select Ctrl+klik, checkboxy per pole, batch PUT /tracks)
+- [x] (P1) Integracja AI Taggera i kolejek
 
 ### 4.3 Testy i dokumentacja WinUI 3
 - [ ] (P1) Testy UI kluczowych flow

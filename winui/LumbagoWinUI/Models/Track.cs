@@ -4,6 +4,9 @@ namespace LumbagoWinUI.Models;
 
 public sealed class Track
 {
+    [JsonPropertyName("id")]
+    public int Id { get; init; }
+
     [JsonPropertyName("path")]
     public string Path { get; init; } = string.Empty;
 
