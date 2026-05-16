@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import tempfile
 
-from lumbago_app.core.models import Track
-from lumbago_app.data.db import reset_engine
-from lumbago_app.data.repository import init_db, list_tracks, upsert_tracks
-from lumbago_app.services.metadata_writeback import PendingTrackWrite, apply_track_writes
+from core.models import Track
+from data.db import reset_engine
+from data.repository import init_db, list_tracks, upsert_tracks
+from services.metadata_writeback import PendingTrackWrite, apply_track_writes
 
 
 def test_apply_track_writes_does_not_allow_ai_to_overwrite_existing_artist(monkeypatch):
@@ -14,7 +14,7 @@ def test_apply_track_writes_does_not_allow_ai_to_overwrite_existing_artist(monke
         reset_engine()
         init_db()
         upsert_tracks([Track(path="demo.mp3", artist="Tiesto", title="Children")])
-        monkeypatch.setattr("lumbago_app.services.metadata_writeback.write_tags", lambda *_args, **_kwargs: None)
+        monkeypatch.setattr("services.metadata_writeback.write_tags", lambda *_args, **_kwargs: None)
 
         incoming = Track(path="demo.mp3", artist="Hardwell", title="Children")
         result = apply_track_writes(

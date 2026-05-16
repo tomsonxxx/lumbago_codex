@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from lumbago_app.services.metadata_consensus import (
+from services.metadata_consensus import (
     FieldEvidence,
     MetadataConsensusEngine,
 )

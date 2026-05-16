@@ -1,5 +1,5 @@
-from lumbago_app.core.models import Track
-from lumbago_app.core.services import find_duplicates_by_tags
+from core.models import Track
+from core.services import find_duplicates_by_tags
 
 
 def test_find_duplicates_by_tags_groups_tracks():

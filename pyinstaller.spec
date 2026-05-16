@@ -3,7 +3,7 @@
 block_cipher = None
 
 analysis = Analysis(
-    ["lumbago_app/main.py"],
+    ["main.py"],
     pathex=["."],
     binaries=[],
     datas=[("assets/icon.svg", "assets"), ("assets/icon.ico", "assets"), ("docs/user_guide.md", "docs")],

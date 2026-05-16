@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from lumbago_app.core.models import Track
-from lumbago_app.services.ai_tagger import CloudAiTagger
+from core.models import Track
+from services.ai_tagger import CloudAiTagger
 
 
 class _FakeResponse:

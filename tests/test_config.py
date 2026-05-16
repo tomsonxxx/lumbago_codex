@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from lumbago_app.core.config import load_settings
+from core.config import load_settings
 
 
 def test_load_settings_defaults_validation_policy_to_aggressive(monkeypatch, tmp_path):

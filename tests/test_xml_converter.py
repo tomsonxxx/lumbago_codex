@@ -1,7 +1,7 @@
 from pathlib import Path
 import tempfile
 
-from lumbago_app.services.xml_converter import parse_rekordbox_xml, parse_virtualdj_xml
+from services.xml_converter import parse_rekordbox_xml, parse_virtualdj_xml
 
 
 def test_parse_rekordbox_xml_basic():

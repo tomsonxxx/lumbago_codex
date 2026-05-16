@@ -1,8 +1,8 @@
-from lumbago_app.services.beatgrid import auto_cue_points, compute_beatgrid
-from lumbago_app.core.models import Track
-from lumbago_app.core.audio import write_tags
-from lumbago_app.core.services import enrich_track_with_analysis
-from lumbago_app.services.key_detection import _format_key, _to_camelot
+from services.beatgrid import auto_cue_points, compute_beatgrid
+from core.models import Track
+from core.audio import write_tags
+from core.services import enrich_track_with_analysis
+from services.key_detection import _format_key, _to_camelot
 
 
 def test_compute_beatgrid_basic():
@@ -72,7 +72,7 @@ def test_write_tags_mp3_uses_id3_frames(monkeypatch, tmp_path):
         holder["obj"] = obj
         return obj
 
-    monkeypatch.setattr("lumbago_app.core.audio.ID3", _fake_id3_ctor)
+    monkeypatch.setattr("core.audio.ID3", _fake_id3_ctor)
 
     write_tags(
         audio_path,

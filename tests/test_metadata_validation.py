@@ -1,5 +1,5 @@
-from lumbago_app.core.models import Track
-from lumbago_app.services.metadata_enricher import (
+from core.models import Track
+from services.metadata_enricher import (
     _validate_candidate,
     _is_compilation_album,
     _is_valid_year,

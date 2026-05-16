@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from lumbago_app.core.models import AnalysisResult, Track
-from lumbago_app.services.metadata_enricher import MetadataFillReport
-from lumbago_app.ui.ai_tagger_dialog import (
+from core.models import AnalysisResult, Track
+from services.metadata_enricher import MetadataFillReport
+from ui.ai_tagger_dialog import (
     _PipelineWorker,
     TrackAnalysisState,
     _default_accept_fields,
@@ -52,7 +52,7 @@ def test_default_accept_fields_includes_metadata_and_confident_ai_changes():
 
 
 def test_cloud_pipeline_worker_uses_batch_ai_for_chunk(monkeypatch):
-    from lumbago_app.services.ai_tagger import CloudAiTagger
+    from services.ai_tagger import CloudAiTagger
 
     states = [
         TrackAnalysisState(track=Track(path="01.mp3"), proposed_track=Track(path="01.mp3")),
@@ -75,8 +75,8 @@ def test_cloud_pipeline_worker_uses_batch_ai_for_chunk(monkeypatch):
 
     monkeypatch.setattr(tagger, "analyze_batch", _fake_batch)
     monkeypatch.setattr(tagger, "analyze", lambda _track: (_ for _ in ()).throw(AssertionError("single analyze called")))
-    monkeypatch.setattr("lumbago_app.ui.ai_tagger_dialog.load_analysis_cache", lambda _path: {})
-    monkeypatch.setattr("lumbago_app.ui.ai_tagger_dialog.save_analysis_cache", lambda _path, _payload: None)
+    monkeypatch.setattr("ui.ai_tagger_dialog.load_analysis_cache", lambda _path: {})
+    monkeypatch.setattr("ui.ai_tagger_dialog.save_analysis_cache", lambda _path, _payload: None)
 
     worker = _PipelineWorker(
         states,

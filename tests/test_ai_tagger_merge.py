@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from lumbago_app.core.models import AnalysisResult, Track
-from lumbago_app.services.ai_tagger_merge import _merge_analysis_into_track
+from core.models import AnalysisResult, Track
+from services.ai_tagger_merge import _merge_analysis_into_track
 
 
 def test_merge_keeps_good_local_values() -> None:

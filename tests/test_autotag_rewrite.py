@@ -1,7 +1,7 @@
 from types import SimpleNamespace
 
-from lumbago_app.core.models import Track
-from lumbago_app.services.autotag_rewrite import (
+from core.models import Track
+from services.autotag_rewrite import (
     Candidate,
     UnifiedAutoTagger,
     _clean_text,
@@ -251,7 +251,7 @@ def test_search_ai_returns_error_candidate_when_providers_fail(monkeypatch):
 
     class _FailingTagger:
         def analyze(self, _track):
-            from lumbago_app.core.models import AnalysisResult
+            from core.models import AnalysisResult
 
             return AnalysisResult(description="provider failed", confidence=0.0)
 
@@ -287,7 +287,7 @@ def test_musicbrainz_search_uses_release_group_genre_fallback(monkeypatch):
         lambda _rgid: {"tags": ["trance"], "genres": []},
     )
     monkeypatch.setattr(
-        "lumbago_app.services.autotag_rewrite.requests.get",
+        "services.autotag_rewrite.requests.get",
         lambda *args, **kwargs: type(
             "Resp",
             (),

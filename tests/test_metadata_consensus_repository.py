@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import tempfile
 
-from lumbago_app.core.models import Track
-from lumbago_app.data.db import reset_engine
-from lumbago_app.data.repository import (
+from core.models import Track
+from data.db import reset_engine
+from data.repository import (
     init_db,
     list_metadata_conflicts,
     list_metadata_field_evidence,
@@ -12,7 +12,7 @@ from lumbago_app.data.repository import (
     save_metadata_consensus_report,
     upsert_tracks,
 )
-from lumbago_app.services.metadata_consensus import (
+from services.metadata_consensus import (
     FieldEvidence,
     MetadataConsensusEngine,
 )

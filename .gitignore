@@ -30,13 +30,4 @@ htmlcov/
 .idea/
 .vs/
 *.swp
-.venv311_new/
 node_modules/
-web/node_modules/
-tagerv2/node_modules/
-inteligentny-tagger-id3-src/node_modules/
-tagerv2/lumbago-skeleton/frontend/node_modules/
-tagerv2/lumbago-skeleton/backend/__pycache__/
-tagerv2/lumbago-skeleton/backend/app/__pycache__/
-tagerv2/lumbago-skeleton/backend/tests/__pycache__/
-tagerv2/lumbago-skeleton/backend/.pytest_cache/

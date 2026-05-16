@@ -19,9 +19,6 @@ dependencies = [
   "numpy==1.26.4; python_version < '3.14'",
   "numpy==2.4.3; python_version >= '3.14'",
   "librosa==0.10.2.post1",
-  "fastapi==0.115.8",
-  "uvicorn==0.34.0",
-  "httpx==0.28.1",
 ]
 
 [build-system]
@@ -30,7 +27,7 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["lumbago_app*"]
+include = ["core*", "data*", "services*", "ui*"]
 
 [tool.black]
 line-length = 100

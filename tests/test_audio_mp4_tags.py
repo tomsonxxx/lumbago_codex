@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from lumbago_app.core import audio
+from core import audio
 
 
 class _Mp4Stub:

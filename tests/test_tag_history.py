@@ -1,8 +1,8 @@
 import tempfile
 
-from lumbago_app.core.models import Track
-from lumbago_app.data.db import reset_engine
-from lumbago_app.data.repository import add_change_log, init_db, list_change_log, upsert_tracks
+from core.models import Track
+from data.db import reset_engine
+from data.repository import add_change_log, init_db, list_change_log, upsert_tracks
 
 
 def test_tag_history_roundtrip(monkeypatch):

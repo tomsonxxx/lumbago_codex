@@ -5,9 +5,9 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PyQt6 import QtWidgets
 
-from lumbago_app.core.models import Track
-from lumbago_app.services.metadata_writeback import PendingTrackWrite, WritebackResult
-from lumbago_app.ui.ai_tagger_dialog import AiTaggerDialog
+from core.models import Track
+from services.metadata_writeback import PendingTrackWrite, WritebackResult
+from ui.ai_tagger_dialog import AiTaggerDialog
 
 
 def test_apply_accepted_persists_placeholder_replacements(monkeypatch, tmp_path: Path):
@@ -31,7 +31,7 @@ def test_apply_accepted_persists_placeholder_replacements(monkeypatch, tmp_path:
         calls["writes"] = pending
         return WritebackResult(track_count=len(pending))
 
-    monkeypatch.setattr("lumbago_app.ui.ai_tagger_dialog.apply_track_writes", _apply_track_writes)
+    monkeypatch.setattr("ui.ai_tagger_dialog.apply_track_writes", _apply_track_writes)
     monkeypatch.setattr(dialog, "accept", lambda: calls.__setitem__("accepted", True))
 
     dialog._apply_accepted()

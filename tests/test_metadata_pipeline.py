@@ -1,7 +1,7 @@
 from pathlib import Path
 
-from lumbago_app.core.audio import extract_metadata
-from lumbago_app.services.metadata_enricher import (
+from core.audio import extract_metadata
+from services.metadata_enricher import (
     LOCAL_SOURCE_LABELS,
     MetadataEnricher,
     available_metadata_methods,
@@ -54,8 +54,8 @@ def test_extract_metadata_reads_extended_tags(monkeypatch, tmp_path: Path):
     audio_path = tmp_path / "demo.mp3"
     audio_path.write_bytes(b"ID3")
 
-    monkeypatch.setattr("lumbago_app.core.audio.MutagenFile", lambda _path: _FakeAudio())
-    monkeypatch.setattr("lumbago_app.core.audio.apply_local_metadata", lambda track, path: None)
+    monkeypatch.setattr("core.audio.MutagenFile", lambda _path: _FakeAudio())
+    monkeypatch.setattr("core.audio.apply_local_metadata", lambda track, path: None)
 
     track = extract_metadata(audio_path)
 
@@ -75,8 +75,8 @@ def test_extract_metadata_ignores_trailing_download_bitrate_in_filename(monkeypa
     audio_path = tmp_path / "Poylow, ATHYN - Good In Goodbye - 320.mp3"
     audio_path.write_bytes(b"ID3")
 
-    monkeypatch.setattr("lumbago_app.core.audio.MutagenFile", lambda _path: _FakeAudioNoTags())
-    monkeypatch.setattr("lumbago_app.core.audio._apply_folder_metadata", lambda track, path: None)
+    monkeypatch.setattr("core.audio.MutagenFile", lambda _path: _FakeAudioNoTags())
+    monkeypatch.setattr("core.audio._apply_folder_metadata", lambda track, path: None)
 
     track = extract_metadata(audio_path)
 
@@ -88,8 +88,8 @@ def test_extract_metadata_treats_single_name_before_bitrate_as_title(monkeypatch
     audio_path = tmp_path / "Diamond Heart - 320.mp3"
     audio_path.write_bytes(b"ID3")
 
-    monkeypatch.setattr("lumbago_app.core.audio.MutagenFile", lambda _path: _FakeAudioNoTags())
-    monkeypatch.setattr("lumbago_app.core.audio._apply_folder_metadata", lambda track, path: None)
+    monkeypatch.setattr("core.audio.MutagenFile", lambda _path: _FakeAudioNoTags())
+    monkeypatch.setattr("core.audio._apply_folder_metadata", lambda track, path: None)
 
     track = extract_metadata(audio_path)
 
@@ -103,7 +103,7 @@ def test_extract_metadata_does_not_use_date_folder_as_album(monkeypatch, tmp_pat
     audio_path = folder / "Diamond Heart - 320.mp3"
     audio_path.write_bytes(b"ID3")
 
-    monkeypatch.setattr("lumbago_app.core.audio.MutagenFile", lambda _path: _FakeAudioNoTags())
+    monkeypatch.setattr("core.audio.MutagenFile", lambda _path: _FakeAudioNoTags())
 
     track = extract_metadata(audio_path)
 
@@ -112,8 +112,8 @@ def test_extract_metadata_does_not_use_date_folder_as_album(monkeypatch, tmp_pat
 
 
 def test_copy_missing_fields_treats_placeholders_as_empty():
-    from lumbago_app.core.models import Track
-    from lumbago_app.services.metadata_enricher import _copy_missing_fields
+    from core.models import Track
+    from services.metadata_enricher import _copy_missing_fields
 
     target = Track(path="target.mp3", title="\\", artist="unknown", album="-")
     source = Track(path="source.mp3", title="Fixed Title", artist="Fixed Artist", album="Fixed Album")

@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from copy import deepcopy
 
-from lumbago_app.core.models import Track
-from lumbago_app.services.autotag_rewrite import Candidate, EnrichmentResult
-from lumbago_app.services.metadata_consensus import FieldEvidence
-from lumbago_app.services.metadata_enricher import MetadataFillReport, SourceProbe
-from lumbago_app.services.metadata_pipeline_v2 import MetadataPipelineV2
-from lumbago_app.services.recognition_pipeline_v2 import RecognitionPipelineResult
+from core.models import Track
+from services.autotag_rewrite import Candidate, EnrichmentResult
+from services.metadata_consensus import FieldEvidence
+from services.metadata_enricher import MetadataFillReport, SourceProbe
+from services.metadata_pipeline_v2 import MetadataPipelineV2
+from services.recognition_pipeline_v2 import RecognitionPipelineResult
 
 
 def test_pipeline_preserves_existing_artist_against_ai_and_keeps_conflict():

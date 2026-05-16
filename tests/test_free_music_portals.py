@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from lumbago_app.services.free_music_portals import FreeMusicPortalSearch
+from services.free_music_portals import FreeMusicPortalSearch
 
 
 @dataclass

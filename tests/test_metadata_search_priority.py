@@ -1,5 +1,5 @@
-from lumbago_app.core.models import Track
-from lumbago_app.services.metadata_enricher import (
+from core.models import Track
+from services.metadata_enricher import (
     LOCAL_SOURCE_LABELS,
     _build_portal_consensus,
     _build_portal_queries,

@@ -3,9 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from lumbago_app.core.models import Track
-from lumbago_app.services.free_music_portals import PortalCandidate, PortalProbe
-from lumbago_app.services.recognition_pipeline_v2 import RecognitionPipelineV2, _build_portal_queries
+from core.models import Track
+from services.free_music_portals import PortalCandidate, PortalProbe
+from services.recognition_pipeline_v2 import RecognitionPipelineV2, _build_portal_queries
 
 
 @dataclass

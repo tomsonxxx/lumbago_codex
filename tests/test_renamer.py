@@ -1,8 +1,8 @@
 from pathlib import Path
 import tempfile
 
-from lumbago_app.core.models import Track
-from lumbago_app.core.renamer import (
+from core.models import Track
+from core.renamer import (
     _sanitize_filename,
     apply_rename_plan,
     build_rename_plan,

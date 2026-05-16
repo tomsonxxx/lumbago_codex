@@ -1,5 +1,5 @@
-from lumbago_app.core.models import Track
-from lumbago_app.ui.ai_tagger_dialog import _changed_fields, _format_value
+from core.models import Track
+from ui.ai_tagger_dialog import _changed_fields, _format_value
 
 
 def test_format_value_treats_backslash_placeholder_as_empty():

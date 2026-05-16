@@ -1,8 +1,8 @@
 import tempfile
 
-from lumbago_app.core.models import Track
-from lumbago_app.data.db import reset_engine
-from lumbago_app.data.repository import init_db, upsert_tracks, list_tracks, update_track
+from core.models import Track
+from data.db import reset_engine
+from data.repository import init_db, upsert_tracks, list_tracks, update_track
 
 
 def test_integration_db_roundtrip(monkeypatch):

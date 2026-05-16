@@ -5,16 +5,16 @@ import json
 
 import pytest
 
-from lumbago_app.core.models import AnalysisResult, Track
-from lumbago_app.services.ai_tagger import (
+from core.models import AnalysisResult, Track
+from services.ai_tagger import (
     CloudAiTagger,
     _ALL_AI_FIELDS,
     _build_prompt,
     _missing_fields,
     _normalize_payload,
 )
-from lumbago_app.services.metadata_enricher import MetadataEnricher
-from lumbago_app.services.ai_tagger_merge import _merge_analysis_into_track
+from services.metadata_enricher import MetadataEnricher
+from services.ai_tagger_merge import _merge_analysis_into_track
 
 
 class _FakeResponse:
@@ -277,7 +277,7 @@ def test_merge_ai_analysis_fields_always_overwrite():
 
 def test_musicbrainz_enrich_applies_full_metadata(monkeypatch):
     """enrich_from_musicbrainz_search should fill album, year, genre, etc."""
-    from lumbago_app.services.metadata_enricher import MetadataEnricher
+    from services.metadata_enricher import MetadataEnricher
 
     mb_search_result = {
         "recordings": [
@@ -307,11 +307,11 @@ def test_musicbrainz_enrich_applies_full_metadata(monkeypatch):
     }
 
     monkeypatch.setattr(
-        "lumbago_app.services.metadata_enricher.get_metadata_cache",
+        "services.metadata_enricher.get_metadata_cache",
         lambda key, ttl: None,
     )
     monkeypatch.setattr(
-        "lumbago_app.services.metadata_enricher.set_metadata_cache",
+        "services.metadata_enricher.set_metadata_cache",
         lambda key, data, source=None: None,
     )
 
@@ -320,12 +320,12 @@ def test_musicbrainz_enrich_applies_full_metadata(monkeypatch):
             return mb_search_result
 
     monkeypatch.setattr(
-        "lumbago_app.services.metadata_enricher.MusicBrainzProvider",
+        "services.metadata_enricher.MusicBrainzProvider",
         lambda app: _FakeMBProvider(),
     )
     # Prevent HTTP call for detailed recording
     monkeypatch.setattr(
-        "lumbago_app.services.metadata_enricher.MetadataEnricher._fetch_musicbrainz_recording",
+        "services.metadata_enricher.MetadataEnricher._fetch_musicbrainz_recording",
         lambda self, recording_id: None,
     )
 
@@ -346,11 +346,11 @@ def test_musicbrainz_enrich_applies_full_metadata(monkeypatch):
 
 def test_musicbrainz_enrich_replaces_noisy_local_title_and_artist(monkeypatch):
     monkeypatch.setattr(
-        "lumbago_app.services.metadata_enricher.get_metadata_cache",
+        "services.metadata_enricher.get_metadata_cache",
         lambda key, ttl: None,
     )
     monkeypatch.setattr(
-        "lumbago_app.services.metadata_enricher.set_metadata_cache",
+        "services.metadata_enricher.set_metadata_cache",
         lambda key, data, source=None: None,
     )
 
@@ -377,11 +377,11 @@ def test_musicbrainz_enrich_replaces_noisy_local_title_and_artist(monkeypatch):
             }
 
     monkeypatch.setattr(
-        "lumbago_app.services.metadata_enricher.MusicBrainzProvider",
+        "services.metadata_enricher.MusicBrainzProvider",
         lambda app: _FakeMBProvider(),
     )
     monkeypatch.setattr(
-        "lumbago_app.services.metadata_enricher.MetadataEnricher._fetch_musicbrainz_recording",
+        "services.metadata_enricher.MetadataEnricher._fetch_musicbrainz_recording",
         lambda self, recording_id: None,
     )
 
