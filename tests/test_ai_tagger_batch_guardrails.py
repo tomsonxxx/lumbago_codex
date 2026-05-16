@@ -56,7 +56,7 @@ def test_analyze_batch_enforces_cooldown_between_chunks(monkeypatch) -> None:
     tracks = [Track(path=f"{idx:02d}.mp3") for idx in range(30)]
     sleep_calls: list[float] = []
 
-    monkeypatch.setattr(tagger, "analyze", lambda _track: AnalysisResult())
+    monkeypatch.setattr(tagger, "_analyze_batch_chunk", lambda chunk: [AnalysisResult() for _ in chunk])
     monkeypatch.setattr("time.sleep", lambda seconds: sleep_calls.append(float(seconds)))
 
     results = tagger.analyze_batch(tracks, chunk_size=100)
