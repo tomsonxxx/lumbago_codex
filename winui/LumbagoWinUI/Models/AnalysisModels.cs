@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace LumbagoWinUI.Models;
@@ -7,17 +8,36 @@ public sealed class AnalysisDecisionApi
     [JsonPropertyName("field")]
     public string Field { get; init; } = string.Empty;
 
+    /// <summary>
+    /// Może być stringiem lub liczbą (np. BPM, energy).
+    /// Używamy JsonElement, żeby uniknąć JsonException przy deserializacji.
+    /// </summary>
     [JsonPropertyName("old_value")]
-    public string? OldValue { get; init; }
+    public JsonElement? OldValue { get; init; }
 
     [JsonPropertyName("new_value")]
-    public string? NewValue { get; init; }
+    public JsonElement? NewValue { get; init; }
 
     [JsonPropertyName("accepted")]
     public bool Accepted { get; init; }
 
     [JsonPropertyName("confidence")]
     public double? Confidence { get; init; }
+
+    /// <summary>Normalizuje JsonElement (string/number/null) do czytelnego stringa.</summary>
+    public static string Normalize(JsonElement? el) => el switch
+    {
+        null                                           => string.Empty,
+        { ValueKind: JsonValueKind.Null }              => string.Empty,
+        { ValueKind: JsonValueKind.String }            => el.Value.GetString() ?? string.Empty,
+        { ValueKind: JsonValueKind.Number }            => el.Value.GetDouble().ToString("G"),
+        { ValueKind: JsonValueKind.True  }             => "true",
+        { ValueKind: JsonValueKind.False }             => "false",
+        _                                              => el.Value.ToString(),
+    };
+
+    public string OldDisplay => Normalize(OldValue);
+    public string NewDisplay => Normalize(NewValue);
 }
 
 public sealed class AnalysisItemApi
@@ -25,14 +45,24 @@ public sealed class AnalysisItemApi
     [JsonPropertyName("track_id")]
     public int TrackId { get; init; }
 
-    [JsonPropertyName("track_path")]
+    /// <summary>Klucz w API to "path", nie "track_path".</summary>
+    [JsonPropertyName("path")]
     public string TrackPath { get; init; } = string.Empty;
+
+    [JsonPropertyName("title")]
+    public string Title { get; init; } = string.Empty;
+
+    [JsonPropertyName("artist")]
+    public string Artist { get; init; } = string.Empty;
 
     [JsonPropertyName("decisions")]
     public List<AnalysisDecisionApi> Decisions { get; init; } = [];
 
     [JsonPropertyName("provider_chain")]
     public string? ProviderChain { get; init; }
+
+    [JsonPropertyName("confidence")]
+    public double Confidence { get; init; }
 
     [JsonPropertyName("error")]
     public string? Error { get; init; }

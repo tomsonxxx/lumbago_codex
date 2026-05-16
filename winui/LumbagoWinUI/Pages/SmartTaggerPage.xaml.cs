@@ -73,6 +73,13 @@ public sealed partial class SmartTaggerPage : Page
             _pollTimer = null;
             BtnRunTagger.IsEnabled = true;
             HideProgress();
+
+            if (status.Status == "failed")
+            {
+                ShowStatus("Analiza zakończyła się błędem. Sprawdź klucze API w Ustawieniach lub logi serwera.", isError: true);
+                return;
+            }
+
             BuildResults(status);
         }
     }
@@ -91,24 +98,30 @@ public sealed partial class SmartTaggerPage : Page
             if (item.Decisions is null || item.Decisions.Count == 0) continue;
 
             var decisions = item.Decisions
-                .Where(d => d.NewValue != d.OldValue)
+                .Where(d => d.OldDisplay != d.NewDisplay)
                 .Select(d => new DecisionViewModel
                 {
                     Field      = d.Field,
-                    OldDisplay = string.IsNullOrWhiteSpace(d.OldValue) ? "—" : d.OldValue,
-                    NewDisplay = string.IsNullOrWhiteSpace(d.NewValue) ? "—" : d.NewValue,
+                    OldDisplay = string.IsNullOrWhiteSpace(d.OldDisplay) ? "—" : d.OldDisplay,
+                    NewDisplay = string.IsNullOrWhiteSpace(d.NewDisplay) ? "—" : d.NewDisplay,
                     Accepted   = true,
                 })
                 .ToList();
 
             if (decisions.Count == 0) continue;
 
-            var title = System.IO.Path.GetFileNameWithoutExtension(item.TrackPath);
+            // Preferuj title/artist z API; fallback na nazwę pliku gdy brakuje metadanych
+            var displayTitle = !string.IsNullOrWhiteSpace(item.Title) && !string.IsNullOrWhiteSpace(item.Artist)
+                ? $"{item.Artist} — {item.Title}"
+                : !string.IsNullOrWhiteSpace(item.Title)
+                    ? item.Title
+                    : System.IO.Path.GetFileNameWithoutExtension(item.TrackPath);
+
             var vm = new TrackAnalysisViewModel
             {
                 TrackId      = item.TrackId,
                 TrackPath    = item.TrackPath,
-                TrackTitle   = title,
+                TrackTitle   = displayTitle,
                 ProviderBadge = item.ProviderChain is not null ? $"[{item.ProviderChain}]" : string.Empty,
             };
             foreach (var d in decisions) vm.Decisions.Add(d);
