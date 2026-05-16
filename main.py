@@ -20,7 +20,7 @@ def main() -> int:
     _install_exception_hooks()
     QtCore.QCoreApplication.setAttribute(QtCore.Qt.ApplicationAttribute.AA_UseSoftwareOpenGL)
     app = QtWidgets.QApplication(sys.argv)
-    app.setFont(QtGui.QFont("Segoe UI", 10))
+    app.setFont(QtGui.QFont("Segoe UI", 11))
     apply_theme(app)
     app.aboutToQuit.connect(lambda: _write_log("app.log", "aboutToQuit"))
     try:

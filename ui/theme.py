@@ -9,7 +9,7 @@ QWidget {
     background-color: #0b0f16;
     color: #e8f3ff;
     font-family: "Segoe UI", "Noto Sans", "Arial";
-    font-size: 12px;
+    font-size: 13px;
 }
 
 QDialog, QMainWindow {
@@ -60,7 +60,7 @@ QPushButton, QToolButton {
     background-color: #141a2a;
     border: 1px solid #2b3a55;
     border-radius: 12px;
-    padding: 8px 12px;
+    padding: 9px 14px;
 }
 QPushButton:hover, QToolButton:hover {
     border-color: #63f2ff;
@@ -99,7 +99,7 @@ QPushButton#DangerAction {
 QLabel#SectionTitle {
     color: #63f2ff;
     font-weight: 700;
-    font-size: 13px;
+    font-size: 14px;
     letter-spacing: 0.4px;
 }
 QLabel#DialogTitle {
@@ -376,8 +376,8 @@ QToolButton {
     border: 1px solid #2a4465;
     border-radius: 4px;
     color: #7ecfff;
-    font-size: 11px;
-    padding: 2px 4px;
+    font-size: 12px;
+    padding: 3px 5px;
 }
 QToolButton:hover {
     background-color: rgba(0, 170, 255, 60);
@@ -455,7 +455,7 @@ QGroupBox#SettingsGroup::title {
     padding: 2px 8px;
     color: #63f2ff;
     font-weight: bold;
-    font-size: 12px;
+    font-size: 13px;
     left: 10px;
 }
 
@@ -464,7 +464,7 @@ QPushButton#LinkBtn {
     background: transparent;
     border: none;
     color: #63f2ff;
-    font-size: 11px;
+    font-size: 12px;
     padding: 0 2px;
     text-decoration: underline;
 }
@@ -586,6 +586,23 @@ def apply_theme(app: object, theme_name: str = "cyberpunk") -> None:
     """
     engine = TokenEngine(theme_name)
     app.setStyleSheet(engine.generate_qss())
+
+
+def get_scale_factor() -> float:
+    """Zwraca współczynnik DPI względem 96 DPI (baseline 1x).
+
+    Wymaga istniejącej instancji QApplication. Bezpieczne do wywołania
+    zarówno z apply_theme(), jak i z MainWindow.__init__().
+    """
+    try:
+        from PyQt6.QtWidgets import QApplication
+        screen = QApplication.primaryScreen()
+        if screen is not None:
+            dpi = screen.logicalDotsPerInch()
+            return max(1.0, dpi / 96.0)
+    except Exception:
+        pass
+    return 1.0
 
 
 def _token_to_str(value: object) -> str:
