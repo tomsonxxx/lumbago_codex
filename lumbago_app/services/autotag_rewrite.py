@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
+from hashlib import md5
 from pathlib import Path, PureWindowsPath
 import re
 from typing import Any
@@ -144,7 +145,8 @@ class UnifiedAutoTagger:
         if not _has_value(track.artwork_path):
             artwork_url = _best_artwork_url(candidates)
             if artwork_url:
-                dest = cache_dir() / f"cover_{Path(track.path).stem}.jpg"
+                path_hash = md5(track.path.encode()).hexdigest()[:12]
+                dest = cache_dir() / f"cover_{path_hash}.jpg"
                 if _download_artwork(artwork_url, dest):
                     track.artwork_path = str(dest)
                     changed = True

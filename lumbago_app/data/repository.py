@@ -415,6 +415,7 @@ def list_playlist_tracks(playlist_id: int) -> list[Track]:
             .join(PlaylistTrackOrm, TrackOrm.id == PlaylistTrackOrm.track_id)
             .where(PlaylistTrackOrm.playlist_id == playlist_id)
             .order_by(PlaylistTrackOrm.position, PlaylistTrackOrm.track_id)
+            .options(selectinload(TrackOrm.tags))
         ).all()
         return [_orm_to_track(row[0]) for row in rows]
 
