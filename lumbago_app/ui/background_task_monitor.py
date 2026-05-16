@@ -1,4 +1,4 @@
-"""Background task monitor — animated widget shown at the bottom of the sidebar."""
+﻿"""Background task monitor â€” animated widget shown at the bottom of the sidebar."""
 from __future__ import annotations
 
 import time
@@ -97,7 +97,7 @@ class _PieWidget(QtWidgets.QWidget):
         self._value = 0.0
         self._spin = 0
         self._indeterminate = False
-        self.setFixedSize(26, 26)
+        self.setFixedSize(30, 30)
         t = QtCore.QTimer(self)
         t.timeout.connect(self._tick)
         t.start(40)
@@ -149,12 +149,12 @@ class _PieWidget(QtWidgets.QWidget):
 
 def _eta_str(task: BackgroundTask) -> str:
     if task.finished:
-        return "Ukończono"
+        return "Ukonczono"
     if task.current <= 0:
-        return "obliczanie…"
+        return "obliczanie..."
     elapsed = time.monotonic() - task.started_at
     if elapsed < 0.5:
-        return "obliczanie…"
+        return "obliczanie..."
     rate = task.current / elapsed
     remaining = task.total - task.current
     if rate <= 0 or remaining <= 0:
@@ -181,7 +181,7 @@ class _TaskRow(QtWidgets.QFrame):
         vl.setContentsMargins(8, 6, 8, 6)
         vl.setSpacing(4)
 
-        # Top: pie + name + ×
+        # Top: pie + name + close
         top = QtWidgets.QHBoxLayout()
         top.setSpacing(5)
         self._pie = _PieWidget()
@@ -189,12 +189,12 @@ class _TaskRow(QtWidgets.QFrame):
 
         self._lbl_name = QtWidgets.QLabel(task.name)
         self._lbl_name.setStyleSheet("color:#8fb8d8;font-size:12px;font-weight:bold;")
-        self._lbl_name.setWordWrap(False)
+        self._lbl_name.setWordWrap(True)
         top.addWidget(self._lbl_name, 1)
 
-        btn_x = QtWidgets.QPushButton("×")
+        btn_x = QtWidgets.QPushButton("x")
         btn_x.setFixedSize(16, 16)
-        btn_x.setToolTip("Anuluj / usuń")
+        btn_x.setToolTip("Anuluj / usun")
         btn_x.setStyleSheet(
             "QPushButton{color:#4a6080;background:transparent;border:none;font-size:13px;}"
             "QPushButton:hover{color:#ff5555;}"
@@ -247,7 +247,7 @@ class _TaskRow(QtWidgets.QFrame):
         self._lbl_detail.setText(detail)
         self._lbl_detail.setVisible(bool(detail))
         elapsed = max(0.0, time.monotonic() - task.started_at)
-        self._lbl_meta.setText(f"Czas: {int(elapsed)}s | Zadanie: {task.task_id}")
+        self._lbl_meta.setText(f"Czas: {int(elapsed)}s | ID: {task.task_id}")
 
         if task.finished:
             self.setStyleSheet(
@@ -282,7 +282,7 @@ class BackgroundTaskMonitorWidget(QtWidgets.QWidget):
 
         # Header
         hdr = QtWidgets.QHBoxLayout()
-        lbl = QtWidgets.QLabel("⚙ Procesy w tle")
+        lbl = QtWidgets.QLabel("Procesy w tle")
         lbl.setStyleSheet("color:#4a9eff;font-size:11px;font-weight:bold;")
         self._badge = QtWidgets.QLabel("")
         self._badge.setStyleSheet("color:#4a6080;font-size:10px;")
@@ -296,7 +296,8 @@ class BackgroundTaskMonitorWidget(QtWidgets.QWidget):
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         scroll.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        scroll.setMaximumHeight(360)
+        scroll.setMinimumHeight(180)
+        scroll.setMaximumHeight(460)
         scroll.setStyleSheet("QScrollArea{border:none;background:transparent;}")
         self._container = QtWidgets.QWidget()
         self._vl = QtWidgets.QVBoxLayout(self._container)
@@ -361,3 +362,4 @@ class BackgroundTaskMonitorWidget(QtWidgets.QWidget):
         n = len(self._rows)
         self.setVisible(n > 0)
         self._badge.setText(f"({n})" if n > 0 else "")
+

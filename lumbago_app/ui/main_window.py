@@ -6,6 +6,7 @@ from datetime import datetime
 import os
 import re
 from copy import deepcopy
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 
 from PyQt6 import QtCore, QtGui, QtWidgets
 
@@ -472,30 +473,48 @@ class TrackFilterProxy(QtCore.QSortFilterProxyModel):
 
 
 class ScanWorkerSignals(QtCore.QObject):
-    progress = QtCore.pyqtSignal(int, int)
-    finished = QtCore.pyqtSignal(list)
+    progress = QtCore.pyqtSignal(int, int, str, str)
+    finished = QtCore.pyqtSignal(list, list)
 
 
 class ScanWorker(QtCore.QRunnable):
-    def __init__(self, folder: Path):
+    def __init__(self, folder: Path, per_file_timeout_s: float = 25.0):
         super().__init__()
         self.folder = folder
+        self.per_file_timeout_s = max(5.0, float(per_file_timeout_s))
         self.signals = ScanWorkerSignals()
 
     def run(self):
         tracks: list[Track] = []
+        errors: list[str] = []
         files = list(iter_audio_files(self.folder))
         total = len(files)
-        for idx, path in enumerate(files, 1):
-            track = extract_metadata(path)
-            analysis = heuristic_analysis(track)
-            track.bpm = analysis.bpm
-            track.key = analysis.key
-            track.energy = analysis.energy
-            track.mood = analysis.mood
-            tracks.append(track)
-            self.signals.progress.emit(idx, total)
-        self.signals.finished.emit(tracks)
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            for idx, path in enumerate(files, 1):
+                name = path.name
+                try:
+                    self.signals.progress.emit(idx - 1, total, name, "extract_metadata")
+                    future = pool.submit(self._scan_single_file, path)
+                    track = future.result(timeout=self.per_file_timeout_s)
+                    tracks.append(track)
+                    self.signals.progress.emit(idx, total, name, "done")
+                except FutureTimeoutError:
+                    errors.append(f"{name}: timeout po {int(self.per_file_timeout_s)}s")
+                    self.signals.progress.emit(idx, total, name, "timeout")
+                except Exception as exc:
+                    errors.append(f"{name}: {exc}")
+                    self.signals.progress.emit(idx, total, name, "error")
+        self.signals.finished.emit(tracks, errors)
+
+    @staticmethod
+    def _scan_single_file(path: Path) -> Track:
+        track = extract_metadata(path)
+        analysis = heuristic_analysis(track)
+        track.bpm = analysis.bpm
+        track.key = analysis.key
+        track.energy = analysis.energy
+        track.mood = analysis.mood
+        return track
 
 
 class LoudnessWorkerSignals(QtCore.QObject):
@@ -723,23 +742,28 @@ class AutoTagWorker(QtCore.QRunnable):
         refresh_existing: bool,
     ) -> dict[str, int | str | None]:
         path_obj = Path(track.path)
+        _process_log(f"[autotag] file={path_obj.name} | fn=_run_single_track | stage=start")
         if refresh_existing:
             try:
                 clear_tags(path_obj)
             except Exception:
                 pass
             _reset_track_for_refresh(track)
+            _process_log(f"[autotag] file={path_obj.name} | fn=_run_single_track | stage=refresh_clear_tags")
 
         refreshed = extract_metadata(path_obj)
         _merge_missing_from_source(track, refreshed)
         _repair_identity_from_filename(track)
+        _process_log(f"[autotag] file={path_obj.name} | fn=_run_single_track | stage=recognition_pipeline")
         recognition_result = recognition_pipeline.recognize_track(
             track,
             refresh_existing=refresh_existing,
             query_track=baseline_track,
         )
         _merge_recognition_repairs(track, recognition_result.track)
+        _process_log(f"[autotag] file={path_obj.name} | fn=_run_single_track | stage=unified_autotagger")
         enriched = autotagger.enrich_track(track)
+        _process_log(f"[autotag] file={path_obj.name} | fn=_run_single_track | stage=metadata_consensus")
         resolved = metadata_pipeline.resolve_track(
             baseline_track=baseline_track,
             candidate_track=track,
@@ -779,6 +803,7 @@ class AutoTagWorker(QtCore.QRunnable):
             detected_key=detected_key,
             detected_energy=detected_energy,
         )
+        _process_log(f"[autotag] file={path_obj.name} | fn=_run_single_track | stage=analysis_enrichment_done")
 
         _validate_track_metadata(track)
 
@@ -1520,19 +1545,27 @@ class MainWindow(QtWidgets.QMainWindow):
             self._show_message("Wybrany folder nie istnieje.")
             return
 
-        worker = ScanWorker(folder_path)
+        worker = ScanWorker(folder_path, per_file_timeout_s=25.0)
         task_id = self.task_manager.add_task("Skanowanie biblioteki", 1, "Przygotowanie listy plikow...")
+        _process_log(f"[scan] start | folder={folder_path}")
 
-        def on_progress(current: int, total: int):
+        def on_progress(current: int, total: int, name: str, stage: str):
             total_safe = max(total, 1)
-            self.task_manager.update_task(task_id, current, total_safe, f"Pliki: {current}/{total_safe}")
-            self.status.showMessage(f"Skanowanie {current}/{total_safe} plikow")
-            _process_log(f"[scan] {current}/{total_safe}")
+            detail = f"{stage} | {name}"
+            self.task_manager.update_task(task_id, current, total_safe, detail)
+            self.status.showMessage(f"Skanowanie {current}/{total_safe}: {name} [{stage}]")
+            _process_log(f"[scan] {current}/{total_safe} | file={name} | stage={stage}")
 
-        def on_finished(tracks: list[Track]):
+        def on_finished(tracks: list[Track], errors: list[str]):
             self.task_manager.finish_task(task_id)
             self._scan_finished(tracks)
-            _process_log(f"[scan] done | tracks={len(tracks)}")
+            if errors:
+                for item in errors[:25]:
+                    _process_log(f"[scan] issue | {item}")
+            self.status.showMessage(
+                f"Skanowanie zakonczone. Zapisano: {len(tracks)}, problemy: {len(errors)}"
+            )
+            _process_log(f"[scan] done | tracks={len(tracks)} errors={len(errors)}")
 
         worker.signals.progress.connect(on_progress)
         worker.signals.finished.connect(on_finished)
