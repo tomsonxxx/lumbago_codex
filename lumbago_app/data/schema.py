@@ -70,6 +70,7 @@ class TrackOrm(Base):
     grouping = Column(Text)
     copyright = Column(Text)
     remixer = Column(Text)
+    originalartist = Column(Text)
     cue_in_ms = Column(Integer)
     cue_out_ms = Column(Integer)
     fingerprint = Column(Text)
