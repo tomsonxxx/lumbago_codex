@@ -479,6 +479,8 @@ def _build_prompt(
         " uzywajac swojej wiedzy o tym utworze (artysta, wydanie, rok premiery, itp.)."
         " Jesli aktualna wartosc jest bledna lub niepelna — popraw ja na wiarygodna."
         " Jesli aktualna wartosc jest poprawna — zachowaj ja.\n"
+        "WAZNE: Wszystkie wartosci tekstowe zwracaj WYLACZNIE w alfabecie lacinskim (transliteracja jesli konieczna)."
+        " Nie uzywaj cyrylicy, arabskiego, chinskiego ani zadnego innego pisma nielacinskiego.\n"
         "Zwroc TYLKO poprawny JSON z dokladnie tymi polami: "
         + fields_list
         + "."
