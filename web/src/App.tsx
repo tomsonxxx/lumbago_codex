@@ -10,6 +10,7 @@ import {
 import { AudioPlayer } from "./components/AudioPlayer";
 import { DuplicateFinderModal } from "./components/DuplicateFinderModal";
 import { ImportWizardModal } from "./components/ImportWizardModal";
+import { TrackEditPanel } from "./components/TrackEditPanel";
 import type { AnalysisJob, ProviderConfig, Track } from "./types";
 import { filterTracks } from "./utils/filterTracks";
 
@@ -37,6 +38,7 @@ export function App() {
   const [analysisJob, setAnalysisJob] = useState<AnalysisJob | null>(null);
   const [runningJobId, setRunningJobId] = useState<string>("");
   const [analysisMessage, setAnalysisMessage] = useState("");
+  const [selectedTrack, setSelectedTrack] = useState<Track | null>(null);
 
   useEffect(() => {
     void bootstrap();
@@ -65,6 +67,13 @@ export function App() {
     } finally {
       setLoading(false);
     }
+  }
+
+  function handleTrackSaved(updated: Track) {
+    setLibraryTracks((prev) =>
+      prev.map((t) => (t.id === updated.id ? updated : t))
+    );
+    setSelectedTrack(updated);
   }
 
   async function refreshProviders() {
@@ -157,35 +166,49 @@ export function App() {
       {error ? <div className="error">{error}</div> : null}
 
       {activeTab === "library" ? (
-        <section className="panel">
-          <div className="row filters">
-            <input
-              placeholder="Szukaj po bibliotece"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-            />
-            <input
-              placeholder="Klucz (8A, Am...)"
-              value={keyFilter}
-              onChange={(event) => setKeyFilter(event.target.value)}
-            />
-            <button onClick={() => void refreshTracks()}>Odśwież</button>
+        <section className="panel library-layout">
+          <div className="library-list">
+            <div className="row filters">
+              <input
+                placeholder="Szukaj po bibliotece"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+              />
+              <input
+                placeholder="Klucz (8A, Am...)"
+                value={keyFilter}
+                onChange={(event) => setKeyFilter(event.target.value)}
+              />
+              <button onClick={() => void refreshTracks()}>Odśwież</button>
+            </div>
+            <div className="list-head">
+              <strong>Biblioteka ({tracks.length})</strong>
+              <span>{loading ? "Ładowanie..." : selectedTrack ? "Kliknij track, aby edytować" : "Gotowe"}</span>
+            </div>
+            <ul className="track-list">
+              {tracks.map((track) => (
+                <li
+                  key={track.id}
+                  className={selectedTrack?.id === track.id ? "selected" : ""}
+                  onClick={() => setSelectedTrack(track)}
+                >
+                  <span className="col-artist">{track.artist || "—"}</span>
+                  <span className="col-title">{track.title || "—"}</span>
+                  <span className="col-album">{track.album ?? "—"}</span>
+                  <span className="col-key">{track.key ?? "—"}</span>
+                  <span className="col-bpm">{track.bpm ? track.bpm.toFixed(1) : "—"}</span>
+                </li>
+              ))}
+            </ul>
           </div>
-          <div className="list-head">
-            <strong>Biblioteka ({tracks.length})</strong>
-            <span>{loading ? "Ładowanie..." : "Gotowe"}</span>
-          </div>
-          <ul className="track-list">
-            {tracks.map((track) => (
-              <li key={track.id}>
-                <span>{track.artist}</span>
-                <span>{track.title}</span>
-                <span>{track.album ?? "—"}</span>
-                <span>{track.key ?? "—"}</span>
-                <span>{track.bpm ? track.bpm.toFixed(1) : "—"}</span>
-              </li>
-            ))}
-          </ul>
+
+          {selectedTrack ? (
+            <TrackEditPanel
+              track={selectedTrack}
+              onSaved={handleTrackSaved}
+              onClose={() => setSelectedTrack(null)}
+            />
+          ) : null}
         </section>
       ) : null}
 

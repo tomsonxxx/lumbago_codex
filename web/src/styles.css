@@ -271,10 +271,180 @@ button:disabled {
   gap: 5px;
 }
 
+/* ── Biblioteka z panelem bocznym ───────────────────────────────────────── */
+
+.library-layout {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0;
+  align-items: start;
+}
+
+.library-list {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.track-list li.selected {
+  background: rgba(68, 229, 255, 0.10);
+  border-radius: 6px;
+}
+
+.track-list li {
+  cursor: pointer;
+}
+
+.track-list li:hover:not(.selected) {
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 6px;
+}
+
+/* ── Track Edit Panel ────────────────────────────────────────────────────── */
+
+.track-edit-panel {
+  width: 320px;
+  background: var(--panel-strong);
+  border-left: 1px solid var(--border);
+  border-radius: 0 12px 12px 0;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 500px;
+}
+
+.track-edit-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.track-edit-title {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 260px;
+}
+
+.track-edit-artist {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.btn-icon {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 16px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+
+.btn-icon:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.track-edit-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.field-row-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.edit-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.edit-field-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.edit-field-input {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 13px;
+  padding: 6px 8px;
+  width: 100%;
+}
+
+.edit-field-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+textarea.edit-field-input {
+  resize: vertical;
+  min-height: 48px;
+}
+
+.track-edit-path {
+  font-size: 10px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.track-edit-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: auto;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: #000;
+  font-weight: 600;
+  border: none;
+  border-radius: 8px;
+  padding: 7px 18px;
+  cursor: pointer;
+}
+
+.btn-primary:hover {
+  opacity: 0.9;
+}
+
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 @media (max-width: 880px) {
   .top-shell {
     flex-direction: column;
     align-items: stretch;
+  }
+  .library-layout {
+    grid-template-columns: 1fr;
+  }
+  .track-edit-panel {
+    width: 100%;
+    border-left: none;
+    border-top: 1px solid var(--border);
+    border-radius: 0 0 12px 12px;
   }
   .track-list li {
     grid-template-columns: 1fr;

@@ -158,8 +158,8 @@
 - [ ] (P2) Test `DuplicateFinderModal` (UI + API)
 
 ### 2.4 Brakujące funkcje Web MVP
-- [ ] (P1) Edycja tagów bezpośrednio przez API webowy
-- [ ] (P1) Zapis tagów do pliku audio (przez backend)
+- [x] (P1) Edycja tagów przez API webowy — TrackEditPanel (kliknięcie na track, pola edycji, PUT /tracks)
+- [x] (P1) Zapis tagów do pliku audio przez backend — PUT /tracks/{path} wywołuje write_tags() w Mutagen
 - [ ] (P2) Paginacja wyników `/tracks` (przy dużych bibliotekach)
 - [ ] (P2) Autoryzacja / zabezpieczenie API
 
