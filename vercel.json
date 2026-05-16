@@ -1,4 +1,3 @@
 {
-  "builds": [],
-  "routes": []
+  "ignoreCommand": "exit 1"
 }
