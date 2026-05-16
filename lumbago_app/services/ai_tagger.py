@@ -13,6 +13,7 @@ import requests
 
 from lumbago_app.core.models import AnalysisResult, Track
 from lumbago_app.core.services import heuristic_analysis
+from lumbago_app.services.ai_tagger_merge import _harmonize_batch_results
 from lumbago_app.services.metadata_providers import (
     RateLimitedMusicBrainzProvider,
     _best_mbid_from_acoustid,
@@ -23,6 +24,8 @@ from lumbago_app.services.metadata_providers import (
 _ISRC_RE = re.compile(r"^[A-Z]{2}[A-Z0-9]{3}\d{7}$")
 _YEAR_MIN = 1900
 _YEAR_MAX = int(time.strftime("%Y")) + 1
+_BATCH_MAX_CHUNK = 25
+_BATCH_COOLDOWN_SECONDS = 3.5
 
 
 def _validate_result(result: AnalysisResult) -> AnalysisResult:
@@ -233,13 +236,18 @@ class CloudAiTagger:
         return f"{self.provider_name}|{base_url or ''}|{model or ''}"
 
     def analyze_batch(self, tracks: list[Track], chunk_size: int = 20) -> list[AnalysisResult]:
-        safe_chunk = max(1, min(50, int(chunk_size)))
+        safe_chunk = max(1, min(_BATCH_MAX_CHUNK, int(chunk_size)))
         output: list[AnalysisResult] = []
-        for start in range(0, len(tracks), safe_chunk):
+        total = len(tracks)
+        for start in range(0, total, safe_chunk):
             chunk = tracks[start : start + safe_chunk]
+            chunk_results: list[AnalysisResult] = []
             for track in chunk:
-                output.append(self.analyze(track))
-            time.sleep(0.2)
+                chunk_results.append(self.analyze(track))
+            harmonized = _harmonize_batch_results(list(zip(chunk, chunk_results)))
+            output.extend(result for _, result in harmonized)
+            if start + safe_chunk < total:
+                time.sleep(_BATCH_COOLDOWN_SECONDS)
         return output
 
 
@@ -366,6 +374,10 @@ _TRASH_PATTERNS = (
     "http://",
     "https://",
 )
+_URL_RE = re.compile(r"(?:https?://|www\.)\S+", re.IGNORECASE)
+_WINDOWS_PATH_RE = re.compile(r"\b[A-Za-z]:\\[^\s]+")
+_UNIX_PATH_RE = re.compile(r"(?<!\w)(?:/[^/\s]+){2,}")
+_BASE64_BLOB_RE = re.compile(r"^[A-Za-z0-9+/=]{300,}$")
 
 _ALL_AI_FIELDS: list[str] = [
     "title",
@@ -499,7 +511,7 @@ def _build_prompt(
             )
 
     return (
-        "System instruction: Jesteś ekspertem ds. archiwizacji muzyki. "
+        "System instruction: ROLE: Expert Music Archivist & ID3 Metadata Specialist. "
         "Identyfikujesz utwory po nazwie pliku i szczątkowych tagach. "
         "AI nie jest źródłem prawdy i nie może wymyślać danych.\n"
         "Wymagania:\n"
@@ -508,10 +520,12 @@ def _build_prompt(
         "comment, lyrics, originalFilename, confidence, description.\n"
         "3) originalFilename musi równać się nazwie wejściowej.\n"
         "4) Jeśli nie wiesz pola, zwróć null.\n"
-        "5) Dla ratingu nie zwracaj wartości (pole nie jest częścią schematu).\n"
-        "6) Dbaj o spójność artist/album/albumartist dla sekwencyjnych numerowanych plików.\n"
-        "7) BPM i key oszacuj ostrożnie; nie zgaduj agresywnie.\n"
-        "8) Wszystkie odpowiedzi tekstowe tylko alfabet łaciński.\n"
+        "5) Nigdy nie zwracaj placeholderów: Unknown/Undefined/Various.\n"
+        "6) Dla ratingu nie zwracaj wartości (pole nie jest częścią schematu).\n"
+        "7) Dbaj o spójność artist/album/albumartist dla sekwencyjnych numerowanych plików.\n"
+        "8) Preferuj wydania studyjne zamiast składanek typu Greatest Hits/Best Of.\n"
+        "9) BPM i key oszacuj ostrożnie; nie zgaduj agresywnie.\n"
+        "10) Wszystkie odpowiedzi tekstowe tylko alfabet łaciński.\n"
         + clean_note
         + "\nUzupełnij lub popraw tylko pola niżej: "
         + fields_list
@@ -715,6 +729,12 @@ def _sanitize_prompt_value(value: Any) -> str:
     if not text:
         return ""
     text = text.replace("\n", " ").replace("\r", " ")
+    if _BASE64_BLOB_RE.match(text):
+        return "[BINARY_OMITTED]"
+    text = _URL_RE.sub("[URL]", text)
+    text = _WINDOWS_PATH_RE.sub("[PATH]", text)
+    text = _UNIX_PATH_RE.sub("[PATH]", text)
+    text = " ".join(text.split())
     if len(text) > 180:
         text = text[:180] + "..."
     return text

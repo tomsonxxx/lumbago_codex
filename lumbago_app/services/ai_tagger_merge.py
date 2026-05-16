@@ -47,7 +47,11 @@ _META_OVERWRITE_FIELDS = (
 
 
 def _merge_analysis_into_track(track: Track, result: AnalysisResult) -> Track:
-    """Smart non-destructive merge for AI data."""
+    """Merge AI analysis into track metadata.
+
+    The AI pass is treated as a verification/enrichment step, so populated AI
+    values should overwrite existing values for covered fields.
+    """
     for field in _AI_ANALYSIS_TEXT_FIELDS:
         incoming = getattr(result, field, None)
         if incoming is None or (isinstance(incoming, str) and _is_unknown(incoming)):
@@ -55,13 +59,13 @@ def _merge_analysis_into_track(track: Track, result: AnalysisResult) -> Track:
         if field == "genre" and isinstance(incoming, str):
             incoming = _normalize_genre(incoming)
         current = getattr(track, field, None)
-        if _is_unknown(current):
+        if current != incoming:
             setattr(track, field, incoming)
 
     for field in _AI_ANALYSIS_FLOAT_FIELDS:
         incoming = getattr(result, field, None)
         current = getattr(track, field, None)
-        if incoming is not None and current is None:
+        if incoming is not None and current != incoming:
             setattr(track, field, incoming)
 
     rating = getattr(result, "rating", None)
@@ -76,22 +80,22 @@ def _merge_analysis_into_track(track: Track, result: AnalysisResult) -> Track:
             if 0 <= rating_int <= 5:
                 track.rating = rating_int
 
-    ai_conf = float(result.confidence or 0.0)
+    ai_conf = result.confidence
     for field in _META_OVERWRITE_FIELDS:
         incoming = getattr(result, field, None)
         if incoming is None or (isinstance(incoming, str) and _is_unknown(incoming)):
             continue
         current = getattr(track, field, None)
-        if isinstance(current, str):
-            if _is_garbage(current) and not _is_garbage(incoming):
-                setattr(track, field, incoming)
+        if current == incoming:
+            continue
+        # Keep good local metadata when AI explicitly reports low confidence.
+        if isinstance(current, str) and not _is_garbage(current):
+            if ai_conf is not None and float(ai_conf) < 0.88:
                 continue
-            if not _is_garbage(current):
-                if len(incoming.strip()) > len(current.strip()) + 8 and ai_conf >= 0.88:
-                    setattr(track, field, incoming)
-                continue
-        if current is None:
+        if current is not None:
             setattr(track, field, incoming)
+            continue
+        setattr(track, field, incoming)
 
     return track
 
