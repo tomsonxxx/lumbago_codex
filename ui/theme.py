@@ -455,7 +455,7 @@ QGroupBox#SettingsGroup::title {
     padding: 2px 8px;
     color: #63f2ff;
     font-weight: bold;
-    font-size: 13px;
+    font-size: 12px;
     left: 10px;
 }
 
@@ -464,7 +464,7 @@ QPushButton#LinkBtn {
     background: transparent;
     border: none;
     color: #63f2ff;
-    font-size: 12px;
+    font-size: 11px;
     padding: 0 2px;
     text-decoration: underline;
 }
