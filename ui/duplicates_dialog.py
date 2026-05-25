@@ -249,7 +249,7 @@ class DuplicatesDialog(QtWidgets.QDialog):
         self.actions_btn.setText("Akcje")
         self.actions_btn.setPopupMode(QtWidgets.QToolButton.ToolButtonPopupMode.InstantPopup)
         self.actions_btn.setToolButtonStyle(QtCore.Qt.ToolButtonStyle.ToolButtonTextOnly)
-        self.actions_btn.setToolTip("Menu podstawowych i dodatkowych operacji")
+        self.actions_btn.setToolTip("Menu podstawowych operacji i narzędzi zarządzania duplikatami")
         self.actions_btn.setMenu(self._build_actions_menu())
         top.addWidget(self.actions_btn)
 
@@ -318,7 +318,7 @@ class DuplicatesDialog(QtWidgets.QDialog):
         self.mark_btn.clicked.connect(self._mark_duplicates)
 
         self.clear_btn = QtWidgets.QPushButton("Wyczyść zaznaczenie")
-        self.clear_btn.setToolTip("Odznacz wszystkie pozycje")
+        self.clear_btn.setToolTip("Odznacz wszystkie zaznaczenia w widoku")
         self.clear_btn.clicked.connect(self._clear_marks)
 
         self.close_btn = QtWidgets.QPushButton("Zamknij")
@@ -547,62 +547,74 @@ class DuplicatesDialog(QtWidgets.QDialog):
         if not parents and not files:
             return
 
+        style = self.style()
+        file_icon = style.standardIcon(QtWidgets.QStyle.StandardPixmap.SP_FileIcon)
+        folder_icon = style.standardIcon(QtWidgets.QStyle.StandardPixmap.SP_DirIcon)
+        action_icon = style.standardIcon(QtWidgets.QStyle.StandardPixmap.SP_ComputerIcon)
+        merge_icon = style.standardIcon(QtWidgets.QStyle.StandardPixmap.SP_BrowserReload)
+        move_icon = style.standardIcon(QtWidgets.QStyle.StandardPixmap.SP_DialogOpenButton)
+        delete_icon = style.standardIcon(QtWidgets.QStyle.StandardPixmap.SP_TrashIcon)
+
         menu = QtWidgets.QMenu(self)
 
         if files:
-            files_menu = menu.addMenu("Dla pliku")
+            files_menu = menu.addMenu(file_icon, "Dla pliku")
             files_menu.addAction(
+                action_icon,
                 "Zaznacz plik(i)",
                 lambda: self._set_items_checked(files, QtCore.Qt.CheckState.Checked),
             )
             files_menu.addAction(
+                action_icon,
                 "Odznacz plik(i)",
                 lambda: self._set_items_checked(files, QtCore.Qt.CheckState.Unchecked),
             )
 
         if parents:
-            group_menu = menu.addMenu("Dla grupy")
+            group_menu = menu.addMenu(folder_icon, "Dla grupy")
             group_menu.addAction(
+                action_icon,
                 "Zaznacz grupę/grupy",
                 lambda: self._set_group_items_checked(parents, QtCore.Qt.CheckState.Checked),
             )
             group_menu.addAction(
+                action_icon,
                 "Odznacz grupę/grupy",
                 lambda: self._set_group_items_checked(parents, QtCore.Qt.CheckState.Unchecked),
             )
             group_menu.addSeparator()
-            group_menu.addAction("Zaznacz duplikaty w grupie/grupach", lambda: self._mark_duplicates(parents))
-            group_menu.addAction("Wyczyść zaznaczenie w grupie/grupach", lambda: self._clear_marks(parents))
-            group_menu.addAction("Odwróć zaznaczenie w grupie/grupach", lambda: self._reverse_selection(parents))
+            group_menu.addAction(action_icon, "Zaznacz duplikaty", lambda: self._mark_duplicates(parents))
+            group_menu.addAction(action_icon, "Wyczyść zaznaczenie", lambda: self._clear_marks(parents))
+            group_menu.addAction(action_icon, "Odwróć zaznaczenie", lambda: self._reverse_selection(parents))
 
-            smart_menu = group_menu.addMenu("Inteligentny wybór")
-            smart_menu.addAction("Najnowsze", lambda: self._select_newest_tracks_context(parents, True))
-            smart_menu.addAction("Odznacz najnowsze", lambda: self._select_newest_tracks_context(parents, False))
+            smart_menu = group_menu.addMenu(merge_icon, "Inteligentny wybór")
+            smart_menu.addAction(action_icon, "Najnowsze", lambda: self._select_newest_tracks_context(parents, True))
+            smart_menu.addAction(action_icon, "Odznacz najnowsze", lambda: self._select_newest_tracks_context(parents, False))
             smart_menu.addSeparator()
-            smart_menu.addAction("Najkrótsza nazwa pliku", lambda: self._select_shortest_filenames_context(parents, True))
-            smart_menu.addAction("Odznacz najkrótszą nazwę", lambda: self._select_shortest_filenames_context(parents, False))
+            smart_menu.addAction(action_icon, "Najkrótsza nazwa pliku", lambda: self._select_shortest_filenames_context(parents, True))
+            smart_menu.addAction(action_icon, "Odznacz najkrótszą nazwę", lambda: self._select_shortest_filenames_context(parents, False))
             smart_menu.addSeparator()
-            smart_menu.addAction("Największy rozmiar", lambda: self._select_largest_tracks_context(parents, True))
-            smart_menu.addAction("Odznacz największy rozmiar", lambda: self._select_largest_tracks_context(parents, False))
-            smart_menu.addAction("Najmniejszy rozmiar", lambda: self._select_smallest_tracks_context(parents, True))
-            smart_menu.addAction("Odznacz najmniejszy rozmiar", lambda: self._select_smallest_tracks_context(parents, False))
-            smart_menu.addAction("Najwyższy DJ play count", lambda: self._select_highest_play_count_context(parents, True))
-            smart_menu.addAction("Odznacz najwyższy DJ play count", lambda: self._select_highest_play_count_context(parents, False))
-            smart_menu.addAction("Najniższy DJ play count", lambda: self._select_lowest_play_count_context(parents, True))
-            smart_menu.addAction("Odznacz najniższy DJ play count", lambda: self._select_lowest_play_count_context(parents, False))
+            smart_menu.addAction(action_icon, "Największy rozmiar", lambda: self._select_largest_tracks_context(parents, True))
+            smart_menu.addAction(action_icon, "Odznacz największy rozmiar", lambda: self._select_largest_tracks_context(parents, False))
+            smart_menu.addAction(action_icon, "Najmniejszy rozmiar", lambda: self._select_smallest_tracks_context(parents, True))
+            smart_menu.addAction(action_icon, "Odznacz najmniejszy rozmiar", lambda: self._select_smallest_tracks_context(parents, False))
+            smart_menu.addAction(action_icon, "Najwyższy DJ play count", lambda: self._select_highest_play_count_context(parents, True))
+            smart_menu.addAction(action_icon, "Odznacz najwyższy DJ play count", lambda: self._select_highest_play_count_context(parents, False))
+            smart_menu.addAction(action_icon, "Najniższy DJ play count", lambda: self._select_lowest_play_count_context(parents, True))
+            smart_menu.addAction(action_icon, "Odznacz najniższy DJ play count", lambda: self._select_lowest_play_count_context(parents, False))
             smart_menu.addSeparator()
-            smart_menu.addAction("Najbardziej kompletne dane", lambda: self._select_most_complete_context(parents, True))
-            smart_menu.addAction("Odznacz najbardziej kompletne dane", lambda: self._select_most_complete_context(parents, False))
+            smart_menu.addAction(action_icon, "Najbardziej kompletne dane", lambda: self._select_most_complete_context(parents, True))
+            smart_menu.addAction(action_icon, "Odznacz najbardziej kompletne dane", lambda: self._select_most_complete_context(parents, False))
 
-        actions_menu = menu.addMenu("Akcje")
+        actions_menu = menu.addMenu(merge_icon, "Akcje")
         context_paths = self._context_paths_for_items(files or self._all_child_items(parents))
-        actions_menu.addAction("Przenieś zaznaczone", lambda: self._move_paths(context_paths))
-        actions_menu.addAction("Usuń zaznaczone", lambda: self._delete_paths(context_paths))
+        actions_menu.addAction(move_icon, "Przenieś zaznaczone", lambda: self._move_paths(context_paths))
+        actions_menu.addAction(delete_icon, "Usuń zaznaczone", lambda: self._delete_paths(context_paths))
         actions_menu.addSeparator()
-        actions_menu.addAction("Scal metadane lokalnie", lambda: self._merge_context_groups(parents, use_ai=False))
-        actions_menu.addAction("Szybkie scalanie bez AI", lambda: self._merge_context_groups(parents, use_ai=False))
-        actions_menu.addAction("Scal metadane (AI)", lambda: self._merge_context_groups(parents, use_ai=True))
-        actions_menu.addAction("Ocalałe...", self._export_survivors)
+        actions_menu.addAction(merge_icon, "Scal lokalnie", lambda: self._merge_context_groups(parents, use_ai=False))
+        actions_menu.addAction(merge_icon, "Szybkie scalanie bez AI", lambda: self._merge_context_groups(parents, use_ai=False))
+        actions_menu.addAction(merge_icon, "Scal z AI", lambda: self._merge_context_groups(parents, use_ai=True))
+        actions_menu.addAction(move_icon, "Ocalałe...", self._export_survivors)
 
         menu.exec(self.tree.viewport().mapToGlobal(pos))
 
