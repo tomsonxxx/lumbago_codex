@@ -338,6 +338,9 @@ class DuplicatesDialog(QtWidgets.QDialog):
         self.merge_quick_btn.setToolTip("Scalanie bez AI, tylko na bazie lokalnych tagow i konsensusu")
         self.merge_quick_btn.clicked.connect(self._merge_metadata_quick)
         actions.addWidget(self.merge_quick_btn)
+        self.merge_ai_btn.hide()
+        self.survivor_btn.hide()
+        self.merge_quick_btn.hide()
         actions.addStretch(1)
         actions.addWidget(self.close_btn)
         layout.addLayout(actions)
@@ -547,7 +550,7 @@ class DuplicatesDialog(QtWidgets.QDialog):
         menu = QtWidgets.QMenu(self)
 
         if files:
-            files_menu = menu.addMenu("Pliki")
+            files_menu = menu.addMenu("Dla pliku")
             files_menu.addAction(
                 "Zaznacz plik(i)",
                 lambda: self._set_items_checked(files, QtCore.Qt.CheckState.Checked),
@@ -558,7 +561,7 @@ class DuplicatesDialog(QtWidgets.QDialog):
             )
 
         if parents:
-            group_menu = menu.addMenu("Grupy")
+            group_menu = menu.addMenu("Dla grupy")
             group_menu.addAction(
                 "Zaznacz grupę/grupy",
                 lambda: self._set_group_items_checked(parents, QtCore.Qt.CheckState.Checked),
