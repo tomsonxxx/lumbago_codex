@@ -197,6 +197,8 @@ class DuplicatesDialog(QtWidgets.QDialog):
         self._merge_quick_action: QtGui.QAction | None = None
         self._survivor_action: QtGui.QAction | None = None
         self._merge_worker: DuplicateMergeWorker | None = None
+        self._scan_progress_dialog: QtWidgets.QProgressDialog | None = None
+        self._scan_running = False
         self._selection_shortcuts: list[QtGui.QShortcut] = []
         self._build_ui()
 
@@ -283,6 +285,11 @@ class DuplicatesDialog(QtWidgets.QDialog):
         top.addWidget(self.group_limit_spin)
         top.addStretch(1)
         layout.addLayout(top)
+
+        self.scan_status_label = QtWidgets.QLabel("Gotowe do skanowania.")
+        self.scan_status_label.setWordWrap(True)
+        self.scan_status_label.setObjectName("DialogHint")
+        layout.addWidget(self.scan_status_label)
 
         self.excluded_folders_label = QtWidgets.QLabel("")
         self.excluded_folders_label.setWordWrap(True)
@@ -445,8 +452,13 @@ class DuplicatesDialog(QtWidgets.QDialog):
         return menu
 
     def _run_scan(self) -> None:
-        self.tree.clear()
-        self._set_source_group_rows([])
+        if self._scan_running:
+            return
+        self._scan_running = True
+        self.run_btn.setEnabled(False)
+        self.run_btn.setText("Skanowanie...")
+        self._set_scan_status("Skanowanie duplikatów...")
+        QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.CursorShape.WaitCursor)
         method = self.method.currentText()
 
         if method == "Fuzzy":
@@ -458,6 +470,11 @@ class DuplicatesDialog(QtWidgets.QDialog):
             progress.setWindowTitle("Duplikaty")
             progress.setMinimumDuration(0)
             progress.setValue(0)
+            progress.setWindowModality(QtCore.Qt.WindowModality.ApplicationModal)
+            progress.show()
+            progress.raise_()
+            progress.activateWindow()
+            self._scan_progress_dialog = progress
             QtWidgets.QApplication.processEvents()
             svc = FuzzyDedupService()
             groups = svc.find_fuzzy_duplicates(self._tracks)
@@ -469,6 +486,7 @@ class DuplicatesDialog(QtWidgets.QDialog):
             progress.setValue(1)
             progress.close()
             self._set_source_group_rows(rows)
+            self._scan_finished(rows)
             return
 
         progress = QtWidgets.QProgressDialog(
@@ -476,12 +494,18 @@ class DuplicatesDialog(QtWidgets.QDialog):
         )
         progress.setWindowTitle("Duplikaty")
         progress.setMinimumDuration(0)
+        progress.setWindowModality(QtCore.Qt.WindowModality.ApplicationModal)
+        progress.show()
+        progress.raise_()
+        progress.activateWindow()
+        self._scan_progress_dialog = progress
 
         self._scanner = DuplicateScanWorker(self._tracks, method)
 
         def on_progress(current: int, total: int) -> None:
             progress.setMaximum(total)
             progress.setValue(current)
+            self._set_scan_status(f"Skanowanie duplikatów: {current}/{total}")
             if progress.wasCanceled():
                 self._scanner.stop()
 
@@ -489,6 +513,7 @@ class DuplicatesDialog(QtWidgets.QDialog):
             progress.close()
             rows = self._rows_from_result(result)
             self._set_source_group_rows(rows)
+            self._scan_finished(rows)
 
         self._scanner.signals.progress.connect(on_progress)
         self._scanner.signals.finished.connect(on_finished)
@@ -649,6 +674,23 @@ class DuplicatesDialog(QtWidgets.QDialog):
     def _set_source_group_rows(self, rows: list[tuple[str, list[Track]]]) -> None:
         self._source_group_rows = [(label, tracks) for label, tracks in rows if len(tracks) > 1]
         self._apply_view_filters()
+
+    def _set_scan_status(self, text: str) -> None:
+        if hasattr(self, "scan_status_label") and self.scan_status_label is not None:
+            self.scan_status_label.setText(text)
+
+    def _scan_finished(self, rows: list[tuple[str, list[Track]]]) -> None:
+        self._scan_running = False
+        self.run_btn.setEnabled(True)
+        self.run_btn.setText("Szukaj")
+        QtWidgets.QApplication.restoreOverrideCursor()
+        if self._scan_progress_dialog is not None:
+            self._scan_progress_dialog.close()
+            self._scan_progress_dialog = None
+        if rows:
+            self._set_scan_status(f"Znaleziono {len(rows)} grup duplikatów.")
+        else:
+            self._set_scan_status("Nie znaleziono duplikatów.")
 
     def _apply_view_filters(self) -> None:
         rows = filter_group_rows(
