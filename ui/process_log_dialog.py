@@ -10,7 +10,7 @@ from ui.widgets import apply_dialog_fade, dialog_icon_pixmap
 class ProcessLogDialog(QtWidgets.QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Log procesow aplikacji")
+        self.setWindowTitle("Log procesów aplikacji")
         self.resize(980, 620)
         apply_dialog_fade(self)
 
@@ -28,7 +28,7 @@ class ProcessLogDialog(QtWidgets.QDialog):
         title_row = QtWidgets.QHBoxLayout()
         title_icon = QtWidgets.QLabel()
         title_icon.setPixmap(dialog_icon_pixmap(18))
-        title = QtWidgets.QLabel("Log procesow")
+        title = QtWidgets.QLabel("Log procesów")
         title.setObjectName("DialogTitle")
         hint = QtWidgets.QLabel("Autotagowanie, rozpoznawanie i status przetwarzania")
         hint.setObjectName("DialogHint")
@@ -41,15 +41,15 @@ class ProcessLogDialog(QtWidgets.QDialog):
         self._view = QtWidgets.QPlainTextEdit()
         self._view.setReadOnly(True)
         self._view.setFont(QtGui.QFont("Consolas", 10))
-        self._view.setPlaceholderText("Brak wpisow logu procesow.")
+        self._view.setPlaceholderText("Brak wpisów w logu procesów.")
         card_layout.addWidget(self._view, 1)
 
         button_row = QtWidgets.QHBoxLayout()
         self._auto_scroll = QtWidgets.QCheckBox("Auto-scroll")
         self._auto_scroll.setChecked(True)
-        refresh_btn = QtWidgets.QPushButton("Odswiez")
+        refresh_btn = QtWidgets.QPushButton("Odśwież")
         refresh_btn.clicked.connect(self._refresh_now)
-        clear_btn = QtWidgets.QPushButton("Wyczysc log")
+        clear_btn = QtWidgets.QPushButton("Wyczyść log")
         clear_btn.clicked.connect(self._clear_log)
         close_btn = QtWidgets.QPushButton("Zamknij")
         close_btn.clicked.connect(self.accept)

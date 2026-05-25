@@ -465,10 +465,10 @@ class AiTaggerDialog(QtWidgets.QDialog):
         layout.addWidget(self._options_btn)
         layout.addStretch()
 
-        self._run_btn = QtWidgets.QPushButton("Start analizy")
+        self._run_btn = QtWidgets.QPushButton("Uruchom analizę")
         self._run_btn.setObjectName("PrimaryBtn")
         self._run_btn.clicked.connect(self._start_pipeline)
-        self._stop_btn = QtWidgets.QPushButton("Stop")
+        self._stop_btn = QtWidgets.QPushButton("Zatrzymaj")
         self._stop_btn.setObjectName("DangerBtn")
         self._stop_btn.setEnabled(False)
         self._stop_btn.clicked.connect(self._stop_pipeline)

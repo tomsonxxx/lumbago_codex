@@ -194,7 +194,7 @@ class _TaskRow(QtWidgets.QFrame):
 
         btn_x = QtWidgets.QPushButton("x")
         btn_x.setFixedSize(16, 16)
-        btn_x.setToolTip("Anuluj / usun")
+        btn_x.setToolTip("Anuluj lub usuń zadanie")
         btn_x.setStyleSheet(
             "QPushButton{color:#4a6080;background:transparent;border:none;font-size:13px;}"
             "QPushButton:hover{color:#ff5555;}"
