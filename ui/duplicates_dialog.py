@@ -180,11 +180,15 @@ class DuplicatesDialog(QtWidgets.QDialog):
         self._show_audio_only = True
         self._hide_system_like = False
         self._excluded_roots: list[str] = []
+        self._search_query: str = ""
+        self._sort_column: int | None = None
+        self._sort_order: QtCore.Qt.SortOrder = QtCore.Qt.SortOrder.AscendingOrder
         self._audio_only_action: QtGui.QAction | None = None
         self._system_filter_action: QtGui.QAction | None = None
         self._exclude_folders_action: QtGui.QAction | None = None
         self._clear_excluded_folders_action: QtGui.QAction | None = None
         self.system_like_check: QtWidgets.QCheckBox | None = None
+        self.search_edit: QtWidgets.QLineEdit | None = None
         self.excluded_folders_label: QtWidgets.QLabel | None = None
         self.group_limit_spin: QtWidgets.QSpinBox | None = None
         self._reverse_shortcut: QtGui.QShortcut | None = None
@@ -231,6 +235,14 @@ class DuplicatesDialog(QtWidgets.QDialog):
         self.run_btn.setToolTip("Uruchom skan duplikatów")
         self.run_btn.clicked.connect(self._run_scan)
         top.addWidget(self.run_btn)
+
+        search_label = QtWidgets.QLabel("Szukaj:")
+        top.addWidget(search_label)
+        self.search_edit = QtWidgets.QLineEdit()
+        self.search_edit.setPlaceholderText("Tytuł, artysta, ścieżka lub grupa")
+        self.search_edit.setClearButtonEnabled(True)
+        self.search_edit.textChanged.connect(self._set_search_query)
+        top.addWidget(self.search_edit, 1)
 
         self.actions_btn = QtWidgets.QToolButton()
         self.actions_btn.setText("Akcje")
@@ -288,6 +300,8 @@ class DuplicatesDialog(QtWidgets.QDialog):
         header.setStretchLastSection(True)
         header.setSectionResizeMode(QtWidgets.QHeaderView.ResizeMode.Interactive)
         header.setSectionsMovable(True)
+        header.setSortIndicatorShown(False)
+        header.sectionClicked.connect(self._handle_header_click)
         header.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
         header.customContextMenuRequested.connect(self._show_column_menu)
         self.tree.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.ExtendedSelection)
@@ -369,6 +383,13 @@ class DuplicatesDialog(QtWidgets.QDialog):
         extra_menu.addAction("Eksportuj raport", self._export_report)
         self._survivor_action = extra_menu.addAction("Wyprowadź ocalałe...")
         self._survivor_action.triggered.connect(self._export_survivors)
+        select_menu = extra_menu.addMenu("Zaznaczanie")
+        select_menu.addAction("Zaznacz najnowsze", self._select_newest_tracks)
+        select_menu.addAction("Odznacz najnowsze", lambda: self._select_newest_tracks(False))
+        select_menu.addAction("Zaznacz najkrótszą nazwę pliku", self._select_shortest_filenames)
+        select_menu.addAction("Odznacz najkrótszą nazwę pliku", lambda: self._select_shortest_filenames(False))
+        select_menu.addAction("Zaznacz najbardziej kompletne dane", self._select_most_complete_tracks)
+        select_menu.addAction("Odznacz najbardziej kompletne dane", lambda: self._select_most_complete_tracks(False))
         destructive_menu = menu.addMenu("Nieodwracalne")
         destructive_menu.setStyleSheet(
             """
@@ -448,10 +469,15 @@ class DuplicatesDialog(QtWidgets.QDialog):
         return rows
 
     def _show_column_menu(self, pos) -> None:
+        column = self.tree.header().logicalIndexAt(pos)
         menu = QtWidgets.QMenu(self)
         show_all = menu.addAction("Pokaż wszystkie")
         hide_all = menu.addAction("Ukryj wszystkie")
         menu.addSeparator()
+        if column >= 0:
+            menu.addAction("Sortuj rosnąco", lambda: self._set_sorting(column, QtCore.Qt.SortOrder.AscendingOrder))
+            menu.addAction("Sortuj malejąco", lambda: self._set_sorting(column, QtCore.Qt.SortOrder.DescendingOrder))
+            menu.addSeparator()
         actions: list[tuple[QtWidgets.QAction, int]] = []
         for col in range(self.tree.columnCount()):
             name = self.tree.headerItem().text(col)
@@ -480,6 +506,27 @@ class DuplicatesDialog(QtWidgets.QDialog):
                         action.setChecked(True)
                 break
 
+    def _handle_header_click(self, column: int) -> None:
+        if self._sort_column == column:
+            self._sort_order = (
+                QtCore.Qt.SortOrder.DescendingOrder
+                if self._sort_order == QtCore.Qt.SortOrder.AscendingOrder
+                else QtCore.Qt.SortOrder.AscendingOrder
+            )
+        else:
+            self._sort_column = column
+            self._sort_order = QtCore.Qt.SortOrder.AscendingOrder
+        self._set_sorting(self._sort_column, self._sort_order)
+
+    def _set_sorting(self, column: int | None, order: QtCore.Qt.SortOrder) -> None:
+        self._sort_column = column
+        self._sort_order = order
+        header = self.tree.header()
+        if column is not None:
+            header.setSortIndicatorShown(True)
+            header.setSortIndicator(column, order)
+        self._apply_view_filters()
+
     def _hide_all_but_anchor(self, columns: list[int]) -> None:
         if not columns:
             return
@@ -492,12 +539,16 @@ class DuplicatesDialog(QtWidgets.QDialog):
         self._apply_view_filters()
 
     def _apply_view_filters(self) -> None:
-        self._group_rows = filter_group_rows(
+        rows = filter_group_rows(
             self._source_group_rows,
             audio_only=self._show_audio_only,
             hide_system_like=self._hide_system_like,
             excluded_roots=self._excluded_roots,
         )
+        query = self._search_query.strip().casefold()
+        if query:
+            rows = [(label, tracks) for label, tracks in rows if self._row_matches_query(label, tracks, query)]
+        self._group_rows = rows
         self._groups = [tracks for _, tracks in self._group_rows]
         self._refresh_excluded_folder_label()
         self._rebuild_tree()
@@ -526,9 +577,18 @@ class DuplicatesDialog(QtWidgets.QDialog):
             self._system_filter_action.blockSignals(False)
         self._apply_view_filters()
 
+    def _set_search_query(self, text: str) -> None:
+        self._search_query = text or ""
+        self._apply_view_filters()
+
     def _reset_filters(self) -> None:
         self._set_audio_only(True)
         self._set_hide_system_like(False)
+        self._search_query = ""
+        if self.search_edit is not None and self.search_edit.text():
+            self.search_edit.blockSignals(True)
+            self.search_edit.clear()
+            self.search_edit.blockSignals(False)
         if self.system_like_check is not None and self.system_like_check.isChecked():
             self.system_like_check.blockSignals(True)
             self.system_like_check.setChecked(False)
@@ -572,6 +632,27 @@ class DuplicatesDialog(QtWidgets.QDialog):
                 seen.add(label)
                 labels.append(label)
         return labels
+
+    def _row_matches_query(self, label: str, tracks: list[Track], query: str) -> bool:
+        if not query:
+            return True
+        if query in label.casefold():
+            return True
+        for track in tracks:
+            values = [
+                track.title,
+                track.artist,
+                track.album,
+                track.albumartist,
+                track.genre,
+                track.comment,
+                track.path,
+                Path(track.path).name,
+            ]
+            for value in values:
+                if value and query in str(value).casefold():
+                    return True
+        return False
 
     def _resolve_merge_groups(self, *, only_selected: bool) -> list[tuple[str, list[Track]]]:
         groups = list(self._group_rows)
@@ -850,11 +931,12 @@ class DuplicatesDialog(QtWidgets.QDialog):
 
     def _rebuild_tree(self) -> None:
         self.tree.clear()
-        for label, tracks in self._group_rows:
+        rows = self._sorted_group_rows(self._group_rows)
+        for label, tracks in rows:
             parent = QtWidgets.QTreeWidgetItem([label])
             parent.setFirstColumnSpanned(True)
             self.tree.addTopLevelItem(parent)
-            for track in tracks:
+            for track in self._sorted_tracks(tracks):
                 size = track.file_size or _safe_size(track.path)
                 item = QtWidgets.QTreeWidgetItem(
                     [
@@ -872,6 +954,65 @@ class DuplicatesDialog(QtWidgets.QDialog):
                 parent.addChild(item)
             parent.setExpanded(True)
 
+    def _sorted_group_rows(self, rows: list[tuple[str, list[Track]]]) -> list[tuple[str, list[Track]]]:
+        if self._sort_column is None:
+            return list(rows)
+        return sorted(
+            rows,
+            key=lambda row: self._group_sort_key(row[0], row[1], self._sort_column),
+        )
+
+    def _sorted_tracks(self, tracks: list[Track]) -> list[Track]:
+        if self._sort_column is None:
+            return list(tracks)
+        return sorted(
+            tracks,
+            key=lambda track: self._track_sort_key(track, self._sort_column),
+        )
+
+    def _group_sort_key(self, label: str, tracks: list[Track], column: int):
+        if column == 0:
+            return self._text_sort_key(label)
+        track = self._representative_track(tracks)
+        return self._track_sort_key(track, column)
+
+    def _representative_track(self, tracks: list[Track]) -> Track:
+        for track in tracks:
+            if track:
+                return track
+        return Track(path="")
+
+    def _track_sort_key(self, track: Track, column: int):
+        if column == 0:
+            return self._text_sort_key(Path(track.path).name)
+        if column == 1:
+            return self._text_sort_key(track.title or "")
+        if column == 2:
+            return self._text_sort_key(track.artist or "")
+        if column == 3:
+            return self._text_sort_key(track.path or "")
+        if column == 4:
+            size = track.file_size if isinstance(track.file_size, int) else _safe_size(track.path)
+            return self._numeric_sort_key(size)
+        if column == 5:
+            bpm = track.bpm if isinstance(track.bpm, (int, float)) else None
+            return self._numeric_sort_key(bpm)
+        if column == 6:
+            return self._text_sort_key(track.key or "")
+        return self._text_sort_key(track.path or "")
+
+    def _text_sort_key(self, value: str):
+        text = (value or "").casefold()
+        if self._sort_order == QtCore.Qt.SortOrder.DescendingOrder:
+            return (text == "", tuple(-ord(ch) for ch in text))
+        return (text == "", text)
+
+    def _numeric_sort_key(self, value: int | float | None):
+        if value is None:
+            return (1, 0)
+        adjusted = -float(value) if self._sort_order == QtCore.Qt.SortOrder.DescendingOrder else float(value)
+        return (0, adjusted)
+
     def _mark_duplicates(self) -> None:
         for i in range(self.tree.topLevelItemCount()):
             parent = self.tree.topLevelItem(i)
@@ -880,6 +1021,51 @@ class DuplicatesDialog(QtWidgets.QDialog):
             parent.child(0).setCheckState(0, QtCore.Qt.CheckState.Unchecked)
             for idx in range(1, parent.childCount()):
                 parent.child(idx).setCheckState(0, QtCore.Qt.CheckState.Checked)
+
+    def _select_newest_tracks(self, checked: bool = True) -> None:
+        self._select_best_track(
+            checked=checked,
+            score_fn=lambda track: (
+                track.file_mtime if isinstance(track.file_mtime, (int, float)) else 0.0,
+                track.date_modified.timestamp() if getattr(track, "date_modified", None) else 0.0,
+            ),
+        )
+
+    def _select_shortest_filenames(self, checked: bool = True) -> None:
+        self._select_best_track(
+            checked=checked,
+            score_fn=lambda track: (-len(Path(track.path).name), -(len(track.path))),
+        )
+
+    def _select_most_complete_tracks(self, checked: bool = True) -> None:
+        self._select_best_track(
+            checked=checked,
+            score_fn=lambda track: self._track_completeness_score(track),
+        )
+
+    def _select_best_track(self, *, checked: bool, score_fn) -> None:
+        for i in range(self.tree.topLevelItemCount()):
+            parent = self.tree.topLevelItem(i)
+            if parent.childCount() < 1:
+                continue
+            best_child = None
+            best_score = None
+            for idx in range(parent.childCount()):
+                child = parent.child(idx)
+                track = self._track_map.get(child.data(0, QtCore.Qt.ItemDataRole.UserRole))
+                if track is None:
+                    continue
+                score = score_fn(track)
+                if best_score is None or score > best_score:
+                    best_score = score
+                    best_child = child
+            if best_child is not None:
+                if checked:
+                    for idx in range(parent.childCount()):
+                        parent.child(idx).setCheckState(0, QtCore.Qt.CheckState.Unchecked)
+                    best_child.setCheckState(0, QtCore.Qt.CheckState.Checked)
+                else:
+                    best_child.setCheckState(0, QtCore.Qt.CheckState.Unchecked)
 
     def _reverse_selection(self) -> None:
         for i in range(self.tree.topLevelItemCount()):
@@ -899,6 +1085,55 @@ class DuplicatesDialog(QtWidgets.QDialog):
             parent = self.tree.topLevelItem(i)
             for idx in range(parent.childCount()):
                 parent.child(idx).setCheckState(0, QtCore.Qt.CheckState.Unchecked)
+
+    def _track_completeness_score(self, track: Track) -> tuple[int, int, int, int]:
+        fields = [
+            track.title,
+            track.artist,
+            track.album,
+            track.albumartist,
+            track.year,
+            track.genre,
+            track.tracknumber,
+            track.discnumber,
+            track.composer,
+            track.comment,
+            track.lyrics,
+            track.originalartist,
+            track.isrc,
+            track.publisher,
+            track.grouping,
+            track.copyright,
+            track.remixer,
+            track.key,
+            track.mood,
+        ]
+        score = 0
+        for value in fields:
+            if value:
+                score += 2
+        if track.bpm is not None:
+            score += 2
+        if track.duration is not None:
+            score += 2
+        if track.file_size is not None:
+            score += 1
+        if track.file_hash:
+            score += 2
+        if track.fingerprint:
+            score += 2
+        if track.waveform_path:
+            score += 1
+        if track.artwork_path:
+            score += 1
+        if track.bitrate is not None:
+            score += 1
+        if track.sample_rate is not None:
+            score += 1
+        completeness_bonus = sum(1 for value in [track.title, track.artist, track.album] if value)
+        recent_bonus = int(track.file_mtime or 0)
+        size_bonus = int(track.file_size or 0)
+        return score, completeness_bonus, recent_bonus, size_bonus
 
     def _selected_paths(self) -> list[str]:
         paths: list[str] = []
