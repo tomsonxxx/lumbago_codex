@@ -383,11 +383,18 @@ class DuplicatesDialog(QtWidgets.QDialog):
         extra_menu.addAction("Eksportuj raport", self._export_report)
         self._survivor_action = extra_menu.addAction("Wyprowadź ocalałe...")
         self._survivor_action.triggered.connect(self._export_survivors)
-        select_menu = extra_menu.addMenu("Zaznaczanie")
+        select_menu = extra_menu.addMenu("Inteligentne zaznaczanie")
         select_menu.addAction("Zaznacz najnowsze", self._select_newest_tracks)
         select_menu.addAction("Odznacz najnowsze", lambda: self._select_newest_tracks(False))
+        select_menu.addSeparator()
         select_menu.addAction("Zaznacz najkrótszą nazwę pliku", self._select_shortest_filenames)
         select_menu.addAction("Odznacz najkrótszą nazwę pliku", lambda: self._select_shortest_filenames(False))
+        select_menu.addSeparator()
+        select_menu.addAction("Zaznacz największy rozmiar", self._select_largest_tracks)
+        select_menu.addAction("Odznacz największy rozmiar", lambda: self._select_largest_tracks(False))
+        select_menu.addAction("Zaznacz najwyższy DJ play count", self._select_highest_play_count_tracks)
+        select_menu.addAction("Odznacz najwyższy DJ play count", lambda: self._select_highest_play_count_tracks(False))
+        select_menu.addSeparator()
         select_menu.addAction("Zaznacz najbardziej kompletne dane", self._select_most_complete_tracks)
         select_menu.addAction("Odznacz najbardziej kompletne dane", lambda: self._select_most_complete_tracks(False))
         destructive_menu = menu.addMenu("Nieodwracalne")
@@ -1035,6 +1042,24 @@ class DuplicatesDialog(QtWidgets.QDialog):
         self._select_best_track(
             checked=checked,
             score_fn=lambda track: (-len(Path(track.path).name), -(len(track.path))),
+        )
+
+    def _select_largest_tracks(self, checked: bool = True) -> None:
+        self._select_best_track(
+            checked=checked,
+            score_fn=lambda track: (
+                track.file_size if isinstance(track.file_size, int) else _safe_size(track.path) or -1,
+                track.file_mtime if isinstance(track.file_mtime, (int, float)) else 0.0,
+            ),
+        )
+
+    def _select_highest_play_count_tracks(self, checked: bool = True) -> None:
+        self._select_best_track(
+            checked=checked,
+            score_fn=lambda track: (
+                track.play_count if isinstance(track.play_count, int) else 0,
+                track.file_mtime if isinstance(track.file_mtime, (int, float)) else 0.0,
+            ),
         )
 
     def _select_most_complete_tracks(self, checked: bool = True) -> None:
