@@ -13,6 +13,7 @@ from core.models import Track
 from core.services import enrich_track_with_analysis
 from data.repository import upsert_tracks
 from services.key_detection import detect_key
+from services.track_filters import is_system_like_path
 
 
 @dataclass
@@ -21,6 +22,7 @@ class ImportOptions:
     recursive: bool
     extensions: set[str]
     deep_audio_scan: bool
+    skip_system_like: bool
 
 
 class ScanWizardSignals(QtCore.QObject):
@@ -60,6 +62,8 @@ class ScanWizardWorker(QtCore.QRunnable):
                 extensions=self.options.extensions,
             )
         )
+        if self.options.skip_system_like:
+            files = [path for path in files if not is_system_like_path(path)]
         total = len(files)
         tracks: list[Track] = []
         errors: list[dict[str, Any]] = []
@@ -248,6 +252,12 @@ class ImportWizard(QtWidgets.QDialog):
         self.deep_audio_scan = QtWidgets.QCheckBox("Dokladna analiza audio podczas skanu (wolniej)")
         self.deep_audio_scan.setChecked(False)
         layout.addWidget(self.deep_audio_scan)
+        self.skip_system_like_check = QtWidgets.QCheckBox("Pomiń pliki systemowe i pomocnicze")
+        self.skip_system_like_check.setChecked(True)
+        self.skip_system_like_check.setToolTip(
+            "Pominięcie plików wyglądających na systemowe, tymczasowe lub nie-muzyczne podczas importu."
+        )
+        layout.addWidget(self.skip_system_like_check)
         layout.addStretch(1)
         return page
 
@@ -316,6 +326,7 @@ class ImportWizard(QtWidgets.QDialog):
             recursive=self.recursive_check.isChecked(),
             extensions=extensions,
             deep_audio_scan=self.deep_audio_scan.isChecked(),
+            skip_system_like=self.skip_system_like_check.isChecked(),
         )
 
     def _next(self):
@@ -450,7 +461,5 @@ class ImportWizard(QtWidgets.QDialog):
         if self._import_worker:
             self._import_worker.stop()
         super().reject()
-
-
 
 

@@ -4,6 +4,8 @@ import logging
 from pathlib import Path
 from PyQt6 import QtCore
 
+from services.track_filters import is_system_like_path
+
 logger = logging.getLogger(__name__)
 AUDIO_EXTENSIONS = frozenset({".mp3",".flac",".aac",".m4a",".ogg",".wav",".aiff",".aif",".wma",".opus",".mp4"})
 DEBOUNCE_MS = 800
@@ -66,6 +68,12 @@ class WatchFolderService(QtCore.QObject):
     @staticmethod
     def _scan(folder: Path) -> set[Path]:
         try:
-            return {f for f in folder.iterdir() if f.is_file() and f.suffix.lower() in AUDIO_EXTENSIONS}
+            return {
+                f
+                for f in folder.iterdir()
+                if f.is_file()
+                and f.suffix.lower() in AUDIO_EXTENSIONS
+                and not is_system_like_path(f)
+            }
         except PermissionError:
             return set()

@@ -1,14 +1,14 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import csv
 import shutil
+import re
 from pathlib import Path
 
-from PyQt6 import QtCore, QtWidgets
-from ui.widgets import apply_dialog_fade, dialog_icon_pixmap
+from PyQt6 import QtCore, QtGui, QtWidgets
 
-from core.models import DuplicateGroup, Track
 from core.audio import file_hash
+from core.models import DuplicateGroup, Track
 from core.services import DuplicateResult, find_duplicates_by_tags
 from data.repository import (
     delete_tracks_by_paths,
@@ -16,7 +16,152 @@ from data.repository import (
     update_track_paths_bulk,
     update_tracks_file_meta,
 )
+from services.duplicate_merge import apply_duplicate_merge_plan, build_duplicate_merge_plan
 from services.recognizer import AcoustIdRecognizer
+from services.track_filters import filter_group_rows
+from ui.widgets import apply_dialog_fade, dialog_icon_pixmap
+
+
+class DuplicateMergePreviewDialog(QtWidgets.QDialog):
+    def __init__(self, plans, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Podgląd scalania metadanych")
+        self.setMinimumSize(920, 560)
+        apply_dialog_fade(self)
+        self._plans = list(plans)
+        self._build_ui()
+        self._populate()
+
+    def _build_ui(self) -> None:
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
+
+        card = QtWidgets.QFrame()
+        card.setObjectName("DialogCard")
+        card_layout = QtWidgets.QVBoxLayout(card)
+        card_layout.setContentsMargins(16, 14, 16, 16)
+        card_layout.setSpacing(10)
+        layout.addWidget(card)
+        layout = card_layout
+
+        title_row = QtWidgets.QHBoxLayout()
+        title_icon = QtWidgets.QLabel()
+        title_icon.setPixmap(dialog_icon_pixmap(18))
+        title_icon.setFixedSize(20, 20)
+        title = QtWidgets.QLabel(self.windowTitle())
+        title.setObjectName("DialogTitle")
+        title_row.addWidget(title_icon)
+        title_row.addWidget(title)
+        title_row.addStretch(1)
+        layout.addLayout(title_row)
+
+        self.summary_label = QtWidgets.QLabel("")
+        self.summary_label.setWordWrap(True)
+        layout.addWidget(self.summary_label)
+
+        self.tree = QtWidgets.QTreeWidget()
+        self.tree.setColumnCount(6)
+        self.tree.setHeaderLabels(["Grupa / pole", "Źródło", "Pewność", "Stare", "Nowe", "Powód"])
+        self.tree.setRootIsDecorated(True)
+        self.tree.setAlternatingRowColors(True)
+        self.tree.setUniformRowHeights(False)
+        header = self.tree.header()
+        header.setStretchLastSection(True)
+        header.setSectionResizeMode(QtWidgets.QHeaderView.ResizeMode.Interactive)
+        header.setSectionsMovable(True)
+        layout.addWidget(self.tree, 1)
+
+        footer = QtWidgets.QHBoxLayout()
+        self.select_all_btn = QtWidgets.QPushButton("Zaznacz wszystkie")
+        self.select_all_btn.clicked.connect(self._select_all)
+        self.select_none_btn = QtWidgets.QPushButton("Odznacz wszystkie")
+        self.select_none_btn.clicked.connect(self._select_none)
+        self.cancel_btn = QtWidgets.QPushButton("Anuluj")
+        self.cancel_btn.clicked.connect(self.reject)
+        self.apply_btn = QtWidgets.QPushButton("Zastosuj wybrane")
+        self.apply_btn.clicked.connect(self.accept)
+        footer.addWidget(self.select_all_btn)
+        footer.addWidget(self.select_none_btn)
+        footer.addStretch(1)
+        footer.addWidget(self.cancel_btn)
+        footer.addWidget(self.apply_btn)
+        layout.addLayout(footer)
+
+        self.tree.itemChanged.connect(self._refresh_summary)
+
+    def _populate(self) -> None:
+        self.tree.blockSignals(True)
+        self.tree.clear()
+        for idx, plan in enumerate(self._plans):
+            survivor_name = Path(plan.survivor.path).name
+            top = QtWidgets.QTreeWidgetItem(
+                [
+                    f"Grupa {idx + 1}: {survivor_name}",
+                    "AI" if plan.ai_used else "Konsensus",
+                    f"{len(plan.field_decisions)}",
+                    Path(plan.survivor.path).parent.name,
+                    "",
+                    "zaznaczone",
+                ]
+            )
+            top.setFlags(
+                top.flags()
+                | QtCore.Qt.ItemFlag.ItemIsUserCheckable
+                | QtCore.Qt.ItemFlag.ItemIsEnabled
+                | QtCore.Qt.ItemFlag.ItemIsSelectable
+            )
+            top.setCheckState(0, QtCore.Qt.CheckState.Checked)
+            top.setData(0, QtCore.Qt.ItemDataRole.UserRole, idx)
+            self.tree.addTopLevelItem(top)
+
+            for decision in plan.field_decisions:
+                child = QtWidgets.QTreeWidgetItem(
+                    [
+                        decision.field_name,
+                        decision.source,
+                        f"{decision.confidence:.2f}",
+                        _format_preview_value(decision.current_value),
+                        _format_preview_value(decision.resolved_value),
+                        decision.reason,
+                    ]
+                )
+                child.setFlags(child.flags() & ~QtCore.Qt.ItemFlag.ItemIsEditable)
+                top.addChild(child)
+            top.setExpanded(True)
+        self.tree.blockSignals(False)
+        self._refresh_summary()
+
+    def _select_all(self) -> None:
+        for idx in range(self.tree.topLevelItemCount()):
+            item = self.tree.topLevelItem(idx)
+            item.setCheckState(0, QtCore.Qt.CheckState.Checked)
+        self._refresh_summary()
+
+    def _select_none(self) -> None:
+        for idx in range(self.tree.topLevelItemCount()):
+            item = self.tree.topLevelItem(idx)
+            item.setCheckState(0, QtCore.Qt.CheckState.Unchecked)
+        self._refresh_summary()
+
+    def _refresh_summary(self, *_args) -> None:
+        selected = self.selected_plans()
+        total_fields = sum(len(plan.field_decisions) for plan in selected)
+        self.summary_label.setText(
+            f"Wybrano {len(selected)} z {len(self._plans)} grup. "
+            f"Podgląd pokazuje {total_fields} pól do zapisu."
+        )
+
+    def selected_plans(self):
+        plans = []
+        for idx in range(self.tree.topLevelItemCount()):
+            item = self.tree.topLevelItem(idx)
+            if item.checkState(0) != QtCore.Qt.CheckState.Checked:
+                continue
+            plan_index = item.data(0, QtCore.Qt.ItemDataRole.UserRole)
+            if isinstance(plan_index, int) and 0 <= plan_index < len(self._plans):
+                plans.append(self._plans[plan_index])
+        return plans
 
 
 class DuplicatesDialog(QtWidgets.QDialog):
@@ -28,10 +173,25 @@ class DuplicatesDialog(QtWidgets.QDialog):
         self._tracks = tracks
         self._track_map = {track.path: track for track in tracks}
         self._scanner = None
+        self._source_group_rows: list[tuple[str, list[Track]]] = []
+        self._group_rows: list[tuple[str, list[Track]]] = []
         self._groups: list[list[Track]] = []
+        self._show_audio_only = True
+        self._hide_system_like = False
+        self._excluded_roots: list[str] = []
+        self._audio_only_action: QtGui.QAction | None = None
+        self._system_filter_action: QtGui.QAction | None = None
+        self._exclude_folders_action: QtGui.QAction | None = None
+        self._clear_excluded_folders_action: QtGui.QAction | None = None
+        self.system_like_check: QtWidgets.QCheckBox | None = None
+        self.excluded_folders_label: QtWidgets.QLabel | None = None
+        self._reverse_shortcut: QtGui.QShortcut | None = None
+        self._merge_ai_action: QtGui.QAction | None = None
+        self._survivor_action: QtGui.QAction | None = None
+        self._merge_worker: DuplicateMergeWorker | None = None
         self._build_ui()
 
-    def _build_ui(self):
+    def _build_ui(self) -> None:
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(12)
@@ -56,17 +216,52 @@ class DuplicatesDialog(QtWidgets.QDialog):
         layout.addLayout(title_row)
 
         top = QtWidgets.QHBoxLayout()
+        top.setSpacing(10)
         top.addWidget(QtWidgets.QLabel("Metoda wykrywania:"))
         self.method = QtWidgets.QComboBox()
         self.method.addItems(["Hash", "Tagi", "Fingerprint", "Etapowo", "Fuzzy"])
         self.method.setToolTip("Wybierz metodę wykrywania duplikatów")
         top.addWidget(self.method)
+
         self.run_btn = QtWidgets.QPushButton("Szukaj")
         self.run_btn.setToolTip("Uruchom skan duplikatów")
         self.run_btn.clicked.connect(self._run_scan)
         top.addWidget(self.run_btn)
+
+        self.actions_btn = QtWidgets.QToolButton()
+        self.actions_btn.setText("Akcje")
+        self.actions_btn.setPopupMode(QtWidgets.QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.actions_btn.setToolButtonStyle(QtCore.Qt.ToolButtonStyle.ToolButtonTextOnly)
+        self.actions_btn.setToolTip("Menu podstawowych i dodatkowych operacji")
+        self.actions_btn.setMenu(self._build_actions_menu())
+        top.addWidget(self.actions_btn)
+
+        self.audio_only_check = QtWidgets.QCheckBox("Tylko audio")
+        self.audio_only_check.setChecked(True)
+        self.audio_only_check.setToolTip("Pokazuj wyłącznie pliki z obsługiwanymi rozszerzeniami audio")
+        self.audio_only_check.toggled.connect(self._set_audio_only)
+        top.addWidget(self.audio_only_check)
+
+        self.system_like_check = QtWidgets.QCheckBox("Ukryj systemowe")
+        self.system_like_check.setChecked(False)
+        self.system_like_check.setToolTip(
+            "Ukrywaj pliki wyglądające na systemowe, pomocnicze lub nie-muzyczne artefakty."
+        )
+        self.system_like_check.toggled.connect(self._set_hide_system_like)
+        top.addWidget(self.system_like_check)
+
+        self.reset_filters_btn = QtWidgets.QPushButton("Reset filtrów")
+        self.reset_filters_btn.setToolTip("Przywróć domyślne filtry: tylko audio włączone, pliki systemowe ukryte wyłączone")
+        self.reset_filters_btn.clicked.connect(self._reset_filters)
+        top.addWidget(self.reset_filters_btn)
+
         top.addStretch(1)
         layout.addLayout(top)
+
+        self.excluded_folders_label = QtWidgets.QLabel("")
+        self.excluded_folders_label.setWordWrap(True)
+        self.excluded_folders_label.setVisible(False)
+        layout.addWidget(self.excluded_folders_label)
 
         self.tree = QtWidgets.QTreeWidget()
         self.tree.setColumnCount(7)
@@ -85,81 +280,152 @@ class DuplicatesDialog(QtWidgets.QDialog):
         layout.addWidget(self.tree, 1)
 
         actions = QtWidgets.QHBoxLayout()
+        actions.setSpacing(8)
         self.mark_btn = QtWidgets.QPushButton("Zaznacz duplikaty")
-        self.mark_btn.setToolTip("Zaznacz wszystkie duplikaty (zostaw pierwsze)")
+        self.mark_btn.setToolTip("Zaznacz wszystkie duplikaty, zostawiając pierwszy plik w grupie")
         self.mark_btn.clicked.connect(self._mark_duplicates)
+
         self.clear_btn = QtWidgets.QPushButton("Wyczyść zaznaczenie")
         self.clear_btn.setToolTip("Odznacz wszystkie pozycje")
         self.clear_btn.clicked.connect(self._clear_marks)
-        self.move_btn = QtWidgets.QPushButton("Przenieś zaznaczone")
-        self.move_btn.setToolTip("Przenieś zaznaczone pliki do folderu")
-        self.move_btn.clicked.connect(self._move_selected)
-        self.merge_btn = QtWidgets.QPushButton("Scal metadane")
-        self.merge_btn.setToolTip("Scal brakujące tagi do pierwszego utworu w grupie")
-        self.merge_btn.clicked.connect(self._merge_selected)
-        self.delete_btn = QtWidgets.QPushButton("Usuń zaznaczone")
-        self.delete_btn.setToolTip("Usuń zaznaczone pliki z dysku i bazy")
-        self.delete_btn.clicked.connect(self._delete_selected)
-        self.export_btn = QtWidgets.QPushButton("Eksportuj raport")
-        self.export_btn.setToolTip("Zapisz raport CSV z wynikami")
-        self.export_btn.clicked.connect(self._export_report)
+
         self.close_btn = QtWidgets.QPushButton("Zamknij")
         self.close_btn.clicked.connect(self.reject)
+
         actions.addWidget(self.mark_btn)
         actions.addWidget(self.clear_btn)
+        self.merge_ai_btn = QtWidgets.QPushButton("Scal metadane (AI)")
+        self.merge_ai_btn.setToolTip("Zbuduj spójny zestaw tagów dla każdej grupy, używając konsensusu i AI")
+        self.merge_ai_btn.clicked.connect(self._merge_metadata_with_ai)
+        actions.addWidget(self.merge_ai_btn)
+        self.survivor_btn = QtWidgets.QPushButton("Ocalałe...")
+        self.survivor_btn.setToolTip("Przenieś lub skopiuj ocalałe pliki do wybranego katalogu")
+        self.survivor_btn.clicked.connect(self._export_survivors)
+        actions.addWidget(self.survivor_btn)
         actions.addStretch(1)
-        actions.addWidget(self.move_btn)
-        actions.addWidget(self.merge_btn)
-        actions.addWidget(self.delete_btn)
-        actions.addWidget(self.export_btn)
         actions.addWidget(self.close_btn)
         layout.addLayout(actions)
 
-    def _run_scan(self):
+        self._reverse_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+I"), self)
+        self._reverse_shortcut.setContext(QtCore.Qt.ShortcutContext.WindowShortcut)
+        self._reverse_shortcut.activated.connect(self._reverse_selection)
+
+    def _build_actions_menu(self) -> QtWidgets.QMenu:
+        menu = QtWidgets.QMenu(self)
+
+        basic_menu = menu.addMenu("Podstawowe")
+        basic_menu.addAction("Zaznacz duplikaty", self._mark_duplicates)
+        basic_menu.addAction("Wyczyść zaznaczenie", self._clear_marks)
+        basic_menu.addSeparator()
+        basic_menu.addAction("Zamknij", self.reject)
+
+        extra_menu = menu.addMenu("Dodatkowe")
+        extra_menu.addAction("Odwróć zaznaczenie\tCtrl+I", self._reverse_selection)
+        self._audio_only_action = extra_menu.addAction("Tylko audio")
+        self._audio_only_action.setCheckable(True)
+        self._audio_only_action.setChecked(True)
+        self._audio_only_action.toggled.connect(self._set_audio_only)
+        self._system_filter_action = extra_menu.addAction("Ukryj pliki systemowe")
+        self._system_filter_action.setCheckable(True)
+        self._system_filter_action.setChecked(False)
+        self._system_filter_action.toggled.connect(self._set_hide_system_like)
+        extra_menu.addSeparator()
+        self._exclude_folders_action = extra_menu.addAction("Wyklucz folder...")
+        self._exclude_folders_action.triggered.connect(self._add_excluded_folder)
+        self._clear_excluded_folders_action = extra_menu.addAction("Wyczyść wykluczone foldery")
+        self._clear_excluded_folders_action.triggered.connect(self._clear_excluded_folders)
+        extra_menu.addSeparator()
+        extra_menu.addAction("Przenieś zaznaczone", self._move_selected)
+        extra_menu.addAction("Scal metadane", self._merge_selected)
+        self._merge_ai_action = extra_menu.addAction("Scal metadane (AI)")
+        self._merge_ai_action.triggered.connect(self._merge_metadata_with_ai)
+        extra_menu.addAction("Eksportuj raport", self._export_report)
+        self._survivor_action = extra_menu.addAction("Wyprowadź ocalałe...")
+        self._survivor_action.triggered.connect(self._export_survivors)
+        destructive_menu = menu.addMenu("Nieodwracalne")
+        destructive_menu.setStyleSheet(
+            """
+            QMenu {
+                background-color: #1a1013;
+            }
+            QMenu::item {
+                color: #ff6b6b;
+                padding: 6px 18px 6px 18px;
+            }
+            QMenu::item:selected {
+                background-color: #5a1f2a;
+                color: #ffecec;
+            }
+            """
+        )
+        destructive_menu.addAction("Usuń zaznaczone", self._delete_selected)
+        return menu
+
+    def _run_scan(self) -> None:
         self.tree.clear()
+        self._set_source_group_rows([])
         method = self.method.currentText()
 
         if method == "Fuzzy":
             from services.fuzzy_dedup import FuzzyDedupService
-            progress = QtWidgets.QProgressDialog("Skanowanie duplikatów (fuzzy)...", None, 0, 1, self)
+
+            progress = QtWidgets.QProgressDialog(
+                "Skanowanie duplikatów (fuzzy)...", None, 0, 1, self
+            )
             progress.setWindowTitle("Duplikaty")
             progress.setMinimumDuration(0)
             progress.setValue(0)
             QtWidgets.QApplication.processEvents()
             svc = FuzzyDedupService()
             groups = svc.find_fuzzy_duplicates(self._tracks)
-            result = [g.tracks for g in groups if len(g.tracks) > 1]
+            rows = [
+                (f"Grupa {group_idx}", group.tracks)
+                for group_idx, group in enumerate(groups, 1)
+                if len(group.tracks) > 1
+            ]
             progress.setValue(1)
             progress.close()
-            self._populate_tree_flat(result)
+            self._set_source_group_rows(rows)
             return
 
-        progress = QtWidgets.QProgressDialog("Skanowanie duplikatów...", "Anuluj", 0, len(self._tracks), self)
+        progress = QtWidgets.QProgressDialog(
+            "Skanowanie duplikatów...", "Anuluj", 0, len(self._tracks), self
+        )
         progress.setWindowTitle("Duplikaty")
         progress.setMinimumDuration(0)
 
         self._scanner = DuplicateScanWorker(self._tracks, method)
 
-        def on_progress(current: int, total: int):
+        def on_progress(current: int, total: int) -> None:
             progress.setMaximum(total)
             progress.setValue(current)
             if progress.wasCanceled():
                 self._scanner.stop()
 
-        def on_finished(result):
+        def on_finished(result) -> None:
             progress.close()
-            self._populate_tree(result)
+            rows = self._rows_from_result(result)
+            self._set_source_group_rows(rows)
 
         self._scanner.signals.progress.connect(on_progress)
         self._scanner.signals.finished.connect(on_finished)
         QtCore.QThreadPool.globalInstance().start(self._scanner)
 
-    def _show_column_menu(self, pos):
+    def _rows_from_result(self, result) -> list[tuple[str, list[Track]]]:
+        rows: list[tuple[str, list[Track]]] = []
+        for group_idx, group in enumerate(result.groups, 1):
+            tracks = [self._tracks[i - 1] for i in group.track_ids if 0 < i <= len(self._tracks)]
+            if len(tracks) < 2:
+                continue
+            rows.append((f"Grupa {group_idx} (sim {group.similarity:.2f})", tracks))
+        return rows
+
+    def _show_column_menu(self, pos) -> None:
         menu = QtWidgets.QMenu(self)
         show_all = menu.addAction("Pokaż wszystkie")
         hide_all = menu.addAction("Ukryj wszystkie")
         menu.addSeparator()
-        actions = []
+        actions: list[tuple[QtWidgets.QAction, int]] = []
         for col in range(self.tree.columnCount()):
             name = self.tree.headerItem().text(col)
             action = QtWidgets.QAction(name, menu)
@@ -194,14 +460,320 @@ class DuplicatesDialog(QtWidgets.QDialog):
         for col in columns:
             self.tree.setColumnHidden(col, col != anchor)
 
-    def _populate_tree(self, result):
-        self._groups = []
-        for group_idx, group in enumerate(result.groups, 1):
-            tracks = [self._tracks[i - 1] for i in group.track_ids if 0 < i <= len(self._tracks)]
-            if len(tracks) < 2:
+    def _set_source_group_rows(self, rows: list[tuple[str, list[Track]]]) -> None:
+        self._source_group_rows = [(label, tracks) for label, tracks in rows if len(tracks) > 1]
+        self._apply_view_filters()
+
+    def _apply_view_filters(self) -> None:
+        self._group_rows = filter_group_rows(
+            self._source_group_rows,
+            audio_only=self._show_audio_only,
+            hide_system_like=self._hide_system_like,
+            excluded_roots=self._excluded_roots,
+        )
+        self._groups = [tracks for _, tracks in self._group_rows]
+        self._refresh_excluded_folder_label()
+        self._rebuild_tree()
+
+    def _set_audio_only(self, enabled: bool) -> None:
+        self._show_audio_only = bool(enabled)
+        if hasattr(self, "audio_only_check") and self.audio_only_check.isChecked() != self._show_audio_only:
+            self.audio_only_check.blockSignals(True)
+            self.audio_only_check.setChecked(self._show_audio_only)
+            self.audio_only_check.blockSignals(False)
+        if self._audio_only_action is not None and self._audio_only_action.isChecked() != self._show_audio_only:
+            self._audio_only_action.blockSignals(True)
+            self._audio_only_action.setChecked(self._show_audio_only)
+            self._audio_only_action.blockSignals(False)
+        self._apply_view_filters()
+
+    def _set_hide_system_like(self, enabled: bool) -> None:
+        self._hide_system_like = bool(enabled)
+        if self.system_like_check is not None and self.system_like_check.isChecked() != self._hide_system_like:
+            self.system_like_check.blockSignals(True)
+            self.system_like_check.setChecked(self._hide_system_like)
+            self.system_like_check.blockSignals(False)
+        if self._system_filter_action is not None and self._system_filter_action.isChecked() != self._hide_system_like:
+            self._system_filter_action.blockSignals(True)
+            self._system_filter_action.setChecked(self._hide_system_like)
+            self._system_filter_action.blockSignals(False)
+        self._apply_view_filters()
+
+    def _reset_filters(self) -> None:
+        self._set_audio_only(True)
+        self._set_hide_system_like(False)
+        if self.system_like_check is not None and self.system_like_check.isChecked():
+            self.system_like_check.blockSignals(True)
+            self.system_like_check.setChecked(False)
+            self.system_like_check.blockSignals(False)
+        self._clear_excluded_folders()
+
+    def _add_excluded_folder(self) -> None:
+        folder = QtWidgets.QFileDialog.getExistingDirectory(self, "Wybierz folder do wykluczenia")
+        if not folder:
+            return
+        normalized = str(Path(folder))
+        if normalized not in self._excluded_roots:
+            self._excluded_roots.append(normalized)
+            self._excluded_roots.sort(key=str.lower)
+        self._apply_view_filters()
+
+    def _clear_excluded_folders(self) -> None:
+        self._excluded_roots = []
+        self._apply_view_filters()
+
+    def _refresh_excluded_folder_label(self) -> None:
+        if self.excluded_folders_label is None:
+            return
+        if not self._excluded_roots:
+            self.excluded_folders_label.clear()
+            self.excluded_folders_label.setVisible(False)
+            return
+        names = ", ".join(Path(root).name or root for root in self._excluded_roots[:4])
+        if len(self._excluded_roots) > 4:
+            names += f" +{len(self._excluded_roots) - 4}"
+        self.excluded_folders_label.setText(f"Wykluczone foldery: {names}")
+        self.excluded_folders_label.setVisible(True)
+
+    def _merge_metadata_with_ai(self) -> None:
+        if self._merge_worker is not None:
+            QtWidgets.QMessageBox.information(
+                self,
+                "Scal metadane (AI)",
+                "Przygotowywanie konsensusu AI juz trwa.",
+            )
+            return
+
+        groups = [tracks for tracks in self._group_rows if len(tracks[1]) > 1]
+        if not groups:
+            QtWidgets.QMessageBox.information(self, "Scal metadane (AI)", "Brak grup do scalenia.")
+            return
+
+        try:
+            from core.config import load_settings
+
+            settings = load_settings()
+        except Exception:
+            settings = None
+
+        self._start_merge_worker(groups, settings)
+        return
+
+        progress = QtWidgets.QProgressDialog("Przygotowywanie konsensusu AI...", "Anuluj", 0, len(groups), self)
+        progress.setWindowTitle("Scal metadane (AI)")
+        progress.setMinimumDuration(0)
+
+        plans = []
+        for idx, (_, tracks) in enumerate(groups, 1):
+            if progress.wasCanceled():
+                break
+            plan = build_duplicate_merge_plan(tracks, settings=settings, use_ai=True)
+            if plan is not None and plan.changed_fields:
+                plans.append(plan)
+            progress.setValue(idx)
+            QtWidgets.QApplication.processEvents()
+        progress.close()
+
+        if not plans:
+            QtWidgets.QMessageBox.information(
+                self,
+                "Scal metadane (AI)",
+                "Silnik nie znalazł niczego do poprawy w aktualnym zestawie duplikatów.",
+            )
+            return
+
+        preview = DuplicateMergePreviewDialog(plans, self)
+        if preview.exec() != QtWidgets.QDialog.DialogCode.Accepted:
+            return
+
+        selected_plans = preview.selected_plans()
+        if not selected_plans:
+            QtWidgets.QMessageBox.information(
+                self,
+                "Scal metadane (AI)",
+                "Nie zaznaczono żadnych grup do zapisu.",
+            )
+            return
+
+        changed_tracks = 0
+        changed_fields = 0
+        for plan in selected_plans:
+            applied = apply_duplicate_merge_plan(plan)
+            if applied:
+                changed_tracks += 1
+                changed_fields += len(applied)
+        if changed_tracks:
+            self._apply_view_filters()
+            QtWidgets.QMessageBox.information(
+                self,
+                "Scal metadane (AI)",
+                f"Zaktualizowano {changed_fields} pól w {changed_tracks} grupach.",
+            )
+
+    def _start_merge_worker(self, groups: list[tuple[str, list[Track]]], settings) -> None:
+        progress = QtWidgets.QProgressDialog(
+            "Przygotowywanie konsensusu AI...", "Anuluj", 0, len(groups), self
+        )
+        progress.setWindowTitle("Scal metadane (AI)")
+        progress.setMinimumDuration(0)
+        progress.setWindowModality(QtCore.Qt.WindowModality.WindowModal)
+
+        self._set_merge_actions_enabled(False)
+        self._merge_worker = DuplicateMergeWorker(groups, settings=settings, use_ai=True)
+
+        def on_progress(current: int, total: int, label: str) -> None:
+            progress.setMaximum(total)
+            progress.setValue(current)
+            if label:
+                progress.setLabelText(label)
+
+        def on_failed(message: str) -> None:
+            progress.close()
+            self._merge_worker = None
+            self._set_merge_actions_enabled(True)
+            QtWidgets.QMessageBox.warning(self, "Scal metadane (AI)", message)
+
+        def on_finished(plans: list) -> None:
+            progress.close()
+            self._merge_worker = None
+            self._set_merge_actions_enabled(True)
+            self._show_merge_preview(plans)
+
+        progress.canceled.connect(self._merge_worker.stop)
+        self._merge_worker.signals.progress.connect(on_progress)
+        self._merge_worker.signals.failed.connect(on_failed)
+        self._merge_worker.signals.finished.connect(on_finished)
+        QtCore.QThreadPool.globalInstance().start(self._merge_worker)
+
+    def _show_merge_preview(self, plans: list) -> None:
+        if not plans:
+            QtWidgets.QMessageBox.information(
+                self,
+                "Scal metadane (AI)",
+                "Silnik nie znalazl niczego do poprawy w aktualnym zestawie duplikatow.",
+            )
+            return
+
+        preview = DuplicateMergePreviewDialog(plans, self)
+        if preview.exec() != QtWidgets.QDialog.DialogCode.Accepted:
+            return
+
+        selected_plans = preview.selected_plans()
+        if not selected_plans:
+            QtWidgets.QMessageBox.information(
+                self,
+                "Scal metadane (AI)",
+                "Nie zaznaczono zadnych grup do zapisu.",
+            )
+            return
+
+        changed_tracks = 0
+        changed_fields = 0
+        for plan in selected_plans:
+            applied = apply_duplicate_merge_plan(plan)
+            if applied:
+                changed_tracks += 1
+                changed_fields += len(applied)
+        if changed_tracks:
+            self._apply_view_filters()
+            QtWidgets.QMessageBox.information(
+                self,
+                "Scal metadane (AI)",
+                f"Zaktualizowano {changed_fields} pol w {changed_tracks} grupach.",
+            )
+
+    def _set_merge_actions_enabled(self, enabled: bool) -> None:
+        self.merge_ai_btn.setEnabled(enabled)
+        if self._merge_ai_action is not None:
+            self._merge_ai_action.setEnabled(enabled)
+
+    def _export_survivors(self) -> None:
+        survivors = self._survivor_tracks()
+        if not survivors:
+            QtWidgets.QMessageBox.information(
+                self,
+                "Ocalałe pliki",
+                "Nie znaleziono żadnych ocalałych plików do wyprowadzenia.",
+            )
+            return
+
+        target_dir = QtWidgets.QFileDialog.getExistingDirectory(
+            self,
+            "Wybierz katalog dla ocalałych plików",
+        )
+        if not target_dir:
+            return
+
+        mode, ok = QtWidgets.QInputDialog.getItem(
+            self,
+            "Ocalałe pliki",
+            "Co zrobić z ocalałymi plikami?",
+            ["Skopiuj", "Przenieś"],
+            0,
+            False,
+        )
+        if not ok:
+            return
+
+        dest_root = Path(target_dir)
+        history: list[dict[str, str]] = []
+        copied = 0
+        moved = 0
+        for group_label, track in survivors:
+            src = Path(track.path)
+            if not src.exists():
                 continue
-            self._groups.append(tracks)
-            parent = QtWidgets.QTreeWidgetItem([f"Grupa {group_idx} (sim {group.similarity:.2f})"])
+            dest_dir = dest_root / _safe_folder_name(group_label)
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            dest = dest_dir / src.name
+            if dest.exists():
+                dest = dest_dir / f"survivor_{src.name}"
+            if mode == "Przenieś":
+                shutil.move(str(src), str(dest))
+                history.append({"old": str(src), "new": str(dest)})
+                moved += 1
+            else:
+                shutil.copy2(str(src), str(dest))
+                copied += 1
+
+        if history:
+            update_track_paths_bulk(history)
+            self._apply_view_filters()
+
+        QtWidgets.QMessageBox.information(
+            self,
+            "Ocalałe pliki",
+            f"{'Przeniesiono' if mode == 'Przenieś' else 'Skopiowano'} "
+            f"{moved if mode == 'Przenieś' else copied} plików do: {dest_root}",
+        )
+
+    def _survivor_tracks(self) -> list[tuple[str, Track]]:
+        survivors: list[tuple[str, Track]] = []
+        for row_idx in range(self.tree.topLevelItemCount()):
+            parent = self.tree.topLevelItem(row_idx)
+            if parent is None or parent.childCount() == 0:
+                continue
+            survivor_child = next(
+                (
+                    parent.child(idx)
+                    for idx in range(parent.childCount())
+                    if parent.child(idx).checkState(0) != QtCore.Qt.CheckState.Checked
+                ),
+                parent.child(0),
+            )
+            survivor_path = survivor_child.data(0, QtCore.Qt.ItemDataRole.UserRole)
+            if not survivor_path:
+                continue
+            track = self._track_map.get(survivor_path)
+            if track is None:
+                continue
+            survivors.append((parent.text(0), track))
+        return survivors
+
+    def _rebuild_tree(self) -> None:
+        self.tree.clear()
+        for label, tracks in self._group_rows:
+            parent = QtWidgets.QTreeWidgetItem([label])
             parent.setFirstColumnSpanned(True)
             self.tree.addTopLevelItem(parent)
             for track in tracks:
@@ -222,35 +794,7 @@ class DuplicatesDialog(QtWidgets.QDialog):
                 parent.addChild(item)
             parent.setExpanded(True)
 
-    def _populate_tree_flat(self, groups: list[list]):
-        """Populate tree from a flat list of track groups (used by Fuzzy mode)."""
-        self._groups = []
-        for group_idx, tracks in enumerate(groups, 1):
-            if len(tracks) < 2:
-                continue
-            self._groups.append(tracks)
-            parent = QtWidgets.QTreeWidgetItem([f"Grupa {group_idx}"])
-            parent.setFirstColumnSpanned(True)
-            self.tree.addTopLevelItem(parent)
-            for track in tracks:
-                size = track.file_size or _safe_size(track.path)
-                item = QtWidgets.QTreeWidgetItem(
-                    [
-                        "",
-                        track.title or "",
-                        track.artist or "",
-                        track.path,
-                        f"{size or ''}",
-                        f"{track.bpm or ''}",
-                        track.key or "",
-                    ]
-                )
-                item.setCheckState(0, QtCore.Qt.CheckState.Unchecked)
-                item.setData(0, QtCore.Qt.ItemDataRole.UserRole, track.path)
-                parent.addChild(item)
-            parent.setExpanded(True)
-
-    def _mark_duplicates(self):
+    def _mark_duplicates(self) -> None:
         for i in range(self.tree.topLevelItemCount()):
             parent = self.tree.topLevelItem(i)
             if parent.childCount() <= 1:
@@ -259,7 +803,20 @@ class DuplicatesDialog(QtWidgets.QDialog):
             for idx in range(1, parent.childCount()):
                 parent.child(idx).setCheckState(0, QtCore.Qt.CheckState.Checked)
 
-    def _clear_marks(self):
+    def _reverse_selection(self) -> None:
+        for i in range(self.tree.topLevelItemCount()):
+            parent = self.tree.topLevelItem(i)
+            for idx in range(parent.childCount()):
+                child = parent.child(idx)
+                current = child.checkState(0)
+                child.setCheckState(
+                    0,
+                    QtCore.Qt.CheckState.Unchecked
+                    if current == QtCore.Qt.CheckState.Checked
+                    else QtCore.Qt.CheckState.Checked,
+                )
+
+    def _clear_marks(self) -> None:
         for i in range(self.tree.topLevelItemCount()):
             parent = self.tree.topLevelItem(i)
             for idx in range(parent.childCount()):
@@ -271,13 +828,14 @@ class DuplicatesDialog(QtWidgets.QDialog):
             parent = self.tree.topLevelItem(i)
             for idx in range(parent.childCount()):
                 child = parent.child(idx)
-                if child.checkState(0) == QtCore.Qt.CheckState.Checked:
-                    path = child.data(0, QtCore.Qt.ItemDataRole.UserRole)
-                    if path:
-                        paths.append(path)
+                if child.checkState(0) != QtCore.Qt.CheckState.Checked:
+                    continue
+                path = child.data(0, QtCore.Qt.ItemDataRole.UserRole)
+                if path:
+                    paths.append(path)
         return paths
 
-    def _move_selected(self):
+    def _move_selected(self) -> None:
         paths = self._selected_paths()
         if not paths:
             return
@@ -298,7 +856,7 @@ class DuplicatesDialog(QtWidgets.QDialog):
             update_track_paths_bulk(history)
             self.accept()
 
-    def _delete_selected(self):
+    def _delete_selected(self) -> None:
         paths = self._selected_paths()
         if not paths:
             return
@@ -317,7 +875,7 @@ class DuplicatesDialog(QtWidgets.QDialog):
         delete_tracks_by_paths(paths)
         self.accept()
 
-    def _export_report(self):
+    def _export_report(self) -> None:
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
             self,
             "Zapisz raport CSV",
@@ -345,7 +903,7 @@ class DuplicatesDialog(QtWidgets.QDialog):
                         ]
                     )
 
-    def _merge_selected(self):
+    def _merge_selected(self) -> None:
         changed = False
         for i in range(self.tree.topLevelItemCount()):
             parent = self.tree.topLevelItem(i)
@@ -378,7 +936,6 @@ class DuplicatesDialog(QtWidgets.QDialog):
         if changed:
             self.accept()
 
-
 def _safe_size(path: str) -> int | None:
     try:
         return Path(path).stat().st_size
@@ -386,9 +943,31 @@ def _safe_size(path: str) -> int | None:
         return None
 
 
+def _safe_folder_name(name: str) -> str:
+    cleaned = re.sub(r'[<>:"/\\|?*]+', "_", name).strip(" ._")
+    return cleaned or "survivors"
+
+
+def _format_preview_value(value) -> str:
+    if value is None:
+        return "—"
+    if isinstance(value, float):
+        if value.is_integer():
+            return str(int(value))
+        return f"{value:.4f}".rstrip("0").rstrip(".")
+    text = str(value).strip()
+    return text or "—"
+
+
 class DuplicateScanSignals(QtCore.QObject):
     progress = QtCore.pyqtSignal(int, int)
     finished = QtCore.pyqtSignal(object)
+
+
+class DuplicateMergeSignals(QtCore.QObject):
+    progress = QtCore.pyqtSignal(int, int, str)
+    finished = QtCore.pyqtSignal(list)
+    failed = QtCore.pyqtSignal(str)
 
 
 class DuplicateScanWorker(QtCore.QRunnable):
@@ -399,10 +978,10 @@ class DuplicateScanWorker(QtCore.QRunnable):
         self.signals = DuplicateScanSignals()
         self._stop = False
 
-    def stop(self):
+    def stop(self) -> None:
         self._stop = True
 
-    def run(self):
+    def run(self) -> None:
         result = self._scan()
         self.signals.finished.emit(result)
 
@@ -434,7 +1013,11 @@ class DuplicateScanWorker(QtCore.QRunnable):
             return self._groups_from_fingerprint()
         return self._scan_staged(paths, stat_map)
 
-    def _ensure_hashes(self, stat_map: dict[str, tuple[int | None, float | None]], subset: list[Track] | None = None):
+    def _ensure_hashes(
+        self,
+        stat_map: dict[str, tuple[int | None, float | None]],
+        subset: list[Track] | None = None,
+    ) -> None:
         targets = subset or self.tracks
         updates: list[Track] = []
         for idx, track in enumerate(targets, 1):
@@ -455,8 +1038,10 @@ class DuplicateScanWorker(QtCore.QRunnable):
             update_tracks_file_meta(updates)
 
     def _ensure_fingerprints(
-        self, stat_map: dict[str, tuple[int | None, float | None]], subset: list[Track] | None = None
-    ):
+        self,
+        stat_map: dict[str, tuple[int | None, float | None]],
+        subset: list[Track] | None = None,
+    ) -> None:
         recognizer = AcoustIdRecognizer(api_key=None)
         targets = subset or self.tracks
         updates: list[Track] = []
@@ -480,7 +1065,9 @@ class DuplicateScanWorker(QtCore.QRunnable):
         if updates:
             update_tracks_file_meta(updates)
 
-    def _scan_staged(self, paths: list[Path], stat_map: dict[str, tuple[int | None, float | None]]):
+    def _scan_staged(
+        self, paths: list[Path], stat_map: dict[str, tuple[int | None, float | None]]
+    ):
         size_groups: dict[tuple[int | None, float | None], list[Track]] = {}
         for track in self.tracks:
             size, mtime = stat_map.get(track.path, (track.file_size, track.file_mtime))
@@ -538,13 +1125,41 @@ class DuplicateScanWorker(QtCore.QRunnable):
         return DuplicateResult(groups=groups)
 
 
+class DuplicateMergeWorker(QtCore.QRunnable):
+    def __init__(self, groups: list[tuple[str, list[Track]]], *, settings=None, use_ai: bool = True):
+        super().__init__()
+        self.groups = groups
+        self.settings = settings
+        self.use_ai = use_ai
+        self.signals = DuplicateMergeSignals()
+        self._stop = False
+
+    def stop(self) -> None:
+        self._stop = True
+
+    def run(self) -> None:
+        try:
+            plans = []
+            total = len(self.groups)
+            for idx, (label, tracks) in enumerate(self.groups, 1):
+                if self._stop:
+                    break
+                group_label = label.split("(")[0].strip()
+                survivor_name = Path(tracks[0].path).name if tracks else ""
+                status = f"Przygotowywanie konsensusu AI... {group_label} {survivor_name}".strip()
+                self.signals.progress.emit(max(0, idx - 1), total, status)
+                plan = build_duplicate_merge_plan(tracks, settings=self.settings, use_ai=self.use_ai)
+                if plan is not None and plan.changed_fields:
+                    plans.append(plan)
+                self.signals.progress.emit(idx, total, status)
+            self.signals.finished.emit(plans)
+        except Exception as exc:
+            self.signals.failed.emit(str(exc))
+
+
 def _stat_track(path: str) -> tuple[int | None, float | None]:
     try:
         stat = Path(path).stat()
         return stat.st_size, stat.st_mtime
     except Exception:
         return None, None
-
-
-
-
