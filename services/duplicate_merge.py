@@ -73,12 +73,22 @@ def build_duplicate_merge_plan(
     *,
     settings: Any | None = None,
     use_ai: bool = True,
+    logger=None,
+    group_label: str = "",
 ) -> DuplicateMergePlan | None:
     cleaned = [track for track in tracks if isinstance(track, Track)]
     if len(cleaned) < 2:
         return None
 
     survivor = _choose_survivor(cleaned)
+    if logger is not None:
+        try:
+            logger(
+                f"[dupmerge] start | group={group_label or Path(survivor.path).name} "
+                f"| tracks={len(cleaned)} | use_ai={int(bool(use_ai))} | survivor={Path(survivor.path).name}"
+            )
+        except Exception:
+            pass
     resolver = MetadataConsensusEngine()
     evidence_by_field: dict[str, list[FieldEvidence]] = {}
     observed_at = _now()
@@ -139,7 +149,7 @@ def build_duplicate_merge_plan(
     ai_used = False
     if use_ai and settings is not None:
         try:
-            autotagger = UnifiedAutoTagger(settings)
+            autotagger = UnifiedAutoTagger(settings, logger=logger)
             ai_result = autotagger.enrich_track(deepcopy(survivor))
             ai_candidate = ai_result.best_match
             if ai_candidate is not None and ai_candidate.score > 0:
@@ -182,7 +192,7 @@ def build_duplicate_merge_plan(
             )
         )
 
-    return DuplicateMergePlan(
+    plan = DuplicateMergePlan(
         survivor=survivor,
         resolved_track=resolved_track,
         consensus=consensus,
@@ -190,6 +200,15 @@ def build_duplicate_merge_plan(
         ai_used=ai_used,
         source_tracks=cleaned,
     )
+    if logger is not None:
+        try:
+            logger(
+                f"[dupmerge] done | group={group_label or Path(survivor.path).name} "
+                f"| changed_fields={len(plan.changed_fields)} | ai_used={int(plan.ai_used)}"
+            )
+        except Exception:
+            pass
+    return plan
 
 
 def apply_duplicate_merge_plan(plan: DuplicateMergePlan) -> list[str]:

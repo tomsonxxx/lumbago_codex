@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import shutil
 import re
+from datetime import datetime
 from pathlib import Path
 
 from PyQt6 import QtCore, QtGui, QtWidgets
@@ -185,8 +186,11 @@ class DuplicatesDialog(QtWidgets.QDialog):
         self._clear_excluded_folders_action: QtGui.QAction | None = None
         self.system_like_check: QtWidgets.QCheckBox | None = None
         self.excluded_folders_label: QtWidgets.QLabel | None = None
+        self.group_limit_spin: QtWidgets.QSpinBox | None = None
         self._reverse_shortcut: QtGui.QShortcut | None = None
+        self._reverse_group_shortcut: QtGui.QShortcut | None = None
         self._merge_ai_action: QtGui.QAction | None = None
+        self._merge_quick_action: QtGui.QAction | None = None
         self._survivor_action: QtGui.QAction | None = None
         self._merge_worker: DuplicateMergeWorker | None = None
         self._build_ui()
@@ -255,6 +259,15 @@ class DuplicatesDialog(QtWidgets.QDialog):
         self.reset_filters_btn.clicked.connect(self._reset_filters)
         top.addWidget(self.reset_filters_btn)
 
+        top.addWidget(QtWidgets.QLabel("Limit grup:"))
+        self.group_limit_spin = QtWidgets.QSpinBox()
+        self.group_limit_spin.setRange(0, 5000)
+        self.group_limit_spin.setSpecialValueText("bez limitu")
+        self.group_limit_spin.setValue(100)
+        self.group_limit_spin.setToolTip(
+            "Maksymalna liczba grup przetwarzanych w jednym przebiegu. 0 oznacza brak limitu."
+        )
+        top.addWidget(self.group_limit_spin)
         top.addStretch(1)
         layout.addLayout(top)
 
@@ -277,6 +290,8 @@ class DuplicatesDialog(QtWidgets.QDialog):
         header.setSectionsMovable(True)
         header.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
         header.customContextMenuRequested.connect(self._show_column_menu)
+        self.tree.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.tree.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
         layout.addWidget(self.tree, 1)
 
         actions = QtWidgets.QHBoxLayout()
@@ -302,6 +317,10 @@ class DuplicatesDialog(QtWidgets.QDialog):
         self.survivor_btn.setToolTip("Przenieś lub skopiuj ocalałe pliki do wybranego katalogu")
         self.survivor_btn.clicked.connect(self._export_survivors)
         actions.addWidget(self.survivor_btn)
+        self.merge_quick_btn = QtWidgets.QPushButton("Szybkie scalanie")
+        self.merge_quick_btn.setToolTip("Scalanie bez AI, tylko na bazie lokalnych tagow i konsensusu")
+        self.merge_quick_btn.clicked.connect(self._merge_metadata_quick)
+        actions.addWidget(self.merge_quick_btn)
         actions.addStretch(1)
         actions.addWidget(self.close_btn)
         layout.addLayout(actions)
@@ -309,6 +328,9 @@ class DuplicatesDialog(QtWidgets.QDialog):
         self._reverse_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+I"), self)
         self._reverse_shortcut.setContext(QtCore.Qt.ShortcutContext.WindowShortcut)
         self._reverse_shortcut.activated.connect(self._reverse_selection)
+        self._reverse_group_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+Shift+I"), self)
+        self._reverse_group_shortcut.setContext(QtCore.Qt.ShortcutContext.WindowShortcut)
+        self._reverse_group_shortcut.activated.connect(self._reverse_group_selection)
 
     def _build_actions_menu(self) -> QtWidgets.QMenu:
         menu = QtWidgets.QMenu(self)
@@ -321,6 +343,7 @@ class DuplicatesDialog(QtWidgets.QDialog):
 
         extra_menu = menu.addMenu("Dodatkowe")
         extra_menu.addAction("Odwróć zaznaczenie\tCtrl+I", self._reverse_selection)
+        extra_menu.addAction("Odwroc wybor grup\tCtrl+Shift+I", self._reverse_group_selection)
         self._audio_only_action = extra_menu.addAction("Tylko audio")
         self._audio_only_action.setCheckable(True)
         self._audio_only_action.setChecked(True)
@@ -339,6 +362,10 @@ class DuplicatesDialog(QtWidgets.QDialog):
         extra_menu.addAction("Scal metadane", self._merge_selected)
         self._merge_ai_action = extra_menu.addAction("Scal metadane (AI)")
         self._merge_ai_action.triggered.connect(self._merge_metadata_with_ai)
+        self._merge_quick_action = extra_menu.addAction("Szybkie scalanie bez AI")
+        self._merge_quick_action.triggered.connect(self._merge_metadata_quick)
+        extra_menu.addAction("Scal AI tylko zaznaczone grupy", self._merge_metadata_with_ai_selected)
+        extra_menu.addAction("Szybkie scalanie tylko zaznaczonych", self._merge_metadata_quick_selected)
         extra_menu.addAction("Eksportuj raport", self._export_report)
         self._survivor_action = extra_menu.addAction("Wyprowadź ocalałe...")
         self._survivor_action.triggered.connect(self._export_survivors)
@@ -535,18 +562,66 @@ class DuplicatesDialog(QtWidgets.QDialog):
         self.excluded_folders_label.setText(f"Wykluczone foldery: {names}")
         self.excluded_folders_label.setVisible(True)
 
+    def _selected_group_labels(self) -> list[str]:
+        labels: list[str] = []
+        seen: set[str] = set()
+        for item in self.tree.selectedItems():
+            parent = item.parent() or item
+            label = parent.text(0)
+            if label and label not in seen:
+                seen.add(label)
+                labels.append(label)
+        return labels
+
+    def _resolve_merge_groups(self, *, only_selected: bool) -> list[tuple[str, list[Track]]]:
+        groups = list(self._group_rows)
+        if only_selected:
+            selected = set(self._selected_group_labels())
+            groups = [row for row in groups if row[0] in selected]
+        limit = self.group_limit_spin.value() if self.group_limit_spin is not None else 0
+        if limit > 0:
+            groups = groups[:limit]
+        return groups
+
+    def _reverse_group_selection(self) -> None:
+        selected = set(self._selected_group_labels())
+        self.tree.blockSignals(True)
+        self.tree.clearSelection()
+        for idx in range(self.tree.topLevelItemCount()):
+            item = self.tree.topLevelItem(idx)
+            if item.text(0) not in selected:
+                item.setSelected(True)
+        self.tree.blockSignals(False)
+
+    def _merge_metadata_quick(self) -> None:
+        self._start_merge_flow(use_ai=False, only_selected=False)
+
+    def _merge_metadata_quick_selected(self) -> None:
+        self._start_merge_flow(use_ai=False, only_selected=True)
+
+    def _merge_metadata_with_ai_selected(self) -> None:
+        self._start_merge_flow(use_ai=True, only_selected=True)
+
     def _merge_metadata_with_ai(self) -> None:
+        self._start_merge_flow(use_ai=True, only_selected=False)
+
+    def _start_merge_flow(self, *, use_ai: bool, only_selected: bool) -> None:
         if self._merge_worker is not None:
             QtWidgets.QMessageBox.information(
                 self,
                 "Scal metadane (AI)",
-                "Przygotowywanie konsensusu AI juz trwa.",
+                "Przygotowywanie konsensusu juz trwa.",
             )
             return
 
-        groups = [tracks for tracks in self._group_rows if len(tracks[1]) > 1]
+        groups = self._resolve_merge_groups(only_selected=only_selected)
         if not groups:
-            QtWidgets.QMessageBox.information(self, "Scal metadane (AI)", "Brak grup do scalenia.")
+            message = (
+                "Nie zaznaczono zadnych grup do scalenia."
+                if only_selected
+                else "Brak grup do scalenia."
+            )
+            QtWidgets.QMessageBox.information(self, "Scal metadane (AI)", message)
             return
 
         try:
@@ -556,7 +631,7 @@ class DuplicatesDialog(QtWidgets.QDialog):
         except Exception:
             settings = None
 
-        self._start_merge_worker(groups, settings)
+        self._start_merge_worker(groups, settings, use_ai=use_ai)
         return
 
         progress = QtWidgets.QProgressDialog("Przygotowywanie konsensusu AI...", "Anuluj", 0, len(groups), self)
@@ -610,16 +685,16 @@ class DuplicatesDialog(QtWidgets.QDialog):
                 f"Zaktualizowano {changed_fields} pól w {changed_tracks} grupach.",
             )
 
-    def _start_merge_worker(self, groups: list[tuple[str, list[Track]]], settings) -> None:
+    def _start_merge_worker(self, groups: list[tuple[str, list[Track]]], settings, *, use_ai: bool) -> None:
         progress = QtWidgets.QProgressDialog(
             "Przygotowywanie konsensusu AI...", "Anuluj", 0, len(groups), self
         )
-        progress.setWindowTitle("Scal metadane (AI)")
+        progress.setWindowTitle("Scal metadane")
         progress.setMinimumDuration(0)
         progress.setWindowModality(QtCore.Qt.WindowModality.WindowModal)
 
         self._set_merge_actions_enabled(False)
-        self._merge_worker = DuplicateMergeWorker(groups, settings=settings, use_ai=True)
+        self._merge_worker = DuplicateMergeWorker(groups, settings=settings, use_ai=use_ai)
 
         def on_progress(current: int, total: int, label: str) -> None:
             progress.setMaximum(total)
@@ -684,8 +759,11 @@ class DuplicatesDialog(QtWidgets.QDialog):
 
     def _set_merge_actions_enabled(self, enabled: bool) -> None:
         self.merge_ai_btn.setEnabled(enabled)
+        self.merge_quick_btn.setEnabled(enabled)
         if self._merge_ai_action is not None:
             self._merge_ai_action.setEnabled(enabled)
+        if self._merge_quick_action is not None:
+            self._merge_quick_action.setEnabled(enabled)
 
     def _export_survivors(self) -> None:
         survivors = self._survivor_tracks()
@@ -959,6 +1037,17 @@ def _format_preview_value(value) -> str:
     return text or "—"
 
 
+def _process_log(message: str) -> None:
+    try:
+        target = Path.cwd() / ".lumbago_data" / "process.log"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with target.open("a", encoding="utf-8", errors="ignore") as handle:
+            handle.write(f"{timestamp} {message}\n")
+    except Exception:
+        pass
+
+
 class DuplicateScanSignals(QtCore.QObject):
     progress = QtCore.pyqtSignal(int, int)
     finished = QtCore.pyqtSignal(object)
@@ -1143,17 +1232,40 @@ class DuplicateMergeWorker(QtCore.QRunnable):
             total = len(self.groups)
             for idx, (label, tracks) in enumerate(self.groups, 1):
                 if self._stop:
+                    _process_log(f"[dupmerge] canceled | processed={idx - 1} total={total}")
                     break
-                group_label = label.split("(")[0].strip()
+                group_label = label
                 survivor_name = Path(tracks[0].path).name if tracks else ""
-                status = f"Przygotowywanie konsensusu AI... {group_label} {survivor_name}".strip()
+                mode_name = "AI" if self.use_ai else "quick"
+                status = f"Scalanie {mode_name}: {group_label} | {survivor_name}".strip()
                 self.signals.progress.emit(max(0, idx - 1), total, status)
-                plan = build_duplicate_merge_plan(tracks, settings=self.settings, use_ai=self.use_ai)
+                _process_log(
+                    f"[dupmerge] {idx}/{total} | group={group_label} | file={survivor_name} "
+                    f"| mode={mode_name} | stage=start"
+                )
+                plan = build_duplicate_merge_plan(
+                    tracks,
+                    settings=self.settings,
+                    use_ai=self.use_ai,
+                    logger=_process_log,
+                    group_label=group_label,
+                )
                 if plan is not None and plan.changed_fields:
                     plans.append(plan)
+                    _process_log(
+                        f"[dupmerge] {idx}/{total} | group={group_label} | mode={mode_name} "
+                        f"| stage=done | changed_fields={len(plan.changed_fields)}"
+                    )
+                else:
+                    _process_log(
+                        f"[dupmerge] {idx}/{total} | group={group_label} | mode={mode_name} "
+                        f"| stage=done | changed_fields=0"
+                    )
                 self.signals.progress.emit(idx, total, status)
+            _process_log(f"[dupmerge] finished | plans={len(plans)} total={total} | use_ai={int(self.use_ai)}")
             self.signals.finished.emit(plans)
         except Exception as exc:
+            _process_log(f"[dupmerge] failed | error={exc}")
             self.signals.failed.emit(str(exc))
 
 
