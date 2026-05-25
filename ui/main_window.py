@@ -980,6 +980,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.thread_pool = QtCore.QThreadPool.globalInstance()
         self.task_manager = BackgroundTaskManager(self)
         self._apply_app_icon()
+        self._toolbar_mode = "full"
+        self._adaptive_toolbar_buttons: list[QtWidgets.QPushButton | QtWidgets.QToolButton] = []
 
         self._build_ui()
         _debug_log("MainWindow: build_ui ok")
@@ -1089,6 +1091,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._apply_icons()
         self._setup_shortcuts()
         self._build_menu()
+        QtCore.QTimer.singleShot(0, self._refresh_responsive_ui)
         # Przywróć pozycję splittera z poprzedniej sesji
         QtCore.QTimer.singleShot(0, self._restore_ui_state)
 
@@ -1183,12 +1186,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.sidebar_toggle_btn.setToolTip("Pokaż / ukryj lewy panel")
         self.sidebar_toggle_btn.clicked.connect(self._toggle_sidebar)
         title_row.addWidget(self.sidebar_toggle_btn)
-        header_label = QtWidgets.QLabel("Przegladarka biblioteki")
-        header_label.setObjectName("SectionTitle")
-        title_row.addWidget(header_label)
-        subtitle = QtWidgets.QLabel("Smart Search + priorytet metadanych")
-        subtitle.setObjectName("DialogHint")
-        title_row.addWidget(subtitle)
+        self.header_label = QtWidgets.QLabel("Przegladarka biblioteki")
+        self.header_label.setObjectName("SectionTitle")
+        title_row.addWidget(self.header_label)
+        self.header_subtitle = QtWidgets.QLabel("Smart Search + priorytet metadanych")
+        self.header_subtitle.setObjectName("DialogHint")
+        title_row.addWidget(self.header_subtitle)
         title_row.addStretch(1)
         self.filter_toggle_btn = QtWidgets.QPushButton("🔍")
         self.filter_toggle_btn.setFixedSize(self._s(28), self._s(28))
@@ -1276,10 +1279,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.genre_input.textChanged.connect(self._apply_filters)
         row.addWidget(self.genre_input)
 
-        clear_btn = AnimatedButton("Wyczysc")
-        clear_btn.setToolTip("Wyczysc wszystkie filtry")
-        clear_btn.clicked.connect(self._clear_filters)
-        row.addWidget(clear_btn)
+        self.clear_filters_btn = AnimatedButton("Wyczysc")
+        self.clear_filters_btn.setToolTip("Wyczysc wszystkie filtry")
+        self.clear_filters_btn.clicked.connect(self._clear_filters)
+        row.addWidget(self.clear_filters_btn)
 
         self.view_toggle = QtWidgets.QComboBox()
         self.view_toggle.setObjectName("ViewToggle")
@@ -1843,6 +1846,11 @@ class MainWindow(QtWidgets.QMainWindow):
         details_action = menu.addAction("Pokaż szczegóły")
         ai_action = menu.addAction("Analiza AI")
         local_meta_action = menu.addAction("Wczytaj metadane lokalne")
+        selection_menu = menu.addMenu("Zaznaczenie")
+        selection_select_all = selection_menu.addAction("Zaznacz wszystko")
+        selection_clear = selection_menu.addAction("Wyczyść zaznaczenie")
+        selection_bulk = selection_menu.addAction("Edycja zbiorcza")
+        selection_compare = selection_menu.addAction("Porównaj tagi")
         action = menu.exec(self.grid_view.mapToGlobal(pos))
         if action == play_action:
             if not self.player:
@@ -1860,6 +1868,14 @@ class MainWindow(QtWidgets.QMainWindow):
             self._run_ai_tagger()
         if action == local_meta_action:
             self._apply_local_metadata_selected()
+        if action == selection_select_all:
+            self._select_all()
+        if action == selection_clear:
+            self._clear_selection()
+        if action == selection_bulk:
+            self._bulk_edit()
+        if action == selection_compare:
+            self._compare_tags()
 
     def _select_all(self):
         if self.view_stack.currentIndex() == 0:
@@ -1950,6 +1966,11 @@ class MainWindow(QtWidgets.QMainWindow):
             add_menu.addAction(name)
         ai_action = menu.addAction("Analiza AI")
         local_meta_action = menu.addAction("Wczytaj metadane lokalne")
+        selection_menu = menu.addMenu("Zaznaczenie")
+        selection_select_all = selection_menu.addAction("Zaznacz wszystko")
+        selection_clear = selection_menu.addAction("Wyczyść zaznaczenie")
+        selection_bulk = selection_menu.addAction("Edycja zbiorcza")
+        selection_compare = selection_menu.addAction("Porównaj tagi")
         menu.addSeparator()
         col_menu = menu.addMenu("Kolumny")
         show_all_col = col_menu.addAction("Pokaż wszystkie")
@@ -1992,6 +2013,14 @@ class MainWindow(QtWidgets.QMainWindow):
             self._run_ai_tagger()
         elif action == local_meta_action:
             self._apply_local_metadata_selected()
+        elif action == selection_select_all:
+            self._select_all()
+        elif action == selection_clear:
+            self._clear_selection()
+        elif action == selection_bulk:
+            self._bulk_edit()
+        elif action == selection_compare:
+            self._compare_tags()
         elif action == show_all_col:
             for _, col in col_actions:
                 self.table_view.setColumnHidden(col, False)
@@ -2249,6 +2278,16 @@ class MainWindow(QtWidgets.QMainWindow):
     def showEvent(self, event):
         _debug_log("MainWindow: showEvent")
         super().showEvent(event)
+        QtCore.QTimer.singleShot(0, self._refresh_responsive_ui)
+
+    def resizeEvent(self, event: QtGui.QResizeEvent) -> None:
+        super().resizeEvent(event)
+        self._refresh_responsive_ui()
+
+    def changeEvent(self, event: QtCore.QEvent) -> None:
+        super().changeEvent(event)
+        if event.type() == QtCore.QEvent.Type.WindowStateChange:
+            QtCore.QTimer.singleShot(0, self._refresh_responsive_ui)
 
     def _run_ai_tagger(self):
         tracks = self._selected_tracks()
@@ -2563,7 +2602,16 @@ class MainWindow(QtWidgets.QMainWindow):
                 )
             finally:
                 self.overwrite_existing_tags.blockSignals(False)
+        if hasattr(self, "toolbar_overwrite_action"):
+            self.toolbar_overwrite_action.blockSignals(True)
+            try:
+                self.toolbar_overwrite_action.setChecked(
+                    (self.settings.validation_policy or "aggressive") == "aggressive"
+                )
+            finally:
+                self.toolbar_overwrite_action.blockSignals(False)
         self._update_mode_pill()
+        self._refresh_responsive_ui()
 
     def _set_overwrite_existing_tags(self, checked: bool) -> None:
         policy = "aggressive" if checked else "balanced"
@@ -2646,6 +2694,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if self.content_splitter.sizes()[1] == 0:
             self.toggle_detail_btn.setText("▶")
             self._detail_title_label.hide()
+        self._refresh_responsive_ui()
 
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:
         try:
@@ -2659,6 +2708,11 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _show_message(self, text: str):
         QtWidgets.QMessageBox.information(self, "Lumbago Music AI", text)
+
+    def _toolbar_context_menu(self, pos: QtCore.QPoint) -> None:
+        if not hasattr(self, "toolbar_actions_menu"):
+            return
+        self.toolbar_actions_menu.exec(self.sender().mapToGlobal(pos))
 
     def _setup_shortcuts(self):
         QtGui.QShortcut(QtGui.QKeySequence("Space"), self, activated=self._toggle_playback)
@@ -2683,6 +2737,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.btn_settings.setIcon(icon("settings.svg"))
         self.settings_btn.setIcon(icon("settings.svg"))
         self.auto_tag_btn.setIcon(icon("magic.svg"))
+        self.actions_btn.setIcon(icon("dialog.svg"))
+        self.clear_filters_btn.setIcon(self.style().standardIcon(QtWidgets.QStyle.StandardPixmap.SP_DialogResetButton))
         self.play_btn.setIcon(icon("play.svg"))
         self.stop_btn.setIcon(icon("stop.svg"))
 
@@ -2706,6 +2762,18 @@ class MainWindow(QtWidgets.QMainWindow):
         tools.addAction("Log procesów", self._open_process_log)
         tools.addSeparator()
         tools.addAction("Sprawdź klucze API", self._open_api_key_check)
+
+        selection_menu = menu.addMenu("Zaznaczenie")
+        selection_menu.addAction("Zaznacz wszystko", self._select_all)
+        selection_menu.addAction("Wyczyść zaznaczenie", self._clear_selection)
+        selection_menu.addAction("Edycja zbiorcza", self._bulk_edit)
+        selection_menu.addAction("Porównaj tagi", self._compare_tags)
+
+        view_menu = menu.addMenu("Widok")
+        view_menu.addAction("Pokaż / ukryj panel boczny", self.sidebar_toggle_btn.click)
+        view_menu.addAction("Pokaż / ukryj filtry", self.filter_toggle_btn.click)
+        view_menu.addAction("Pokaż / ukryj DJ Player", self.dj_player_btn.click)
+        view_menu.addAction("Pokaż / ukryj panel szczegółów", self._toggle_detail_panel)
 
         help_menu = menu.addMenu("Pomoc")
         help_menu.addAction("Instrukcja użytkownika", self._open_user_guide)
@@ -2800,8 +2868,12 @@ class MainWindow(QtWidgets.QMainWindow):
     def _build_toolbar(self) -> QtWidgets.QFrame:
         frame = QtWidgets.QFrame()
         frame.setObjectName("Toolbar")
+        frame.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
+        frame.customContextMenuRequested.connect(self._toolbar_context_menu)
         row = QtWidgets.QHBoxLayout(frame)
         row.setContentsMargins(12, 8, 12, 8)
+        row.setSpacing(10)
+        self.toolbar_row = row
         self.title_label = QtWidgets.QLabel("Lumbago Music AI")
         font = self.title_label.font()
         font.setPointSize(14)
@@ -2814,7 +2886,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.mode_pill.setObjectName("ModePill")
         self._update_mode_pill()
         row.addWidget(self.mode_pill)
-        row.addStretch(1)
 
         self.overwrite_existing_tags = QtWidgets.QCheckBox("Nadpisuj tagi")
         self.overwrite_existing_tags.setToolTip(
@@ -2822,37 +2893,17 @@ class MainWindow(QtWidgets.QMainWindow):
         )
         self.overwrite_existing_tags.toggled.connect(self._set_overwrite_existing_tags)
         row.addWidget(self.overwrite_existing_tags)
+        row.addStretch(1)
 
         self.settings_btn = AnimatedButton("Ustawienia")
         self.settings_btn.setToolTip("Konfiguracja aplikacji i kluczy API")
         self.settings_btn.clicked.connect(self._open_settings)
         row.addWidget(self.settings_btn)
 
-        self.reset_library_btn = AnimatedButton("Wyczyść bibliotekę")
-        self.reset_library_btn.setObjectName("DangerAction")
-        self.reset_library_btn.setToolTip("Usuń wszystkie utwory, playlisty i cache z bazy")
-        self.reset_library_btn.clicked.connect(self._reset_library)
-        row.addWidget(self.reset_library_btn)
-
-        self.select_all_btn = AnimatedButton("Zaznacz wszystko")
-        self.select_all_btn.setToolTip("Zaznacz wszystkie utwory na liście/siatce")
-        self.select_all_btn.clicked.connect(self._select_all)
-        row.addWidget(self.select_all_btn)
-
-        self.clear_sel_btn = AnimatedButton("Wyczyść zaznaczenie")
-        self.clear_sel_btn.setToolTip("Odznacz wszystkie utwory")
-        self.clear_sel_btn.clicked.connect(self._clear_selection)
-        row.addWidget(self.clear_sel_btn)
-
-        self.bulk_edit_btn = AnimatedButton("Edycja zbiorcza")
-        self.bulk_edit_btn.setToolTip("Masowa edycja tagów dla wielu utworów")
-        self.bulk_edit_btn.clicked.connect(self._bulk_edit)
-        row.addWidget(self.bulk_edit_btn)
-
-        self.compare_btn = AnimatedButton("Porównaj tagi")
-        self.compare_btn.setToolTip("Porównaj stare i nowe tagi dla utworów")
-        self.compare_btn.clicked.connect(self._compare_tags)
-        row.addWidget(self.compare_btn)
+        self.actions_btn = QtWidgets.QToolButton()
+        self.actions_btn.setPopupMode(QtWidgets.QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.actions_btn.setToolTip("Dodatkowe akcje biblioteki, zaznaczenia i narzędzia")
+        row.addWidget(self.actions_btn)
 
         self.auto_tag_btn = AnimatedButton("Autotagowanie")
         self.auto_tag_btn.setObjectName("AutoTagSearch")
@@ -2860,6 +2911,134 @@ class MainWindow(QtWidgets.QMainWindow):
         self.auto_tag_btn.clicked.connect(self._run_ai_tagger)
         self.auto_tag_btn.enable_pulse()
         row.addWidget(self.auto_tag_btn)
+        self._build_toolbar_actions_menu()
+        self._register_toolbar_button(self.settings_btn, "Ustawienia", "Ustaw.")
+        self._register_toolbar_button(self.actions_btn, "Akcje", "Akcje", icon_only=True)
+        self._register_toolbar_button(self.auto_tag_btn, "Autotagowanie", "Autotag", icon_only=True)
         return frame
+
+    def _register_toolbar_button(
+        self,
+        button: QtWidgets.QPushButton | QtWidgets.QToolButton,
+        full_text: str,
+        medium_text: str | None = None,
+        *,
+        icon_only: bool = False,
+    ) -> None:
+        button._full_text = full_text  # type: ignore[attr-defined]
+        button._medium_text = medium_text or full_text  # type: ignore[attr-defined]
+        button._icon_only = icon_only  # type: ignore[attr-defined]
+        self._adaptive_toolbar_buttons.append(button)
+
+    def _build_toolbar_actions_menu(self) -> None:
+        self.toolbar_actions_menu = QtWidgets.QMenu(self)
+
+        self.toolbar_overwrite_action = self.toolbar_actions_menu.addAction("Nadpisuj istniejące tagi")
+        self.toolbar_overwrite_action.setCheckable(True)
+        self.toolbar_overwrite_action.toggled.connect(self._set_overwrite_existing_tags)
+        self.toolbar_actions_menu.addSeparator()
+
+        selection_menu = self.toolbar_actions_menu.addMenu("Zaznaczenie")
+        selection_menu.addAction("Zaznacz wszystko", self._select_all)
+        selection_menu.addAction("Wyczyść zaznaczenie", self._clear_selection)
+
+        batch_menu = self.toolbar_actions_menu.addMenu("Operacje zbiorcze")
+        batch_menu.addAction("Edycja zbiorcza", self._bulk_edit)
+        batch_menu.addAction("Porównaj tagi", self._compare_tags)
+        batch_menu.addAction("Metadane lokalne", self._apply_local_metadata_selected)
+
+        tools_menu = self.toolbar_actions_menu.addMenu("Narzędzia")
+        tools_menu.addAction("Wyszukaj duplikaty", self._open_duplicates)
+        tools_menu.addAction("Zmiana nazw", self._open_renamer)
+        tools_menu.addAction("Log procesów", self._open_process_log)
+
+        self.toolbar_actions_menu.addSeparator()
+        reset_action = self.toolbar_actions_menu.addAction("Wyczyść bibliotekę", self._reset_library)
+        reset_action.setIcon(self.style().standardIcon(QtWidgets.QStyle.StandardPixmap.SP_TrashIcon))
+        self.actions_btn.setMenu(self.toolbar_actions_menu)
+
+    def _set_toolbar_button_compact(
+        self,
+        button: QtWidgets.QPushButton | QtWidgets.QToolButton,
+        compact: bool,
+        text: str,
+    ) -> None:
+        button.setText(text)
+        if isinstance(button, QtWidgets.QToolButton):
+            style = (
+                QtCore.Qt.ToolButtonStyle.ToolButtonIconOnly
+                if compact
+                else QtCore.Qt.ToolButtonStyle.ToolButtonTextBesideIcon
+            )
+            button.setToolButtonStyle(style)
+        if compact:
+            button.setMinimumWidth(self._s(40))
+            button.setMaximumWidth(self._s(44))
+        else:
+            button.setMinimumWidth(0)
+            button.setMaximumWidth(16777215)
+        button.updateGeometry()
+
+    def _refresh_responsive_ui(self) -> None:
+        if not hasattr(self, "_main_column_widget"):
+            return
+        width = self._main_column_widget.width() or self.width()
+        if width >= self._s(1320):
+            mode = "full"
+        elif width >= self._s(1080):
+            mode = "medium"
+        else:
+            mode = "compact"
+        self._toolbar_mode = mode
+
+        self.title_label.setText("Lumbago Music AI" if mode == "full" else "Lumbago")
+        provider = getattr(getattr(self, "settings", None), "cloud_ai_provider", None) or "local"
+        if provider == "local":
+            self.mode_pill.setText("Tryb mieszany (lokalny)" if mode == "full" else "Tryb lokalny")
+        else:
+            self.mode_pill.setText(f"Tryb API • {provider}" if mode != "compact" else f"API • {provider}")
+        self.mode_pill.setToolTip(f"Aktywny provider AI: {provider}")
+
+        show_checkbox = mode != "compact"
+        self.overwrite_existing_tags.setVisible(show_checkbox)
+        self.overwrite_existing_tags.setText("Nadpisuj tagi" if mode == "full" else "Nadpisuj")
+
+        for button in self._adaptive_toolbar_buttons:
+            text = button._full_text if mode == "full" else button._medium_text  # type: ignore[attr-defined]
+            compact = mode == "compact" and bool(button._icon_only)  # type: ignore[attr-defined]
+            self._set_toolbar_button_compact(button, compact, "" if compact else text)
+
+        if hasattr(self, "header_label"):
+            self.header_label.setText("Przegladarka biblioteki" if mode == "full" else "Biblioteka")
+        if hasattr(self, "header_subtitle"):
+            self.header_subtitle.setVisible(mode == "full")
+        if hasattr(self, "search_input"):
+            self.search_input.setPlaceholderText("Szukaj metadanych..." if mode == "full" else "Szukaj...")
+        if hasattr(self, "search_category"):
+            self.search_category.setMinimumWidth(self._s(170 if mode == "full" else 120 if mode == "medium" else 92))
+        if hasattr(self, "bpm_min"):
+            self.bpm_min.setPrefix("BPM min " if mode == "full" else "Min ")
+        if hasattr(self, "bpm_max"):
+            self.bpm_max.setPrefix("BPM max " if mode == "full" else "Max ")
+        if hasattr(self, "key_input"):
+            self.key_input.setPlaceholderText("Tonacja" if mode != "compact" else "Key")
+        if hasattr(self, "genre_input"):
+            self.genre_input.setPlaceholderText("Gatunek" if mode != "compact" else "Genre")
+        if hasattr(self, "clear_filters_btn"):
+            clear_compact = mode == "compact"
+            self.clear_filters_btn.setText("" if clear_compact else "Wyczysc")
+            self.clear_filters_btn.setMinimumWidth(self._s(40 if clear_compact else 110))
+            self.clear_filters_btn.setMaximumWidth(self._s(44) if clear_compact else 16777215)
+
+        sidebar_auto_threshold = self._s(1180)
+        auto_collapsed = getattr(self, "_sidebar_auto_collapsed", False)
+        if width < sidebar_auto_threshold and self.sidebar_toggle_btn.isChecked():
+            self._sidebar_auto_collapsed = True
+            self.sidebar_toggle_btn.setChecked(False)
+            self._toggle_sidebar()
+        elif width >= sidebar_auto_threshold and auto_collapsed and not self.sidebar_toggle_btn.isChecked():
+            self._sidebar_auto_collapsed = False
+            self.sidebar_toggle_btn.setChecked(True)
+            self._toggle_sidebar()
 
 
