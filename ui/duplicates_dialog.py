@@ -197,6 +197,7 @@ class DuplicatesDialog(QtWidgets.QDialog):
         self._merge_quick_action: QtGui.QAction | None = None
         self._survivor_action: QtGui.QAction | None = None
         self._merge_worker: DuplicateMergeWorker | None = None
+        self._selection_shortcuts: list[QtGui.QShortcut] = []
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -304,6 +305,8 @@ class DuplicatesDialog(QtWidgets.QDialog):
         header.sectionClicked.connect(self._handle_header_click)
         header.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
         header.customContextMenuRequested.connect(self._show_column_menu)
+        self.tree.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
+        self.tree.customContextMenuRequested.connect(self._show_tree_context_menu)
         self.tree.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.ExtendedSelection)
         self.tree.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
         layout.addWidget(self.tree, 1)
@@ -345,6 +348,23 @@ class DuplicatesDialog(QtWidgets.QDialog):
         self._reverse_group_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+Shift+I"), self)
         self._reverse_group_shortcut.setContext(QtCore.Qt.ShortcutContext.WindowShortcut)
         self._reverse_group_shortcut.activated.connect(self._reverse_group_selection)
+        self._bind_selection_shortcuts()
+
+    def _bind_selection_shortcuts(self) -> None:
+        bindings = [
+            ("Ctrl+Alt+N", self._select_newest_tracks),
+            ("Ctrl+Alt+F", self._select_shortest_filenames),
+            ("Ctrl+Alt+L", self._select_largest_tracks),
+            ("Ctrl+Alt+Shift+L", self._select_smallest_tracks),
+            ("Ctrl+Alt+P", self._select_highest_play_count_tracks),
+            ("Ctrl+Alt+Shift+P", self._select_lowest_play_count_tracks),
+            ("Ctrl+Alt+C", self._select_most_complete_tracks),
+        ]
+        for keyseq, callback in bindings:
+            shortcut = QtGui.QShortcut(QtGui.QKeySequence(keyseq), self)
+            shortcut.setContext(QtCore.Qt.ShortcutContext.WindowShortcut)
+            shortcut.activated.connect(callback)
+            self._selection_shortcuts.append(shortcut)
 
     def _build_actions_menu(self) -> QtWidgets.QMenu:
         menu = QtWidgets.QMenu(self)
@@ -392,8 +412,13 @@ class DuplicatesDialog(QtWidgets.QDialog):
         select_menu.addSeparator()
         select_menu.addAction("Zaznacz największy rozmiar", self._select_largest_tracks)
         select_menu.addAction("Odznacz największy rozmiar", lambda: self._select_largest_tracks(False))
+        select_menu.addAction("Zaznacz najmniejszy rozmiar", self._select_smallest_tracks)
+        select_menu.addAction("Odznacz najmniejszy rozmiar", lambda: self._select_smallest_tracks(False))
+        select_menu.addSeparator()
         select_menu.addAction("Zaznacz najwyższy DJ play count", self._select_highest_play_count_tracks)
         select_menu.addAction("Odznacz najwyższy DJ play count", lambda: self._select_highest_play_count_tracks(False))
+        select_menu.addAction("Zaznacz najniższy DJ play count", self._select_lowest_play_count_tracks)
+        select_menu.addAction("Odznacz najniższy DJ play count", lambda: self._select_lowest_play_count_tracks(False))
         select_menu.addSeparator()
         select_menu.addAction("Zaznacz najbardziej kompletne dane", self._select_most_complete_tracks)
         select_menu.addAction("Odznacz najbardziej kompletne dane", lambda: self._select_most_complete_tracks(False))
@@ -512,6 +537,71 @@ class DuplicatesDialog(QtWidgets.QDialog):
                     else:
                         action.setChecked(True)
                 break
+
+    def _show_tree_context_menu(self, pos) -> None:
+        item = self.tree.itemAt(pos)
+        parents, files = self._context_targets_for_item(item)
+        if not parents and not files:
+            return
+
+        menu = QtWidgets.QMenu(self)
+
+        if files:
+            files_menu = menu.addMenu("Pliki")
+            files_menu.addAction(
+                "Zaznacz plik(i)",
+                lambda: self._set_items_checked(files, QtCore.Qt.CheckState.Checked),
+            )
+            files_menu.addAction(
+                "Odznacz plik(i)",
+                lambda: self._set_items_checked(files, QtCore.Qt.CheckState.Unchecked),
+            )
+
+        if parents:
+            group_menu = menu.addMenu("Grupy")
+            group_menu.addAction(
+                "Zaznacz grupę/grupy",
+                lambda: self._set_group_items_checked(parents, QtCore.Qt.CheckState.Checked),
+            )
+            group_menu.addAction(
+                "Odznacz grupę/grupy",
+                lambda: self._set_group_items_checked(parents, QtCore.Qt.CheckState.Unchecked),
+            )
+            group_menu.addSeparator()
+            group_menu.addAction("Zaznacz duplikaty w grupie/grupach", lambda: self._mark_duplicates(parents))
+            group_menu.addAction("Wyczyść zaznaczenie w grupie/grupach", lambda: self._clear_marks(parents))
+            group_menu.addAction("Odwróć zaznaczenie w grupie/grupach", lambda: self._reverse_selection(parents))
+
+            smart_menu = group_menu.addMenu("Inteligentny wybór")
+            smart_menu.addAction("Najnowsze", lambda: self._select_newest_tracks_context(parents, True))
+            smart_menu.addAction("Odznacz najnowsze", lambda: self._select_newest_tracks_context(parents, False))
+            smart_menu.addSeparator()
+            smart_menu.addAction("Najkrótsza nazwa pliku", lambda: self._select_shortest_filenames_context(parents, True))
+            smart_menu.addAction("Odznacz najkrótszą nazwę", lambda: self._select_shortest_filenames_context(parents, False))
+            smart_menu.addSeparator()
+            smart_menu.addAction("Największy rozmiar", lambda: self._select_largest_tracks_context(parents, True))
+            smart_menu.addAction("Odznacz największy rozmiar", lambda: self._select_largest_tracks_context(parents, False))
+            smart_menu.addAction("Najmniejszy rozmiar", lambda: self._select_smallest_tracks_context(parents, True))
+            smart_menu.addAction("Odznacz najmniejszy rozmiar", lambda: self._select_smallest_tracks_context(parents, False))
+            smart_menu.addAction("Najwyższy DJ play count", lambda: self._select_highest_play_count_context(parents, True))
+            smart_menu.addAction("Odznacz najwyższy DJ play count", lambda: self._select_highest_play_count_context(parents, False))
+            smart_menu.addAction("Najniższy DJ play count", lambda: self._select_lowest_play_count_context(parents, True))
+            smart_menu.addAction("Odznacz najniższy DJ play count", lambda: self._select_lowest_play_count_context(parents, False))
+            smart_menu.addSeparator()
+            smart_menu.addAction("Najbardziej kompletne dane", lambda: self._select_most_complete_context(parents, True))
+            smart_menu.addAction("Odznacz najbardziej kompletne dane", lambda: self._select_most_complete_context(parents, False))
+
+        actions_menu = menu.addMenu("Akcje")
+        context_paths = self._context_paths_for_items(files or self._all_child_items(parents))
+        actions_menu.addAction("Przenieś zaznaczone", lambda: self._move_paths(context_paths))
+        actions_menu.addAction("Usuń zaznaczone", lambda: self._delete_paths(context_paths))
+        actions_menu.addSeparator()
+        actions_menu.addAction("Scal metadane lokalnie", lambda: self._merge_context_groups(parents, use_ai=False))
+        actions_menu.addAction("Szybkie scalanie bez AI", lambda: self._merge_context_groups(parents, use_ai=False))
+        actions_menu.addAction("Scal metadane (AI)", lambda: self._merge_context_groups(parents, use_ai=True))
+        actions_menu.addAction("Ocalałe...", self._export_survivors)
+
+        menu.exec(self.tree.viewport().mapToGlobal(pos))
 
     def _handle_header_click(self, column: int) -> None:
         if self._sort_column == column:
@@ -1020,9 +1110,9 @@ class DuplicatesDialog(QtWidgets.QDialog):
         adjusted = -float(value) if self._sort_order == QtCore.Qt.SortOrder.DescendingOrder else float(value)
         return (0, adjusted)
 
-    def _mark_duplicates(self) -> None:
-        for i in range(self.tree.topLevelItemCount()):
-            parent = self.tree.topLevelItem(i)
+    def _mark_duplicates(self, parents: list[QtWidgets.QTreeWidgetItem] | None = None) -> None:
+        targets = parents or [self.tree.topLevelItem(i) for i in range(self.tree.topLevelItemCount())]
+        for parent in targets:
             if parent.childCount() <= 1:
                 continue
             parent.child(0).setCheckState(0, QtCore.Qt.CheckState.Unchecked)
@@ -1038,9 +1128,30 @@ class DuplicatesDialog(QtWidgets.QDialog):
             ),
         )
 
+    def _select_newest_tracks_context(self, parents: list[QtWidgets.QTreeWidgetItem], checked: bool = True) -> None:
+        self._select_best_track(
+            checked=checked,
+            parents=parents,
+            score_fn=lambda track: (
+                track.file_mtime if isinstance(track.file_mtime, (int, float)) else 0.0,
+                track.date_modified.timestamp() if getattr(track, "date_modified", None) else 0.0,
+            ),
+        )
+
     def _select_shortest_filenames(self, checked: bool = True) -> None:
         self._select_best_track(
             checked=checked,
+            score_fn=lambda track: (-len(Path(track.path).name), -(len(track.path))),
+        )
+
+    def _select_shortest_filenames_context(
+        self,
+        parents: list[QtWidgets.QTreeWidgetItem],
+        checked: bool = True,
+    ) -> None:
+        self._select_best_track(
+            checked=checked,
+            parents=parents,
             score_fn=lambda track: (-len(Path(track.path).name), -(len(track.path))),
         )
 
@@ -1049,6 +1160,35 @@ class DuplicatesDialog(QtWidgets.QDialog):
             checked=checked,
             score_fn=lambda track: (
                 track.file_size if isinstance(track.file_size, int) else _safe_size(track.path) or -1,
+                track.file_mtime if isinstance(track.file_mtime, (int, float)) else 0.0,
+            ),
+        )
+
+    def _select_largest_tracks_context(self, parents: list[QtWidgets.QTreeWidgetItem], checked: bool = True) -> None:
+        self._select_best_track(
+            checked=checked,
+            parents=parents,
+            score_fn=lambda track: (
+                track.file_size if isinstance(track.file_size, int) else _safe_size(track.path) or -1,
+                track.file_mtime if isinstance(track.file_mtime, (int, float)) else 0.0,
+            ),
+        )
+
+    def _select_smallest_tracks(self, checked: bool = True) -> None:
+        self._select_best_track(
+            checked=checked,
+            score_fn=lambda track: (
+                -1 * (track.file_size if isinstance(track.file_size, int) else _safe_size(track.path) or -1),
+                track.file_mtime if isinstance(track.file_mtime, (int, float)) else 0.0,
+            ),
+        )
+
+    def _select_smallest_tracks_context(self, parents: list[QtWidgets.QTreeWidgetItem], checked: bool = True) -> None:
+        self._select_best_track(
+            checked=checked,
+            parents=parents,
+            score_fn=lambda track: (
+                -1 * (track.file_size if isinstance(track.file_size, int) else _safe_size(track.path) or -1),
                 track.file_mtime if isinstance(track.file_mtime, (int, float)) else 0.0,
             ),
         )
@@ -1062,15 +1202,69 @@ class DuplicatesDialog(QtWidgets.QDialog):
             ),
         )
 
+    def _select_highest_play_count_tracks_context(
+        self,
+        parents: list[QtWidgets.QTreeWidgetItem],
+        checked: bool = True,
+    ) -> None:
+        self._select_best_track(
+            checked=checked,
+            parents=parents,
+            score_fn=lambda track: (
+                track.play_count if isinstance(track.play_count, int) else 0,
+                track.file_mtime if isinstance(track.file_mtime, (int, float)) else 0.0,
+            ),
+        )
+
+    def _select_lowest_play_count_tracks(self, checked: bool = True) -> None:
+        self._select_best_track(
+            checked=checked,
+            score_fn=lambda track: (
+                -1 * (track.play_count if isinstance(track.play_count, int) else 0),
+                track.file_mtime if isinstance(track.file_mtime, (int, float)) else 0.0,
+            ),
+        )
+
+    def _select_lowest_play_count_tracks_context(
+        self,
+        parents: list[QtWidgets.QTreeWidgetItem],
+        checked: bool = True,
+    ) -> None:
+        self._select_best_track(
+            checked=checked,
+            parents=parents,
+            score_fn=lambda track: (
+                -1 * (track.play_count if isinstance(track.play_count, int) else 0),
+                track.file_mtime if isinstance(track.file_mtime, (int, float)) else 0.0,
+            ),
+        )
+
     def _select_most_complete_tracks(self, checked: bool = True) -> None:
         self._select_best_track(
             checked=checked,
             score_fn=lambda track: self._track_completeness_score(track),
         )
 
-    def _select_best_track(self, *, checked: bool, score_fn) -> None:
-        for i in range(self.tree.topLevelItemCount()):
-            parent = self.tree.topLevelItem(i)
+    def _select_most_complete_context(
+        self,
+        parents: list[QtWidgets.QTreeWidgetItem],
+        checked: bool = True,
+    ) -> None:
+        self._select_best_track(
+            checked=checked,
+            parents=parents,
+            score_fn=lambda track: self._track_completeness_score(track),
+        )
+
+    def _select_best_track(
+        self,
+        *,
+        checked: bool,
+        score_fn,
+        parents: list[QtWidgets.QTreeWidgetItem] | None = None,
+    ) -> None:
+        targets = parents or [self.tree.topLevelItem(i) for i in range(self.tree.topLevelItemCount())]
+        for parent in targets:
             if parent.childCount() < 1:
                 continue
             best_child = None
@@ -1092,9 +1286,9 @@ class DuplicatesDialog(QtWidgets.QDialog):
                 else:
                     best_child.setCheckState(0, QtCore.Qt.CheckState.Unchecked)
 
-    def _reverse_selection(self) -> None:
-        for i in range(self.tree.topLevelItemCount()):
-            parent = self.tree.topLevelItem(i)
+    def _reverse_selection(self, parents: list[QtWidgets.QTreeWidgetItem] | None = None) -> None:
+        targets = parents or [self.tree.topLevelItem(i) for i in range(self.tree.topLevelItemCount())]
+        for parent in targets:
             for idx in range(parent.childCount()):
                 child = parent.child(idx)
                 current = child.checkState(0)
@@ -1105,9 +1299,9 @@ class DuplicatesDialog(QtWidgets.QDialog):
                     else QtCore.Qt.CheckState.Checked,
                 )
 
-    def _clear_marks(self) -> None:
-        for i in range(self.tree.topLevelItemCount()):
-            parent = self.tree.topLevelItem(i)
+    def _clear_marks(self, parents: list[QtWidgets.QTreeWidgetItem] | None = None) -> None:
+        targets = parents or [self.tree.topLevelItem(i) for i in range(self.tree.topLevelItemCount())]
+        for parent in targets:
             for idx in range(parent.childCount()):
                 parent.child(idx).setCheckState(0, QtCore.Qt.CheckState.Unchecked)
 
@@ -1173,6 +1367,103 @@ class DuplicatesDialog(QtWidgets.QDialog):
                     paths.append(path)
         return paths
 
+    def _context_targets_for_item(
+        self, item: QtWidgets.QTreeWidgetItem | None
+    ) -> tuple[list[QtWidgets.QTreeWidgetItem], list[QtWidgets.QTreeWidgetItem]]:
+        selected = self.tree.selectedItems()
+        if item is None:
+            parents = [it for it in selected if it.parent() is None]
+            files = [it for it in selected if it.parent() is not None]
+            return self._unique_items(parents), self._unique_items(files)
+
+        if item.parent() is None:
+            if item in selected:
+                parents = [it for it in selected if it.parent() is None] or [item]
+            else:
+                parents = [item]
+            files = self._all_child_items(parents)
+            return self._unique_items(parents), self._unique_items(files)
+
+        parent = item.parent()
+        if item in selected:
+            files = [it for it in selected if it.parent() == parent]
+            if not files:
+                files = [item]
+        else:
+            files = [item]
+        return [parent], self._unique_items(files)
+
+    def _all_child_items(self, parents: list[QtWidgets.QTreeWidgetItem]) -> list[QtWidgets.QTreeWidgetItem]:
+        children: list[QtWidgets.QTreeWidgetItem] = []
+        for parent in parents:
+            for idx in range(parent.childCount()):
+                children.append(parent.child(idx))
+        return self._unique_items(children)
+
+    def _context_paths_for_items(self, items: list[QtWidgets.QTreeWidgetItem]) -> list[str]:
+        paths: list[str] = []
+        for item in items:
+            path = item.data(0, QtCore.Qt.ItemDataRole.UserRole)
+            if path and path not in paths:
+                paths.append(path)
+        return paths
+
+    def _set_items_checked(
+        self,
+        items: list[QtWidgets.QTreeWidgetItem],
+        state: QtCore.Qt.CheckState,
+    ) -> None:
+        for item in items:
+            item.setCheckState(0, state)
+
+    def _set_group_items_checked(
+        self,
+        parents: list[QtWidgets.QTreeWidgetItem],
+        state: QtCore.Qt.CheckState,
+    ) -> None:
+        for parent in parents:
+            for idx in range(parent.childCount()):
+                parent.child(idx).setCheckState(0, state)
+
+    def _merge_context_groups(self, parents: list[QtWidgets.QTreeWidgetItem], *, use_ai: bool) -> None:
+        if not parents:
+            return
+        groups = [
+            (
+                parent.text(0),
+                [
+                    track
+                    for item in self._group_child_items(parent)
+                    if (track := self._track_map.get(item.data(0, QtCore.Qt.ItemDataRole.UserRole))) is not None
+                ],
+            )
+            for parent in parents
+        ]
+        groups = [(label, tracks) for label, tracks in groups if len(tracks) > 1]
+        if not groups:
+            return
+        try:
+            from core.config import load_settings
+
+            settings = load_settings()
+        except Exception:
+            settings = None
+        self._start_merge_worker(groups, settings, use_ai=use_ai)
+
+    def _group_child_items(self, parent: QtWidgets.QTreeWidgetItem) -> list[QtWidgets.QTreeWidgetItem]:
+        return [parent.child(idx) for idx in range(parent.childCount())]
+
+    def _unique_items(self, items: list[QtWidgets.QTreeWidgetItem]) -> list[QtWidgets.QTreeWidgetItem]:
+        unique: list[QtWidgets.QTreeWidgetItem] = []
+        seen: set[int] = set()
+        for item in items:
+            key = id(item)
+            if key in seen:
+                continue
+            seen.add(key)
+            unique.append(item)
+        return unique
+
     def _move_selected(self) -> None:
         paths = self._selected_paths()
         if not paths:
@@ -1193,6 +1484,44 @@ class DuplicatesDialog(QtWidgets.QDialog):
         if history:
             update_track_paths_bulk(history)
             self.accept()
+
+    def _move_paths(self, paths: list[str]) -> None:
+        if not paths:
+            return
+        target_dir = QtWidgets.QFileDialog.getExistingDirectory(self, "Wybierz folder docelowy")
+        if not target_dir:
+            return
+        history: list[dict[str, str]] = []
+        for path in paths:
+            src = Path(path)
+            if not src.exists():
+                continue
+            dest = Path(target_dir) / src.name
+            if dest.exists():
+                dest = Path(target_dir) / f"dup_{src.name}"
+            shutil.move(str(src), str(dest))
+            history.append({"old": str(src), "new": str(dest)})
+        if history:
+            update_track_paths_bulk(history)
+            self._apply_view_filters()
+
+    def _delete_paths(self, paths: list[str]) -> None:
+        if not paths:
+            return
+        confirm = QtWidgets.QMessageBox.question(
+            self,
+            "Potwierdzenie",
+            "Czy na pewno usunąć zaznaczone pliki z dysku i bazy?",
+        )
+        if confirm != QtWidgets.QMessageBox.StandardButton.Yes:
+            return
+        for path in paths:
+            try:
+                Path(path).unlink(missing_ok=True)
+            except Exception:
+                continue
+        delete_tracks_by_paths(paths)
+        self._apply_view_filters()
 
     def _delete_selected(self) -> None:
         paths = self._selected_paths()
