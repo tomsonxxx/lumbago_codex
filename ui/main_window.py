@@ -5,6 +5,7 @@ import json
 from datetime import datetime
 import os
 import re
+import threading
 from copy import deepcopy
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError, as_completed
 
@@ -647,6 +648,8 @@ class AutoTagWorker(QtCore.QRunnable):
         self.settings = settings
         self.signals = AutoTagWorkerSignals()
         self._stop_requested = False
+        self._processed_count = 0
+        self._progress_lock = threading.Lock()
 
     def stop(self) -> None:
         self._stop_requested = True
@@ -658,7 +661,7 @@ class AutoTagWorker(QtCore.QRunnable):
         total = len(self.tracks)
 
         autotagger = UnifiedAutoTagger(self.settings, logger=_process_log)
-        autotagger.preload_ai_batch(self.tracks)
+        self._emit_stage("-", "Przygotowanie źródeł i analizy...")
         metadata_filler = AutoMetadataFiller(
             getattr(self.settings, "musicbrainz_app_name", None),
             validation_policy=getattr(self.settings, "validation_policy", None),
@@ -710,6 +713,7 @@ class AutoTagWorker(QtCore.QRunnable):
                     tags_changed = before.tags != track.tags
 
                     if fields_to_write:
+                        self._emit_stage(Path(track.path).name, "Zapis tagów do pliku i bazy...")
                         old_values = {
                             name: (None if getattr(before, name, None) is None else str(getattr(before, name, None)))
                             for name in fields_to_write
@@ -759,6 +763,8 @@ class AutoTagWorker(QtCore.QRunnable):
                     detail = "Wystąpił błąd podczas autotagowania tego utworu."
 
                 processed += 1
+                with self._progress_lock:
+                    self._processed_count = processed
                 track_name = Path(track.path).name if track is not None else "-"
                 self.signals.progress.emit(processed, total, track_name, detail)
 
@@ -773,9 +779,10 @@ class AutoTagWorker(QtCore.QRunnable):
         recognition_pipeline: RecognitionPipelineV2,
     ) -> dict[str, object]:
         before = deepcopy(track)
+        self._emit_stage(Path(track.path).name, "Lokalne metadane i biblioteka...")
         metadata_report: MetadataFillReport | None = None
         try:
-            metadata_report = metadata_filler.fill_missing_with_report(track, "mix")
+            metadata_report = metadata_filler.fill_missing_with_report(track, "offline")
         except Exception:
             metadata_report = None
         autotag_summary = self._run_single_track(
@@ -806,6 +813,7 @@ class AutoTagWorker(QtCore.QRunnable):
         refresh_existing: bool,
     ) -> dict[str, int | str | None]:
         path_obj = Path(track.path)
+        self._emit_stage(path_obj.name, "Start analizy utworu...")
         _process_log(f"[autotag] file={path_obj.name} | fn=_run_single_track | stage=start")
         if refresh_existing:
             try:
@@ -823,6 +831,7 @@ class AutoTagWorker(QtCore.QRunnable):
         # Dzięki temu recognize_track() poniżej trafia w cache zamiast uruchamiać fpcalc drugi raz.
         if track.fingerprint is None:
             try:
+                self._emit_stage(path_obj.name, "Fingerprint audio...")
                 _fp = recognition_pipeline.recognizer.fingerprint(path_obj)
                 if _fp:
                     track.fingerprint = _fp[1]
@@ -849,6 +858,7 @@ class AutoTagWorker(QtCore.QRunnable):
         )
 
         # Krok 3: pipeline metadanych (korzysta z cache fingerprint z kroku 1).
+        self._emit_stage(path_obj.name, "Rozpoznawanie i źródła metadanych...")
         _process_log(f"[autotag] file={path_obj.name} | fn=_run_single_track | stage=recognition_pipeline")
         recognition_result = recognition_pipeline.recognize_track(
             track,
@@ -856,8 +866,10 @@ class AutoTagWorker(QtCore.QRunnable):
             query_track=baseline_track,
         )
         _merge_recognition_repairs(track, recognition_result.track)
+        self._emit_stage(path_obj.name, "AI i źródła muzyczne...")
         _process_log(f"[autotag] file={path_obj.name} | fn=_run_single_track | stage=unified_autotagger")
         enriched = autotagger.enrich_track(track)
+        self._emit_stage(path_obj.name, "Konsensus metadanych...")
         _process_log(f"[autotag] file={path_obj.name} | fn=_run_single_track | stage=metadata_consensus")
         resolved = metadata_pipeline.resolve_track(
             baseline_track=baseline_track,
@@ -871,6 +883,7 @@ class AutoTagWorker(QtCore.QRunnable):
             setattr(track, field_name, getattr(resolved.track, field_name, None))
 
         # Krok 4: zbierz wyniki analizy audio (zazwyczaj już gotowe, bo pipeline trwał dłużej).
+        self._emit_stage(path_obj.name, "Domykanie analizy audio...")
         detected_key = None
         detected_bpm = None
         detected_energy = None
@@ -938,6 +951,11 @@ class AutoTagWorker(QtCore.QRunnable):
             ),
             "recognition_result": recognition_result,
         }
+
+    def _emit_stage(self, track_name: str, detail: str) -> None:
+        with self._progress_lock:
+            current = self._processed_count
+        self.signals.progress.emit(current, len(self.tracks), track_name, detail)
 
     def _fields_requiring_file_sync(self, track: Track) -> list[str]:
         try:

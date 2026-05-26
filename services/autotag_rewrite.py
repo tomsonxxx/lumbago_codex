@@ -4,6 +4,7 @@ from dataclasses import dataclass, field, replace
 from hashlib import md5
 from pathlib import Path, PureWindowsPath
 import re
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from time import perf_counter
 from typing import Any, Callable
@@ -76,6 +77,8 @@ class UnifiedAutoTagger:
         self.settings = settings
         self._logger = logger
         self._ai_batch_cache: dict[str, AnalysisResult] = {}
+        self._ai_tagger: MultiAiTagger | None = None
+        self._ai_lock = threading.Lock()
 
     def preload_ai_batch(self, tracks: list[Track]) -> None:
         """Run batch AI tagging for all tracks upfront; results cached by path."""
@@ -557,7 +560,7 @@ class UnifiedAutoTagger:
         if cached is not None and (cached.confidence or 0.0) >= 0.5:
             result = cached
         else:
-            tagger = self._build_multi_ai_tagger()
+            tagger = self._get_multi_ai_tagger()
             if tagger is None:
                 if cached is None:
                     return None
@@ -615,6 +618,12 @@ class UnifiedAutoTagger:
             remixer=result.remixer or track.remixer,
             tags=tags,
         )
+
+    def _get_multi_ai_tagger(self) -> MultiAiTagger | None:
+        with self._ai_lock:
+            if self._ai_tagger is None:
+                self._ai_tagger = self._build_multi_ai_tagger()
+            return self._ai_tagger
 
     def _search_lrclib(self, track: Track) -> Candidate | None:
         track = _track_with_filename_identity(track)
@@ -697,7 +706,7 @@ class UnifiedAutoTagger:
 
     def _build_multi_ai_tagger(self) -> MultiAiTagger | None:
         taggers: list[CloudAiTagger] = []
-        for provider in ("openai", "gemini", "grok", "deepseek"):
+        for provider in self._configured_ai_providers():
             api_key, base_url, model = _resolve_provider_config(provider, self.settings)
             if not api_key:
                 continue
@@ -714,6 +723,27 @@ class UnifiedAutoTagger:
         if not taggers:
             return None
         return MultiAiTagger(taggers, max_workers=min(4, len(taggers)))
+
+    def _configured_ai_providers(self) -> tuple[str, ...]:
+        all_providers = ("openai", "gemini", "grok", "deepseek")
+        raw = str(getattr(self.settings, "cloud_ai_provider", "") or "").strip().lower()
+        if raw and raw not in {"all", "multi", "multiple"}:
+            requested = tuple(
+                provider.strip()
+                for chunk in raw.split("+")
+                for provider in chunk.split(",")
+                if provider.strip()
+            )
+            selected = tuple(provider for provider in requested if provider in all_providers)
+            if selected:
+                return selected
+        if not raw:
+            for provider in all_providers:
+                if getattr(self.settings, f"{provider}_api_key", None):
+                    return (provider,)
+            if getattr(self.settings, "cloud_ai_api_key", None):
+                return ("openai",)
+        return all_providers
 
 
 def _best_artwork_url(candidates: list[Candidate]) -> str | None:

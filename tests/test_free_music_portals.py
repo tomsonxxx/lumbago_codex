@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import threading
 
-from services.free_music_portals import FreeMusicPortalSearch
+from services.free_music_portals import FreeMusicPortalSearch, PortalProbe
 
 
 @dataclass
@@ -147,3 +148,38 @@ def test_discogs_provider_parses_result():
     assert probe.candidate is not None
     assert probe.candidate.artist == "Metallica"
     assert probe.candidate.title == "Fade to Black"
+
+
+def test_search_all_runs_portal_providers_in_parallel(monkeypatch):
+    search = FreeMusicPortalSearch(max_workers=2)
+    monkeypatch.setattr(search, "PORTALS", (("one", "One"), ("two", "Two")))
+
+    lock = threading.Lock()
+    active = 0
+    max_active = 0
+    release = threading.Event()
+
+    def _provider(key: str, label: str):
+        def _run(_query: str) -> PortalProbe:
+            nonlocal active, max_active
+            with lock:
+                active += 1
+                max_active = max(max_active, active)
+                if active == 2:
+                    release.set()
+            release.wait(0.05)
+            with lock:
+                active -= 1
+            return PortalProbe(key, label, None, "OK")
+
+        return _run
+
+    search._providers = {
+        "one": _provider("one", "One"),
+        "two": _provider("two", "Two"),
+    }
+
+    probes = search.search_all("artist title")
+
+    assert [probe.source_key for probe in probes] == ["one", "two"]
+    assert max_active == 2
