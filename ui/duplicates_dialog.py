@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import shutil
 import re
+import traceback
 from datetime import datetime
 from pathlib import Path
 
@@ -16,6 +17,7 @@ from data.repository import (
     update_track,
     update_track_paths_bulk,
     update_tracks_file_meta,
+    track_path_exists,
 )
 from services.duplicate_merge import apply_duplicate_merge_plan, build_duplicate_merge_plan
 from services.recognizer import AcoustIdRecognizer
@@ -1060,6 +1062,74 @@ class DuplicatesDialog(QtWidgets.QDialog):
             f"{moved if mode == 'Przenieś' else copied} plików do: {dest_root}",
         )
 
+    def _export_survivors(self) -> None:
+        try:
+            survivors = self._survivor_tracks()
+            if not survivors:
+                QtWidgets.QMessageBox.information(
+                    self,
+                    "OcalaĹ‚e pliki",
+                    "Nie znaleziono ĹĽadnych ocalaĹ‚ych plikĂłw do wyprowadzenia.",
+                )
+                return
+
+            target_dir = QtWidgets.QFileDialog.getExistingDirectory(
+                self,
+                "Wybierz katalog dla ocalaĹ‚ych plikĂłw",
+            )
+            if not target_dir:
+                return
+
+            mode, ok = QtWidgets.QInputDialog.getItem(
+                self,
+                "OcalaĹ‚e pliki",
+                "Co zrobiÄ‡ z ocalaĹ‚ymi plikami?",
+                ["Skopiuj", "PrzenieĹ›"],
+                0,
+                False,
+            )
+            if not ok:
+                return
+
+            dest_root = Path(target_dir)
+            reserved: set[Path] = set()
+            history: list[dict[str, str]] = []
+            copied = 0
+            moved = 0
+            for group_label, track in survivors:
+                src = Path(track.path)
+                if not src.exists():
+                    continue
+                dest_dir = dest_root / _safe_folder_name(group_label)
+                dest_dir.mkdir(parents=True, exist_ok=True)
+                dest = _unique_destination_path(dest_dir, src.name, prefix="survivor", reserved=reserved)
+                if mode == "PrzenieĹ›":
+                    shutil.move(str(src), str(dest))
+                    history.append({"old": str(src), "new": str(dest)})
+                    moved += 1
+                else:
+                    shutil.copy2(str(src), str(dest))
+                    copied += 1
+
+            if history:
+                update_track_paths_bulk(history)
+                self._apply_view_filters()
+
+            QtWidgets.QMessageBox.information(
+                self,
+                "OcalaĹ‚e pliki",
+                f"{'Przeniesiono' if mode == 'PrzenieĹ›' else 'Skopiowano'} "
+                f"{moved if mode == 'PrzenieĹ›' else copied} plikĂłw do: {dest_root}",
+            )
+        except Exception as exc:
+            _process_log(f"[duplicates] survivor export failed | error={exc}\n{traceback.format_exc()}")
+            QtWidgets.QMessageBox.critical(
+                self,
+                "BĹ‚Ä…d",
+                "Nie udaĹ‚o siÄ™ wyprowadziÄ‡ ocalaĹ‚ych plikĂłw. "
+                "SprawdĹş plik process.log lub crash.log, aby zobaczyÄ‡ szczegĂłĹ‚y.",
+            )
+
     def _survivor_tracks(self) -> list[tuple[str, Track]]:
         survivors: list[tuple[str, Track]] = []
         for row_idx in range(self.tree.topLevelItemCount()):
@@ -1562,6 +1632,63 @@ class DuplicatesDialog(QtWidgets.QDialog):
             update_track_paths_bulk(history)
             self._apply_view_filters()
 
+    def _move_selected(self) -> None:
+        try:
+            paths = self._selected_paths()
+            if not paths:
+                return
+            target_dir = QtWidgets.QFileDialog.getExistingDirectory(self, "Wybierz folder docelowy")
+            if not target_dir:
+                return
+            reserved: set[Path] = set()
+            history: list[dict[str, str]] = []
+            for path in paths:
+                src = Path(path)
+                if not src.exists():
+                    continue
+                dest = _unique_destination_path(Path(target_dir), src.name, prefix="dup", reserved=reserved)
+                shutil.move(str(src), str(dest))
+                history.append({"old": str(src), "new": str(dest)})
+            if history:
+                update_track_paths_bulk(history)
+                self.accept()
+        except Exception as exc:
+            _process_log(f"[duplicates] move selected failed | error={exc}\n{traceback.format_exc()}")
+            QtWidgets.QMessageBox.critical(
+                self,
+                "BĹ‚Ä…d",
+                "Nie udaĹ‚o siÄ™ przenieĹ›Ä‡ zaznaczonych plikĂłw. "
+                "SprawdĹş plik process.log lub crash.log, aby zobaczyÄ‡ szczegĂłĹ‚y.",
+            )
+
+    def _move_paths(self, paths: list[str]) -> None:
+        try:
+            if not paths:
+                return
+            target_dir = QtWidgets.QFileDialog.getExistingDirectory(self, "Wybierz folder docelowy")
+            if not target_dir:
+                return
+            reserved: set[Path] = set()
+            history: list[dict[str, str]] = []
+            for path in paths:
+                src = Path(path)
+                if not src.exists():
+                    continue
+                dest = _unique_destination_path(Path(target_dir), src.name, prefix="dup", reserved=reserved)
+                shutil.move(str(src), str(dest))
+                history.append({"old": str(src), "new": str(dest)})
+            if history:
+                update_track_paths_bulk(history)
+                self._apply_view_filters()
+        except Exception as exc:
+            _process_log(f"[duplicates] move paths failed | error={exc}\n{traceback.format_exc()}")
+            QtWidgets.QMessageBox.critical(
+                self,
+                "BĹ‚Ä…d",
+                "Nie udaĹ‚o siÄ™ przenieĹ›Ä‡ plikĂłw. "
+                "SprawdĹş plik process.log lub crash.log, aby zobaczyÄ‡ szczegĂłĹ‚y.",
+            )
+
     def _delete_paths(self, paths: list[str]) -> None:
         if not paths:
             return
@@ -1670,6 +1797,37 @@ def _safe_size(path: str) -> int | None:
 def _safe_folder_name(name: str) -> str:
     cleaned = re.sub(r'[<>:"/\\|?*]+', "_", name).strip(" ._")
     return cleaned or "survivors"
+
+
+def _unique_destination_path(
+    dest_dir: Path,
+    filename: str,
+    *,
+    prefix: str,
+    reserved: set[Path] | None = None,
+) -> Path:
+    candidate = dest_dir / filename
+    if (
+        not candidate.exists()
+        and not track_path_exists(str(candidate))
+        and (reserved is None or candidate not in reserved)
+    ):
+        if reserved is not None:
+            reserved.add(candidate)
+        return candidate
+
+    source = Path(filename)
+    stem = source.stem
+    suffix = source.suffix
+    counter = 1
+    while True:
+        candidate = dest_dir / f"{prefix}_{counter}_{stem}{suffix}"
+        if candidate.exists() or track_path_exists(str(candidate)) or (reserved is not None and candidate in reserved):
+            counter += 1
+            continue
+        if reserved is not None:
+            reserved.add(candidate)
+        return candidate
 
 
 def _format_preview_value(value) -> str:

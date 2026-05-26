@@ -219,6 +219,14 @@ def update_track_path(old_path: str, new_path: str) -> None:
         session.commit()
 
 
+def track_path_exists(track_path: str) -> bool:
+    Session = get_session_factory()
+    with Session() as session:
+        return session.scalar(
+            select(TrackOrm.id).where(TrackOrm.path == track_path)
+        ) is not None
+
+
 def update_track_paths_bulk(history: list[dict[str, str]]) -> None:
     if not history:
         return
