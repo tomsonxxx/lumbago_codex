@@ -86,6 +86,7 @@ class Track:
     title: str | None = None
     artist: str | None = None
     album: str | None = None
+    albumartist: str | None = None
     year: str | None = None
     genre: str | None = None
     bpm: float | None = None
@@ -105,6 +106,13 @@ class Track:
     lyrics: str | None = None
     originalartist: str | None = None
     remixer: str | None = None
+    composer: str | None = None
+    tracknumber: str | None = None
+    discnumber: str | None = None
+    isrc: str | None = None
+    publisher: str | None = None
+    grouping: str | None = None
+    copyright: str | None = None
     cue_in_ms: int | None = None
     cue_out_ms: int | None = None
     fingerprint: str | None = None

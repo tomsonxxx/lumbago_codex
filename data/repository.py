@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from typing import Iterable, Optional
-from datetime import datetime, timedelta
+from typing import Iterable
+from datetime import datetime, timedelta, timezone
 import json
 
 from sqlalchemy import delete, select, update, text, func
@@ -112,7 +112,7 @@ _TRACK_READ_FIELDS = _TRACK_META_FIELDS + [
 
 
 def _orm_to_track(row: TrackOrm) -> Track:
-    kwargs = {"path": row.path, "id": getattr(row, "id", None)}
+    kwargs = {"path": row.path}
     for field in _TRACK_READ_FIELDS:
         kwargs[field] = getattr(row, field, None)
     kwargs["play_count"] = kwargs.get("play_count") or 0
@@ -132,39 +132,6 @@ def list_tracks() -> list[Track]:
             select(TrackOrm).order_by(TrackOrm.id).options(selectinload(TrackOrm.tags))
         ).all()
         return [_orm_to_track(row) for row in rows]
-
-
-def get_track_by_path(path: str) -> Optional[Track]:
-    """Return full Track (with id) by path or None if not in library."""
-    if not path:
-        return None
-    Session = get_session_factory()
-    with Session() as session:
-        row = session.scalar(
-            select(TrackOrm).where(TrackOrm.path == path).options(selectinload(TrackOrm.tags))
-        )
-        return _orm_to_track(row) if row else None
-
-
-def get_or_create_track_by_path(path: str) -> Track:
-    """Ensure track exists in DB (minimal), return Track with id populated."""
-    from core.models import Track as _Track  # avoid circular if any
-    if not path:
-        return _Track(path="")
-    existing = get_track_by_path(path)
-    if existing and existing.id:
-        return existing
-    # Create minimal
-    Session = get_session_factory()
-    with Session() as session:
-        orm = session.scalar(select(TrackOrm).where(TrackOrm.path == path))
-        if not orm:
-            orm = TrackOrm(path=path)
-            session.add(orm)
-            session.commit()
-            session.refresh(orm)
-        # Re-fetch via our converter for consistency
-    return get_track_by_path(path) or _Track(path=path)
 
 
 def update_track(track: Track) -> None:
@@ -233,7 +200,7 @@ def reset_library() -> None:
 
 def delete_tracks_by_paths(paths: Iterable[str]) -> None:
     Session = get_session_factory()
-    path_list = [path for path in paths]
+    path_list = list(paths)
     if not path_list:
         return
     with Session() as session:
@@ -359,7 +326,7 @@ def get_metadata_cache(key: str, max_age_seconds: int | None = None) -> dict | N
         if not row:
             return None
         if max_age_seconds is not None and row.created_at:
-            cutoff = datetime.utcnow() - timedelta(seconds=max_age_seconds)
+            cutoff = datetime.now(timezone.utc) - timedelta(seconds=max_age_seconds)
             if row.created_at < cutoff:
                 session.delete(row)
                 session.commit()
@@ -378,14 +345,14 @@ def set_metadata_cache(key: str, payload: dict, source: str | None = None) -> No
         if row:
             row.payload = encoded
             row.source = source
-            row.created_at = datetime.utcnow()
+            row.created_at = datetime.now(timezone.utc)
         else:
             session.add(
                 MetadataCacheOrm(
                     key=key,
                     payload=encoded,
                     source=source,
-                    created_at=datetime.utcnow(),
+                    created_at=datetime.now(timezone.utc),
                 )
             )
         session.commit()
@@ -542,11 +509,10 @@ def list_metadata_conflicts(track_path: str, field_name: str | None = None) -> l
         return [
             {
                 "field": row.field_name,
-                "old": row.old_value or "",
-                "new": row.new_value or "",
-                "source": row.source,
-                "confidence": str(row.confidence),
-                "verified": str(bool(row.verified)),
+                "chosen_value": row.chosen_value or "",
+                "chosen_source": row.chosen_source or "",
+                "reason": row.reason or "",
+                "variants_json": row.variants_json or "",
                 "detected_at": str(row.detected_at),
             }
             for row in rows
@@ -573,9 +539,7 @@ def create_analysis_job(
             status="pending",
         )
         if parameters:
-            # Na razie trzymamy parametry jako JSON w error_msg lub dodamy kolumnę później
-            # Na start używamy prostego podejścia - można później rozbudować
-            pass
+            job_orm.error_msg = json.dumps(parameters, ensure_ascii=False)
 
         session.add(job_orm)
         session.commit()
@@ -633,11 +597,11 @@ def update_analysis_job_status(
             return False
 
         job.status = status
-        job.updated_at = datetime.utcnow()
+        job.updated_at = datetime.now(timezone.utc)
         if error_msg:
             job.error_msg = error_msg
         if status in ("completed", "failed", "cancelled"):
-            job.finished_at = datetime.utcnow()
+            job.finished_at = datetime.now(timezone.utc)
 
         session.commit()
         return True
@@ -651,6 +615,19 @@ def get_analysis_jobs_for_track(track_id: int) -> list[AnalysisJob]:
             .where(AnalysisJobOrm.track_id == track_id)
             .order_by(AnalysisJobOrm.created_at.desc())
         ).all()
+        return [
+            AnalysisJob(
+                job_id=row.id,
+                track_id=row.track_id,
+                job_type=row.job_type,
+                priority=row.priority,
+                status=row.status,
+                created_at=row.created_at,
+                updated_at=row.updated_at,
+                error_msg=row.error_msg,
+            )
+            for row in rows
+        ]
 
 
 # ============================================================
@@ -731,18 +708,85 @@ def delete_cue_point(track_id: int, hotcue_index: int | None = None, time_ms: in
         session.commit()
 
 
-# (Duplicate Cue Points block removed per DJ-06 P0 report.
-# Single authoritative implementation retained above.
-# This fixes risk for 8-hotcue mode + memory features in DJ Player.)
+def _next_metadata_version(session, track_id: int, field_name: str) -> int:
+    evidence_version = session.scalar(
+        select(func.max(MetadataFieldEvidenceOrm.version)).where(
+            MetadataFieldEvidenceOrm.track_id == track_id,
+            MetadataFieldEvidenceOrm.field_name == field_name,
+        )
+    )
+    history_version = session.scalar(
+        select(func.max(MetadataHistoryOrm.version)).where(
+            MetadataHistoryOrm.track_id == track_id,
+            MetadataHistoryOrm.field_name == field_name,
+        )
+    )
+    current = max(evidence_version or 0, history_version or 0)
+    return int(current) + 1
 
-def create_playlist(name: str, description: str = "") -> Playlist:
+
+def _serialize_value(value) -> str | None:
+    if value is None:
+        return None
+    return str(value)
+
+
+def list_playlists() -> list[str]:
     Session = get_session_factory()
     with Session() as session:
-        p = PlaylistOrm(name=name, description=description)
-        session.add(p)
+        rows = session.scalars(select(PlaylistOrm).order_by(PlaylistOrm.id)).all()
+        if not rows:
+            return ["Favorites", "Recent Imports", "Set Preparation"]
+        return [row.name for row in rows]
+
+
+def list_playlists_full() -> list[Playlist]:
+    Session = get_session_factory()
+    with Session() as session:
+        rows = session.scalars(select(PlaylistOrm).order_by(PlaylistOrm.id)).all()
+        return [
+            Playlist(
+                name=row.name,
+                description=row.description,
+                is_smart=bool(row.is_smart),
+                rules=row.rules,
+                playlist_id=row.id,
+            )
+            for row in rows
+        ]
+
+
+def create_playlist(name: str, description: str | None = None, is_smart: bool = False, rules: str | None = None) -> None:
+    Session = get_session_factory()
+    with Session() as session:
+        existing = session.scalar(select(PlaylistOrm).where(PlaylistOrm.name == name))
+        if existing:
+            return
+        session.add(
+            PlaylistOrm(
+                name=name,
+                description=description,
+                is_smart=1 if is_smart else 0,
+                rules=rules,
+            )
+        )
         session.commit()
-        session.refresh(p)
-        return Playlist(id=p.id, name=p.name, description=p.description, created_at=p.created_at)
+
+
+def update_playlist(playlist_id: int, name: str, description: str | None, is_smart: bool, rules: str | None) -> None:
+    Session = get_session_factory()
+    with Session() as session:
+        session.execute(
+            update(PlaylistOrm)
+            .where(PlaylistOrm.id == playlist_id)
+            .values(
+                name=name,
+                description=description,
+                is_smart=1 if is_smart else 0,
+                rules=rules,
+            )
+        )
+        session.commit()
 
 
 def delete_playlist(playlist_id: int) -> None:
@@ -753,125 +797,104 @@ def delete_playlist(playlist_id: int) -> None:
         session.commit()
 
 
-def list_playlists() -> list[Playlist]:
+def list_playlist_tracks(playlist_id: int) -> list[Track]:
     Session = get_session_factory()
     with Session() as session:
-        rows = session.scalars(select(PlaylistOrm).order_by(PlaylistOrm.name)).all()
-        return [Playlist(id=r.id, name=r.name, description=r.description, created_at=r.created_at) for r in rows]
-
-
-def list_playlists_full() -> list[dict]:
-    Session = get_session_factory()
-    with Session() as session:
-        rows = session.scalars(select(PlaylistOrm).order_by(PlaylistOrm.name)).all()
-        result = []
-        for r in rows:
-            count = session.scalar(
-                select(func.count(PlaylistTrackOrm.track_id)).where(PlaylistTrackOrm.playlist_id == r.id)
-            )
-            result.append({
-                "id": r.id, "name": r.name, "description": r.description,
-                "track_count": count or 0, "created_at": r.created_at
-            })
-        return result
-
-
-def list_playlist_tracks(playlist_name: str) -> list[Track]:
-    Session = get_session_factory()
-    with Session() as session:
-        playlist = session.scalar(select(PlaylistOrm).where(PlaylistOrm.name == playlist_name))
-        if not playlist:
-            return []
-        rows = session.scalars(
-            select(TrackOrm)
-            .join(PlaylistTrackOrm)
-            .where(PlaylistTrackOrm.playlist_id == playlist.id)
-            .order_by(PlaylistTrackOrm.position)
+        rows = session.execute(
+            select(TrackOrm, PlaylistTrackOrm.position)
+            .join(PlaylistTrackOrm, TrackOrm.id == PlaylistTrackOrm.track_id)
+            .where(PlaylistTrackOrm.playlist_id == playlist_id)
+            .order_by(PlaylistTrackOrm.position, PlaylistTrackOrm.track_id)
+            .options(selectinload(TrackOrm.tags))
         ).all()
-        return [Track(id=t.id, path=t.path, title=t.title, artist=t.artist, album=t.album, bpm=t.bpm, key=t.key) for t in rows]
+        return [_orm_to_track(row[0]) for row in rows]
 
 
-def set_playlist_track_order(playlist_name: str, ordered_paths: list[str]) -> None:
-    """Prosta implementacja zmiany kolejności."""
+def set_playlist_track_order(playlist_id: int, ordered_paths: list[str]) -> None:
     Session = get_session_factory()
     with Session() as session:
-        playlist = session.scalar(select(PlaylistOrm).where(PlaylistOrm.name == playlist_name))
-        if not playlist:
-            return
-        for pos, path in enumerate(ordered_paths, 1):
+        for position, path in enumerate(ordered_paths):
             track = session.scalar(select(TrackOrm).where(TrackOrm.path == path))
-            if track:
-                link = session.scalar(
-                    select(PlaylistTrackOrm).where(
-                        (PlaylistTrackOrm.playlist_id == playlist.id) &
-                        (PlaylistTrackOrm.track_id == track.id)
-                    )
+            if not track:
+                continue
+            session.execute(
+                update(PlaylistTrackOrm)
+                .where(
+                    PlaylistTrackOrm.playlist_id == playlist_id,
+                    PlaylistTrackOrm.track_id == track.id,
                 )
-                if link:
-                    link.position = pos
+                .values(position=position)
+            )
         session.commit()
 
-
-def update_playlist(playlist_id: int, name: str = None, description: str = None) -> None:
-    Session = get_session_factory()
-    with Session() as session:
-        p = session.get(PlaylistOrm, playlist_id)
-        if p:
-            if name: p.name = name
-            if description is not None: p.description = description
-            session.commit()
-
-
-# Minimal stubs for other referenced functions to keep app importable
-def add_change_log(*a, **k): pass
-def get_or_create_track_by_path(path): 
-    from core.models import Track
-    return Track(path=path)
-def list_metadata_history(*a, **k): return []
-def replace_track_tags(*a, **k): pass
-def reset_library(): pass
-def update_tracks(*a, **k): pass
-def update_track(*a, **k): pass
-def upsert_tracks(*a, **k): return []
 
 def add_track_to_playlist(playlist_name: str, track_path: str) -> None:
-    """Dodaje utwór (po ścieżce) do playlisty o podanej nazwie. Tworzy playlistę jeśli nie istnieje."""
     Session = get_session_factory()
     with Session() as session:
-        playlist = session.scalar(
-            select(PlaylistOrm).where(PlaylistOrm.name == playlist_name)
-        )
-        if not playlist:
+        playlist = session.scalar(select(PlaylistOrm).where(PlaylistOrm.name == playlist_name))
+        if playlist is None:
             playlist = PlaylistOrm(name=playlist_name)
             session.add(playlist)
-            session.commit()
-            session.refresh(playlist)
-
-        track = session.scalar(
-            select(TrackOrm).where(TrackOrm.path == track_path)
-        )
-        if not track:
+            session.flush()
+        track = session.scalar(select(TrackOrm).where(TrackOrm.path == track_path))
+        if track is None:
             return
-
         existing = session.scalar(
             select(PlaylistTrackOrm).where(
-                (PlaylistTrackOrm.playlist_id == playlist.id) &
-                (PlaylistTrackOrm.track_id == track.id)
+                PlaylistTrackOrm.playlist_id == playlist.id,
+                PlaylistTrackOrm.track_id == track.id,
             )
         )
-        if existing:
-            return
-
-        max_pos = session.scalar(
-            select(func.max(PlaylistTrackOrm.position)).where(
-                PlaylistTrackOrm.playlist_id == playlist.id
+        if existing is None:
+            max_pos = session.scalar(
+                select(PlaylistTrackOrm.position)
+                .where(PlaylistTrackOrm.playlist_id == playlist.id)
+                .order_by(PlaylistTrackOrm.position.desc())
             )
-        ) or 0
-
-        link = PlaylistTrackOrm(
-            playlist_id=playlist.id,
-            track_id=track.id,
-            position=max_pos + 1
-        )
-        session.add(link)
+            next_pos = (max_pos or 0) + 1
+            session.add(
+                PlaylistTrackOrm(
+                    playlist_id=playlist.id,
+                    track_id=track.id,
+                    position=next_pos,
+                )
+            )
         session.commit()
+
+
+def upsert_audio_features(track_path: str, features: AudioFeatures) -> None:
+    Session = get_session_factory()
+    with Session() as session:
+        track = session.scalar(select(TrackOrm).where(TrackOrm.path == track_path))
+        if not track:
+            return
+        existing = session.get(AudioFeaturesOrm, track.id)
+        if existing:
+            existing.mfcc_json = features.mfcc_json
+            existing.tempo = features.tempo
+            existing.spectral_centroid = features.spectral_centroid
+            existing.spectral_rolloff = features.spectral_rolloff
+            existing.brightness = features.brightness
+            existing.roughness = features.roughness
+            existing.zero_crossing_rate = features.zero_crossing_rate
+            existing.chroma_json = features.chroma_json
+            existing.danceability = features.danceability
+            existing.valence = features.valence
+        else:
+            session.add(
+                AudioFeaturesOrm(
+                    id=track.id,
+                    mfcc_json=features.mfcc_json,
+                    tempo=features.tempo,
+                    spectral_centroid=features.spectral_centroid,
+                    spectral_rolloff=features.spectral_rolloff,
+                    brightness=features.brightness,
+                    roughness=features.roughness,
+                    zero_crossing_rate=features.zero_crossing_rate,
+                    chroma_json=features.chroma_json,
+                    danceability=features.danceability,
+                    valence=features.valence,
+                )
+            )
+        session.commit()
+
