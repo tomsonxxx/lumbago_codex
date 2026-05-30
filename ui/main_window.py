@@ -1689,8 +1689,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 dbt = get_track_by_path(track.path)
                 if dbt and dbt.id:
                     track = dbt
-            except Exception:
-                pass
+            except Exception as exc:
+                _debug_log(f"DB lookup failed for track path in _play_selected: {exc}")
         # Zawsze kieruj do nowego dedykowanego DJ Playera
         self._open_dj_player_window()
         if hasattr(self, "_dj_player_window") and self._dj_player_window is not None:
@@ -1724,8 +1724,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 dbt = get_track_by_path(track.path)
                 if dbt and dbt.id:
                     track = dbt
-            except Exception:
-                pass
+            except Exception as exc:
+                _debug_log(f"DB lookup failed for track path in _load_selected_to_deck: {exc}")
         self._open_dj_player_window()
         if hasattr(self, "_dj_player_window") and self._dj_player_window:
             self._dj_player_window.load_track_to_deck(deck, track)
@@ -1775,8 +1775,8 @@ class MainWindow(QtWidgets.QMainWindow):
                             dbt = get_track_by_path(track.path)
                             if dbt and dbt.id:
                                 track = dbt
-                        except Exception:
-                            pass
+                        except Exception as exc:
+                            _debug_log(f"DB lookup failed for track path in grid context menu (A): {exc}")
                     self._dj_player_window.load_track_to_deck("A", track)
         elif action == load_b_action:
             self._open_dj_player_window()
@@ -1789,8 +1789,8 @@ class MainWindow(QtWidgets.QMainWindow):
                             dbt = get_track_by_path(track.path)
                             if dbt and dbt.id:
                                 track = dbt
-                        except Exception:
-                            pass
+                        except Exception as exc:
+                            _debug_log(f"DB lookup failed for track path in grid context menu (B): {exc}")
                     self._dj_player_window.load_track_to_deck("B", track)
         if action == details_action:
             self._update_detail_panel_from_grid()
@@ -1895,8 +1895,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 db_track = get_track_by_path(track.path)
                 if db_track and db_track.id:
                     track = db_track
-            except Exception:
-                pass
+            except Exception as exc:
+                _debug_log(f"DB lookup failed for track path in table context menu: {exc}")
         menu = QtWidgets.QMenu(self)
         play_action = menu.addAction("Odtwórz")
         load_a_action = menu.addAction("Załaduj do Deck A (DJ Player)")
@@ -1957,11 +1957,17 @@ class MainWindow(QtWidgets.QMainWindow):
         elif action == clear_action:
             self._clear_tags()
         elif action in add_menu.actions():
-            source_index = self.filter_proxy.mapToSource(index)
-            track = self.table_model.track_at(source_index.row())
-            if track:
-                add_track_to_playlist(action.text(), track.path)
-                self.status.showMessage(f"Dodano do playlisty: {action.text()}")
+            playlist_name = action.text()
+            tracks = self._selected_tracks()
+            added = 0
+            for track in tracks:
+                if track and track.path:
+                    add_track_to_playlist(playlist_name, track.path)
+                    added += 1
+            if added > 0:
+                self.status.showMessage(f"Dodano {added} utworów do playlisty: {playlist_name}")
+            else:
+                self.status.showMessage("Nie zaznaczono żadnych utworów.")
         elif action == ai_action:
             self._run_ai_tagger()
         elif action == local_meta_action:
@@ -2222,10 +2228,6 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.status.showMessage(f"Dodano do playlisty: {data.name}")
             return True
         return super().eventFilter(source, event)
-
-    def closeEvent(self, event):
-        _debug_log("MainWindow: closeEvent")
-        super().closeEvent(event)
 
     def showEvent(self, event):
         _debug_log("MainWindow: showEvent")
@@ -2680,8 +2682,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 dbt = get_track_by_path(track.path)
                 if dbt and dbt.id:
                     track = dbt
-            except Exception:
-                pass
+            except Exception as exc:
+                _debug_log(f"DB lookup failed for track path in _on_library_track_activated: {exc}")
         if hasattr(self, "_dj_player_window") and self._dj_player_window is not None:
             self._dj_player_window.show()
             self._dj_player_window.raise_()

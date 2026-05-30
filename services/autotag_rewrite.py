@@ -357,6 +357,14 @@ class UnifiedAutoTagger:
                         genre = rg_genres[0]
                     elif rg_tags:
                         genre = rg_tags[0]
+
+            # If we only got a very broad genre from MusicBrainz, try to use more specific tags
+            broad_genres = {"electronic", "dance", "rock", "pop", "hip hop", "jazz", "classical"}
+            if genre and genre.lower() in broad_genres and tags:
+                for t in tags:
+                    if t.lower() not in broad_genres:
+                        genre = t
+                        break
         release_artists = release.get("artist-credit", [])
         if release_artists:
             albumartist = ", ".join(
@@ -580,7 +588,19 @@ class UnifiedAutoTagger:
         if have:
             base_score = min(99, round(have / 10))
         score = max(0, min(100, base_score + _similarity_bonus(track, title_part, artist_part)))
-        tags = [*best.get("genre", []), *best.get("style", [])]
+        genres = best.get("genre") or []
+        styles = best.get("style") or []
+
+        # Prefer more specific "style" over broad "genre" for better subgenre classification
+        if styles:
+            genre = styles[0]
+        elif genres:
+            genre = genres[0]
+        else:
+            genre = None
+
+        tags = [*genres, *styles]
+
         return Candidate(
             source="Discogs",
             score=score,
@@ -588,8 +608,8 @@ class UnifiedAutoTagger:
             artist=artist_part or track.artist,
             album=title_field or track.album,
             year=str(best.get("year") or "") or None,
-            genre=((best.get("genre") or [None])[0]),
-            tags=[str(tag).strip() for tag in tags[:8] if str(tag).strip()],
+            genre=genre,
+            tags=[str(tag).strip() for tag in tags[:10] if str(tag).strip()],
             artwork_url=_to_clean_str(best.get("cover_image")) or _to_clean_str(best.get("thumb")),
         )
 
