@@ -264,6 +264,9 @@ class _NoopAudioBackend(AudioBackend):
         self._rate = 1.0
         self._volume = 1.0
         self._keylock = False
+        self._loop_start: int | None = None
+        self._loop_end: int | None = None
+        self._loop_enabled: bool = False
 
     @classmethod
     def is_available(cls) -> bool:
@@ -328,18 +331,29 @@ class _NoopAudioBackend(AudioBackend):
         pass
 
     def set_loop_points(self, start_ms: Optional[int], end_ms: Optional[int]) -> None:
-        pass
+        self._loop_start = start_ms
+        self._loop_end = end_ms
 
     def set_loop_enabled(self, enabled: bool) -> None:
-        pass
+        self._loop_enabled = bool(enabled)
 
     def is_loop_enabled(self) -> bool:
-        return False
+        return self._loop_enabled
 
     def get_loop_points(self) -> tuple[Optional[int], Optional[int]]:
-        return (None, None)
+        return (self._loop_start, self._loop_end)
 
     def get_state(self) -> DeckState:
         from .types import PlaybackState as PS, BackendErrorCode as EC
-        return DeckState(state=PS.IDLE, is_playing=False, error_code=EC.BACKEND_UNAVAILABLE,
-                         error_message="No audio backend available")
+        return DeckState(
+            state=PS.IDLE,
+            is_playing=False,
+            rate=getattr(self, "_rate", 1.0),
+            keylock_enabled=getattr(self, "_keylock", False),
+            loop_enabled=self._loop_enabled,
+            loop_start_ms=self._loop_start,
+            loop_end_ms=self._loop_end,
+            volume=getattr(self, "_volume", 1.0),
+            error_code=EC.BACKEND_UNAVAILABLE,
+            error_message="No audio backend available",
+        )
