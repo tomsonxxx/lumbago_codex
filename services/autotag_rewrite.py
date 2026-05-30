@@ -247,6 +247,11 @@ class UnifiedAutoTagger:
                     continue
             if field_name in _LOCALLY_MEASURED and _has_value(current):
                 continue
+
+            # For genre, prefer more specific values among candidates
+            if field_name == "genre":
+                incoming = _best_specific_genre(candidates, current)
+
             if current != incoming:
                 setattr(track, field_name, incoming)
                 changed = True
@@ -923,6 +928,47 @@ def _has_value(value: Any) -> bool:
         normalized = value.strip().lower()
         return bool(normalized) and normalized not in {"-", "—", "unknown", "n/a", "none", "null", "brak"}
     return True
+
+
+_BROAD_GENRES = {
+    "electronic", "dance", "rock", "pop", "hip hop", "jazz", "classical",
+    "blues", "folk", "metal", "indie", "alternative", "r&b", "soul", "funk"
+}
+
+
+def _best_specific_genre(candidates: list[Candidate], current: str | None) -> str | None:
+    """Wybiera najbardziej precyzyjny gatunek spośród dobrych kandydatów.
+    Preferuje dłuższe i mniej ogólne wartości (np. 'Deep House' > 'Electronic').
+    """
+    if not candidates:
+        return current
+
+    scored = []
+    for c in candidates:
+        if not c.genre or c.score < 50:
+            continue
+        g = c.genre.strip()
+        if not g:
+            continue
+        is_broad = g.lower() in _BROAD_GENRES
+        specificity = (0 if is_broad else 10) + len(g)
+        scored.append((specificity, c.score, g))
+
+    if not scored:
+        return current
+
+    scored.sort(key=lambda x: (x[0], x[1]), reverse=True)
+    best = scored[0][2]
+
+    if current and _has_value(current):
+        current_lower = current.lower().strip()
+        if current_lower in _BROAD_GENRES and best.lower() not in _BROAD_GENRES:
+            return best
+        if len(best) > len(current) * 1.15:
+            return best
+        return current
+
+    return best
 
 
 def _looks_like_track_number(value: str | None) -> bool:
