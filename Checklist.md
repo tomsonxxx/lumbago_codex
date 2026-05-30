@@ -1,6 +1,9 @@
 # Checklist — Lumbago Music AI (Stan projektu)
 
-> Wygenerowano: 2026-04-28. Aktualizacja: 2026-05-16. Obejmuje wszystkie cztery aplikacje: Desktop, Web MVP, tagerv2 i WinUI 3.
+> **Uwaga:** Projekt jest obecnie skupiony wyłącznie na wersji Desktop (PyQt6).  
+> Wersje Web MVP (FastAPI + React), tagerv2 (React standalone) i planowana migracja na WinUI 3 zostały usunięte z aktywnego repozytorium w maju 2026 w celu uproszczenia i skupienia na głównej aplikacji desktopowej + DJ Playerze.  
+> Poniższa checklist dotyczy tylko aktualnej wersji Desktop.  
+> Wygenerowano: 2026-04-28. Ostatnia aktualizacja po sprzątaniu: 2026-05.
 
 ## Legenda
 - [x] zrobione
@@ -10,7 +13,7 @@
 
 ---
 
-## 1. Desktop App (`lumbago_app/`)
+## 1. Desktop App (PyQt6)
 
 ### 1.1 Fundamenty i infrastruktura
 - [x] Struktura projektu (`core/`, `data/`, `ui/`, `services/`)
@@ -129,7 +132,17 @@
 
 ---
 
-## 2. Web MVP (`web/`)
+## 2. Wersje historyczne (usunięte z repozytorium w maju 2026)
+
+Wersje Web MVP, tagerv2 i WinUI 3 zostały całkowicie usunięte z aktywnego kodu w celu uproszczenia projektu. Poniżej jedynie krótka notatka historyczna.
+
+**Web MVP (FastAPI + React)** — prototyp webowy z backendem FastAPI i frontendem React/Vite. Usunięty.
+
+**tagerv2 (React standalone)** — samodzielna aplikacja React do tagowania. Usunięta.
+
+**WinUI 3** — planowana pełna migracja UI na WinUI 3 (C#). Usunięta z planów na rzecz dalszego rozwoju PyQt6 Desktop + DJ Player.
+
+Szczegóły historyczne znajdują się w `docs/HISTORY.md` i `RECOVERY.md`.
 
 ### 2.1 Backend FastAPI
 - [x] `web/backend/api.py` — FastAPI app

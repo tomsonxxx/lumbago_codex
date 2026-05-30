@@ -1,5 +1,7 @@
 # Historia budowania — Lumbago Music AI
 
+> **Maj 2026 — Gruntowne sprzątanie:** Wersje Web MVP (FastAPI+React), tagerv2 (React standalone) i planowana migracja na WinUI 3 zostały usunięte z repozytorium. Projekt jest teraz wyłącznie desktopowy (PyQt6 + DJ Player).
+>
 > Scalono z `Build.md` (faza Python/PyQt6) i `Build2.md` (faza WinUI 3 Reboot).
 
 ---
