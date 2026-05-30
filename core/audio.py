@@ -117,7 +117,6 @@ def extract_metadata(path: Path) -> Track:
     track.title = tag_value("TIT2") or tag_value("title")
     track.artist = tag_value("TPE1") or tag_value("artist")
     track.album = tag_value("TALB") or tag_value("album")
-    track.albumartist = tag_value("TPE2") or tag_value("albumartist") or tag_value("album artist")
     track.year = (
         tag_value("TDRC")
         or tag_value("date")
@@ -125,9 +124,6 @@ def extract_metadata(path: Path) -> Track:
         or tag_value("TYER")
     )
     track.genre = tag_value("TCON") or tag_value("genre")
-    track.tracknumber = tag_value("TRCK") or tag_value("tracknumber")
-    track.discnumber = tag_value("TPOS") or tag_value("discnumber")
-    track.composer = tag_value("TCOM") or tag_value("composer")
     track.bpm = _parse_float_tag(
         tag_value("TBPM")
         or tag_value("bpm")
@@ -149,10 +145,6 @@ def extract_metadata(path: Path) -> Track:
     track.energy = _parse_float_tag(tag_value("energy") or tag_value("ENERGY"))
     track.comment = tag_value("COMM") or tag_value("comment") or tag_value("COMM::eng")
     track.lyrics = tag_value("USLT") or tag_value("lyrics") or tag_value("USLT::eng")
-    track.isrc = tag_value("TSRC") or tag_value("isrc")
-    track.publisher = tag_value("TPUB") or tag_value("organization") or tag_value("label")
-    track.grouping = tag_value("TIT1") or tag_value("grouping") or tag_value("contentgroup")
-    track.copyright = tag_value("TCOP") or tag_value("copyright")
     track.remixer = tag_value("TPE4") or tag_value("remixer")
     track.originalartist = tag_value("TOPE") or tag_value("originalartist") or tag_value("original_artist")
     # MP4/M4A uses a different tagging scheme; normalize through read_tags to fill gaps.
@@ -161,12 +153,8 @@ def extract_metadata(path: Path) -> Track:
         _fill_if_empty(track, "title", canonical_tags.get("title"))
         _fill_if_empty(track, "artist", canonical_tags.get("artist"))
         _fill_if_empty(track, "album", canonical_tags.get("album"))
-        _fill_if_empty(track, "albumartist", canonical_tags.get("albumartist"))
         _fill_if_empty(track, "year", canonical_tags.get("year"))
         _fill_if_empty(track, "genre", canonical_tags.get("genre"))
-        _fill_if_empty(track, "tracknumber", canonical_tags.get("tracknumber"))
-        _fill_if_empty(track, "discnumber", canonical_tags.get("discnumber"))
-        _fill_if_empty(track, "composer", canonical_tags.get("composer"))
         if track.bpm is None:
             track.bpm = _parse_float_tag(canonical_tags.get("bpm"))
         _fill_if_empty(track, "key", canonical_tags.get("key"))
@@ -177,10 +165,6 @@ def extract_metadata(path: Path) -> Track:
             track.energy = _parse_float_tag(canonical_tags.get("energy"))
         _fill_if_empty(track, "comment", canonical_tags.get("comment"))
         _fill_if_empty(track, "lyrics", canonical_tags.get("lyrics"))
-        _fill_if_empty(track, "isrc", canonical_tags.get("isrc"))
-        _fill_if_empty(track, "publisher", canonical_tags.get("publisher"))
-        _fill_if_empty(track, "grouping", canonical_tags.get("grouping"))
-        _fill_if_empty(track, "copyright", canonical_tags.get("copyright"))
         _fill_if_empty(track, "remixer", canonical_tags.get("remixer"))
     apply_local_metadata(track, path)
     return track
@@ -196,17 +180,9 @@ def read_tags(path: Path) -> dict[str, str]:
     _normalize_map = {
         "date": "year", "year": "year",
         "initialkey": "key",
-        "albumartist": "albumartist", "album artist": "albumartist",
-        "tracknumber": "tracknumber",
-        "discnumber": "discnumber",
-        "composer": "composer",
         "rating": "rating", "popm": "rating",
         "comment": "comment",
         "lyrics": "lyrics",
-        "isrc": "isrc",
-        "organization": "publisher", "label": "publisher",
-        "grouping": "grouping", "contentgroup": "grouping",
-        "copyright": "copyright",
         "remixer": "remixer",
     }
     tags = {}

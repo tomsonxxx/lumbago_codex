@@ -23,11 +23,10 @@ from services.metadata_writeback import PendingTrackWrite, apply_track_writes
 from ui.widgets import apply_dialog_fade
 
 FIELDS = [
-    "title", "bpm", "key", "artist", "album", "genre", "year", "composer",
-    "comment", "lyrics", "publisher",
-    "albumartist", "tracknumber", "discnumber",
+    "title", "bpm", "key", "artist", "album", "genre", "year",
+    "comment", "lyrics",
     "rating", "mood", "energy",
-    "isrc", "grouping", "copyright", "remixer",
+    "remixer",
 ]
 AI_FIELDS = {"genre", "bpm", "key", "mood", "energy", "rating", "year"}
 AUDIO_DERIVED_FIELDS = {"bpm", "key", "energy", "mood"}
@@ -35,12 +34,8 @@ FIELD_LABELS = {
     "title": "TytuĹ‚",
     "artist": "Artysta",
     "album": "Album",
-    "albumartist": "Artysta albumu",
     "year": "Rok",
     "genre": "Gatunek",
-    "tracknumber": "Nr utworu",
-    "discnumber": "Nr dysku",
-    "composer": "Kompozytor",
     "bpm": "BPM",
     "key": "Tonacja",
     "rating": "Ocena",
@@ -48,10 +43,6 @@ FIELD_LABELS = {
     "energy": "Energia",
     "comment": "Komentarz",
     "lyrics": "Tekst",
-    "isrc": "ISRC",
-    "publisher": "Wydawca",
-    "grouping": "Grupa",
-    "copyright": "Prawa autorskie",
     "remixer": "Remikser",
 }
 METHOD_LABELS = {

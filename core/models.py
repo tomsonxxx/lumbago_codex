@@ -21,22 +21,15 @@ PRIORITY_AUTOTAG_FIELDS: tuple[str, ...] = (
     "year",             # 7
     "energy",           # 8
     "mood",             # 9
-    "publisher",        # 10 (label)
+
 )
 
 # Pola uzupełniane "na spokojnie" w tle (niższy priorytet)
 BACKGROUND_AUTOTAG_FIELDS: tuple[str, ...] = (
-    "albumartist",
-    "tracknumber",
-    "discnumber",
-    "composer",
     "originalartist",
-    "isrc",
     "rating",
     "comment",
     "lyrics",
-    "grouping",
-    "copyright",
     "remixer",
 )
 
@@ -92,15 +85,10 @@ class Track:
     title: str | None = None
     artist: str | None = None
     album: str | None = None
-    albumartist: str | None = None
     year: str | None = None
     genre: str | None = None
-    tracknumber: str | None = None
-    discnumber: str | None = None
-    composer: str | None = None
     bpm: float | None = None
     key: str | None = None
-    loudness_lufs: float | None = None
     duration: int | None = None
     file_size: int | None = None
     file_mtime: float | None = None
@@ -115,10 +103,6 @@ class Track:
     comment: str | None = None
     lyrics: str | None = None
     originalartist: str | None = None
-    isrc: str | None = None
-    publisher: str | None = None
-    grouping: str | None = None
-    copyright: str | None = None
     remixer: str | None = None
     cue_in_ms: int | None = None
     cue_out_ms: int | None = None
@@ -168,8 +152,10 @@ class AnalysisJob:
     status: str = "pending"
     created_at: datetime | None = None
     updated_at: datetime | None = None
+    finished_at: datetime | None = None
     error_msg: str | None = None
     job_id: int | None = None
+    parameters: dict | None = None  # na przyszłość (np. lista pól)
 
 
 @dataclass

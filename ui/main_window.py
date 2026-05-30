@@ -29,6 +29,7 @@ from core.services import enrich_track_with_analysis, heuristic_analysis
 from core.waveform import generate_waveform, generate_waveform_threadsafe
 from services.autotag_rewrite import UnifiedAutoTagger
 from services.background_autotag_worker import BackgroundAutotagWorker
+from services.background_enrichment_service import BackgroundEnrichmentService
 from services.beatgrid import auto_cue_points, compute_beatgrid
 from services.key_detection import detect_key
 from services.metadata_enricher import AutoMetadataFiller, MetadataFillReport
@@ -148,12 +149,8 @@ _AUTOTAG_FIELDS = [
     "title",
     "artist",
     "album",
-    "albumartist",
     "year",
     "genre",
-    "tracknumber",
-    "discnumber",
-    "composer",
     "bpm",
     "key",
     "rating",
@@ -161,10 +158,6 @@ _AUTOTAG_FIELDS = [
     "energy",
     "comment",
     "lyrics",
-    "isrc",
-    "publisher",
-    "grouping",
-    "copyright",
     "remixer",
 ]
 
@@ -172,12 +165,8 @@ _AUTOTAG_FIELD_LABELS = {
     "title": "Tytuł",
     "artist": "Artysta",
     "album": "Album",
-    "albumartist": "Artysta albumu",
     "year": "Rok",
     "genre": "Gatunek",
-    "tracknumber": "Nr utworu",
-    "discnumber": "Nr dysku",
-    "composer": "Kompozytor",
     "bpm": "BPM",
     "key": "Tonacja",
     "rating": "Ocena",
@@ -185,10 +174,6 @@ _AUTOTAG_FIELD_LABELS = {
     "energy": "Energia",
     "comment": "Komentarz",
     "lyrics": "Tekst",
-    "isrc": "ISRC",
-    "publisher": "Wydawca",
-    "grouping": "Grupa",
-    "copyright": "Prawa autorskie",
     "remixer": "Remikser",
 }
 
@@ -467,21 +452,14 @@ class TrackFilterProxy(QtCore.QSortFilterProxyModel):
             "title": str(track.title or ""),
             "artist": str(track.artist or ""),
             "album": str(track.album or ""),
-            "albumartist": str(track.albumartist or ""),
             "genre": str(track.genre or ""),
             "date": str(track.year or ""),
-            "tracknumber": str(track.tracknumber or ""),
-            "discnumber": str(track.discnumber or ""),
-            "composer": str(track.composer or ""),
             "bpm": str(track.bpm or ""),
             "key": str(track.key or ""),
             "rating": str(track.rating or ""),
             "comment": str(track.comment or ""),
             "lyrics": str(track.lyrics or ""),
-            "isrc": str(track.isrc or ""),
-            "publisher": str(track.publisher or ""),
-            "grouping": str(track.grouping or ""),
-            "copyright": str(track.copyright or ""),
+
             "remixer": str(track.remixer or ""),
             "mood": str(track.mood or ""),
         }
@@ -562,7 +540,6 @@ class LoudnessWorker(QtCore.QRunnable):
             save_analysis_cache(
                 Path(track.path),
                 {
-                    "loudness_lufs": lufs,
                     "cue_in_ms": cue_in,
                     "cue_out_ms": cue_out,
                     "beatgrid": beatgrid,
@@ -690,7 +667,7 @@ class AutoTagWorker(QtCore.QRunnable):
             genius_api_key=getattr(self.settings, "genius_api_key", None),
         )
 
-        _LOCAL_FIELDS = ("loudness_lufs", "cue_in_ms", "cue_out_ms", "fingerprint", "waveform_path", "artwork_path")
+        _LOCAL_FIELDS = ("cue_in_ms", "cue_out_ms", "fingerprint", "waveform_path", "artwork_path")
 
         # Domyślnie 6 workerów — każdy może być w innej fazie pipeline (fpcalc,
         # AcoustID, MusicBrainz, AI, features), co daje przeplatanie zapytań.
@@ -874,10 +851,7 @@ class AutoTagWorker(QtCore.QRunnable):
             _AUDIO_ANALYSIS_POOL.submit(_run_audio_features_task, path_obj)
             if (track.bpm is None or track.energy is None) else None
         )
-        _loudness_future = (
-            _AUDIO_ANALYSIS_POOL.submit(analyze_loudness, path_obj)
-            if track.loudness_lufs is None else None
-        )
+        _loudness_future = None
         _waveform_future = (
             _AUDIO_ANALYSIS_POOL.submit(generate_waveform_threadsafe, path_obj)
             if track.waveform_path is None else None
@@ -953,11 +927,7 @@ class AutoTagWorker(QtCore.QRunnable):
         _validate_track_metadata(track)
         path_obj = Path(track.path)
 
-        if _loudness_future is not None:
-            try:
-                track.loudness_lufs = _loudness_future.result(timeout=45)
-            except Exception as e:
-                _process_log(f"[autotag] loudness error file={path_obj.name} err={e}")
+        # loudness removed from fields
 
         if track.cue_in_ms is None and track.duration:
             try:
@@ -1597,21 +1567,13 @@ class MainWindow(QtWidgets.QMainWindow):
     def _apply_filters(self):
         category_map = {
             "Wszystkie pola": "all",
-            "Album Artist": "albumartist",
             "Genre": "genre",
             "Date": "date",
-            "Track Number": "tracknumber",
-            "Disc Number": "discnumber",
-            "Composer": "composer",
             "BPM": "bpm",
             "Key": "key",
             "Rating": "rating",
             "Comment": "comment",
             "Lyrics": "lyrics",
-            "ISRC": "isrc",
-            "Publisher": "publisher",
-            "Grouping": "grouping",
-            "Copyright": "copyright",
             "Remixer": "remixer",
             "Mood": "mood",
         }
@@ -1743,20 +1705,13 @@ class MainWindow(QtWidgets.QMainWindow):
             f"Title: {track.title or ''}",
             f"Artist: {track.artist or ''}",
             f"Album: {track.album or ''}",
-            f"AlbumArtist: {track.albumartist or ''}",
             f"Year: {track.year or ''}",
             f"Genre: {track.genre or ''}",
-            f"Track: {track.tracknumber or ''}",
-            f"Disc: {track.discnumber or ''}",
-            f"Composer: {track.composer or ''}",
             f"BPM: {track.bpm or ''}",
             f"Key: {track.key or ''}",
             f"Rating: {track.rating or ''}",
             f"Mood: {track.mood or ''}",
-            f"ISRC: {track.isrc or ''}",
-            f"Publisher: {track.publisher or ''}",
             f"Remixer: {track.remixer or ''}",
-            f"LUFS: {track.loudness_lufs or ''}",
             f"Cue A: {track.cue_in_ms or ''}",
             f"Cue B: {track.cue_out_ms or ''}",
             f"Duration: {track.duration or ''}",
@@ -2372,105 +2327,78 @@ class MainWindow(QtWidgets.QMainWindow):
             )
             _process_log(f"[autotag] done | processed={processed} updated={updated} errors={errors}")
 
-            # === NOWA LOGIKA TŁA (timeout-based) ===
+            # === NOWA LOGIKA TŁA (przez kolejkę AnalysisJob) ===
             settings = load_settings()
-            delay = getattr(settings, "background_autotag_delay_seconds", 0)
 
-            if getattr(settings, "background_autotag_enabled", True) and delay > 0 and len(tracks) > 0:
-                self.status.showMessage(
-                    f"Autotagowanie zakończone. Uzupełnianie reszty pól w tle uruchomi się automatycznie za {delay} s..."
-                )
-                QtCore.QTimer.singleShot(
-                    delay * 1000,
-                    lambda: self._start_background_enrichment(tracks, settings)
-                )
-            elif getattr(settings, "background_autotag_enabled", True):
-                self.status.showMessage(
-                    "Autotagowanie zakończone. Uzupełnianie reszty pól w tle dostępne ręcznie (menu kontekstowe)."
-                )
+            if getattr(settings, "background_autotag_enabled", True) and len(tracks) > 0:
+                delay = getattr(settings, "background_autotag_delay_seconds", 0)
+
+                if delay > 0:
+                    self.status.showMessage(
+                        f"Autotagowanie zakończone. Zadania uzupełniania dodano do kolejki. "
+                        f"Uruchomienie automatyczne za {delay} s."
+                    )
+                    QtCore.QTimer.singleShot(
+                        delay * 1000,
+                        lambda: self._start_background_enrichment(tracks, settings)
+                    )
+                else:
+                    # Natychmiast dodajemy zadania do kolejki (procesor je obsłuży)
+                    self._start_background_enrichment(tracks, settings)
+                    self.status.showMessage(
+                        "Autotagowanie zakończone. Zadania uzupełniania dodano do kolejki w tle."
+                    )
 
         self._autotag_worker.signals.progress.connect(on_progress)
         self._autotag_worker.signals.finished.connect(on_finished)
         self.thread_pool.start(self._autotag_worker)
 
     def _run_background_enrichment_selected(self):
-        """Ręczne uruchomienie uzupełniania w tle dla zaznaczonych utworów."""
+        """Ręczne uruchomienie uzupełniania w tle dla zaznaczonych utworów (przez kolejkę AnalysisJob)."""
         tracks = self._selected_tracks()
         if not tracks:
             self._show_message("Zaznacz co najmniej jeden utwór.")
             return
 
-        # Ochrona przed uruchomieniem drugiego workera gdy już coś działa
-        if hasattr(self, '_background_workers'):
-            active = [t for (w, t) in self._background_workers if t.isRunning()]
-            if active:
-                self._show_message("Uzupełnianie w tle już trwa. Poczekaj aż się zakończy lub zatrzymaj poprzednie.")
-                return
-
         settings = load_settings()
-        self._start_background_enrichment(tracks, settings)
-        self.status.showMessage(f"Uruchomiono uzupełnianie w tle dla {len(tracks)} utworów...")
+        service = self._get_bg_enrichment_service()
+
+        track_ids = [t.id for t in tracks if hasattr(t, 'id') and t.id]
+        if not track_ids:
+            # fallback – jeśli tracki nie mają jeszcze id (rzadko)
+            track_ids = [repository.get_or_create_track_by_path(t.path).id for t in tracks]
+
+        service.enqueue_background_enrichment(track_ids, priority=3, source="manual")
+        self.status.showMessage(f"Dodano {len(track_ids)} zadań uzupełniania w tle.")
+
+    def _get_bg_enrichment_service(self) -> BackgroundEnrichmentService:
+        if self._bg_enrichment_service is None:
+            self._bg_enrichment_service = BackgroundEnrichmentService(self.settings, self)
+            # Uruchamiamy procesor zadań w tle
+            self._bg_enrichment_service.start_processor(interval_ms=7000)
+        return self._bg_enrichment_service
 
     def _start_background_enrichment(self, tracks: list[Track], settings) -> None:
-        """Uruchamia ciche uzupełnianie mniej priorytetowych pól w tle."""
+        """
+        Dodaje zadania uzupełniania w tle do kolejki AnalysisJob.
+        Nie uruchamia workera bezpośrednio – robi to procesor w tle.
+        """
         try:
-            worker = BackgroundAutotagWorker(tracks, settings)
-            task_id = self.task_manager.add_task(
-                "Uzupełnianie tagów w tle", len(tracks), "Przygotowanie..."
-            )
+            service = self._get_bg_enrichment_service()
 
-            def on_bg_progress(current: int, total: int, name: str):
-                self.task_manager.update_task(task_id, current, total, f"Tło: {name}")
-
-            def on_bg_track_updated(track_path: str, changes: dict):
-                # Odświeżamy tylko jeśli ten track jest aktualnie widoczny
-                self._refresh_track_in_view(track_path, changes)
-
-            def on_bg_finished(updated: int, total: int):
-                self.task_manager.finish_task(task_id)
-                if updated > 0:
-                    self.status.showMessage(
-                        f"Uzupełniono w tle: {updated} z {total} utworów"
-                    )
-                    _process_log(f"[autotag-bg] finished | updated={updated}/{total}")
+            track_ids = []
+            for t in tracks:
+                if hasattr(t, 'id') and t.id:
+                    track_ids.append(t.id)
                 else:
-                    self.task_manager.remove_task(task_id)
+                    db_track = repository.get_or_create_track_by_path(t.path)
+                    track_ids.append(db_track.id)
 
-                # Czyścimy zakończone workery z listy
-                if hasattr(self, '_background_workers'):
-                    self._background_workers = [
-                        (w, t) for (w, t) in self._background_workers if t.isRunning()
-                    ]
-
-            worker.progress.connect(on_bg_progress)
-            worker.track_updated.connect(on_bg_track_updated)
-            worker.finished.connect(on_bg_finished)
-
-            # Uruchamiamy w osobnym wątku
-            thread = QtCore.QThread()
-            worker.moveToThread(thread)
-            thread.started.connect(worker.run)
-            worker.finished.connect(thread.quit)
-            worker.finished.connect(worker.deleteLater)
-            thread.finished.connect(thread.deleteLater)
-
-            # Zarządzanie wieloma workerami w tle (bezpieczne uruchamianie wielu razy)
-            if not hasattr(self, '_background_workers'):
-                self._background_workers = []  # lista (worker, thread)
-
-            # Opcjonalnie: nie pozwalamy na więcej niż jeden aktywny worker w tle naraz
-            # (można to później zmienić na允许多个 jeśli potrzeba)
-            active = [w for w in self._background_workers if w[1].isRunning()]
-            if active:
-                _process_log("[autotag-bg] Worker w tle już działa – pomijam nowe uruchomienie")
-                self.status.showMessage("Uzupełnianie w tle już trwa...")
-                return
-
-            self._background_workers.append((worker, thread))
-            thread.start()
+            service.enqueue_background_enrichment(track_ids, priority=5, source="autotag_finish")
+            _process_log(f"[autotag-bg] Dodano {len(track_ids)} zadań do kolejki AnalysisJob")
 
         except Exception as e:
-            _process_log(f"[autotag-bg] failed to start: {e}")
+            _process_log(f"[autotag-bg] failed to enqueue jobs: {e}")
 
     def _refresh_track_in_view(self, track_path: str, changes: dict):
         """Odświeża widok po uzupełnieniu w tle (prosta wersja)."""
