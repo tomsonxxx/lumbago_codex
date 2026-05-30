@@ -82,6 +82,7 @@ class AnalysisResult:
 @dataclass
 class Track:
     path: str
+    id: int | None = None
     title: str | None = None
     artist: str | None = None
     album: str | None = None

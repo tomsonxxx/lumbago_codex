@@ -264,3 +264,32 @@
 | 5 | Test na czystym Windows (PyInstaller build) | Desktop | P1 | ⏳ |
 | 6 | ~~Edycja tagów przez Web API~~ | Web MVP | P1 | ✅ |
 | 7 | Naprawić failing test: `test_unified_autotagger_picks_best_candidate` | Desktop | P1 | ⏳ |
+
+---
+
+## 7. Future / Backlog (tylko Desktop — rzeczy z blueprintu odłożone)
+
+> Zapisane na prośbę użytkownika 2026-05. Skupiamy się wyłącznie na wersji desktopowej (PyQt6).
+> Te funkcjonalności są uznane za wartościowe, ale odłożone na później.
+
+- [ ] **Library Builder** — kreator struktury folderów według szablonu (`{genre}/{year}/{artist}/{album}`).  
+  Już istnieje `core/renamer.py` + import wizard — zrobić jako osobny "Library Organizer".
+
+- [ ] **Ulepszony Duplicate Finder z pełnym audio fingerprint**  
+  Obecny: `fuzzy_dedup.py` + AcoustID. Blueprint zakłada 3 metody (hash + tags + fingerprint) + automatyczne merge. Warto dopracować UI i logikę łączenia.
+
+- [ ] **Metadata Auto-Complete w tle (batch mode dla całej biblioteki)**  
+  Już częściowo zaimplementowane przez `BackgroundEnrichmentService` + `AnalysisJob` + `BackgroundAutotagWorker`.  
+  Do rozbudowy: lepsza wizualizacja postępu, ręczne uruchamianie dla całej biblioteki, raporty.
+
+- [ ] **Waveform Color Coding** — kolorowanie waveformu według charakteru dźwięku  
+  (🔴 kick/bass, 🟡 hi-hat/percussion, 🟢 wokale, 🔵 breakdown).  
+  Wymaga dobrego playera + dodatkowej analizy spektralnej.
+
+- [ ] Inne potencjalne rzeczy z blueprintu warte rozważenia później (tylko desktop):
+  - Bardziej zaawansowane Smart Collections (rule engine z AND/OR)
+  - Playlist Intelligence (sortowanie wg harmonic mixing + energy flow)
+  - Crate Digger / "Find Similar Tracks"
+  - Export Manager zoptymalizowany pod CDJ / XDJ / Engine Prime
+  - Lepsze wsparcie cue points / memory points w DB i UI
+

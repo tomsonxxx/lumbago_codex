@@ -13,22 +13,15 @@ class TrackTableModel(QtCore.QAbstractTableModel):
         "Tytuł",
         "Artysta",
         "Album",
-        "Artysta albumu",
         "Rok",
         "Gatunek",
-        "Kompozytor",
         "BPM",
         "Tonacja",
         "Nastrój",
         "Energia",
         "Komentarz",
         "Tekst",
-        "ISRC",
-        "Wydawca",
-        "Grupa",
-        "Prawa autorskie",
         "Remikser",
-        "Głośność (LUFS)",
         "Czas",
         "Format",
         "Rozmiar",
@@ -49,6 +42,7 @@ class TrackTableModel(QtCore.QAbstractTableModel):
     def __init__(self, tracks: list[Track] | None = None):
         super().__init__()
         self._tracks = tracks or []
+        self._now_playing: dict[str, str | None] = {"A": None, "B": None}  # deck -> path
 
     def rowCount(self, parent=QtCore.QModelIndex()) -> int:
         return len(self._tracks)
@@ -61,26 +55,19 @@ class TrackTableModel(QtCore.QAbstractTableModel):
             return None
         track = self._tracks[index.row()]
         if role == QtCore.Qt.ItemDataRole.DisplayRole:
-            return [
+            row_data = [
                 track.title or "",
                 track.artist or "",
                 track.album or "",
-                track.albumartist or "",
                 track.year or "",
                 track.genre or "",
-                track.composer or "",
                 _format_float(track.bpm, 1),
                 track.key or "",
                 track.mood or "",
                 _format_float(track.energy, 2),
                 track.comment or "",
                 track.lyrics or "",
-                track.isrc or "",
-                track.publisher or "",
-                track.grouping or "",
-                track.copyright or "",
                 track.remixer or "",
-                _format_float(track.loudness_lufs, 1),
                 _format_duration(track.duration),
                 track.format or "",
                 _format_size(track.file_size),
@@ -96,7 +83,17 @@ class TrackTableModel(QtCore.QAbstractTableModel):
                 track.waveform_path or "",
                 track.path,
                 _format_tags(track.tags),
-            ][index.column()]
+            ]
+            if index.column() == 0:
+                p = getattr(track, 'path', None)
+                prefix = ""
+                if p:
+                    if self._now_playing.get("A") == p:
+                        prefix += "▶A "
+                    if self._now_playing.get("B") == p:
+                        prefix += "▶B "
+                return prefix + str(row_data[0])
+            return row_data[index.column()]
         if role == QtCore.Qt.ItemDataRole.DecorationRole and index.column() == 0:
             if track.artwork_path:
                 path = Path(track.artwork_path)
@@ -106,6 +103,17 @@ class TrackTableModel(QtCore.QAbstractTableModel):
                         return QtGui.QIcon(pixmap.scaled(96, 96, QtCore.Qt.AspectRatioMode.KeepAspectRatio))
         if role == QtCore.Qt.ItemDataRole.UserRole:
             return track
+        if role == QtCore.Qt.ItemDataRole.BackgroundRole:
+            p = getattr(track, 'path', None)
+            if p:
+                playing_a = self._now_playing.get("A") == p
+                playing_b = self._now_playing.get("B") == p
+                if playing_a and playing_b:
+                    return QtGui.QColor("#2a1f3a")  # both decks (subtle purple)
+                if playing_a:
+                    return QtGui.QColor("#162a40")  # Deck A highlight (cool blue)
+                if playing_b:
+                    return QtGui.QColor("#1a3328")  # Deck B highlight (green tint)
         return None
 
     def headerData(self, section: int, orientation: QtCore.Qt.Orientation, role=QtCore.Qt.ItemDataRole.DisplayRole):
@@ -124,6 +132,31 @@ class TrackTableModel(QtCore.QAbstractTableModel):
         if 0 <= row < len(self._tracks):
             return self._tracks[row]
         return None
+
+    def set_now_playing(self, deck_a_path: str | None, deck_b_path: str | None) -> None:
+        """Update which tracks are loaded in DJ Player decks for visual indicators."""
+        self._now_playing = {"A": deck_a_path, "B": deck_b_path}
+        if self._tracks:
+            top_left = self.index(0, 0)
+            bottom_right = self.index(len(self._tracks) - 1, len(self.headers) - 1)
+            self.dataChanged.emit(top_left, bottom_right, [QtCore.Qt.ItemDataRole.DisplayRole, QtCore.Qt.ItemDataRole.BackgroundRole])
+
+    def mimeData(self, indexes):
+        """Obsługa drag & drop - przekazujemy ścieżki plików."""
+        from PyQt6.QtCore import QMimeData, QByteArray
+        mime = QMimeData()
+        paths = []
+        for index in indexes:
+            if index.column() == 0:  # tylko pierwsza kolumna, żeby nie duplikować
+                track = self.track_at(index.row())
+                if track:
+                    paths.append(track.path)
+        if paths:
+            mime.setData("application/x-lumbago-track-paths", QByteArray(",".join(paths).encode()))
+            # Dodatkowo standardowe URI dla kompatybilności
+            urls = [f"file://{p}" for p in paths]
+            mime.setUrls([QtCore.QUrl(u) for u in urls])
+        return mime
 
 
 def _format_duration(seconds: int | None) -> str:
@@ -179,6 +212,10 @@ class TrackGridDelegate(QtWidgets.QStyledItemDelegate):
     def __init__(self, placeholder: QtGui.QPixmap):
         super().__init__()
         self.placeholder = placeholder
+        self._now_playing: dict[str, str | None] = {"A": None, "B": None}
+
+    def set_now_playing(self, deck_a_path: str | None, deck_b_path: str | None) -> None:
+        self._now_playing = {"A": deck_a_path, "B": deck_b_path}
 
     def paint(self, painter: QtGui.QPainter, option, index: QtCore.QModelIndex):
         painter.save()
@@ -226,6 +263,29 @@ class TrackGridDelegate(QtWidgets.QStyledItemDelegate):
         font.setBold(False)
         painter.setFont(font)
         painter.drawText(text_rect, QtCore.Qt.AlignmentFlag.AlignBottom | QtCore.Qt.TextFlag.TextWordWrap, artist or "")
+
+        # Now playing badges for DJ Player integration (▶A / ▶B)
+        p = getattr(track, 'path', None) if track else None
+        if p:
+            playing_a = self._now_playing.get("A") == p
+            playing_b = self._now_playing.get("B") == p
+            if playing_a or playing_b:
+                badge = "▶ "
+                if playing_a:
+                    badge += "A"
+                if playing_b:
+                    badge += ("+" if playing_a else "") + "B"
+                badge_rect = QtCore.QRect(rect.x() + rect.width() - 52, rect.y() + 6, 46, 16)
+                painter.setPen(QtCore.Qt.PenStyle.NoPen)
+                painter.setBrush(QtGui.QColor("#ff2d55" if (playing_a and not playing_b) else "#22c55e" if (playing_b and not playing_a) else "#a855f7"))
+                painter.drawRoundedRect(badge_rect, 3, 3)
+                painter.setPen(QtGui.QColor("#ffffff"))
+                f2 = painter.font()
+                f2.setPointSize(7)
+                f2.setBold(True)
+                painter.setFont(f2)
+                painter.drawText(badge_rect, QtCore.Qt.AlignmentFlag.AlignCenter, badge)
+
         painter.restore()
 
     def sizeHint(self, option, index: QtCore.QModelIndex) -> QtCore.QSize:

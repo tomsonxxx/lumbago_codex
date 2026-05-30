@@ -329,6 +329,12 @@ class LibraryWidget(QtWidgets.QWidget):
         if dlg.exec() == QtWidgets.QDialog.DialogCode.Accepted:
             self._crate_model.refresh_columns()
 
+    def set_now_playing(self, deck_a_path: str | None = None, deck_b_path: str | None = None):
+        """Stub for main window now-playing sync (DJ Player indicators).
+        Full implementation can highlight rows in list/crate views in future."""
+        self._now_playing = {"A": deck_a_path, "B": deck_b_path}
+        # No-op for now to keep 100% compat; primary table+grid in main_window are fully wired.
+
 
 class ColumnConfigDialog(QtWidgets.QDialog):
     def __init__(self, config: DJCrateColumnConfig, parent=None):

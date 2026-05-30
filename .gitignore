@@ -31,3 +31,12 @@ htmlcov/
 .vs/
 *.swp
 node_modules/
+
+# Debug / one-off troubleshooting scripts (local only)
+RUN_WITH_ERROR_LOG.bat
+RUN_WITH_FULL_ERROR.bat
+diagnose_startup.bat
+launch_with_traceback.py
+show_crash_logs.py
+extract_blueprint.py
+docs/Lumbago_Blueprint_Extracted.txt

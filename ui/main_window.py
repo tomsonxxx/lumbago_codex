@@ -43,6 +43,8 @@ from data.repository import (
     add_change_log,
     create_playlist,
     delete_playlist,
+    get_or_create_track_by_path,
+    get_track_by_path,
     init_db,
     list_playlist_tracks,
     list_playlists,
@@ -71,7 +73,7 @@ from ui.theme import get_scale_factor
 from ui.widgets import AnimatedButton
 from ui.xml_converter_dialog import XmlConverterDialog
 from ui.xml_import_dialog import XmlImportDialog
-from ui.player_widget import PlayerWidget as DJPlayerWidget
+from ui.dj_player_window import DJPlayerWindow
 from ui.library_widget import LibraryWidget
 from ui.background_task_monitor import BackgroundTaskManager, BackgroundTaskMonitorWidget
 from ui.health_dashboard import HealthReportDashboard
@@ -528,11 +530,6 @@ class LoudnessWorker(QtCore.QRunnable):
         updated: list[Track] = []
         total = len(self.tracks)
         for idx, track in enumerate(self.tracks, 1):
-            try:
-                lufs = analyze_loudness(Path(track.path))
-                track.loudness_lufs = lufs
-            except Exception:
-                lufs = None
             cue_in, cue_out = auto_cue_points(track.duration)
             track.cue_in_ms = cue_in
             track.cue_out_ms = cue_out
@@ -1054,6 +1051,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.table_view.customContextMenuRequested.connect(self._table_context_menu)
         self.table_view.setAlternatingRowColors(True)
         self.table_view.setSortingEnabled(True)
+
+        # Włączamy drag & drop na zewnątrz (do DJ Playera itp.)
+        self.table_view.setDragEnabled(True)
+        self.table_view.setDragDropMode(QtWidgets.QAbstractItemView.DragDropMode.DragOnly)
         self.filter_proxy.setSortCaseSensitivity(QtCore.Qt.CaseSensitivity.CaseInsensitive)
         header = self.table_view.horizontalHeader()
         header.setStretchLastSection(True)
@@ -1102,8 +1103,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.content_splitter.splitterMoved.connect(self._on_splitter_moved)
         main_column.addWidget(self.content_splitter, 1)
 
-        player = self._build_player()
-        main_column.addWidget(player)
+        # Stary wbudowany odtwarzacz został usunięty.
+        # Nowy, pełny DJ Player (2 decki) otwiera się jako osobne okno przyciskiem 🎛
         dj_player_container = self._build_dj_player()
         main_column.addWidget(dj_player_container)
 
@@ -1221,13 +1222,21 @@ class MainWindow(QtWidgets.QMainWindow):
         self.filter_toggle_btn.setToolTip("Pokaż / ukryj pasek filtrów")
         self.filter_toggle_btn.clicked.connect(self._toggle_filter_row)
         title_row.addWidget(self.filter_toggle_btn)
-        self.dj_player_btn = QtWidgets.QPushButton("🎛")
-        self.dj_player_btn.setFixedSize(self._s(28), self._s(28))
+        self.dj_player_btn = QtWidgets.QPushButton("🎛  DJ Player")
+        self.dj_player_btn.setStyleSheet("font-weight: bold; padding: 4px 12px;")
+        self.dj_player_btn.setToolTip(
+            "Otwórz profesjonalny DJ Player (2 decki).\n\n"
+            "• BPM-aware beatgrid, 4/8 hotcue (z czasem), Quantize, KEY, SYNC (tempo+phase), PFL\n"
+            "• Master + HP Cue, 3-pasmowy EQ, pitch range, crossfader, pętle, Recent History\n"
+            "• Memory S/R per deck, Now Playing indicators w bibliotece, pełne Load A/B\n"
+            "• Drag & drop + kontekstowe menu + skróty\n\n"
+            "Zdecydowanie zalecany VLC (videolan.org/vlc) dla pełnych możliwości.\n"
+            "Fallback (Qt) — podstawowe odtwarzanie działa."
+        )
         self.dj_player_btn.setCheckable(True)
         self.dj_player_btn.setChecked(False)
-        self.dj_player_btn.setToolTip("Pokaż / ukryj DJ Player")
-        self.dj_player_btn.clicked.connect(self._toggle_dj_player)
         title_row.addWidget(self.dj_player_btn)
+        self.dj_player_btn.clicked.connect(self._toggle_dj_player)
         layout.addLayout(title_row)
 
         self.filter_row_widget = QtWidgets.QWidget()
@@ -1240,21 +1249,13 @@ class MainWindow(QtWidgets.QMainWindow):
         self.search_category.addItems(
             [
                 "Wszystkie pola",
-                "Album Artist",
                 "Genre",
                 "Date",
-                "Track Number",
-                "Disc Number",
-                "Composer",
                 "BPM",
                 "Key",
                 "Rating",
                 "Comment",
                 "Lyrics",
-                "ISRC",
-                "Publisher",
-                "Grouping",
-                "Copyright",
                 "Remixer",
                 "Mood",
             ]
@@ -1384,9 +1385,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.detail_genre = QtWidgets.QLineEdit()
         self.detail_bpm = QtWidgets.QLineEdit()
         self.detail_key = QtWidgets.QLineEdit()
-        self.detail_loudness = QtWidgets.QLineEdit()
-        self.detail_loudness.setReadOnly(True)
-        self.detail_loudness.setToolTip("Zintegrowana głośność (LUFS)")
         self.detail_energy = QtWidgets.QLineEdit()
         self.detail_energy.setReadOnly(True)
         self.detail_energy.setToolTip("Energia (0.0–1.0)")
@@ -1400,7 +1398,6 @@ class MainWindow(QtWidgets.QMainWindow):
         form.addRow("Gatunek", self.detail_genre)
         form.addRow("BPM", self.detail_bpm)
         form.addRow("Tonacja", self.detail_key)
-        form.addRow("LUFS", self.detail_loudness)
         form.addRow("Energia", self.detail_energy)
         form.addRow("Nastrój", self.detail_mood)
         layout.addLayout(form)
@@ -1439,84 +1436,8 @@ class MainWindow(QtWidgets.QMainWindow):
         outer.addWidget(scroll, 1)
         return frame
 
-    def _build_player(self) -> QtWidgets.QFrame:
-        frame = QtWidgets.QFrame()
-        frame.setObjectName("PlayerDock")
-        layout = QtWidgets.QVBoxLayout(frame)
-        layout.setContentsMargins(12, 8, 12, 8)
-        row = QtWidgets.QHBoxLayout()
-        self.player = None
-        self.audio_output = None
-        if os.getenv("LUMBAGO_DISABLE_MULTIMEDIA", "1") == "1":
-            _debug_log("Player init skipped (LUMBAGO_DISABLE_MULTIMEDIA=1)")
-        else:
-            try:
-                from PyQt6.QtMultimedia import QAudioOutput, QMediaPlayer
-
-                self.player = QMediaPlayer()
-                self.audio_output = QAudioOutput()
-                self.player.setAudioOutput(self.audio_output)
-            except Exception as exc:
-                _debug_log(f"Player init failed: {exc}")
-
-        self.play_btn = AnimatedButton("Odtwarzaj / Pauza")
-        self.play_btn.setToolTip("Odtwarzaj lub wstrzymaj wybrany utwór")
-        self.play_btn.clicked.connect(self._toggle_playback)
-        row.addWidget(self.play_btn)
-
-        self.stop_btn = AnimatedButton("Zatrzymaj")
-        self.stop_btn.setToolTip("Zatrzymaj odtwarzanie")
-        if self.player:
-            self.stop_btn.clicked.connect(self.player.stop)
-        row.addWidget(self.stop_btn)
-        row.addStretch(1)
-        layout.addLayout(row)
-
-        timeline = QtWidgets.QHBoxLayout()
-        self.position_slider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
-        self.position_slider.setRange(0, 1000)
-        self.position_slider.sliderMoved.connect(self._seek_position)
-        self.time_label = QtWidgets.QLabel("00:00 / 00:00")
-        timeline.addWidget(self.position_slider, 1)
-        timeline.addWidget(self.time_label)
-        layout.addLayout(timeline)
-
-        cues = QtWidgets.QHBoxLayout()
-        self.cue_a_btn = AnimatedButton("Ustaw Cue A")
-        self.cue_a_btn.setToolTip("Zapisz pozycję jako Cue A")
-        self.cue_a_btn.clicked.connect(self._set_cue_a)
-        self.cue_b_btn = AnimatedButton("Ustaw Cue B")
-        self.cue_b_btn.setToolTip("Zapisz pozycję jako Cue B")
-        self.cue_b_btn.clicked.connect(self._set_cue_b)
-        self.jump_a_btn = AnimatedButton("Skok A")
-        self.jump_a_btn.setToolTip("Skocz do Cue A")
-        self.jump_a_btn.clicked.connect(self._jump_to_cue_a)
-        self.jump_b_btn = AnimatedButton("Skok B")
-        self.jump_b_btn.setToolTip("Skocz do Cue B")
-        self.jump_b_btn.clicked.connect(self._jump_to_cue_b)
-        self.loop_btn = AnimatedButton("Loop A-B")
-        self.loop_btn.setToolTip("Włącz/wyłącz pętlę między Cue A i B")
-        self.loop_btn.clicked.connect(self._toggle_loop)
-        self.auto_cue_btn = AnimatedButton("Auto-cue")
-        self.auto_cue_btn.setToolTip("Ustaw automatyczne Cue (intro/outro)")
-        self.auto_cue_btn.clicked.connect(self._auto_cue_selected)
-        cues.addWidget(self.cue_a_btn)
-        cues.addWidget(self.cue_b_btn)
-        cues.addWidget(self.jump_a_btn)
-        cues.addWidget(self.jump_b_btn)
-        cues.addWidget(self.loop_btn)
-        cues.addWidget(self.auto_cue_btn)
-        cues.addStretch(1)
-        layout.addLayout(cues)
-
-        if self.player:
-            self.player.positionChanged.connect(self._on_position_changed)
-            self.player.durationChanged.connect(self._on_duration_changed)
-        self._duration_ms = 0
-        self._cue_a = None
-        self._cue_b = None
-        self._loop_enabled = False
-        return frame
+    # _build_player removed — stary wbudowany odtwarzacz został całkowicie usunięty.
+    # Nowy DJ Player działa jako osobne okno (przycisk "🎛 DJ Player" w toolbarze).
 
     def _build_placeholder_pixmap(self, width: int, height: int) -> QtGui.QPixmap:
         pixmap = QtGui.QPixmap(width, height)
@@ -1536,6 +1457,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self._apply_playlist_view()
         if hasattr(self, "library_widget") and self.view_toggle.currentIndex() == 2:
             self.library_widget.set_tracks(tracks)
+        # Preserve/refresh any active DJ player now-playing highlights
+        if hasattr(self, "_refresh_now_playing_indicators"):
+            QtCore.QTimer.singleShot(10, self._refresh_now_playing_indicators)
 
     def _load_playlists(self):
         self.playlist_list.clear()
@@ -1733,19 +1657,12 @@ class MainWindow(QtWidgets.QMainWindow):
             f"Title: {track.title or ''}",
             f"Artist: {track.artist or ''}",
             f"Album: {track.album or ''}",
-            f"AlbumArtist: {track.albumartist or ''}",
             f"Genre: {track.genre or ''}",
-            f"Track: {track.tracknumber or ''}",
-            f"Disc: {track.discnumber or ''}",
-            f"Composer: {track.composer or ''}",
             f"BPM: {track.bpm or ''}",
             f"Key: {track.key or ''}",
             f"Rating: {track.rating or ''}",
             f"Mood: {track.mood or ''}",
-            f"ISRC: {track.isrc or ''}",
-            f"Publisher: {track.publisher or ''}",
             f"Remixer: {track.remixer or ''}",
-            f"LUFS: {track.loudness_lufs or ''}",
             f"Cue A: {track.cue_in_ms or ''}",
             f"Cue B: {track.cue_out_ms or ''}",
             f"Duration: {track.duration or ''}",
@@ -1762,86 +1679,65 @@ class MainWindow(QtWidgets.QMainWindow):
         track = self.table_model.track_at(source_index.row())
         if not track:
             return
-        if hasattr(self, "_dj_player"):
-            self._dj_player.load_track(track)
-            self._dj_player.play()
-            return
-        if not self.player:
-            self._show_message("Odtwarzacz jest niedostępny w tej wersji.")
-            return
-        self._cue_a = track.cue_in_ms
-        self._cue_b = track.cue_out_ms
-        url = QtCore.QUrl.fromLocalFile(track.path)
-        self.player.setSource(url)
-        self.player.play()
+        if not getattr(track, 'id', None):
+            try:
+                dbt = get_track_by_path(track.path)
+                if dbt and dbt.id:
+                    track = dbt
+            except Exception:
+                pass
+        # Zawsze kieruj do nowego dedykowanego DJ Playera
+        self._open_dj_player_window()
+        if hasattr(self, "_dj_player_window") and self._dj_player_window is not None:
+            self._dj_player_window.load_track_to_deck("A", track)
 
-    def _toggle_playback(self):
-        if not self.player:
-            self._show_message("Odtwarzacz jest niedostępny w tej wersji.")
+    def _load_selected_to_deck(self, deck: str):
+        """Load currently selected track(s) from table/grid to the given deck (first selected)."""
+        tracks = self._selected_tracks()
+        if not tracks:
+            # Fallback to single current in table or grid
+            if self.view_stack.currentIndex() == 0:  # table
+                indexes = self.table_view.selectionModel().selectedRows()
+                if indexes:
+                    src = self.filter_proxy.mapToSource(indexes[0])
+                    t = self.table_model.track_at(src.row())
+                    if t:
+                        tracks = [t]
+            else:
+                indexes = self.grid_view.selectionModel().selectedIndexes()
+                if indexes:
+                    src = self.filter_proxy.mapToSource(indexes[0])
+                    t = self.table_model.track_at(src.row())
+                    if t:
+                        tracks = [t]
+        if not tracks:
+            self.status.showMessage("Zaznacz utwór, aby załadować do decka.")
             return
-        from PyQt6.QtMultimedia import QMediaPlayer
-        if self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
-            self.player.pause()
+        track = tracks[0]
+        if not getattr(track, 'id', None):
+            try:
+                dbt = get_track_by_path(track.path)
+                if dbt and dbt.id:
+                    track = dbt
+            except Exception:
+                pass
+        self._open_dj_player_window()
+        if hasattr(self, "_dj_player_window") and self._dj_player_window:
+            self._dj_player_window.load_track_to_deck(deck, track)
+            self.status.showMessage(f"Załadowano do Deck {deck}")
+
+    def _stop_all_decks_from_main(self):
+        """Global stop/unload callable from main window shortcuts/menus."""
+        if hasattr(self, "_dj_player_window") and self._dj_player_window:
+            self._dj_player_window.stop_all_decks()
+            self.status.showMessage("Wszystkie decki zatrzymane (DJ Player)")
         else:
-            self._play_selected()
+            self.status.showMessage("DJ Player nie jest otwarty.")
 
-    def _seek_position(self, value: int):
-        if not self.player:
-            return
-        if self._duration_ms <= 0:
-            return
-        self.player.setPosition(int(self._duration_ms * (value / 1000)))
-
-    def _on_duration_changed(self, duration: int):
-        if not self.player:
-            return
-        self._duration_ms = duration
-        self._update_time_label(self.player.position(), duration)
-
-    def _on_position_changed(self, position: int):
-        if not self.player:
-            return
-        if self._duration_ms > 0:
-            self.position_slider.blockSignals(True)
-            self.position_slider.setValue(int((position / self._duration_ms) * 1000))
-            self.position_slider.blockSignals(False)
-        self._update_time_label(position, self._duration_ms)
-        if self._loop_enabled and self._cue_a is not None and self._cue_b is not None:
-            if position >= self._cue_b:
-                self.player.setPosition(self._cue_a)
-
-    def _update_time_label(self, position: int, duration: int):
-        def fmt(ms: int) -> str:
-            seconds = max(0, ms // 1000)
-            mins = seconds // 60
-            secs = seconds % 60
-            return f"{mins:02d}:{secs:02d}"
-        self.time_label.setText(f"{fmt(position)} / {fmt(duration)}")
-
-    def _set_cue_a(self):
-        if not self.player:
-            return
-        self._cue_a = self.player.position()
-        self._show_message("Ustawiono Cue A.")
-
-    def _set_cue_b(self):
-        if not self.player:
-            return
-        self._cue_b = self.player.position()
-        self._show_message("Ustawiono Cue B.")
-
-    def _jump_to_cue_a(self):
-        if self.player and self._cue_a is not None:
-            self.player.setPosition(self._cue_a)
-
-    def _jump_to_cue_b(self):
-        if self.player and self._cue_b is not None:
-            self.player.setPosition(self._cue_b)
-
-    def _toggle_loop(self):
-        self._loop_enabled = not self._loop_enabled
-        state = "włączona" if self._loop_enabled else "wyłączona"
-        self.status.showMessage(f"Pętla {state}.")
+    # === Stary wbudowany odtwarzacz całkowicie usunięty ===
+    # Poniższe metody były częścią starego playera i zostały usunięte:
+    # _on_duration_changed, _on_position_changed, _update_time_label,
+    # _set_cue_a, _set_cue_b, _jump_to_cue_a, _jump_to_cue_b, _toggle_loop
 
     def _grid_context_menu(self, pos):
         index = self.grid_view.indexAt(pos)
@@ -1849,6 +1745,8 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         menu = QtWidgets.QMenu(self)
         play_action = menu.addAction("Odtwórz")
+        load_a_action = menu.addAction("Załaduj do Deck A (DJ Player)")
+        load_b_action = menu.addAction("Załaduj do Deck B (DJ Player)")
         details_action = menu.addAction("Pokaż szczegóły")
         ai_action = menu.addAction("Analiza AI")
         local_meta_action = menu.addAction("Wczytaj metadane lokalne")
@@ -1860,15 +1758,35 @@ class MainWindow(QtWidgets.QMainWindow):
         selection_compare = selection_menu.addAction("Porównaj tagi")
         action = menu.exec(self.grid_view.mapToGlobal(pos))
         if action == play_action:
-            if not self.player:
-                self._show_message("Odtwarzacz jest niedostępny w tej wersji.")
-                return
-            source_index = self.filter_proxy.mapToSource(index)
-            track = self.table_model.track_at(source_index.row())
-            if track:
-                url = QtCore.QUrl.fromLocalFile(track.path)
-                self.player.setSource(url)
-                self.player.play()
+            self._play_selected()
+        elif action == load_a_action:
+            self._open_dj_player_window()
+            if hasattr(self, "_dj_player_window") and self._dj_player_window:
+                source_index = self.filter_proxy.mapToSource(index)
+                track = self.table_model.track_at(source_index.row())
+                if track:
+                    if not getattr(track, 'id', None):
+                        try:
+                            dbt = get_track_by_path(track.path)
+                            if dbt and dbt.id:
+                                track = dbt
+                        except Exception:
+                            pass
+                    self._dj_player_window.load_track_to_deck("A", track)
+        elif action == load_b_action:
+            self._open_dj_player_window()
+            if hasattr(self, "_dj_player_window") and self._dj_player_window:
+                source_index = self.filter_proxy.mapToSource(index)
+                track = self.table_model.track_at(source_index.row())
+                if track:
+                    if not getattr(track, 'id', None):
+                        try:
+                            dbt = get_track_by_path(track.path)
+                            if dbt and dbt.id:
+                                track = dbt
+                        except Exception:
+                            pass
+                    self._dj_player_window.load_track_to_deck("B", track)
         if action == details_action:
             self._update_detail_panel_from_grid()
         if action == ai_action:
@@ -1964,8 +1882,20 @@ class MainWindow(QtWidgets.QMainWindow):
         index = self.table_view.indexAt(pos)
         if not index.isValid():
             return
+        source_index = self.filter_proxy.mapToSource(index)
+        track = self.table_model.track_at(source_index.row())
+        # Enrich with DB id for reliable hotcue persistence when loading to player
+        if track and (not hasattr(track, 'id') or not track.id):
+            try:
+                db_track = get_track_by_path(track.path)
+                if db_track and db_track.id:
+                    track = db_track
+            except Exception:
+                pass
         menu = QtWidgets.QMenu(self)
         play_action = menu.addAction("Odtwórz")
+        load_a_action = menu.addAction("Załaduj do Deck A (DJ Player)")
+        load_b_action = menu.addAction("Załaduj do Deck B (DJ Player)")
         details_action = menu.addAction("Pokaż szczegóły")
         reload_action = menu.addAction("Odczytaj tagi z pliku")
         save_action = menu.addAction("Zapisz tagi do pliku")
@@ -1996,6 +1926,14 @@ class MainWindow(QtWidgets.QMainWindow):
         action = menu.exec(self.table_view.viewport().mapToGlobal(pos))
         if action == play_action:
             self._play_selected()
+        elif action == load_a_action:
+            self._open_dj_player_window()
+            if hasattr(self, "_dj_player_window") and self._dj_player_window:
+                self._dj_player_window.load_track_to_deck("A", track)
+        elif action == load_b_action:
+            self._open_dj_player_window()
+            if hasattr(self, "_dj_player_window") and self._dj_player_window:
+                self._dj_player_window.load_track_to_deck("B", track)
         elif action == details_action:
             self._update_detail_panel()
         elif action == reload_action:
@@ -2109,11 +2047,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.detail_genre.setText(track.genre or "")
         self.detail_bpm.setText(str(track.bpm) if track.bpm is not None else "")
         self.detail_key.setText(track.key or "")
-        self.detail_loudness.setText(str(track.loudness_lufs) if track.loudness_lufs is not None else "")
         self.detail_energy.setText(str(track.energy) if track.energy is not None else "")
         self.detail_mood.setText(track.mood or "")
-        self._cue_a = track.cue_in_ms
-        self._cue_b = track.cue_out_ms
         self._selected_track = track
         self._selected_snapshot = {
             "title": track.title,
@@ -2366,7 +2301,7 @@ class MainWindow(QtWidgets.QMainWindow):
         track_ids = [t.id for t in tracks if hasattr(t, 'id') and t.id]
         if not track_ids:
             # fallback – jeśli tracki nie mają jeszcze id (rzadko)
-            track_ids = [repository.get_or_create_track_by_path(t.path).id for t in tracks]
+            track_ids = [get_or_create_track_by_path(t.path).id for t in tracks if get_or_create_track_by_path(t.path).id]
 
         service.enqueue_background_enrichment(track_ids, priority=3, source="manual")
         self.status.showMessage(f"Dodano {len(track_ids)} zadań uzupełniania w tle.")
@@ -2391,8 +2326,9 @@ class MainWindow(QtWidgets.QMainWindow):
                 if hasattr(t, 'id') and t.id:
                     track_ids.append(t.id)
                 else:
-                    db_track = repository.get_or_create_track_by_path(t.path)
-                    track_ids.append(db_track.id)
+                    db_track = get_or_create_track_by_path(t.path)
+                    if db_track and db_track.id:
+                        track_ids.append(db_track.id)
 
             service.enqueue_background_enrichment(track_ids, priority=5, source="autotag_finish")
             _process_log(f"[autotag-bg] Dodano {len(track_ids)} zadań do kolejki AnalysisJob")
@@ -2518,9 +2454,6 @@ class MainWindow(QtWidgets.QMainWindow):
                 },
             )
         update_tracks(tracks)
-        if getattr(self, "_selected_track", None):
-            self._cue_a = self._selected_track.cue_in_ms
-            self._cue_b = self._selected_track.cue_out_ms
         self._show_message("Auto‑cue ustawione.")
 
     def _export_playlist_virtualdj(self):
@@ -2628,21 +2561,82 @@ class MainWindow(QtWidgets.QMainWindow):
             self._run_ai_tagger()
 
     def _build_dj_player(self) -> QtWidgets.QWidget:
-        try:
-            self._dj_player = DJPlayerWidget(self)
-            self._dj_player.setVisible(False)
-            return self._dj_player
-        except Exception as exc:
-            _debug_log(f"DJPlayerWidget init failed: {exc}")
-            self._dj_player = None
-            return QtWidgets.QWidget()
+        # W nowej wersji DJ Player jest osobnym oknem – nie embedujemy go już w głównym oknie.
+        # Zostawiamy pusty placeholder, żeby nie psuć layoutu.
+        return QtWidgets.QWidget()
 
     def _toggle_dj_player(self):
-        if self._dj_player is None:
-            return
-        visible = not self._dj_player.isVisible()
-        self._dj_player.setVisible(visible)
-        self.dj_player_btn.setChecked(visible)
+        self._open_dj_player_window()
+
+    def _open_dj_player_window(self):
+        """Otwiera dedykowane okno DJ Player (nowa implementacja)."""
+        if not hasattr(self, "_dj_player_window") or self._dj_player_window is None:
+            try:
+                self._dj_player_window = DJPlayerWindow(self)
+                # Wire signals for live "now playing" indicators + bidirectional sync (core integration)
+                self._dj_player_window.deck_track_loaded.connect(self._on_dj_deck_loaded)
+                self._dj_player_window.deck_track_unloaded.connect(self._on_dj_deck_unloaded)
+                self._dj_player_window.all_stopped.connect(self._refresh_now_playing_indicators)
+                # Clear indicators when player window is closed/destroyed
+                self._dj_player_window.destroyed.connect(self._clear_dj_now_playing_indicators)
+            except Exception as exc:
+                _debug_log(f"DJPlayerWindow init failed: {exc}")
+                self._show_error_dialog(
+                    "Błąd DJ Playera",
+                    "Nie udało się otworzyć DJ Playera.\n\n"
+                    f"Szczegóły błędu:\n{exc}\n\n"
+                    "Jeśli błąd dotyczy 'QShortcut' lub podobnych rzeczy — to jest błąd w kodzie, nie problem z VLC.\n"
+                    "Spróbuj zrestartować aplikację. Jeśli problem będzie się powtarzał, skopiuj dokładny tekst błędu i wyślij."
+                )
+                return
+
+        self._dj_player_window.show()
+        self._dj_player_window.raise_()
+        self._dj_player_window.activateWindow()
+        self.dj_player_btn.setChecked(True)
+
+    def _on_dj_deck_loaded(self, deck: str, track):
+        """Called when DJ Player loads a track into A or B — update indicators immediately."""
+        if not hasattr(self, "_now_playing"):
+            self._now_playing = {"A": None, "B": None}
+        path = getattr(track, 'path', None) if track else None
+        self._now_playing[deck] = path
+        self._refresh_now_playing_indicators()
+
+    def _on_dj_deck_unloaded(self, deck: str):
+        if not hasattr(self, "_now_playing"):
+            self._now_playing = {"A": None, "B": None}
+        self._now_playing[deck] = None
+        self._refresh_now_playing_indicators()
+
+    def _clear_dj_now_playing_indicators(self):
+        """Clear visual now-playing state when DJ Player window is closed."""
+        if hasattr(self, "_now_playing"):
+            self._now_playing = {"A": None, "B": None}
+        self._refresh_now_playing_indicators()
+
+    def _refresh_now_playing_indicators(self):
+        """Push current deck states to table model + grid delegate for visual feedback."""
+        a_path = getattr(self, "_now_playing", {}).get("A") if hasattr(self, "_now_playing") else None
+        b_path = getattr(self, "_now_playing", {}).get("B") if hasattr(self, "_now_playing") else None
+
+        # Table (always present)
+        if hasattr(self, "table_model"):
+            self.table_model.set_now_playing(a_path, b_path)
+
+        # Grid icon view delegate
+        if hasattr(self, "grid_view"):
+            delegate = self.grid_view.itemDelegate()
+            if isinstance(delegate, TrackGridDelegate):
+                delegate.set_now_playing(a_path, b_path)
+            self.grid_view.viewport().update()
+
+        # Also notify library_widget (DJ Crate view) if it supports it (hook for future)
+        if hasattr(self, "library_widget") and hasattr(self.library_widget, "set_now_playing"):
+            try:
+                self.library_widget.set_now_playing(a_path, b_path)
+            except Exception:
+                pass
 
     def _init_watch_folder_service(self):
         try:
@@ -2665,12 +2659,10 @@ class MainWindow(QtWidgets.QMainWindow):
         detail = [
             f"Title: {track.title or ''}",
             f"Artist: {track.artist or ''}",
-            f"AlbumArtist: {track.albumartist or ''}",
             f"BPM: {track.bpm or ''}",
             f"Key: {track.key or ''}",
             f"Genre: {track.genre or ''}",
             f"Mood: {track.mood or ''}",
-            f"ISRC: {track.isrc or ''}",
             f"Duration: {track.duration or ''}",
             f"Path: {track.path}",
         ]
@@ -2678,11 +2670,17 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _on_library_track_activated(self, track):
         self._update_detail_panel_from_library(track)
-        if self._dj_player is not None:
-            if not self._dj_player.isVisible():
-                self._dj_player.setVisible(True)
-            self._dj_player.load_track(track)
-            self._dj_player.play()
+        if track and not getattr(track, 'id', None):
+            try:
+                dbt = get_track_by_path(track.path)
+                if dbt and dbt.id:
+                    track = dbt
+            except Exception:
+                pass
+        if hasattr(self, "_dj_player_window") and self._dj_player_window is not None:
+            self._dj_player_window.show()
+            self._dj_player_window.raise_()
+            self._dj_player_window.load_track_to_deck("A", track)
 
     def _load_settings(self):
         self.settings = load_settings()
@@ -2801,13 +2799,45 @@ class MainWindow(QtWidgets.QMainWindow):
     def _show_message(self, text: str):
         QtWidgets.QMessageBox.information(self, "Lumbago Music AI", text)
 
+    def _show_error_dialog(self, title: str, message: str):
+        """Pokazuje błąd w oknie z możliwością zaznaczenia i skopiowania tekstu."""
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle(title)
+        dialog.setMinimumSize(520, 320)
+
+        layout = QtWidgets.QVBoxLayout(dialog)
+        layout.setContentsMargins(12, 12, 12, 12)
+
+        # Tekst błędu - zaznaczalny
+        text_edit = QtWidgets.QPlainTextEdit()
+        text_edit.setPlainText(message)
+        text_edit.setReadOnly(True)
+        text_edit.setLineWrapMode(QtWidgets.QPlainTextEdit.LineWrapMode.WidgetWidth)
+        text_edit.setStyleSheet("font-family: Consolas, monospace; font-size: 11px;")
+        layout.addWidget(text_edit)
+
+        # Przyciski
+        btn_layout = QtWidgets.QHBoxLayout()
+        copy_btn = QtWidgets.QPushButton("Kopiuj do schowka")
+        ok_btn = QtWidgets.QPushButton("OK")
+
+        copy_btn.clicked.connect(lambda: QtWidgets.QApplication.clipboard().setText(message))
+        ok_btn.clicked.connect(dialog.accept)
+
+        btn_layout.addWidget(copy_btn)
+        btn_layout.addStretch()
+        btn_layout.addWidget(ok_btn)
+        layout.addLayout(btn_layout)
+
+        dialog.exec()
+
     def _toolbar_context_menu(self, pos: QtCore.QPoint) -> None:
         if not hasattr(self, "toolbar_actions_menu"):
             return
         self.toolbar_actions_menu.exec(self.sender().mapToGlobal(pos))
 
     def _setup_shortcuts(self):
-        QtGui.QShortcut(QtGui.QKeySequence("Space"), self, activated=self._toggle_playback)
+        # Old player Space shortcut removed (new DJ Player has its own shortcuts)
         QtGui.QShortcut(QtGui.QKeySequence("Ctrl+F"), self, activated=self.search_input.setFocus)
         QtGui.QShortcut(QtGui.QKeySequence("Ctrl+I"), self, activated=self._open_import_wizard)
         QtGui.QShortcut(QtGui.QKeySequence("Ctrl+D"), self, activated=self._open_duplicates)
@@ -2815,6 +2845,11 @@ class MainWindow(QtWidgets.QMainWindow):
         QtGui.QShortcut(QtGui.QKeySequence("Ctrl+E"), self, activated=self._open_xml_converter)
         QtGui.QShortcut(QtGui.QKeySequence("Ctrl+T"), self, activated=self._run_ai_tagger)
         QtGui.QShortcut(QtGui.QKeySequence("Ctrl+Shift+D"), self, activated=self._toggle_detail_panel)
+
+        # DJ Player load shortcuts (professional workflow)
+        QtGui.QShortcut(QtGui.QKeySequence("Ctrl+Shift+A"), self, activated=lambda: self._load_selected_to_deck("A"))
+        QtGui.QShortcut(QtGui.QKeySequence("Ctrl+Shift+B"), self, activated=lambda: self._load_selected_to_deck("B"))
+        QtGui.QShortcut(QtGui.QKeySequence("Ctrl+Shift+Esc"), self, activated=self._stop_all_decks_from_main)
 
     def _apply_icons(self):
         icons_dir = Path(__file__).resolve().parent / "assets" / "icons"
@@ -2831,8 +2866,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.auto_tag_btn.setIcon(icon("magic.svg"))
         self.actions_btn.setIcon(icon("dialog.svg"))
         self.clear_filters_btn.setIcon(self.style().standardIcon(QtWidgets.QStyle.StandardPixmap.SP_DialogResetButton))
-        self.play_btn.setIcon(icon("play.svg"))
-        self.stop_btn.setIcon(icon("stop.svg"))
+        # Old embedded player icons removed (new DJ Player is in separate window)
 
     def _build_menu(self):
         menu = self.menuBar()
@@ -2864,7 +2898,8 @@ class MainWindow(QtWidgets.QMainWindow):
         view_menu = menu.addMenu("Widok")
         view_menu.addAction("Pokaż / ukryj panel boczny", self.sidebar_toggle_btn.click)
         view_menu.addAction("Pokaż / ukryj filtry", self.filter_toggle_btn.click)
-        view_menu.addAction("Pokaż / ukryj DJ Player", self.dj_player_btn.click)
+        view_menu.addAction("Otwórz DJ Player (2 decki + waveform)", self.dj_player_btn.click)
+        view_menu.addAction("Zatrzymaj wszystkie decki (DJ Player)", self._stop_all_decks_from_main)
         view_menu.addAction("Pokaż / ukryj panel szczegółów", self._toggle_detail_panel)
 
         help_menu = menu.addMenu("Pomoc")

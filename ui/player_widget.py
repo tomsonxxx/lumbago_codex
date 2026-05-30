@@ -1,6 +1,16 @@
 """
-Player widget dla Lumbago_Music.
-WaveformWidget (QPainter Float32), HotcuePad (8 padów), PlayerWidget (QtMultimedia).
+LEGACY / DEPRECATED
+
+This file contains the old embedded player implementation (QtMultimedia direct + custom Waveform/HotcuePad).
+
+The professional dual-deck DJ Player is now in:
+- ui/dj_player_window.py (DJPlayerWindow + DeckWidget with full pro features)
+- services/playback/ (PlaybackEngine + hardened VLC/Qt backends)
+
+Per DJ-06 Testing Agent report and DESIGN.md intent, this legacy module is kept only for reference / possible future simple preview use.
+It is NOT used by the main dedicated DJ Player and has not been migrated to the new PlaybackEngine.
+
+If you need a small non-DJ preview player, consider creating a thin wrapper around PlaybackEngine instead of maintaining this duplicate code.
 """
 from __future__ import annotations
 import logging
