@@ -125,7 +125,9 @@
 
 ---
 
-## Faza 2 — WinUI 3 Reboot (Build2.md, od 2026-03-17)
+## Faza 2 — WinUI 3 Reboot (Build2.md, od 2026-03-17) — **PORZUCONA I USUNIĘTA Z REPOZYTORIUM (maj 2026)**
+
+> **Uwaga historyczna:** Ta faza projektu została ostatecznie porzucona podczas sprzątania repozytorium w maju 2026. Projekt skupia się wyłącznie na wersji desktopowej PyQt6 + DJ Player. Poniższa sekcja zachowana jest wyłącznie jako zapis historyczny.
 
 1. 2026-03-17 — Utworzono Build2.md i ToDo2.md, wykonano audyt dokumentacji oraz przegląd podglądów UI.
 2. 2026-03-17 — Rozpoczęto benchmarking wzorców UI z aplikacji DJ i menedżerów biblioteki.

@@ -75,7 +75,9 @@ git checkout 1f5047c8 -- <ścieżka>
 
 ---
 
-## USUNIĘTE PLIKI ŚLEDZONE PRZEZ GIT
+## USUNIĘTE PLIKI ŚLEDZONE PRZEZ GIT (Maj 2026)
+
+> **Uwaga:** Poniższa sekcja dokumentuje pliki, które zostały usunięte podczas gruntownego sprzątania repozytorium. Projekt Lumbago Music AI jest obecnie **wyłącznie wersją desktopową** (PyQt6). Stare wersje (Web MVP, tagerv2, WinUI 3) zostały całkowicie porzucone i usunięte z aktywnego kodu.
 
 ### Prototyp WinUI 3 (winui/ — 32 pliki C#)
 - winui/LumbagoWinUI.sln
