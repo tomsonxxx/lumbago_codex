@@ -76,10 +76,22 @@ def iter_audio_files(
 
 
 def extract_metadata(path: Path) -> Track:
-    audio = _open_mutagen(path)
     size = path.stat().st_size
     mtime = path.stat().st_mtime
     track = Track(path=str(path), file_size=size, file_mtime=mtime)
+
+    audio = None
+    try:
+        audio = _open_mutagen(path)
+    except Exception as e:
+        # Uszkodzony plik lub nieobsługiwany format — logujemy i zwracamy bazowy track
+        try:
+            from ui.main_window import _process_log
+            _process_log(f"[import] extract_metadata failed file={path.name} err={e}")
+        except Exception:
+            pass
+        return track
+
     if audio is None:
         return track
 

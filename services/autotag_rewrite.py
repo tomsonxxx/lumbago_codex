@@ -12,7 +12,13 @@ from typing import Any, Callable
 import requests
 
 from core.config import cache_dir
-from core.models import AnalysisResult, Tag, Track
+from core.models import (
+    AnalysisResult,
+    BACKGROUND_AUTOTAG_FIELDS,
+    PRIORITY_AUTOTAG_FIELDS,
+    Tag,
+    Track,
+)
 from core.renamer import parse_filename_tags
 from services.ai_tagger import CloudAiTagger, MultiAiTagger
 
@@ -102,20 +108,52 @@ class UnifiedAutoTagger:
         if self._logger:
             self._logger(f"[autotag] ai_batch_preload done cached={len(self._ai_batch_cache)}")
 
-    def enrich_track(self, track: Track) -> EnrichmentResult:
+    def enrich_track(self, track: Track, *, priority_only: bool = False) -> EnrichmentResult:
+        """
+        Główna metoda wzbogacania metadanych.
+
+        priority_only=True  → tryb szybki (dla dużych batchy).
+                            Skupia się na 10 najważniejszych polach (PRIORITY_AUTOTAG_FIELDS).
+                            Pomija wolniejsze i mniej wartościowe źródła.
+                            Po zebraniu priorytetowych danych przechodzi do kolejnego pliku.
+
+        priority_only=False → pełny tryb (wszystkie pola).
+                            Używany w tle do uzupełniania reszty tagów.
+        """
         candidates: list[Candidate] = []
+
+        # Źródła, które dają mało wartości w szybkim passie
         supplemental_only_sources = {"LRCLIB", "Lyrics.ovh"}
-        providers = (
-            self._search_musicbrainz,
-            self._search_itunes,
-            self._search_deezer,
-            self._search_discogs,
-            self._search_lrclib,
-            self._search_lyrics_ovh,
-            self._search_ai,
-        )
+
+        if priority_only:
+            # === TRYB SZYBKI (priorytetowe 10 pól) ===
+            # Optymalna kolejność pod kątem szybkości + jakości (darmowe źródła):
+            # 1. MusicBrainz – bardzo dobre, wiarygodne dane
+            # 2. Discogs     – świetny na label, year, gatunek
+            # 3. AI (batch)  – jeśli już załadowany preload'em
+            # 4. iTunes + Deezer – szybkie uzupełnienie
+            providers = (
+                self._search_musicbrainz,
+                self._search_discogs,
+                self._search_ai,           # AI batch (największy zysk po preload)
+                self._search_itunes,
+                self._search_deezer,
+            )
+        else:
+            # === TRYB PEŁNY (wszystkie pola + tło) ===
+            providers = (
+                self._search_musicbrainz,
+                self._search_itunes,
+                self._search_deezer,
+                self._search_discogs,
+                self._search_lrclib,
+                self._search_lyrics_ovh,
+                self._search_ai,
+            )
+
         max_workers = int(getattr(self.settings, "provider_parallel_workers", 6) or 6)
         max_workers = max(2, min(max_workers, len(providers)))
+
         with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="autotag-src") as pool:
             future_map = {pool.submit(self._timed_provider_call, fn, track): fn for fn in providers}
             for future in as_completed(future_map):
@@ -129,14 +167,18 @@ class UnifiedAutoTagger:
 
         valid = [candidate for candidate in candidates if candidate.error is None and candidate.score > 0]
         valid.sort(key=lambda candidate: candidate.score, reverse=True)
+
         valid_for_best = [candidate for candidate in valid if candidate.source not in supplemental_only_sources]
         best_match = valid_for_best[0] if valid_for_best else (valid[0] if valid else None)
+
         if self._logger is not None:
+            mode = "priority" if priority_only else "full"
             top = best_match
             if top is not None:
-                self._logger(f"[autotag] source_summary best={top.source} score={top.score} total_candidates={len(candidates)}")
+                self._logger(f"[autotag] mode={mode} best={top.source} score={top.score} total={len(candidates)}")
             else:
-                self._logger(f"[autotag] source_summary best=none total_candidates={len(candidates)}")
+                self._logger(f"[autotag] mode={mode} best=none total={len(candidates)}")
+
         return EnrichmentResult(candidates=candidates, best_match=best_match)
 
     def _timed_provider_call(self, fn, track: Track) -> Candidate | None:
@@ -744,6 +786,47 @@ class UnifiedAutoTagger:
             if getattr(self.settings, "cloud_ai_api_key", None):
                 return ("openai",)
         return all_providers
+
+    def enrich_missing_background_fields(
+        self,
+        track: Track,
+        already_filled_fields: set[str] | None = None,
+    ) -> EnrichmentResult:
+        """
+        Uzupełnia pola z BACKGROUND_AUTOTAG_FIELDS (te mniej priorytetowe).
+
+        Przeznaczona do wywoływania w tle, po tym jak użytkownik już dostał
+        priorytetowe 10 pól i może normalnie pracować z plikiem.
+        """
+        already_filled = already_filled_fields or set()
+
+        # Uruchamiamy pełny tryb (priority_only=False)
+        result = self.enrich_track(track, priority_only=False)
+
+        # Filtrowanie — interesują nas tylko pola tła, których jeszcze nie mamy
+        filtered_candidates: list[Candidate] = []
+        for cand in result.candidates:
+            if cand.error:
+                continue
+            # Sprawdź czy kandydat wnosi coś nowego w polach tła
+            has_new_background_value = False
+            for field in BACKGROUND_AUTOTAG_FIELDS:
+                if field in already_filled:
+                    continue
+                val = getattr(cand, field, None)
+                if val:
+                    has_new_background_value = True
+                    break
+            if has_new_background_value:
+                filtered_candidates.append(cand)
+
+        if not filtered_candidates:
+            return EnrichmentResult(candidates=[], best_match=None)
+
+        filtered_candidates.sort(key=lambda c: c.score, reverse=True)
+        best = filtered_candidates[0]
+
+        return EnrichmentResult(candidates=filtered_candidates, best_match=best)
 
 
 def _best_artwork_url(candidates: list[Candidate]) -> str | None:

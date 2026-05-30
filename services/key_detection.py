@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 MAJOR_PROFILE = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88]
@@ -16,14 +19,16 @@ def detect_key(path: Path, duration_s: int = 60) -> str | None:
         return None
     try:
         y, sr = librosa.load(path, sr=22050, mono=True, duration=duration_s)
-    except Exception:
+    except Exception as e:
+        logger.debug("Key detection load failed for %s: %s", path.name, e)
         return None
     if y is None or len(y) == 0:
         return None
     try:
         chroma = librosa.feature.chroma_cqt(y=y, sr=sr)
         profile = chroma.mean(axis=1)
-    except Exception:
+    except Exception as e:
+        logger.debug("Key detection chroma failed for %s: %s", path.name, e)
         return None
     return _estimate_key(profile)
 

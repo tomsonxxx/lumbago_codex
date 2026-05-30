@@ -23,11 +23,12 @@ import shutil
 from core.analysis_cache import save_analysis_cache
 from core.backup import perform_backup
 from core.config import cache_dir, load_settings, save_settings
-from core.models import Track
+from core.models import BACKGROUND_AUTOTAG_FIELDS, PRIORITY_AUTOTAG_FIELDS, Track
 from core.renamer import parse_filename_tags
 from core.services import enrich_track_with_analysis, heuristic_analysis
 from core.waveform import generate_waveform, generate_waveform_threadsafe
 from services.autotag_rewrite import UnifiedAutoTagger
+from services.background_autotag_worker import BackgroundAutotagWorker
 from services.beatgrid import auto_cue_points, compute_beatgrid
 from services.key_detection import detect_key
 from services.metadata_enricher import AutoMetadataFiller, MetadataFillReport
@@ -128,9 +129,9 @@ def _looks_like_track_number(value: str | None) -> bool:
 
 
 # Wspólna pula wątków dla analizy cech audio (key, BPM, loudness, waveform).
-# Uruchamiana równolegle z pipeline'em metadanych, żeby nie tracić czasu na
-# sekwencyjne oczekiwanie. Rozmiar 6 pozwala na 6 równoczesnych analiz.
-_AUDIO_ANALYSIS_POOL = ThreadPoolExecutor(max_workers=6, thread_name_prefix="audio-pool")
+# Operacje z librosa i ffmpeg są ciężkie i potencjalnie niestabilne.
+# Zmniejszamy domyślną równoległość do 3 dla większej stabilności.
+_AUDIO_ANALYSIS_POOL = ThreadPoolExecutor(max_workers=3, thread_name_prefix="audio-pool")
 
 
 def _run_audio_features_task(path: Path) -> object | None:
@@ -138,7 +139,8 @@ def _run_audio_features_task(path: Path) -> object | None:
     try:
         from services.audio_features import AudioFeatureExtractor
         return AudioFeatureExtractor().extract(path, duration_s=20)
-    except Exception:
+    except Exception as e:
+        _process_log(f"[autotag] audio_features_task error file={path.name} err={e}")
         return None
 
 
@@ -661,6 +663,17 @@ class AutoTagWorker(QtCore.QRunnable):
         total = len(self.tracks)
 
         autotagger = UnifiedAutoTagger(self.settings, logger=_process_log)
+
+        # === BATCH AI PRELOAD (kluczowa optymalizacja szybkości) ===
+        # AI jest wywoływane raz na całą partię z góry, zamiast per-plik.
+        # Dzięki temu przy dużych batchach oszczędzamy bardzo dużo czasu.
+        if len(self.tracks) >= 3:
+            self._emit_stage("-", "Przygotowanie AI (batch)...")
+            try:
+                autotagger.preload_ai_batch(self.tracks)
+            except Exception as e:
+                _process_log(f"[autotag] preload_ai_batch error: {e}")
+
         self._emit_stage("-", "Przygotowanie źródeł i analizy...")
         metadata_filler = AutoMetadataFiller(
             getattr(self.settings, "musicbrainz_app_name", None),
@@ -757,10 +770,11 @@ class AutoTagWorker(QtCore.QRunnable):
                         sync_fields=sync_fields,
                         remaining_missing=_missing_autotag_fields(track),
                     )
-                except Exception:
+                except Exception as exc:
                     errors += 1
                     track = None
                     detail = "Wystąpił błąd podczas autotagowania tego utworu."
+                    _process_log(f"[autotag] ERROR processing track | err={exc}")
 
                 processed += 1
                 with self._progress_lock:
@@ -783,23 +797,34 @@ class AutoTagWorker(QtCore.QRunnable):
         metadata_report: MetadataFillReport | None = None
         try:
             metadata_report = metadata_filler.fill_missing_with_report(track, "offline")
-        except Exception:
+        except Exception as e:
+            _process_log(f"[autotag] metadata_filler error file={track.path} err={e}")
             metadata_report = None
-        autotag_summary = self._run_single_track(
-            track,
-            autotagger,
-            metadata_pipeline=metadata_pipeline,
-            recognition_pipeline=recognition_pipeline,
-            baseline_track=before,
-            metadata_report=metadata_report,
-            refresh_existing=_should_refresh_existing_metadata(track.path),
-        )
-        return {
-            "track": track,
-            "before": before,
-            "metadata_report": metadata_report,
-            "autotag_summary": autotag_summary,
-        }
+        try:
+            autotag_summary = self._run_single_track(
+                track,
+                autotagger,
+                metadata_pipeline=metadata_pipeline,
+                recognition_pipeline=recognition_pipeline,
+                baseline_track=before,
+                metadata_report=metadata_report,
+                refresh_existing=_should_refresh_existing_metadata(track.path),
+            )
+            return {
+                "track": track,
+                "before": before,
+                "metadata_report": metadata_report,
+                "autotag_summary": autotag_summary,
+            }
+        except Exception as e:
+            _process_log(f"[autotag] FATAL error in _run_single_track file={track.path} err={e}")
+            # Zwracamy minimalny obiekt, żeby batch nie padł całkowicie
+            return {
+                "track": track,
+                "before": before,
+                "metadata_report": None,
+                "autotag_summary": {"best_source": None, "best_score": None, "refresh_existing": False, "candidate_count": 0, "recognition_result": None},
+            }
 
     def _run_single_track(
         self,
@@ -840,6 +865,7 @@ class AutoTagWorker(QtCore.QRunnable):
 
         # Krok 2: uruchom analizę cech audio RÓWNOLEGLE z pipeline'em metadanych.
         # Każde zadanie trafia do współdzielonej puli; wyniki zbieramy po metadanych.
+        _process_log(f"[autotag] starting audio analysis futures file={path_obj.name}")
         _key_future = (
             _AUDIO_ANALYSIS_POOL.submit(detect_key, path_obj)
             if not _has_value(track.key) else None
@@ -868,7 +894,14 @@ class AutoTagWorker(QtCore.QRunnable):
         _merge_recognition_repairs(track, recognition_result.track)
         self._emit_stage(path_obj.name, "AI i źródła muzyczne...")
         _process_log(f"[autotag] file={path_obj.name} | fn=_run_single_track | stage=unified_autotagger")
-        enriched = autotagger.enrich_track(track)
+
+        # === NOWY MECHANIZM PRIORYTETOWY ===
+        # Domyślnie używamy trybu szybkiego (priority_only=True).
+        # Najpierw uzupełniamy 10 najważniejszych pól (PRIORITY_AUTOTAG_FIELDS),
+        # potem przechodzimy do kolejnego pliku.
+        # Reszta pól będzie uzupełniana później w tle (jeszcze do zaimplementowania).
+        use_priority_mode = True
+        enriched = autotagger.enrich_track(track, priority_only=use_priority_mode)
         self._emit_stage(path_obj.name, "Konsensus metadanych...")
         _process_log(f"[autotag] file={path_obj.name} | fn=_run_single_track | stage=metadata_consensus")
         resolved = metadata_pipeline.resolve_track(
@@ -891,8 +924,8 @@ class AutoTagWorker(QtCore.QRunnable):
         if _key_future is not None:
             try:
                 detected_key = _key_future.result(timeout=45)
-            except Exception:
-                pass
+            except Exception as e:
+                _process_log(f"[autotag] key_detection error file={path_obj.name} err={e}")
 
         if _features_future is not None:
             try:
@@ -906,8 +939,8 @@ class AutoTagWorker(QtCore.QRunnable):
                     ]
                     if numeric_parts:
                         detected_energy = float(sum(numeric_parts) / len(numeric_parts))
-            except Exception:
-                pass
+            except Exception as e:
+                _process_log(f"[autotag] audio_features error file={path_obj.name} err={e}")
 
         enrich_track_with_analysis(
             track,
@@ -923,22 +956,22 @@ class AutoTagWorker(QtCore.QRunnable):
         if _loudness_future is not None:
             try:
                 track.loudness_lufs = _loudness_future.result(timeout=45)
-            except Exception:
-                pass
+            except Exception as e:
+                _process_log(f"[autotag] loudness error file={path_obj.name} err={e}")
 
         if track.cue_in_ms is None and track.duration:
             try:
                 track.cue_in_ms, track.cue_out_ms = auto_cue_points(track.duration)
-            except Exception:
-                pass
+            except Exception as e:
+                _process_log(f"[autotag] auto_cue error file={path_obj.name} err={e}")
 
         if _waveform_future is not None:
             try:
                 wave_path = _waveform_future.result(timeout=45)
                 if wave_path:
                     track.waveform_path = str(wave_path)
-            except Exception:
-                pass
+            except Exception as e:
+                _process_log(f"[autotag] waveform error file={path_obj.name} err={e}")
 
         best = getattr(enriched, "best_match", None)
         return {
@@ -1864,6 +1897,7 @@ class MainWindow(QtWidgets.QMainWindow):
         details_action = menu.addAction("Pokaż szczegóły")
         ai_action = menu.addAction("Analiza AI")
         local_meta_action = menu.addAction("Wczytaj metadane lokalne")
+        bg_action = menu.addAction("Uzupełnij tagi w tle (reszta pól)")
         selection_menu = menu.addMenu("Zaznaczenie")
         selection_select_all = selection_menu.addAction("Zaznacz wszystko")
         selection_clear = selection_menu.addAction("Wyczyść zaznaczenie")
@@ -1886,6 +1920,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self._run_ai_tagger()
         if action == local_meta_action:
             self._apply_local_metadata_selected()
+        if action == bg_action:
+            self._run_background_enrichment_selected()
         if action == selection_select_all:
             self._select_all()
         if action == selection_clear:
@@ -1984,6 +2020,7 @@ class MainWindow(QtWidgets.QMainWindow):
             add_menu.addAction(name)
         ai_action = menu.addAction("Analiza AI")
         local_meta_action = menu.addAction("Wczytaj metadane lokalne")
+        bg_action = menu.addAction("Uzupełnij tagi w tle (reszta pól)")
         selection_menu = menu.addMenu("Zaznaczenie")
         selection_select_all = selection_menu.addAction("Zaznacz wszystko")
         selection_clear = selection_menu.addAction("Wyczyść zaznaczenie")
@@ -2031,6 +2068,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self._run_ai_tagger()
         elif action == local_meta_action:
             self._apply_local_metadata_selected()
+        elif action == bg_action:
+            self._run_background_enrichment_selected()
         elif action == selection_select_all:
             self._select_all()
         elif action == selection_clear:
@@ -2333,9 +2372,116 @@ class MainWindow(QtWidgets.QMainWindow):
             )
             _process_log(f"[autotag] done | processed={processed} updated={updated} errors={errors}")
 
+            # === NOWA LOGIKA TŁA (timeout-based) ===
+            settings = load_settings()
+            delay = getattr(settings, "background_autotag_delay_seconds", 0)
+
+            if getattr(settings, "background_autotag_enabled", True) and delay > 0 and len(tracks) > 0:
+                self.status.showMessage(
+                    f"Autotagowanie zakończone. Uzupełnianie reszty pól w tle uruchomi się automatycznie za {delay} s..."
+                )
+                QtCore.QTimer.singleShot(
+                    delay * 1000,
+                    lambda: self._start_background_enrichment(tracks, settings)
+                )
+            elif getattr(settings, "background_autotag_enabled", True):
+                self.status.showMessage(
+                    "Autotagowanie zakończone. Uzupełnianie reszty pól w tle dostępne ręcznie (menu kontekstowe)."
+                )
+
         self._autotag_worker.signals.progress.connect(on_progress)
         self._autotag_worker.signals.finished.connect(on_finished)
         self.thread_pool.start(self._autotag_worker)
+
+    def _run_background_enrichment_selected(self):
+        """Ręczne uruchomienie uzupełniania w tle dla zaznaczonych utworów."""
+        tracks = self._selected_tracks()
+        if not tracks:
+            self._show_message("Zaznacz co najmniej jeden utwór.")
+            return
+
+        # Ochrona przed uruchomieniem drugiego workera gdy już coś działa
+        if hasattr(self, '_background_workers'):
+            active = [t for (w, t) in self._background_workers if t.isRunning()]
+            if active:
+                self._show_message("Uzupełnianie w tle już trwa. Poczekaj aż się zakończy lub zatrzymaj poprzednie.")
+                return
+
+        settings = load_settings()
+        self._start_background_enrichment(tracks, settings)
+        self.status.showMessage(f"Uruchomiono uzupełnianie w tle dla {len(tracks)} utworów...")
+
+    def _start_background_enrichment(self, tracks: list[Track], settings) -> None:
+        """Uruchamia ciche uzupełnianie mniej priorytetowych pól w tle."""
+        try:
+            worker = BackgroundAutotagWorker(tracks, settings)
+            task_id = self.task_manager.add_task(
+                "Uzupełnianie tagów w tle", len(tracks), "Przygotowanie..."
+            )
+
+            def on_bg_progress(current: int, total: int, name: str):
+                self.task_manager.update_task(task_id, current, total, f"Tło: {name}")
+
+            def on_bg_track_updated(track_path: str, changes: dict):
+                # Odświeżamy tylko jeśli ten track jest aktualnie widoczny
+                self._refresh_track_in_view(track_path, changes)
+
+            def on_bg_finished(updated: int, total: int):
+                self.task_manager.finish_task(task_id)
+                if updated > 0:
+                    self.status.showMessage(
+                        f"Uzupełniono w tle: {updated} z {total} utworów"
+                    )
+                    _process_log(f"[autotag-bg] finished | updated={updated}/{total}")
+                else:
+                    self.task_manager.remove_task(task_id)
+
+                # Czyścimy zakończone workery z listy
+                if hasattr(self, '_background_workers'):
+                    self._background_workers = [
+                        (w, t) for (w, t) in self._background_workers if t.isRunning()
+                    ]
+
+            worker.progress.connect(on_bg_progress)
+            worker.track_updated.connect(on_bg_track_updated)
+            worker.finished.connect(on_bg_finished)
+
+            # Uruchamiamy w osobnym wątku
+            thread = QtCore.QThread()
+            worker.moveToThread(thread)
+            thread.started.connect(worker.run)
+            worker.finished.connect(thread.quit)
+            worker.finished.connect(worker.deleteLater)
+            thread.finished.connect(thread.deleteLater)
+
+            # Zarządzanie wieloma workerami w tle (bezpieczne uruchamianie wielu razy)
+            if not hasattr(self, '_background_workers'):
+                self._background_workers = []  # lista (worker, thread)
+
+            # Opcjonalnie: nie pozwalamy na więcej niż jeden aktywny worker w tle naraz
+            # (można to później zmienić na允许多个 jeśli potrzeba)
+            active = [w for w in self._background_workers if w[1].isRunning()]
+            if active:
+                _process_log("[autotag-bg] Worker w tle już działa – pomijam nowe uruchomienie")
+                self.status.showMessage("Uzupełnianie w tle już trwa...")
+                return
+
+            self._background_workers.append((worker, thread))
+            thread.start()
+
+        except Exception as e:
+            _process_log(f"[autotag-bg] failed to start: {e}")
+
+    def _refresh_track_in_view(self, track_path: str, changes: dict):
+        """Odświeża widok po uzupełnieniu w tle (prosta wersja)."""
+        try:
+            # Na razie najbezpieczniej po prostu odświeżyć bibliotekę
+            # (w przyszłości można zrobić precyzyjne odświeżenie jednego wiersza)
+            if hasattr(self, "_load_tracks"):
+                # Tylko jeśli nie trwa inny ciężki proces
+                pass  # Na razie nie odświeżamy automatycznie, żeby nie przerywać użytkownika
+        except Exception:
+            pass
 
     def _apply_local_metadata_selected(self):
         tracks = self._selected_tracks()

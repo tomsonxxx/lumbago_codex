@@ -1,6 +1,6 @@
 ﻿from __future__ import annotations
 
-from PyQt6 import QtWidgets, QtGui
+from PyQt6 import QtCore, QtWidgets, QtGui
 from ui.widgets import apply_dialog_fade, dialog_icon_pixmap
 
 from data.repository import list_change_log
