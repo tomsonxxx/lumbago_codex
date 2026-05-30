@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import csv
 import shutil
@@ -21,7 +21,7 @@ from data.repository import (
 )
 from services.duplicate_merge import apply_duplicate_merge_plan, build_duplicate_merge_plan
 from services.recognizer import AcoustIdRecognizer
-from services.track_filters import filter_group_rows
+from services.track_filters import DEFAULT_EXCLUDED_ROOTS, filter_group_rows
 from ui.widgets import apply_dialog_fade, dialog_icon_pixmap
 
 
@@ -181,7 +181,7 @@ class DuplicatesDialog(QtWidgets.QDialog):
         self._groups: list[list[Track]] = []
         self._show_audio_only = True
         self._hide_system_like = False
-        self._excluded_roots: list[str] = []
+        self._excluded_roots: list[str] = list(DEFAULT_EXCLUDED_ROOTS)
         self._search_query: str = ""
         self._sort_column: int | None = None
         self._sort_order: QtCore.Qt.SortOrder = QtCore.Qt.SortOrder.AscendingOrder
@@ -762,7 +762,7 @@ class DuplicatesDialog(QtWidgets.QDialog):
         self._apply_view_filters()
 
     def _clear_excluded_folders(self) -> None:
-        self._excluded_roots = []
+        self._excluded_roots = list(DEFAULT_EXCLUDED_ROOTS)
         self._apply_view_filters()
 
     def _refresh_excluded_folder_label(self) -> None:
@@ -1003,138 +1003,123 @@ class DuplicatesDialog(QtWidgets.QDialog):
             self._merge_quick_action.setEnabled(enabled)
 
     def _export_survivors(self) -> None:
-        survivors = self._survivor_tracks()
-        if not survivors:
-            QtWidgets.QMessageBox.information(
-                self,
-                "Ocalałe pliki",
-                "Nie znaleziono żadnych ocalałych plików do wyprowadzenia.",
-            )
-            return
-
-        target_dir = QtWidgets.QFileDialog.getExistingDirectory(
-            self,
-            "Wybierz katalog dla ocalałych plików",
-        )
-        if not target_dir:
-            return
-
-        mode, ok = QtWidgets.QInputDialog.getItem(
-            self,
-            "Ocalałe pliki",
-            "Co zrobić z ocalałymi plikami?",
-            ["Skopiuj", "Przenieś"],
-            0,
-            False,
-        )
-        if not ok:
-            return
-
-        dest_root = Path(target_dir)
-        history: list[dict[str, str]] = []
-        copied = 0
-        moved = 0
-        for group_label, track in survivors:
-            src = Path(track.path)
-            if not src.exists():
-                continue
-            dest_dir = dest_root / _safe_folder_name(group_label)
-            dest_dir.mkdir(parents=True, exist_ok=True)
-            dest = dest_dir / src.name
-            if dest.exists():
-                dest = dest_dir / f"survivor_{src.name}"
-            if mode == "Przenieś":
-                shutil.move(str(src), str(dest))
-                history.append({"old": str(src), "new": str(dest)})
-                moved += 1
-            else:
-                shutil.copy2(str(src), str(dest))
-                copied += 1
-
-        if history:
-            update_track_paths_bulk(history)
-            self._apply_view_filters()
-
-        QtWidgets.QMessageBox.information(
-            self,
-            "Ocalałe pliki",
-            f"{'Przeniesiono' if mode == 'Przenieś' else 'Skopiowano'} "
-            f"{moved if mode == 'Przenieś' else copied} plików do: {dest_root}",
-        )
-
-    def _export_survivors(self) -> None:
         try:
             survivors = self._survivor_tracks()
             if not survivors:
                 QtWidgets.QMessageBox.information(
                     self,
-                    "OcalaĹ‚e pliki",
-                    "Nie znaleziono ĹĽadnych ocalaĹ‚ych plikĂłw do wyprowadzenia.",
+                    "Ocalałe pliki",
+                    "Nie znaleziono żadnych ocalałych plików do wyprowadzenia.",
                 )
                 return
 
             target_dir = QtWidgets.QFileDialog.getExistingDirectory(
                 self,
-                "Wybierz katalog dla ocalaĹ‚ych plikĂłw",
+                "Wybierz katalog dla ocalałych plików",
             )
             if not target_dir:
-                return
-
-            mode, ok = QtWidgets.QInputDialog.getItem(
-                self,
-                "OcalaĹ‚e pliki",
-                "Co zrobiÄ‡ z ocalaĹ‚ymi plikami?",
-                ["Skopiuj", "PrzenieĹ›"],
-                0,
-                False,
-            )
-            if not ok:
                 return
 
             dest_root = Path(target_dir)
             reserved: set[Path] = set()
             history: list[dict[str, str]] = []
-            copied = 0
             moved = 0
-            for group_label, track in survivors:
+            partial = 0
+            failed = 0
+            merged = 0
+            for group_label, track, group_tracks in survivors:
+                merged += self._try_merge_survivor_tags(group_label, track, group_tracks)
                 src = Path(track.path)
-                if not src.exists():
+                try:
+                    if not src.exists():
+                        failed += 1
+                        continue
+                except OSError as exc:
+                    failed += 1
+                    _process_log(
+                        "[duplicates] survivor export inaccessible source | "
+                        f"src={src} | error={exc}\n{traceback.format_exc()}"
+                    )
                     continue
-                dest_dir = dest_root / _safe_folder_name(group_label)
-                dest_dir.mkdir(parents=True, exist_ok=True)
-                dest = _unique_destination_path(dest_dir, src.name, prefix="survivor", reserved=reserved)
-                if mode == "PrzenieĹ›":
-                    shutil.move(str(src), str(dest))
+                dest = _unique_destination_path(dest_root, src.name, prefix="survivor", reserved=reserved)
+                written, source_removed = _transfer_file(
+                    src,
+                    dest,
+                    move=True,
+                    log_prefix="[duplicates] survivor export",
+                )
+                if not written:
+                    failed += 1
+                    continue
+                if source_removed:
                     history.append({"old": str(src), "new": str(dest)})
                     moved += 1
                 else:
-                    shutil.copy2(str(src), str(dest))
-                    copied += 1
+                    partial += 1
 
             if history:
                 update_track_paths_bulk(history)
                 self._apply_view_filters()
 
+            message = f"Przeniesiono {moved} ocalałych plików do: {dest_root}"
+            if merged:
+                message += "\n" + f"Przed przeniesieniem scalono tagi w {merged} plikach."
+            if partial:
+                message += "\n" + f"{partial} plików tylko skopiowano, bo nie udało się usunąć oryginału."
+            if failed:
+                message += "\n" + f"Nie udało się przetworzyć {failed} plików."
             QtWidgets.QMessageBox.information(
                 self,
-                "OcalaĹ‚e pliki",
-                f"{'Przeniesiono' if mode == 'PrzenieĹ›' else 'Skopiowano'} "
-                f"{moved if mode == 'PrzenieĹ›' else copied} plikĂłw do: {dest_root}",
+                "Ocalałe pliki",
+                message,
             )
+
         except Exception as exc:
             _process_log(f"[duplicates] survivor export failed | error={exc}\n{traceback.format_exc()}")
             QtWidgets.QMessageBox.critical(
                 self,
-                "BĹ‚Ä…d",
-                "Nie udaĹ‚o siÄ™ wyprowadziÄ‡ ocalaĹ‚ych plikĂłw. "
-                "SprawdĹş plik process.log lub crash.log, aby zobaczyÄ‡ szczegĂłĹ‚y.",
+                "Błąd",
+                "Nie udało się wyprowadzić ocalałych plików. "
+                "Sprawdź plik process.log lub crash.log, aby zobaczyć szczegóły.",
             )
 
-    def _survivor_tracks(self) -> list[tuple[str, Track]]:
-        survivors: list[tuple[str, Track]] = []
+    def _try_merge_survivor_tags(
+        self,
+        group_label: str,
+        survivor: Track,
+        group_tracks: list[Track],
+    ) -> int:
+        try:
+            plan = build_duplicate_merge_plan(
+                group_tracks,
+                use_ai=False,
+                group_label=group_label,
+                survivor=survivor,
+            )
+            if plan is None:
+                return 0
+            applied = apply_duplicate_merge_plan(plan)
+            return 1 if applied else 0
+        except Exception as exc:
+            _process_log(
+                "[duplicates] survivor merge failed | "
+                f"group={group_label} | survivor={survivor.path} | error={exc}\n"
+                f"{traceback.format_exc()}"
+            )
+            return 0
+
+    def _survivor_tracks(self) -> list[tuple[str, Track, list[Track]]]:
+        survivors: list[tuple[str, Track, list[Track]]] = []
         for row_idx in range(self.tree.topLevelItemCount()):
             parent = self.tree.topLevelItem(row_idx)
             if parent is None or parent.childCount() == 0:
+                continue
+            group_tracks = [
+                track
+                for item in self._group_child_items(parent)
+                if (track := self._track_map.get(item.data(0, QtCore.Qt.ItemDataRole.UserRole))) is not None
+            ]
+            if len(group_tracks) < 2:
                 continue
             survivor_child = next(
                 (
@@ -1150,7 +1135,7 @@ class DuplicatesDialog(QtWidgets.QDialog):
             track = self._track_map.get(survivor_path)
             if track is None:
                 continue
-            survivors.append((parent.text(0), track))
+            survivors.append((parent.text(0), track, group_tracks))
         return survivors
 
     def _rebuild_tree(self) -> None:
@@ -1592,47 +1577,6 @@ class DuplicatesDialog(QtWidgets.QDialog):
         return unique
 
     def _move_selected(self) -> None:
-        paths = self._selected_paths()
-        if not paths:
-            return
-        target_dir = QtWidgets.QFileDialog.getExistingDirectory(self, "Wybierz folder docelowy")
-        if not target_dir:
-            return
-        history: list[dict[str, str]] = []
-        for path in paths:
-            src = Path(path)
-            if not src.exists():
-                continue
-            dest = Path(target_dir) / src.name
-            if dest.exists():
-                dest = Path(target_dir) / f"dup_{src.name}"
-            shutil.move(str(src), str(dest))
-            history.append({"old": str(src), "new": str(dest)})
-        if history:
-            update_track_paths_bulk(history)
-            self.accept()
-
-    def _move_paths(self, paths: list[str]) -> None:
-        if not paths:
-            return
-        target_dir = QtWidgets.QFileDialog.getExistingDirectory(self, "Wybierz folder docelowy")
-        if not target_dir:
-            return
-        history: list[dict[str, str]] = []
-        for path in paths:
-            src = Path(path)
-            if not src.exists():
-                continue
-            dest = Path(target_dir) / src.name
-            if dest.exists():
-                dest = Path(target_dir) / f"dup_{src.name}"
-            shutil.move(str(src), str(dest))
-            history.append({"old": str(src), "new": str(dest)})
-        if history:
-            update_track_paths_bulk(history)
-            self._apply_view_filters()
-
-    def _move_selected(self) -> None:
         try:
             paths = self._selected_paths()
             if not paths:
@@ -1647,8 +1591,14 @@ class DuplicatesDialog(QtWidgets.QDialog):
                 if not src.exists():
                     continue
                 dest = _unique_destination_path(Path(target_dir), src.name, prefix="dup", reserved=reserved)
-                shutil.move(str(src), str(dest))
-                history.append({"old": str(src), "new": str(dest)})
+                written, source_removed = _transfer_file(
+                    src,
+                    dest,
+                    move=True,
+                    log_prefix="[duplicates] move selected",
+                )
+                if written and source_removed:
+                    history.append({"old": str(src), "new": str(dest)})
             if history:
                 update_track_paths_bulk(history)
                 self.accept()
@@ -1675,8 +1625,14 @@ class DuplicatesDialog(QtWidgets.QDialog):
                 if not src.exists():
                     continue
                 dest = _unique_destination_path(Path(target_dir), src.name, prefix="dup", reserved=reserved)
-                shutil.move(str(src), str(dest))
-                history.append({"old": str(src), "new": str(dest)})
+                written, source_removed = _transfer_file(
+                    src,
+                    dest,
+                    move=True,
+                    log_prefix="[duplicates] move paths",
+                )
+                if written and source_removed:
+                    history.append({"old": str(src), "new": str(dest)})
             if history:
                 update_track_paths_bulk(history)
                 self._apply_view_filters()
@@ -1689,26 +1645,10 @@ class DuplicatesDialog(QtWidgets.QDialog):
                 "SprawdĹş plik process.log lub crash.log, aby zobaczyÄ‡ szczegĂłĹ‚y.",
             )
 
-    def _delete_paths(self, paths: list[str]) -> None:
-        if not paths:
-            return
-        confirm = QtWidgets.QMessageBox.question(
-            self,
-            "Potwierdzenie",
-            "Czy na pewno usunąć zaznaczone pliki z dysku i bazy?",
-        )
-        if confirm != QtWidgets.QMessageBox.StandardButton.Yes:
-            return
-        for path in paths:
-            try:
-                Path(path).unlink(missing_ok=True)
-            except Exception:
-                continue
-        delete_tracks_by_paths(paths)
-        self._apply_view_filters()
-
     def _delete_selected(self) -> None:
-        paths = self._selected_paths()
+        self._delete_paths(self._selected_paths())
+
+    def _delete_paths(self, paths: list[str]) -> None:
         if not paths:
             return
         confirm = QtWidgets.QMessageBox.question(
@@ -1828,6 +1768,61 @@ def _unique_destination_path(
         if reserved is not None:
             reserved.add(candidate)
         return candidate
+
+
+def _transfer_file(src: Path, dest: Path, *, move: bool, log_prefix: str) -> tuple[bool, bool]:
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    if not move:
+        try:
+            shutil.copy2(str(src), str(dest))
+            return True, False
+        except Exception as exc:
+            _process_log(
+                f"{log_prefix} copy failed | src={src} | dest={dest} | error={exc}\n"
+                f"{traceback.format_exc()}"
+            )
+            return False, False
+
+    try:
+        shutil.move(str(src), str(dest))
+        return True, True
+    except Exception as move_exc:
+        if dest.exists():
+            if not src.exists():
+                return True, True
+            try:
+                src.unlink()
+                return True, True
+            except Exception as unlink_exc:
+                _process_log(
+                    f"{log_prefix} move left source behind | src={src} | dest={dest} | "
+                    f"move_error={move_exc} | unlink_error={unlink_exc}\n"
+                    f"{traceback.format_exc()}"
+                )
+                return True, False
+
+        try:
+            shutil.copy2(str(src), str(dest))
+        except Exception as copy_exc:
+            _process_log(
+                f"{log_prefix} move fallback copy failed | src={src} | dest={dest} | "
+                f"move_error={move_exc} | copy_error={copy_exc}\n"
+                f"{traceback.format_exc()}"
+            )
+            return False, False
+
+        if not src.exists():
+            return True, True
+        try:
+            src.unlink()
+            return True, True
+        except Exception as unlink_exc:
+            _process_log(
+                f"{log_prefix} copy fallback left source behind | src={src} | dest={dest} | "
+                f"move_error={move_exc} | unlink_error={unlink_exc}\n"
+                f"{traceback.format_exc()}"
+            )
+            return True, False
 
 
 def _format_preview_value(value) -> str:

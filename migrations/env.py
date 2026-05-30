@@ -6,8 +6,8 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
-from lumbago_app.core.config import load_settings
-from lumbago_app.data.schema import Base
+from core.config import load_settings
+from data.schema import Base
 
 config = context.config
 if config.config_file_name is not None:

@@ -6,7 +6,7 @@
 
 ## Faza 1 — Python/PyQt6 Desktop (Build.md)
 
-1. **Bootstrap projektu**: utworzono strukturę `lumbago_app/` (core, data, services, ui) i plik `requirements.txt` z zależnościami.
+1. **Bootstrap projektu**: utworzono strukturę `core/`, `data/`, `services/` i `ui/` oraz plik `requirements.txt` z zależnościami.
 2. **Konfiguracja środowiska**: dodano `core/config.py` z katalogami `%APPDATA%` i cache.
 3. **Modele domenowe**: dodano `core/models.py` (Track, Playlist, Tag, AnalysisResult, itp.).
 4. **Audio core**: dodano `core/audio.py` (scan folderów, mutagen, hash).

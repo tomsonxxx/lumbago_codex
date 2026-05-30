@@ -41,7 +41,7 @@ jobs:
         env:
           LUMBAGO_SAFE_MODE: "1"
           LUMBAGO_SMOKE_SECONDS: "3"
-        run: python -m lumbago_app.main
+        run: python main.py
 
   build_windows:
     needs: tests

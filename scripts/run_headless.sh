@@ -9,4 +9,4 @@ if ! command -v xvfb-run >/dev/null 2>&1; then
   exit 1
 fi
 
-exec xvfb-run -a python -m lumbago_app.main "$@"
+exec xvfb-run -a python main.py "$@"
