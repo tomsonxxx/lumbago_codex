@@ -5,6 +5,12 @@ from pathlib import Path
 from core.audio import AUDIO_EXTENSIONS as CORE_AUDIO_EXTENSIONS
 
 SUPPORTED_AUDIO_EXTENSIONS = {ext.lower() for ext in CORE_AUDIO_EXTENSIONS}
+DEFAULT_EXCLUDED_ROOTS = [
+    r"C:\Program Files",
+    r"C:\Program Files (x86)",
+    r"C:\Users\tomso\AppData",
+    r"D:\WindowsApps",
+]
 SYSTEM_LIKE_NON_AUDIO_EXTENSIONS = {
     ".bak",
     ".bat",

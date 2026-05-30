@@ -360,12 +360,43 @@ class SettingsDialog(QtWidgets.QDialog):
         )
         par_form.addRow("Równoległe pliki (autotag)", self.autotag_parallel_workers)
 
+        # === NOWA OPCJA: Background enrichment ===
+        self.background_autotag_enabled = QtWidgets.QCheckBox(
+            "Uzupełniaj pozostałe tagi w tle po szybkim autotagu"
+        )
+        self.background_autotag_enabled.setToolTip(
+            "Po szybkim uzupełnieniu 10 najważniejszych pól (artist, title, BPM, key itp.)\n"
+            "automatycznie uruchamia się ciche uzupełnianie reszty tagów w tle.\n"
+            "Nie blokuje pracy z biblioteką."
+        )
+        par_form.addRow("", self.background_autotag_enabled)
+
+        self.background_autotag_delay = QtWidgets.QSpinBox()
+        self.background_autotag_delay.setRange(0, 600)
+        self.background_autotag_delay.setSuffix(" sekund")
+        self.background_autotag_delay.setSpecialValueText("Nie uruchamiaj automatycznie")
+        self.background_autotag_delay.setToolTip(
+            "Automatycznie uruchom uzupełnianie reszty pól w tle po upływie tego czasu\n"
+            "od zakończenia autotagu (nawet jeśli nie uruchomiono ręcznie).\n"
+            "0 = uruchamiaj tylko ręcznie lub przy innej akcji użytkownika."
+        )
+        par_form.addRow("Uruchom tło automatycznie po", self.background_autotag_delay)
+
         self.provider_parallel_workers = QtWidgets.QSpinBox()
         self.provider_parallel_workers.setRange(2, 12)
         self.provider_parallel_workers.setToolTip(
             "Ile źródeł metadanych (MusicBrainz, Discogs…) jest odpytywanych równolegle."
         )
         par_form.addRow("Równoległe źródła (API)", self.provider_parallel_workers)
+
+        self.audio_analysis_parallel_workers = QtWidgets.QSpinBox()
+        self.audio_analysis_parallel_workers.setRange(1, 8)
+        self.audio_analysis_parallel_workers.setToolTip(
+            "Ile równoległych analiz audio (librosa, ffmpeg) może działać jednocześnie.\n"
+            "Niższa wartość = większa stabilność przy losowych crashach, wolniejszy autotag."
+        )
+        par_form.addRow("Równoległe analizy audio (librosa/ffmpeg)", self.audio_analysis_parallel_workers)
+
         layout.addWidget(par_box)
 
         cache_box, cache_form = _group("Cache metadanych")
@@ -416,6 +447,15 @@ class SettingsDialog(QtWidgets.QDialog):
         self.metadata_cache_ttl.setValue(s.metadata_cache_ttl_days)
         self.autotag_parallel_workers.setValue(s.autotag_parallel_workers)
         self.provider_parallel_workers.setValue(s.provider_parallel_workers)
+        self.audio_analysis_parallel_workers.setValue(
+            getattr(s, "audio_analysis_parallel_workers", 3)
+        )
+        self.background_autotag_enabled.setChecked(
+            getattr(s, "background_autotag_enabled", True)
+        )
+        self.background_autotag_delay.setValue(
+            getattr(s, "background_autotag_delay_seconds", 0)
+        )
 
     def _save(self) -> None:
         save_settings(
@@ -444,6 +484,9 @@ class SettingsDialog(QtWidgets.QDialog):
                 "METADATA_CACHE_TTL_DAYS": str(self.metadata_cache_ttl.value()),
                 "AUTOTAG_PARALLEL_WORKERS": str(self.autotag_parallel_workers.value()),
                 "PROVIDER_PARALLEL_WORKERS": str(self.provider_parallel_workers.value()),
+                "AUDIO_ANALYSIS_PARALLEL_WORKERS": str(self.audio_analysis_parallel_workers.value()),
+                "BACKGROUND_AUTOTAG_ENABLED": str(self.background_autotag_enabled.isChecked()).lower(),
+                "BACKGROUND_AUTOTAG_DELAY_SECONDS": str(self.background_autotag_delay.value()),
             }
         )
         self.accept()

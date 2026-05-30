@@ -89,6 +89,9 @@ class Settings:
     metadata_cache_ttl_days: int
     autotag_parallel_workers: int
     provider_parallel_workers: int
+    audio_analysis_parallel_workers: int
+    background_autotag_enabled: bool = True
+    background_autotag_delay_seconds: int = 0   # 0 = nie uruchamiaj automatycznie po czasie
 
 
 def default_musicbrainz_user_agent() -> str:
@@ -271,6 +274,35 @@ def load_settings() -> Settings:
                     ),
                     default=6,
                 ),
+            ),
+        ),
+        audio_analysis_parallel_workers=max(
+            1,
+            min(
+                8,
+                _to_int(
+                    _first_value(
+                        payload.get("AUDIO_ANALYSIS_PARALLEL_WORKERS"),
+                        os.getenv("AUDIO_ANALYSIS_PARALLEL_WORKERS"),
+                    ),
+                    default=3,
+                ),
+            ),
+        ),
+        background_autotag_enabled=_first_value(
+            payload.get("BACKGROUND_AUTOTAG_ENABLED"),
+            os.getenv("BACKGROUND_AUTOTAG_ENABLED"),
+            "true",
+        ).lower()
+        not in {"false", "0", "no", "off"},
+        background_autotag_delay_seconds=max(
+            0,
+            _to_int(
+                _first_value(
+                    payload.get("BACKGROUND_AUTOTAG_DELAY_SECONDS"),
+                    os.getenv("BACKGROUND_AUTOTAG_DELAY_SECONDS"),
+                ),
+                default=0,
             ),
         ),
     )

@@ -36,37 +36,38 @@ class AudioFeatureExtractor:
         try:
             y, sr = librosa.load(str(path), sr=22050, mono=True, duration=duration_s)
         except Exception as exc:
+            logger.error("[problematic-audio] load_failed path=%s error=%s", path, exc)
             raise AudioAnalysisError(f"Błąd wczytywania: {exc}") from exc
         try:
             tempo_arr, _ = librosa.beat.beat_track(y=y, sr=sr)
             result.tempo = float(tempo_arr[0]) if hasattr(tempo_arr, '__len__') else float(tempo_arr)
         except Exception as e:
-            logger.warning("BPM error: %s", e)
+            logger.warning("BPM error for %s: %s", path.name, e)
         try:
             mfcc = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=N_MFCC)
             result.mfcc_json = json.dumps([round(float(v), 4) for v in mfcc.mean(axis=1)])
         except Exception as e:
-            logger.warning("MFCC error: %s", e)
+            logger.warning("MFCC error for %s: %s", path.name, e)
         try:
             sc = librosa.feature.spectral_centroid(y=y, sr=sr)
             result.spectral_centroid = float(sc.mean())
             result.brightness = min(1.0, result.spectral_centroid / (sr / 2))
         except Exception as e:
-            logger.warning("Spectral error: %s", e)
+            logger.warning("Spectral error for %s: %s", path.name, e)
         try:
             sr_arr = librosa.feature.spectral_rolloff(y=y, sr=sr)
             result.spectral_rolloff = float(sr_arr.mean())
         except Exception as e:
-            logger.warning("Rolloff error: %s", e)
+            logger.warning("Rolloff error for %s: %s", path.name, e)
         try:
             sb = librosa.feature.spectral_bandwidth(y=y, sr=sr)
             result.roughness = min(1.0, float(sb.mean()) / (sr / 2))
         except Exception as e:
-            logger.warning("Bandwidth error: %s", e)
+            logger.warning("Bandwidth error for %s: %s", path.name, e)
         try:
             result.waveform_blob = compute_waveform_blob(y, WAVEFORM_SAMPLES)
         except Exception as e:
-            logger.warning("Waveform error: %s", e)
+            logger.warning("Waveform error for %s: %s", path.name, e)
         return result
 
     def build_ai_prompt_context(self, result: AudioFeatureResult) -> str:

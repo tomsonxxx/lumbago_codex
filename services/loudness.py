@@ -23,7 +23,7 @@ def analyze_loudness(path: Path) -> float | None:
         "null",
         "-",
     ]
-    _, stderr = _run_ffmpeg(args)
+    _, stderr = _run_ffmpeg(args, timeout=90)
     payload = _extract_json(stderr or "")
     if not payload:
         return None
@@ -53,16 +53,24 @@ def normalize_loudness(
         f"loudnorm=I={target_lufs}:TP={true_peak}:LRA={lra}",
         str(output_path),
     ]
-    code, _ = _run_ffmpeg(args)
+    code, _ = _run_ffmpeg(args, timeout=300)
     return code == 0
 
 
-def _run_ffmpeg(args: list[str]) -> tuple[int, str]:
+def _run_ffmpeg(args: list[str], timeout: int = 120) -> tuple[int, str]:
     try:
-        result = subprocess.run(args, capture_output=True, text=True, check=False)
+        result = subprocess.run(
+            args,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=timeout
+        )
         return result.returncode, result.stderr or ""
-    except Exception:
-        return 1, ""
+    except subprocess.TimeoutExpired:
+        return 1, "ffmpeg timeout"
+    except Exception as e:
+        return 1, str(e)
 
 
 def _extract_json(text: str) -> dict | None:

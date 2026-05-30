@@ -45,7 +45,13 @@ SOURCE_WEIGHTS: dict[str, float] = {
     "spectral_analysis": 0.68,
     "key_detection": 0.7,
     "audio_features": 0.68,
-    "ai_enrichment": 0.2,
+    # Zwiększona waga AI (wcześniej 0.2) — AI ma realnie pomagać przy dużych batchach
+    "ai_enrichment": 0.58,
+    "ai": 0.58,
+    "openai": 0.58,
+    "gemini": 0.58,
+    "grok": 0.58,
+    "deepseek": 0.58,
 }
 
 
@@ -133,11 +139,21 @@ class MetadataConsensusEngine:
         top_score = _aggregate_group_score(field_name, top_group, grouped)
 
         resolved: FieldEvidence | None = None
+
+        # === NOWA, ŁAGODNIEJSZA POLITYKA AI ===
+        # AI może teraz realnie uzupełniać pola, szczególnie gdy inne źródła nie dały wyniku.
         if _is_ai_restricted(field_name, top_choice.source):
+            # Dla pól tożsamościowych (title, artist, album itd.) AI nadal wymaga potwierdzenia
             if _has_non_ai_corroboration(top_group):
                 resolved = top_choice
         elif _is_ai_source(top_choice.source) and field_name in AI_ENRICHMENT_FIELDS:
-            if float(top_choice.confidence) >= 0.65:
+            # Dla pól "miękkich" (mood, energy, genre, comment itd.) dajemy AI dużo większą szansę
+            # Szczególnie w trybie priority + duże batch
+            ai_threshold = 0.48  # obniżone z 0.65
+            if float(top_choice.confidence) >= ai_threshold:
+                resolved = top_choice
+            elif top_score >= self.field_threshold:
+                # Nawet przy niższym confidence AI bierzemy, jeśli nie ma lepszej alternatywy
                 resolved = top_choice
         elif top_score >= self.field_threshold or top_choice.verified:
             resolved = top_choice

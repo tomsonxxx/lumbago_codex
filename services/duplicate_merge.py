@@ -75,12 +75,13 @@ def build_duplicate_merge_plan(
     use_ai: bool = True,
     logger=None,
     group_label: str = "",
+    survivor: Track | None = None,
 ) -> DuplicateMergePlan | None:
     cleaned = [track for track in tracks if isinstance(track, Track)]
     if len(cleaned) < 2:
         return None
 
-    survivor = _choose_survivor(cleaned)
+    survivor = _preferred_survivor(cleaned, survivor)
     if logger is not None:
         try:
             logger(
@@ -236,6 +237,15 @@ def apply_duplicate_merge_plan(plan: DuplicateMergePlan) -> list[str]:
 
 def _choose_survivor(tracks: list[Track]) -> Track:
     return max(tracks, key=_track_score)
+
+
+def _preferred_survivor(tracks: list[Track], survivor: Track | None) -> Track:
+    if survivor is None:
+        return _choose_survivor(tracks)
+    for track in tracks:
+        if track is survivor or track.path == survivor.path:
+            return track
+    return _choose_survivor(tracks)
 
 
 def _track_score(track: Track) -> float:

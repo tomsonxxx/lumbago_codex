@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from html import unescape
 from typing import Callable
@@ -61,6 +62,7 @@ class FreeMusicPortalSearch:
         musixmatch_api_key: str | None = None,
         genius_api_key: str | None = None,
         timeout: float = 7.0,
+        max_workers: int = 6,
     ) -> None:
         self.musicbrainz_app_name = musicbrainz_app_name or "LumbagoMusicAI"
         self.discogs_token = discogs_token
@@ -68,6 +70,7 @@ class FreeMusicPortalSearch:
         self.musixmatch_api_key = musixmatch_api_key
         self.genius_api_key = genius_api_key
         self.timeout = timeout
+        self.max_workers = max(1, min(16, int(max_workers)))
         self.session = requests.Session()
         self.user_agent = "LumbagoMusicAI/1.0"
         self._providers: dict[str, Callable[[str], PortalProbe]] = {
@@ -89,17 +92,35 @@ class FreeMusicPortalSearch:
         }
 
     def search_all(self, query: str) -> list[PortalProbe]:
+        ordered: list[PortalProbe | None] = [None] * len(self.PORTALS)
+        with ThreadPoolExecutor(
+            max_workers=min(self.max_workers, max(1, len(self.PORTALS))),
+            thread_name_prefix="portal-search",
+        ) as pool:
+            future_map = {}
+            for index, (key, label) in enumerate(self.PORTALS):
+                provider = self._providers.get(key)
+                if provider is None:
+                    ordered[index] = PortalProbe(key, label, None, "Provider not configured")
+                    continue
+                future_map[pool.submit(provider, query)] = (index, key, label)
+            for future in as_completed(future_map):
+                index, key, label = future_map[future]
+                try:
+                    ordered[index] = future.result()
+                except Exception as exc:  # defensive: one bad portal must not break the pipeline
+                    ordered[index] = PortalProbe(key, label, None, f"Error: {exc}")
         probes: list[PortalProbe] = []
-        for key, label in self.PORTALS:
+        for index, (key, label) in enumerate(self.PORTALS):
+            probe = ordered[index]
+            if probe is not None:
+                probes.append(probe)
+                continue
             provider = self._providers.get(key)
             if provider is None:
                 probes.append(PortalProbe(key, label, None, "Provider not configured"))
                 continue
-            try:
-                probe = provider(query)
-            except Exception as exc:  # defensive: one bad portal must not break the pipeline
-                probe = PortalProbe(key, label, None, f"Error: {exc}")
-            probes.append(probe)
+            probes.append(PortalProbe(key, label, None, "Provider did not return a result"))
         return probes
 
     # ------------------------------------------------------------------

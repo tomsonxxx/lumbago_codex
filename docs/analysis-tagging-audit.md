@@ -4,7 +4,7 @@
 
 ### Odczyt tagow i lokalnych metadanych
 
-1. `lumbago_app/core/audio.py::extract_metadata()` otwiera plik przez Mutagen i wypelnia `Track`.
+1. `core/audio.py::extract_metadata()` otwiera plik przez Mutagen i wypelnia `Track`.
 2. Dla MP3/FLAC/OGG czyta bezposrednie tagi, a dla MP4/M4A dodatkowo przechodzi przez `read_tags()`.
 3. Na koncu `apply_local_metadata()` dokleja dane z:
    - sidecar JSON,
@@ -97,7 +97,7 @@
 
 ## 4. Zmiany wykonane teraz
 
-- Dodana zostala wspolna usluga zapisu metadanych: `lumbago_app/services/metadata_writeback.py`.
+- Dodana zostala wspolna usluga zapisu metadanych: `services/metadata_writeback.py`.
   - Obsluguje jeden zapis do DB, pliku audio, tabeli tagow i changelogu.
   - Korzystaja z niej teraz oba flow: dialog review i szybki `AutoTagWorker`.
 - Usuniety zostal martwy kod z `AiTaggerDialog`:

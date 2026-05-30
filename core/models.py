@@ -4,6 +4,42 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Optional
 
+# ============================================================
+# PRIORYTETOWE POLA AUTOTAGU (dla mechanizmu szybkiego uzupełniania)
+# ============================================================
+# Te 10 pól jest najważniejsze dla DJ-a i powinno być uzupełnione
+# najszybciej, żeby użytkownik mógł jak najszybciej pracować z plikiem.
+# Reszta pól (tracknumber, composer, lyrics, remixer itd.) jest uzupełniana w tle.
+
+PRIORITY_AUTOTAG_FIELDS: tuple[str, ...] = (
+    "artist",           # 1
+    "title",            # 2
+    "album",            # 3
+    "bpm",              # 4
+    "key",              # 5
+    "genre",            # 6
+    "year",             # 7
+    "energy",           # 8
+    "mood",             # 9
+    "publisher",        # 10 (label)
+)
+
+# Pola uzupełniane "na spokojnie" w tle (niższy priorytet)
+BACKGROUND_AUTOTAG_FIELDS: tuple[str, ...] = (
+    "albumartist",
+    "tracknumber",
+    "discnumber",
+    "composer",
+    "originalartist",
+    "isrc",
+    "rating",
+    "comment",
+    "lyrics",
+    "grouping",
+    "copyright",
+    "remixer",
+)
+
 
 @dataclass
 class CuePoint:

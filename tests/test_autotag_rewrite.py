@@ -29,6 +29,7 @@ def _settings(**kwargs):
         "grok_model": None,
         "deepseek_base_url": None,
         "deepseek_model": None,
+        "cloud_ai_provider": None,
     }
     defaults.update(kwargs)
     return SimpleNamespace(**defaults)
@@ -262,6 +263,30 @@ def test_search_ai_returns_error_candidate_when_providers_fail(monkeypatch):
     assert candidate is not None
     assert candidate.score == 0
     assert candidate.error == "provider failed"
+
+
+def test_unified_autotagger_uses_configured_cloud_ai_provider():
+    service = UnifiedAutoTagger(
+        _settings(
+            cloud_ai_provider="gemini",
+            gemini_api_key="gemini-key",
+            openai_api_key="openai-key",
+        )
+    )
+
+    tagger = service._build_multi_ai_tagger()
+
+    assert tagger is not None
+    assert [item.provider_name for item in tagger.taggers] == ["gemini"]
+
+
+def test_unified_autotagger_uses_openai_for_generic_cloud_ai_key():
+    service = UnifiedAutoTagger(_settings(cloud_ai_api_key="generic-key"))
+
+    tagger = service._build_multi_ai_tagger()
+
+    assert tagger is not None
+    assert [item.provider_name for item in tagger.taggers] == ["openai"]
 
 
 def test_discogs_ranking_prefers_candidate_with_year_and_genre():
