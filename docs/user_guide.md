@@ -1,5 +1,7 @@
 # Instrukcja użytkownika — Lumbago Music AI
 
+> **Uwaga:** Aplikacja jest w pełni desktopowa (PyQt6). Wersje webowe i eksperymentalne React/WinUI zostały usunięte z repozytorium.
+
 ## Start
 1. Uruchom aplikację.
 2. Wejdź w **Ustawienia** i wprowadź klucze API (opcjonalnie).

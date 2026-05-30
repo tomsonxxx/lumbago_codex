@@ -1,7 +1,13 @@
 # Lumbago Music AI
 
-Desktopowa aplikacja do zarządzania biblioteką muzyczną dla DJ-ów i kolekcjonerów.
-UI w PyQt6, lokalna baza SQLite, hybrydowe AI (lokalne heurystyki + opcjonalne API w chmurze).
+**Desktopowa aplikacja** do zarządzania biblioteką muzyczną dla DJ-ów i kolekcjonerów.
+
+- UI: PyQt6 (Windows primary)
+- Baza: SQLite (SQLAlchemy + Alembic)
+- AI: hybrydowe (lokalne heurystyki + opcjonalne API w chmurze: Gemini / OpenAI / Grok / DeepSeek)
+- DJ Player: wbudowany profesjonalny dual-deck (Rekordbox-style) w osobnym oknie
+
+**Projekt jest wyłącznie desktopowy.** Wersje web (FastAPI + React), standalone React (tagerv2) i planowana migracja na WinUI 3 zostały usunięte z repozytorium w celu uproszczenia i skupienia na głównej funkcjonalności.
 
 ## Start
 

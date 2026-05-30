@@ -1,6 +1,6 @@
 # Memory — Lumbago Music AI (DJ Player Project)
 
-**Data ostatniej aktualizacji:** Maj 2026  
+**Data ostatniej aktualizacji:** Maj 2026 (po dużym sprzątaniu repozytorium)  
 **Cel pliku:** Pełna, trwała pamięć projektu — wszystko co zostało omówione, zbudowane, naprawione i postanowione od początku pracy nad DJ Playerem.
 
 ---
@@ -116,3 +116,25 @@ Użytkownik wielokrotnie wracał do tematu naprawiania błędów ładowania i od
 ---
 
 **Ten plik ma być „pamięcią instytucjonalną” projektu.** Im bardziej szczegółowy i szczery będzie, tym łatwiej będzie kontynuować pracę po resetach sesji.
+
+---
+
+## 7. Duże sprzątanie repozytorium (maj 2026)
+
+Na żądanie użytkownika przeprowadzono gruntowne porządki:
+
+- Usunięto wszelkie ślady starych wersji:
+  - Web MVP (FastAPI + React / Vite)
+  - tagerv2 (standalone React tagger)
+  - Plany migracji na WinUI 3
+- Usunięto: vercel.json, docs/recovery_tagerv2_*.md oraz kilka tymczasowych skryptów debugujących z roota.
+- Wyczyszczono requirements.txt (usunięto fastapi, uvicorn, httpx).
+- Naprawiono pliki konfiguracyjne .claude/ (launch.json, settings.local.json) – usunięto stare konfiguracje webowe i odniesienia do nieistniejącej struktury `lumbago_app/`.
+- Zaktualizowano dokumentację (README, user_guide.md, memory.md), aby jasno komunikować, że projekt jest wyłącznie desktopowy (PyQt6).
+- Repozytorium jest teraz czyste i skupione wyłącznie na aplikacji desktopowej + DJ Playerze.
+
+Po sprzątaniu zweryfikowano:
+- Struktura: core/, data/, services/, ui/, tests/, main.py na poziomie głównym.
+- Brak folderów web/react/winui.
+- Testy przechodzą (141 passed).
+- Aplikacja uruchamia się poprawnie.

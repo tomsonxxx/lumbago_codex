@@ -14,9 +14,6 @@ PyInstaller==6.19.0
 numpy==1.26.4; python_version < "3.14"
 numpy==2.4.3; python_version >= "3.14"
 librosa==0.10.2.post1
-fastapi==0.115.8
-uvicorn==0.34.0
-httpx==0.28.1
 
 # Audio backend dla DJ Playera (dedykowane okno z dual-deck)
 # Wymaga zainstalowanego VLC na systemie (https://www.videolan.org/vlc/)
