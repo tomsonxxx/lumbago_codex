@@ -170,93 +170,10 @@ Szczegóły historyczne znajdują się w `docs/HISTORY.md` i `RECOVERY.md`.
 - [x] (P1) Test przepływu UI — filterTracks unit tests (vitest)
 - [ ] (P2) Test `DuplicateFinderModal` (UI + API)
 
-### 2.4 Brakujące funkcje Web MVP
-- [x] (P1) Edycja tagów przez API webowy — TrackEditPanel (kliknięcie na track, pola edycji, PUT /tracks)
-- [x] (P1) Zapis tagów do pliku audio przez backend — PUT /tracks/{path} wywołuje write_tags() w Mutagen
-- [ ] (P2) Paginacja wyników `/tracks` (przy dużych bibliotekach)
-- [ ] (P2) Autoryzacja / zabezpieczenie API
-
----
-
-## 3. tagerv2 (`tagerv2/`)
-
-### 3.1 Core
-- [x] Standalone — brak backendu, dostęp do plików przez File System Access API
-- [x] State w `localStorage` (pliki + playlisty)
-- [x] `useLibrary` — lista plików, playlisty, sort/filter
-- [x] `useAIProcessing` — batch enrichment przez Gemini
-- [x] `useSettings` — API keys, preferences
-- [x] `services/aiService.ts` — Gemini + Grok + OpenAI (client-side)
-- [x] `services/cacheService.ts` — cache wyników AI
-- [x] `services/geminiService.ts` — native Gemini API calls
-
-### 3.2 UI komponenty
-- [x] Pełny zestaw komponentów (TrackTable, TrackGrid, Sidebar, PlayerDock, FilterBar, itp.)
-- [x] SmartTaggerModal — batch AI tagging
-- [x] EditTagsModal, BulkEditModal, RenameModal
-- [x] DuplicateResolverModal
-- [x] XmlConverterModal
-- [x] SmartPlaylistModal
-- [x] MediaBrowser, DirectoryConnect, FileDropzone
-- [x] Dashboard z statystykami biblioteki
-- [x] Tailwind CSS + dark/light mode
-
-### 3.3 Utilities
-- [x] `utils/audioUtils.ts` — odczyt ID3 (browser)
-- [x] `utils/csvUtils.ts` — eksport CSV
-- [x] `utils/djUtils.ts` — Camelot mapping, BPM utils
-- [x] `utils/duplicateUtils.ts` — wykrywanie duplikatów
-- [x] `utils/filenameUtils.ts` — wzorce renamingu
-- [x] `utils/sortingUtils.ts`, `utils/stringUtils.ts`
-
-### 3.4 Jakość kodu i testy
-- [x] (P0) `npm run lint` przechodzi bez ostrzeżeń (max-warnings 0)
-- [x] (P1) Unit testy dla kluczowych utilities (duplicateUtils, djUtils, stringUtils) — 25 testów vitest
-- [ ] (P1) Testy vitest dla hook `useLibrary` i `useAIProcessing`
-
-### 3.5 Brakujące funkcje
-- [ ] (P1) Zapis tagów z powrotem do pliku audio (File System Access API + ID3 writer)
-- [ ] (P2) Eksport playlisty do Rekordbox/VirtualDJ XML (pełny flow)
-- [ ] (P2) PWA / offline support
-- [~] Backend / serwer — nie w zakresie (browser-only by design)
-
----
-
-## 4. WinUI 3 Rewrite (ToDo2.md — Etap 6-10)
-
-> Nowy UI na Windows, planowany jako następna iteracja po obecnym PyQt6.
-
-### 4.1 Decyzje i architektura
-- [x] Styl: „neon glass" / WinUI 3
-- [x] Makiety wszystkich widoków (v1 + v2 w `docs/winui3/previews/`)
-- [x] Theme.xaml, App.xaml, strony (`docs/winui3/`)
-- [x] Decyzja o modelu integracji UI ↔ logika — lokalny HTTP 127.0.0.1 (FastAPI) — patrz `docs/winui3/ipc_decision.md`
-- [x] Definicja zakresu MVP nowego UI — Library, Start, Settings + ApiClient + BackendLauncher
-
-### 4.2 Implementacja
-- [x] Szkielet aplikacji WinUI 3 (shell, nawigacja, routing) — `winui/LumbagoWinUI/` (18 plików; wymaga VS 2022 + Windows App SDK workload do kompilacji)
-- [x] Widok Biblioteki (lista + siatka + filtry + detail panel) — przełącznik lista↔siatka, filtry Gatunek/Tonacja/BPM, panel edycji tagów, PUT /tracks/{path} w backend
-- [x] (P1) Import, Duplikaty, Konwerter XML — ImportPage (FolderPicker + podgląd + commit), DuplicatesPage (3 tryby + karty grup + usuwanie), ConverterPage (Rekordbox→VirtualDJ); backend: DELETE /tracks/{path} + POST /convert/rekordbox-to-virtualdj
-- [x] (P1) Smart Tagger — strona AI z kolejką analizy, podglądem decyzji per pole i zatwierdzaniem (POST /analysis/jobs, polling, apply)
-- [x] (P1) Globalny odtwarzacz (dock) — play/pause/seek/prev/next, autoplay kolejki, czas pozycji
-- [x] (P1) Podłączenie danych z logiką (tracki, playlisty, tagi)
-- [x] (P1) Akcje masowe i edycje w UI — BulkEditDialog (multi-select Ctrl+klik, checkboxy per pole, batch PUT /tracks)
-- [x] (P1) Integracja AI Taggera i kolejek
-
-### 4.3 Testy i dokumentacja WinUI 3
-- [ ] (P1) Testy UI kluczowych flow
-- [ ] (P1) Testy dostępności (WCAG)
-- [ ] (P2) Testy wydajności listy przy >10k tracks
-- [x] (P1) Aktualizacja `Build2.md` — historia w `docs/HISTORY.md` (wpisy 16-20)
-- [ ] (P2) Checklist testu na czystym Windows (nowy UI)
-
----
-
 ## 5. Infrastruktura i CI/CD
 
-- [x] Desktop CI (`desktop-ci.yml`) — pytest Ubuntu + Windows + build PyInstaller
-- [x] Web CI (`web-ci.yml`) — warunkowy build frontendu
-- [x] CodeQL (`codeql.yml`) — security scanning (Python + JS/TS)
+- [x] Desktop CI (`desktop-ci.yml`) — pytest na Windows + build PyInstaller
+- [x] CodeQL (`codeql.yml`) — security scanning (Python)
 - [x] CLAUDE.md — dokumentacja dla AI assistants
 - [ ] (P2) Automatyczne testy E2E (Playwright/Cypress)
 - [ ] (P2) Coverage report w CI
@@ -266,17 +183,13 @@ Szczegóły historyczne znajdują się w `docs/HISTORY.md` i `RECOVERY.md`.
 
 ## 6. Priorytety natychmiastowe (P0/P1 pending)
 
-> Stan na 2026-05-16. Testy: 95 passed / 1 failed (`test_autotag_rewrite::test_unified_autotagger_picks_best_candidate`) / 1 skipped.
+> Stan po sprzątaniu repozytorium (maj 2026). Skupienie wyłącznie na wersji Desktop (PyQt6 + DJ Player). Stare wersje (Web MVP, tagerv2, WinUI 3) usunięte.
 
 | # | Zadanie | Komponent | Priorytet | Stan |
 |---|---------|-----------|-----------|------|
-| 1 | `npm run lint` bez błędów w tagerv2 | tagerv2 | P0 | ⏳ |
-| 2 | Zapis tagów do pliku audio (browser, tagerv2) | tagerv2 | P1 | ⏳ |
-| 3 | ~~Decyzja: model integracji WinUI 3 ↔ logika~~ | Desktop rewrite | P0 | ✅ |
-| 4 | Integration testy Web API | Web MVP | P1 | ⏳ |
-| 5 | Test na czystym Windows (PyInstaller build) | Desktop | P1 | ⏳ |
-| 6 | ~~Edycja tagów przez Web API~~ | Web MVP | P1 | ✅ |
-| 7 | Naprawić failing test: `test_unified_autotagger_picks_best_candidate` | Desktop | P1 | ⏳ |
+| 1 | Test na czystym Windows (PyInstaller build) | Desktop | P1 | ⏳ |
+| 2 | Naprawić failing test: `test_unified_autotagger_picks_best_candidate` | Desktop | P1 | ⏳ |
+| 3 | Pełna dokumentacja DJ Playera (hotcue, memory, sync) | Desktop | P1 | ⏳ |
 
 ---
 
