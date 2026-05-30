@@ -34,6 +34,48 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install -e .
+
+      - name: Install VLC runtime (for python-vlc / DJ Player tests)
+        shell: powershell
+        run: |
+          $ProgressPreference = 'SilentlyContinue'
+          $vlcVersion = "3.0.21"
+          $vlcInstallerUrl = "https://download.videolan.org/vlc/$vlcVersion/win64/vlc-$vlcVersion-win64.exe"
+          $installer = "vlc-installer.exe"
+          Write-Host "Downloading VLC $vlcVersion installer..."
+          Invoke-WebRequest -Uri $vlcInstallerUrl -OutFile $installer -UseBasicParsing
+
+          Write-Host "Installing VLC silently..."
+          Start-Process -FilePath ".\$installer" -ArgumentList "/S" -Wait -NoNewWindow
+
+          $vlcPath = "C:\Program Files\VideoLAN\VLC"
+          if (Test-Path $vlcPath) {
+              Write-Host "VLC installed to $vlcPath"
+              # Make libvlc.dll discoverable for python-vlc in subsequent steps
+              echo $vlcPath | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+              "VLC_PLUGIN_PATH=$vlcPath\plugins" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          } else {
+              Write-Warning "VLC installation path not found!"
+          }
+          Remove-Item $installer -Force -ErrorAction SilentlyContinue
+
+      - name: Verify VLC for python-vlc
+        shell: powershell
+        run: |
+          python -c "
+          import os
+          print('VLC_PLUGIN_PATH =', os.environ.get('VLC_PLUGIN_PATH'))
+          try:
+              import vlc
+              print('python-vlc version:', vlc.__version__)
+              inst = vlc.Instance('--quiet')
+              print('VLC Instance created successfully')
+              inst.release()
+              print('VLC OK for DJ Player tests')
+          except Exception as e:
+              print('VLC check failed:', e)
+          "
+
       - name: Run tests
         run: python -m pytest -q tests
       - name: Smoke UI
