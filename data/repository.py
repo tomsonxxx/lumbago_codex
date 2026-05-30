@@ -7,9 +7,10 @@ import json
 from sqlalchemy import delete, select, update, text, func
 from sqlalchemy.orm import selectinload
 
-from core.models import AudioFeatures, Playlist, Tag, Track
+from core.models import AnalysisJob, AudioFeatures, Playlist, Tag, Track
 from data.db import get_session_factory, get_engine
 from data.schema import (
+    AnalysisJobOrm,
     AudioFeaturesOrm,
     Base,
     ChangeLogOrm,
@@ -506,6 +507,121 @@ def list_metadata_conflicts(track_path: str, field_name: str | None = None) -> l
             stmt = stmt.where(MetadataConflictOrm.field_name == field_name)
         rows = session.scalars(stmt).all()
         return [
+
+
+# ============================================================
+# AnalysisJob (dla zadań w tle, w tym uzupełnianie tagów)
+# ============================================================
+
+def create_analysis_job(
+    track_id: int,
+    job_type: str,
+    priority: int = 5,
+    parameters: dict | None = None,
+) -> AnalysisJob:
+    """Tworzy nowe zadanie analizy (np. background_enrichment)."""
+    Session = get_session_factory()
+    with Session() as session:
+        job_orm = AnalysisJobOrm(
+            track_id=track_id,
+            job_type=job_type,
+            priority=priority,
+            status="pending",
+        )
+        if parameters:
+            # Na razie trzymamy parametry jako JSON w error_msg lub dodamy kolumnę później
+            # Na start używamy prostego podejścia - można później rozbudować
+            pass
+
+        session.add(job_orm)
+        session.commit()
+        session.refresh(job_orm)
+
+        return AnalysisJob(
+            job_id=job_orm.id,
+            track_id=job_orm.track_id,
+            job_type=job_orm.job_type,
+            priority=job_orm.priority,
+            status=job_orm.status,
+            created_at=job_orm.created_at,
+            updated_at=job_orm.updated_at,
+            error_msg=job_orm.error_msg,
+        )
+
+
+def get_pending_analysis_jobs(limit: int = 10) -> list[AnalysisJob]:
+    """Pobiera oczekujące zadania posortowane po priorytecie i dacie."""
+    Session = get_session_factory()
+    with Session() as session:
+        stmt = (
+            select(AnalysisJobOrm)
+            .where(AnalysisJobOrm.status == "pending")
+            .order_by(AnalysisJobOrm.priority.asc(), AnalysisJobOrm.created_at.asc())
+            .limit(limit)
+        )
+        rows = session.scalars(stmt).all()
+
+        return [
+            AnalysisJob(
+                job_id=row.id,
+                track_id=row.track_id,
+                job_type=row.job_type,
+                priority=row.priority,
+                status=row.status,
+                created_at=row.created_at,
+                updated_at=row.updated_at,
+                error_msg=row.error_msg,
+            )
+            for row in rows
+        ]
+
+
+def update_analysis_job_status(
+    job_id: int,
+    status: str,
+    error_msg: str | None = None,
+) -> bool:
+    """Aktualizuje status zadania."""
+    Session = get_session_factory()
+    with Session() as session:
+        job = session.get(AnalysisJobOrm, job_id)
+        if not job:
+            return False
+
+        job.status = status
+        job.updated_at = datetime.utcnow()
+        if error_msg:
+            job.error_msg = error_msg
+        if status in ("completed", "failed", "cancelled"):
+            job.finished_at = datetime.utcnow()
+
+        session.commit()
+        return True
+
+
+def get_analysis_jobs_for_track(track_id: int) -> list[AnalysisJob]:
+    Session = get_session_factory()
+    with Session() as session:
+        rows = session.scalars(
+            select(AnalysisJobOrm)
+            .where(AnalysisJobOrm.track_id == track_id)
+            .order_by(AnalysisJobOrm.created_at.desc())
+        ).all()
+
+        return [
+            AnalysisJob(
+                job_id=row.id,
+                track_id=row.track_id,
+                job_type=row.job_type,
+                priority=row.priority,
+                status=row.status,
+                created_at=row.created_at,
+                updated_at=row.updated_at,
+                error_msg=row.error_msg,
+            )
+            for row in rows
+        ]
+
             {
                 "field": row.field_name,
                 "chosen_value": row.chosen_value or "",
