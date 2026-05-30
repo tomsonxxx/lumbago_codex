@@ -1,111 +1,118 @@
-# Memory — Lumbago Music AI
+# Memory — Lumbago Music AI (DJ Player Project)
 
-**Data ostatniej aktualizacji:** 2026-05 (po sesji z DJ Playerem + naprawami CI/testów)
-
----
-
-## 1. Ogólny stan projektu
-
-Lumbago Music AI to aplikacja desktopowa (PyQt6) do zarządzania biblioteką muzyczną dla DJ-ów i kolekcjonerów.
-
-- **Główny entry point:** `python main.py`
-- **Główny fokus ostatnich miesięcy:** Profesjonalny, niezależny **DJ Player** (dual-deck) w osobnym oknie, wzorowany na Rekordbox / Traktor / Serato.
-- Język komunikacji z AI: **zawsze po polsku** (użytkownik kategorycznie tego wymaga).
+**Data ostatniej aktualizacji:** Maj 2026  
+**Cel pliku:** Pełna, trwała pamięć projektu — wszystko co zostało omówione, zbudowane, naprawione i postanowione od początku pracy nad DJ Playerem.
 
 ---
 
-## 2. Najważniejsza funkcjonalność — DJ Player (stan na maj 2026)
+## 1. Podstawowe zasady komunikacji
 
-### Architektura
-- **DJPlayerWindow** (`ui/dj_player_window.py`) — główne okno z przełączaniem trybów:
-  - **"Odtwarzacz"** (SinglePlayerView) — czysty, czytelny single-deck
-  - **"Konsola DJ"** — pełny dual-deck (A/B) + crossfader, top mixer, EQ, 4/8 hotcue'ów
-- **PlaybackEngine** (`services/playback/engine.py`) — abstrakcja dual-deck
-  - Priorytet: **VlcAudioBackend**
-  - Fallback: **QtAudioBackend**
-  - Ostatnia deska ratunku: **_NoopAudioBackend** (dla CI i środowisk bez audio)
-- **WaveformWidget** — waveform z beatgridem muzycznym (BPM-aware), playhead, loop region
-- **Hotcue** — pełna persystencja w bazie (tabela `cue_points`), 4 lub 8 padów, kolory, right-click clear
-- Zaawansowane funkcje:
-  - Quantize (Q)
-  - SYNC z dopasowaniem fazy
-  - Memory Save/Recall (S/R) per deck
-  - Recent History (ostatnie 8 utworów na deck)
-  - Pełna integracja z biblioteką (drag & drop, menu kontekstowe "Załaduj do Deck A/B", wskaźniki ▶A / ▶B w tabeli)
-
-### Kluczowe poprawki z ostatniej sesji
-- Naprawiona synchronizacja hotcue'ów i stanu między trybami Single ↔ Console (wcześniej dochodziło do desynchronizacji przy szybkim przełączaniu).
-- Naprawione crashe: `vol_val`, błędne wiązanie przycisku "Wczytaj plik..." w Single view.
-- Poprawione bezpieczne ładowanie waveformu (WaveformRunnable + token zamiast funkcji).
-- Ulepszony `_NoopAudioBackend` — teraz pamięta rate/keylock/loop (testy DJ nie padają w CI bez VLC).
-- Dodano instalację VLC w GitHub Actions (`desktop-ci.yml`) — prawdziwe testy playbacku w CI.
-- Uzupełniono `_TRACK_META_FIELDS` w `data/repository.py` (brakowało `albumartist`, `composer`, `publisher` itd.) — naprawiło wiele testów z nowymi polami Track.
+- **Język:** Użytkownik kategorycznie wymaga, żeby **wszystko** (odpowiedzi, wyjaśnienia, podsumowania) było po polsku. Od pewnego momentu sesji padło wyraźne: „rozmawiamy tylko po polsku”.
+- Użytkownik często resetuje sesje ("zamknij sesję i uruchom nową") i oczekuje, że AI będzie pamiętało kontekst dzięki temu plikowi.
+- Styl pracy: użytkownik często mówi „dalej”, „do końca”, „nie pytaj co chwila”, „sam sukcesywnie podejmuj decyzje”, „poprawiaj błędy”.
 
 ---
 
-## 3. Baza danych i modele
+## 2. Chronologiczna historia pracy nad DJ Playerem (główny temat sesji)
 
-- **Domain models:** `core/models.py` (czysty dataclass `Track`, `CuePoint`, `AnalysisResult` itd.)
-- **ORM:** `data/schema.py` (`TrackOrm` i inne)
-- **Repozytorium:** `data/repository.py` — jedyne miejsce do odczytu/zapisu (nigdy bezpośredni dostęp do Session z UI)
-- Nowe pola Track (albumartist, composer, publisher, tracknumber, discnumber, isrc, grouping, copyright) zostały dodane zarówno do modelu, jak i do bazy + mechanizmów kopiowania.
+### Faza 1 – Początek (żądanie pełnego, profesjonalnego playera)
+- Użytkownik zażądał stworzenia **kompletnego, niezależnego dual-deck DJ Playera** w osobnym oknie.
+- Wymagania: 4 lub 8 hotcue’ów z pełną persystencją w bazie, duży waveform z beatgridem (BPM-aware), 3-pasmowy EQ, crossfader, Volume, Pitch, Loop In/Out, KEY, SYNC (z fazą), PFL, Quantize, Master + HP Cue, Memory Save/Recall, Recent History per deck.
+- Silna integracja z biblioteką (drag&drop, menu kontekstowe, wskaźniki „teraz gra w playerze”).
+- Dwa tryby w jednym oknie: **„Odtwarzacz”** (single) i **„Konsola DJ”** (dual).
+- Użytkownik wielokrotnie podkreślał, że player ma być „osobnym ciałem”, nie bazować na starym wbudowanym odtwarzaczu (`ui/player_widget.py` został uznany za deprecated).
 
----
+### Faza 2 – Iteracje UI i walka o czytelność (najdłuższa i najbardziej emocjonalna część)
+Użytkownik był bardzo wymagający co do jakości interfejsu:
+- Wielokrotne narzekania: „okno jest kompletnie nie czytelne”, „ikony zachodzą na siebie”, „za gęsto”, „wszystko zachodzi na siebie i przykrywa jedno przez drugie”, „tryb pojedynczy jest podwójny!!!”.
+- Prośby o większe pady hotcue, większe czcionki, więcej powietrza, styl „booth” / Rekordbox.
+- Kilka rund przeprojektowywania układu (marginesy, spacingi, rozmiary padów 72×52 → 88×58 → 92×60 itd.).
+- Na pewnym etapie użytkownik poprosił: **„zatrudnij agenta do projektowania UI który od nowa zaprojektuje okno dj playera kopiując rozwiązania UI programu rekordbox”**.
+- Powstały dwa tryby w jednym oknie z przełącznikiem (SinglePlayerView + DeckWidget dual).
 
-## 4. Testy i CI
+### Faza 3 – Ciężka praca nad stabilnością i błędami („poprawiaj błędy”)
+Użytkownik wielokrotnie wracał do tematu naprawiania błędów ładowania i odtwarzania:
+- Krytyczne bugi:
+  - `QThreadPool.start(worker)` gdzie worker był funkcją → TypeError (naprawione przez `WaveformRunnable` + token).
+  - Backendy ustawiały `self._enabled = False` po błędzie → deck na zawsze zablokowany.
+  - Duplikacja metod cue_points w `repository.py`.
+  - Zepsute wiązanie przycisku „Wczytaj plik…” w Single view.
+  - Desynchronizacja hotcue’ów i main cue przy przełączaniu trybów Single ↔ Console.
+  - Brak `vol_val` w SinglePlayerView → crash przy zmianie głośności.
+- Użytkownik wybierał ścieżki napraw (np. „b” = głęboka naprawa synchronizacji hotcue’ów między trybami).
+- Powtarzające się polecenia: „poprawiaj błędy”, „testuj wszystko na gotowo”, „dalej”.
 
-- **Desktop CI** (`.github/workflows/desktop-ci.yml`):
-  - Windows + Python 3.11
-  - `pip install -e .`
-  - Od maja 2026: automatyczna instalacja VLC (żeby testy DJ Playera używały prawdziwego backendu)
-  - Testy playbacku są teraz odporne na brak VLC (noop fallback + odpowiednie skipy)
-- Kluczowe testy DJ: `tests/test_playback_backend.py`
-- Smoke test: `LUMBAGO_SAFE_MODE=1 LUMBAGO_SMOKE_SECONDS=3 python main.py`
+### Faza 4 – Wzmocnienie architektury Playback
+- Stworzenie solidnego `PlaybackEngine` + warstwowych backendów (VLC jako priorytet).
+- Poprawki w `_NoopAudioBackend`, żeby testy DJ działały nawet bez VLC.
+- Dodanie instalacji VLC w GitHub Actions (`desktop-ci.yml`).
 
----
-
-## 5. Ważne konwencje i decyzje
-
-- **Język:** Wszystkie odpowiedzi i komunikacja z użytkownikiem — **po polsku**.
-- **DJ Player** jest całkowicie oddzielnym oknem (nie bazuje na starym `ui/player_widget.py`, który jest deprecated).
-- Przy przełączaniu trybów Single ↔ Console staramy się unikać pełnego reloadu tracka (używamy `_sync_deck_a_state_between_views`).
-- Wszystkie zapisy hotcue'ów idą przez `save_cue_point` / `delete_cue_point` z repository.
-- `AnalysisResult` → `Track` zawsze przez `ai_tagger_merge._merge_analysis_into_track()` (nie nadpisujemy istniejących wartości bez powodu).
-- Nie mieszamy domain models (`core/models.py`) z ORM (`data/schema.py`).
-
----
-
-## 6. Co jest stabilne / co wymaga uwagi (maj 2026)
-
-**Stabilne / gotowe:**
-- Podstawowa architektura DJ Playera (engine + backendy)
-- UI w dwóch trybach (po wielu iteracjach czytelności)
-- Hotcue 4/8 + persystencja
-- Memory S/R, Recent, SYNC, Quantize
-- Integracja z biblioteką
-- CI z VLC + odporne testy
-
-**Ostatnio naprawione:**
-- Desynchronizacja hotcue'ów między trybami
-- Błędy ładowania i crashe w Single view
-- Brakujące pola Track w mechanizmach repository
-- Testy DJ Playera w środowisku bez VLC
-
-**Możliwe kolejne tematy (do potwierdzenia z użytkownikiem):**
-- Dalsze polerowanie UI DJ Playera (jeśli użytkownik zgłosi problemy z czytelnością)
-- Dodanie waveform markers dla hotcue'ów bezpośrednio na waveformie
-- Pełniejsze testy integracyjne DJ Playera
-- Ewentualne usprawnienia w obsłudze błędów backendu audio
+### Faza 5 – Dokończenie spójności modelu danych (ostatnie duże zadanie)
+- Nowe pola w `Track`: `albumartist`, `composer`, `publisher`, `tracknumber`, `discnumber`, `isrc`, `grouping`, `copyright`.
+- Problem: pola były w dataclassu i w ORM, ale nie były kopiowane w `_TRACK_META_FIELDS` w `repository.py` → `AttributeError` i tracone dane.
+- Naprawione w `data/repository.py` + wypchnięte.
 
 ---
 
-## 7. Jak zaczynać nową sesję
+## 3. Kluczowe decyzje architektoniczne
 
-1. Otwórz `memory.md` i przeczytaj sekcje 1–6.
-2. Sprawdź aktualny stan: `git status` + `git log --oneline -5`
-3. Jeśli użytkownik powie "rozmawiamy tylko po polsku" — od razu przełącz się na polski.
-4. Najważniejsze aktualne zadanie z ostatniej sesji: **DJ Player** (dual-deck, Rekordbox-style).
+- **DJ Player jako całkowicie osobne okno** (nie integrujemy go głęboko ze starym player widgetem).
+- **Dwa tryby w jednym oknie** z możliwością przełączania (Single + Dual Console).
+- **PlaybackEngine** jako czysta warstwa logiki (niezależna od UI).
+- Priorytet backendów audio: **VLC → QtMultimedia → Noop**.
+- Hotcue’e przechowywane wyłącznie w tabeli `cue_points` (pełny CRUD w repository).
+- Przy przełączaniu trybów staramy się robić lekką synchronizację stanu zamiast pełnego przeładowania tracka (`_sync_deck_a_state_between_views`).
+- Używanie `QThreadPool + QRunnable` do ciężkich operacji (waveform extraction).
+- Wszystkie zapisy do bazy tylko przez `data/repository.py`.
 
 ---
 
-**Plik memory.md ma służyć jako trwała pamięć między sesjami.** Aktualizuj go po większych zmianach lub na koniec sesji.
+## 4. Najważniejsze problemy i ich rozwiązania (dla przyszłych sesji)
+
+| Problem | Objawy | Rozwiązanie |
+|--------|--------|-----------|
+| Desynchronizacja hotcue’ów przy zmianie trybu | Hotcue’e znikały lub nie działały po przełączeniu Single ↔ Console | Lepsza funkcja `_sync_deck_a_state_between_views` + odświeżanie waveformu i padów |
+| Crash przy ładowaniu waveformu | `TypeError: QThreadPool.start() argument 1 must be QRunnable` | Wprowadzenie `WaveformRunnable` z tokenem ścieżki |
+| Backend blokował się na zawsze | Po błędzie ładowania deck nie chciał już nic odtwarzać | Usunięcie `self._enabled = False` z `_set_error()` w backendach |
+| Testy DJ padały w CI | Brak VLC → noop nie pamiętał rate/loop | Ulepszenie `_NoopAudioBackend` + skipy w testach wymagających realnego audio |
+| Brakujące pola Track po wczytaniu z bazy | `AttributeError: 'Track' object has no attribute 'albumartist'` | Uzupełnienie `_TRACK_META_FIELDS` w repository |
+| Bardzo zła czytelność UI | „Ikony zachodzą”, „za gęsto”, „tryb pojedynczy jest podwójny” | Wiele iteracji layoutu + prośba o redesign w stylu Rekordbox |
+
+---
+
+## 5. Aktualny stan (maj 2026)
+
+**Co działa dobrze:**
+- Pełny, profesjonalny DJ Player z dwoma trybami
+- 4/8 hotcue’ów z persystencją
+- Waveform + muzyczny beatgrid
+- Memory, SYNC z fazą, Quantize, Recent History
+- Stabilne ładowanie i odtwarzanie (VLC jako główny backend)
+- Dobra integracja z biblioteką
+- CI z automatyczną instalacją VLC + odporne testy
+
+**Co jest w miarę stabilne, ale może wymagać dalszej pracy:**
+- Synchronizacja stanu między trybami (działa, ale warto monitorować przy dalszych zmianach)
+- Czytelność UI (użytkownik był bardzo wymagający – przy kolejnych zmianach warto od razu sprawdzać feedback)
+
+**Otwarte / potencjalne tematy na przyszłość:**
+- Rysowanie markerów hotcue’ów bezpośrednio na waveformie
+- Jeszcze lepsze komunikaty błędów przy problemach z plikami audio
+- Pełniejsze testy integracyjne całego playera z biblioteką
+- Ewentualne dodatkowe opcje zaawansowane (np. więcej kontroli nad loopami, beatjump itd.)
+
+---
+
+## 6. Jak korzystać z tego pliku w nowych sesjach
+
+1. Na początku nowej rozmowy poproś AI o przeczytanie `memory.md`.
+2. AI powinno od razu przełączyć się na język polski.
+3. Przed większymi zmianami lub na koniec sesji – aktualizuj ten plik.
+4. Najważniejsze jest zachowanie:
+   - Historii decyzji (dlaczego coś zrobiliśmy tak, a nie inaczej)
+   - Bolesnych lekcji (jakie błędy się powtarzały)
+   - Feedbacku użytkownika (szczególnie negatywnego – to one napędzały największe poprawy)
+
+---
+
+**Ten plik ma być „pamięcią instytucjonalną” projektu.** Im bardziej szczegółowy i szczery będzie, tym łatwiej będzie kontynuować pracę po resetach sesji.
