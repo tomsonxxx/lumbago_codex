@@ -758,6 +758,40 @@ def list_playlists_full() -> list[Playlist]:
         ]
 
 
+# ============================================================
+# Brakujące funkcje do pobierania/ tworzenia tracka po ścieżce
+# (używane w main_window.py i dj_player_window.py)
+# ============================================================
+
+def get_track_by_path(path: str) -> Track | None:
+    """Zwraca Track z bazy po dokładnej ścieżce lub None."""
+    Session = get_session_factory()
+    with Session() as session:
+        row = session.scalar(
+            select(TrackOrm).where(TrackOrm.path == path)
+        )
+        if row:
+            return _orm_to_track(row)
+        return None
+
+
+def get_or_create_track_by_path(path: str) -> Track:
+    """Zwraca istniejący track lub tworzy nowy minimalny wpis w bazie."""
+    existing = get_track_by_path(path)
+    if existing:
+        return existing
+
+    # Tworzymy minimalny track
+    new_track = Track(path=path)
+    upsert_tracks([new_track])
+    # Pobieramy ponownie, żeby mieć pełne dane + id
+    created = get_track_by_path(path)
+    if created is None:
+        # Awaryjnie zwracamy obiekt z minimalnymi danymi
+        return new_track
+    return created
+
+
 def create_playlist(name: str, description: str | None = None, is_smart: bool = False, rules: str | None = None) -> None:
     Session = get_session_factory()
     with Session() as session:
