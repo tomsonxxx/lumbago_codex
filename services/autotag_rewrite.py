@@ -591,13 +591,22 @@ class UnifiedAutoTagger:
         genres = best.get("genre") or []
         styles = best.get("style") or []
 
-        # Prefer more specific "style" over broad "genre" for better subgenre classification
-        if styles:
-            genre = styles[0]
-        elif genres:
-            genre = genres[0]
-        else:
-            genre = None
+        # Prefer more specific "style" over broad "genre"
+        # Try to pick the most detailed style first
+        broad_genres = {"electronic", "dance", "rock", "pop", "hip hop", "jazz", "classical", "blues", "folk", "metal"}
+        genre = None
+
+        for s in styles:
+            if s.lower() not in broad_genres:
+                genre = s
+                break
+        if not genre:
+            for g in genres:
+                if g.lower() not in broad_genres:
+                    genre = g
+                    break
+        if not genre:
+            genre = (styles or genres or [None])[0]
 
         tags = [*genres, *styles]
 

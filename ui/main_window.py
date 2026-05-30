@@ -1942,20 +1942,32 @@ class MainWindow(QtWidgets.QMainWindow):
         elif action == details_action:
             self._update_detail_panel()
         elif action == reload_action:
-            source_index = self.filter_proxy.mapToSource(index)
-            track = self.table_model.track_at(source_index.row())
-            if track:
-                refreshed = extract_metadata(Path(track.path))
-                track.title = refreshed.title
-                track.artist = refreshed.artist
-                track.album = refreshed.album
-                track.genre = refreshed.genre
-                update_track(track)
-                self._load_tracks()
+            tracks = self._selected_tracks()
+            if not tracks:
+                self._show_message("Zaznacz utwory do odświeżenia.")
+                return
+            for track in tracks:
+                if track and track.path:
+                    refreshed = extract_metadata(Path(track.path))
+                    track.title = refreshed.title
+                    track.artist = refreshed.artist
+                    track.album = refreshed.album
+                    track.genre = refreshed.genre
+                    update_track(track)
+            self._load_tracks()
+            self.status.showMessage(f"Odświeżono tagi dla {len(tracks)} utworów.")
         elif action == save_action:
-            self._save_tags_to_file()
+            tracks = self._selected_tracks()
+            if len(tracks) > 1:
+                self._save_tags_to_files_batch(tracks)
+            else:
+                self._save_tags_to_file()
         elif action == clear_action:
-            self._clear_tags()
+            tracks = self._selected_tracks()
+            if len(tracks) > 1:
+                self._clear_tags_batch(tracks)
+            else:
+                self._clear_tags()
         elif action in add_menu.actions():
             playlist_name = action.text()
             tracks = self._selected_tracks()
@@ -2187,6 +2199,55 @@ class MainWindow(QtWidgets.QMainWindow):
         except Exception as exc:
             self._show_message(f"Czyszczenie nieudane: {exc}")
 
+    def _save_tags_to_files_batch(self, tracks: list):
+        """Zapisuje aktualne tagi z biblioteki do plików audio dla wielu zaznaczonych utworów."""
+        if not tracks:
+            return
+        success = 0
+        for track in tracks:
+            if not track or not track.path:
+                continue
+            tags = {
+                "title": track.title or "",
+                "artist": track.artist or "",
+                "album": track.album or "",
+                "year": str(track.year or "") if track.year else "",
+                "genre": track.genre or "",
+                "bpm": str(track.bpm or "") if track.bpm else "",
+                "key": track.key or "",
+            }
+            try:
+                write_tags(Path(track.path), tags)
+                success += 1
+            except Exception:
+                pass
+        self._load_tracks()
+        self._show_message(f"Zapisano tagi do plików dla {success}/{len(tracks)} utworów.")
+
+    def _clear_tags_batch(self, tracks: list):
+        """Czyści tagi z plików i bazy dla wielu zaznaczonych utworów."""
+        if not tracks:
+            return
+        success = 0
+        for track in tracks:
+            if not track or not track.path:
+                continue
+            try:
+                clear_tags(Path(track.path))
+                track.title = None
+                track.artist = None
+                track.album = None
+                track.year = None
+                track.genre = None
+                track.bpm = None
+                track.key = None
+                update_track(track)
+                success += 1
+            except Exception:
+                pass
+        self._load_tracks()
+        self._show_message(f"Wyczyszczono tagi dla {success}/{len(tracks)} utworów.")
+
     def _change_cover(self):
         track = getattr(self, "_selected_track", None)
         if not track:
@@ -2223,9 +2284,17 @@ class MainWindow(QtWidgets.QMainWindow):
         if source is self.playlist_list and event.type() == QtCore.QEvent.Type.Drop:
             item = self.playlist_list.itemAt(event.position().toPoint())
             data = item.data(QtCore.Qt.ItemDataRole.UserRole) if item else None
-            if item and data and hasattr(self, "_selected_track") and self._selected_track:
-                add_track_to_playlist(data.name, self._selected_track.path)
-                self.status.showMessage(f"Dodano do playlisty: {data.name}")
+            if item and data:
+                tracks = self._selected_tracks()
+                if not tracks and hasattr(self, "_selected_track") and self._selected_track:
+                    tracks = [self._selected_track]
+                added = 0
+                for t in tracks:
+                    if t and t.path:
+                        add_track_to_playlist(data.name, t.path)
+                        added += 1
+                if added > 0:
+                    self.status.showMessage(f"Dodano {added} utworów do playlisty: {data.name}")
             return True
         return super().eventFilter(source, event)
 
