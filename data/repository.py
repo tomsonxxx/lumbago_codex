@@ -67,10 +67,12 @@ def _ensure_track_columns(engine) -> None:
 
 
 _TRACK_META_FIELDS = [
-    "title", "artist", "album", "year", "genre",
+    "title", "artist", "album", "albumartist", "year", "genre",
     "bpm", "key", "duration", "file_size", "file_mtime", "file_hash",
     "format", "bitrate", "sample_rate", "energy", "mood",
     "comment", "lyrics", "remixer", "originalartist",
+    "composer", "tracknumber", "discnumber", "isrc", "publisher",
+    "grouping", "copyright",
     "cue_in_ms", "cue_out_ms", "artwork_path", "fingerprint", "waveform_path",
 ]
 
