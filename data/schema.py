@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import (
     Boolean,
@@ -248,8 +248,8 @@ class AnalysisJobOrm(Base):
     job_type = Column(String(30), nullable=False)
     priority = Column(Integer, nullable=False, default=5)
     status = Column(String(20), nullable=False, default="pending")
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     error_msg = Column(Text, nullable=True)
     finished_at = Column(DateTime)
     parameters = Column(Text)  # JSON jako tekst (na przyszłość)

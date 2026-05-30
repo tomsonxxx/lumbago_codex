@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
 
@@ -99,7 +99,7 @@ def _resolve_pending_write(
     item: PendingTrackWrite,
     engine: MetadataConsensusEngine,
 ):
-    observed_at = datetime.utcnow()
+    observed_at = datetime.now(timezone.utc)
     evidence_by_field: dict[str, list[FieldEvidence]] = {}
     chosen_source = _write_source_name(item)
     chosen_confidence = _write_confidence(item)

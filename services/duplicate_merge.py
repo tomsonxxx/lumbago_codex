@@ -315,6 +315,6 @@ def _stringify(value: Any) -> str | None:
 
 
 def _now():
-    from datetime import datetime
+    from datetime import datetime, timezone
 
-    return datetime.utcnow()
+    return datetime.now(timezone.utc)

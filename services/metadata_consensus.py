@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 
@@ -62,7 +62,7 @@ class FieldEvidence:
     source: str
     confidence: float
     verified: bool = False
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     version: int = 1
 
 
@@ -88,7 +88,7 @@ class MetadataConsensusReport:
     accepted_fields: list[str]
     rejected_fields: list[str]
     conflicts: list[FieldConflict]
-    created_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class MetadataConsensusEngine:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from core.models import Track
@@ -105,7 +105,7 @@ class MetadataPipelineV2:
         extra_evidence_by_field: dict[str, list[dict[str, Any]]] | None,
         include_baseline_evidence: bool,
     ) -> dict[str, list[FieldEvidence]]:
-        observed_at = datetime.utcnow()
+        observed_at = datetime.now(timezone.utc)
         evidence_by_field: dict[str, list[FieldEvidence]] = {}
 
         if include_baseline_evidence:

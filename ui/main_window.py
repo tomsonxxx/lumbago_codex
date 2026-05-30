@@ -1001,6 +1001,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self._toolbar_mode = "full"
         self._adaptive_toolbar_buttons: list[QtWidgets.QPushButton | QtWidgets.QToolButton] = []
 
+        # Defensive initialization for lazy attributes (prevents AttributeError on first access)
+        self._bg_enrichment_service = None
+        self._dj_player_window = None
+        self._now_playing: dict[str, str | None] = {"A": None, "B": None}
+
         self._build_ui()
         _debug_log("MainWindow: build_ui ok")
         self._load_column_state()

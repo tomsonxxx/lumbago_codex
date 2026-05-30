@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path, PureWindowsPath
 import logging
 import re
@@ -128,7 +128,7 @@ class RecognitionPipelineV2:
         if refresh_existing:
             _reset_track_for_refresh(working)
         search_source = deepcopy(query_track or track)
-        observed_at = datetime.utcnow()
+        observed_at = datetime.now(timezone.utc)
         evidence_by_field: dict[str, list[FieldEvidence]] = {}
         attempts: list[RecognitionAttempt] = []
 

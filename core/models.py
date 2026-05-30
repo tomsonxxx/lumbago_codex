@@ -21,7 +21,7 @@ PRIORITY_AUTOTAG_FIELDS: tuple[str, ...] = (
     "year",             # 7
     "energy",           # 8
     "mood",             # 9
-
+    "comment",          # 10
 )
 
 # Pola uzupełniane "na spokojnie" w tle (niższy priorytet)

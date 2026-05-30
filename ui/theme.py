@@ -189,14 +189,8 @@ QListView {
     border-radius: 12px;
 }
 QListView::item:selected {
-    background-color: #3b224a;
-    color: #ffe7ff;
-}
-QListView::item:hover {
-    background-color: #1a2236;
-}
-QListView::item:selected {
     background-color: #1c3a52;
+    color: #ffe7ff;
 }
 QListView::item:hover {
     background-color: #16273a;
@@ -222,11 +216,7 @@ QTabBar::tab:selected {
     color: #63f2ff;
 }
 
-QSlider::groove:horizontal {
-    background: #1a2236;
-    height: 6px;
-    border-radius: 3px;
-}
+
 QSlider::sub-page:horizontal {
     background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #63f2ff, stop:1 #ff6bd5);
     border-radius: 3px;
@@ -243,16 +233,7 @@ QSlider::handle:horizontal {
     border-radius: 7px;
 }
 
-QProgressBar {
-    background-color: #141a2a;
-    border: 1px solid #2b3a55;
-    border-radius: 8px;
-    text-align: center;
-}
-QProgressBar::chunk {
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #63f2ff, stop:1 #ff6bd5);
-    border-radius: 8px;
-}
+
 
 QScrollBar:vertical {
     background: #0b0f16;
