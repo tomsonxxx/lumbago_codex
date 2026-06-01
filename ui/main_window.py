@@ -26,7 +26,7 @@ from core.config import cache_dir, load_settings, save_settings
 from core.models import BACKGROUND_AUTOTAG_FIELDS, PRIORITY_AUTOTAG_FIELDS, Track
 from core.renamer import parse_filename_tags
 from core.services import enrich_track_with_analysis, heuristic_analysis
-from core.waveform import generate_waveform, generate_waveform_threadsafe
+from core.waveform import extract_peaks, paint_waveform_pixmap, generate_waveform_threadsafe
 from services.autotag_rewrite import UnifiedAutoTagger
 from services.background_autotag_worker import BackgroundAutotagWorker
 from services.background_enrichment_service import BackgroundEnrichmentService
@@ -1396,6 +1396,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.detail_mood = QtWidgets.QLineEdit()
         self.detail_mood.setReadOnly(True)
         self.detail_mood.setToolTip("Nastrój (AI)")
+
+        self.detail_remixer = QtWidgets.QLineEdit()
+        self.detail_date_modified = QtWidgets.QLineEdit()
+        self.detail_date_modified.setReadOnly(True)
+        self.detail_date_modified.setToolTip("Ostatnia modyfikacja w bazie")
+
         form.addRow("Tytuł", self.detail_title)
         form.addRow("Artysta", self.detail_artist)
         form.addRow("Album", self.detail_album)
@@ -1405,6 +1411,8 @@ class MainWindow(QtWidgets.QMainWindow):
         form.addRow("Tonacja", self.detail_key)
         form.addRow("Energia", self.detail_energy)
         form.addRow("Nastrój", self.detail_mood)
+        form.addRow("Remikser", self.detail_remixer)
+        form.addRow("Data modyfikacji", self.detail_date_modified)
         layout.addLayout(form)
 
         # Przyciski akcji — 2 w rzędzie
@@ -1953,6 +1961,7 @@ class MainWindow(QtWidgets.QMainWindow):
                     track.artist = refreshed.artist
                     track.album = refreshed.album
                     track.genre = refreshed.genre
+                    track.remixer = refreshed.remixer
                     update_track(track)
             self._load_tracks()
             self.status.showMessage(f"Odświeżono tagi dla {len(tracks)} utworów.")
@@ -2072,6 +2081,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.detail_key.setText(track.key or "")
         self.detail_energy.setText(str(track.energy) if track.energy is not None else "")
         self.detail_mood.setText(track.mood or "")
+        self.detail_remixer.setText(track.remixer or "")
+        if track.date_modified:
+            self.detail_date_modified.setText(track.date_modified.strftime("%Y-%m-%d %H:%M"))
+        else:
+            self.detail_date_modified.setText("")
+
         self._selected_track = track
         self._selected_snapshot = {
             "title": track.title,
@@ -2081,12 +2096,17 @@ class MainWindow(QtWidgets.QMainWindow):
             "genre": track.genre,
             "bpm": track.bpm,
             "key": track.key,
+            "remixer": track.remixer,
         }
         self._update_cover_preview(track.artwork_path)
-        wave_path = generate_waveform(Path(track.path))
-        pixmap = QtGui.QPixmap(str(wave_path))
-        if not pixmap.isNull():
-            self.waveform_label.setPixmap(pixmap)
+        # Robust mini-waveform: pure Python/Qt, no ffmpeg dependency, uses same peak extractor as DJ Player.
+        try:
+            peaks = extract_peaks(track.path, num_points=420)
+            pix = paint_waveform_pixmap(peaks, width=420, height=52)
+            if not pix.isNull():
+                self.waveform_label.setPixmap(pix)
+        except Exception:
+            pass  # non-fatal; label stays empty or with previous content
 
     def _save_detail_changes(self):
         track = getattr(self, "_selected_track", None)
@@ -2099,6 +2119,7 @@ class MainWindow(QtWidgets.QMainWindow):
         track.year = self.detail_year.text().strip()
         track.genre = self.detail_genre.text().strip()
         track.key = self.detail_key.text().strip()
+        track.remixer = self.detail_remixer.text().strip() or None
         try:
             track.bpm = float(self.detail_bpm.text()) if self.detail_bpm.text().strip() else None
         except ValueError:
@@ -2107,13 +2128,14 @@ class MainWindow(QtWidgets.QMainWindow):
         update_track(track)
         try:
             tags = {
-                "title": track.title,
-                "artist": track.artist,
-                "album": track.album,
-                "year": track.year,
-                "genre": track.genre,
+                "title": track.title or "",
+                "artist": track.artist or "",
+                "album": track.album or "",
+                "year": track.year or "",
+                "genre": track.genre or "",
                 "bpm": str(track.bpm) if track.bpm is not None else "",
                 "key": track.key or "",
+                "remixer": track.remixer or "",
             }
             write_tags(Path(track.path), tags)
         except Exception as exc:
@@ -2124,7 +2146,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._show_message("Utwór zaktualizowany i zapisany do pliku.")
 
     def _log_changes(self, track: Track, snapshot: dict):
-        for field in ["title", "artist", "album", "year", "genre", "bpm", "key"]:
+        for field in ["title", "artist", "album", "year", "genre", "bpm", "key", "remixer"]:
             old_val = snapshot.get(field)
             new_val = getattr(track, field)
             if old_val != new_val:
@@ -2148,6 +2170,7 @@ class MainWindow(QtWidgets.QMainWindow):
             "genre": self.detail_genre.text().strip(),
             "bpm": self.detail_bpm.text().strip(),
             "key": self.detail_key.text().strip(),
+            "remixer": self.detail_remixer.text().strip(),
         }
         try:
             write_tags(Path(track.path), tags)
@@ -2157,6 +2180,7 @@ class MainWindow(QtWidgets.QMainWindow):
             track.album = refreshed.album
             track.year = refreshed.year
             track.genre = refreshed.genre
+            track.remixer = refreshed.remixer
             update_track(track)
             self._load_tracks()
             self._show_message("Tagi zapisane do pliku.")
@@ -2174,6 +2198,7 @@ class MainWindow(QtWidgets.QMainWindow):
             track.album = refreshed.album
             track.year = refreshed.year
             track.genre = refreshed.genre
+            track.remixer = refreshed.remixer
             update_track(track)
             self._load_tracks()
             self._show_message("Tagi odczytane z pliku.")
@@ -2193,6 +2218,7 @@ class MainWindow(QtWidgets.QMainWindow):
             track.genre = None
             track.bpm = None
             track.key = None
+            track.remixer = None
             update_track(track)
             self._load_tracks()
             self._show_message("Tagi wyczyszczone.")
@@ -2215,6 +2241,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 "genre": track.genre or "",
                 "bpm": str(track.bpm or "") if track.bpm else "",
                 "key": track.key or "",
+                "remixer": track.remixer or "",
             }
             try:
                 write_tags(Path(track.path), tags)
@@ -2241,6 +2268,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 track.genre = None
                 track.bpm = None
                 track.key = None
+                track.remixer = None
                 update_track(track)
                 success += 1
             except Exception:

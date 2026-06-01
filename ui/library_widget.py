@@ -66,12 +66,8 @@ class LibraryFilterBar(QtWidgets.QWidget):
         self.edit_search.setMinimumWidth(160)
         self.edit_search.setClearButtonEnabled(True)
 
-        self.spin_bpm_min = QtWidgets.QSpinBox(); self.spin_bpm_min.setRange(0,300); self.spin_bpm_min.setSpecialValueText("—"); self.spin_bpm_min.setFixedWidth(55)
-        self.spin_bpm_max = QtWidgets.QSpinBox(); self.spin_bpm_max.setRange(0,300); self.spin_bpm_max.setSpecialValueText("—"); self.spin_bpm_max.setFixedWidth(55)
         self.combo_key = QtWidgets.QComboBox(); self.combo_key.addItems(CAMELOT_KEYS); self.combo_key.setFixedWidth(64)
         self.combo_mood = QtWidgets.QComboBox(); self.combo_mood.addItems(MOOD_OPTIONS); self.combo_mood.setFixedWidth(100)
-        self.spin_energy_min = QtWidgets.QDoubleSpinBox(); self.spin_energy_min.setRange(0,10); self.spin_energy_min.setSpecialValueText("—"); self.spin_energy_min.setFixedWidth(58)
-        self.spin_energy_max = QtWidgets.QDoubleSpinBox(); self.spin_energy_max.setRange(0,10); self.spin_energy_max.setSpecialValueText("—"); self.spin_energy_max.setFixedWidth(58)
         self.combo_rating = QtWidgets.QComboBox(); self.combo_rating.addItems(["—","★","★★","★★★","★★★★","★★★★★"]); self.combo_rating.setFixedWidth(70)
 
         btn_reset = QtWidgets.QPushButton("✕"); btn_reset.setFixedSize(26,26); btn_reset.clicked.connect(self.reset_filters)
@@ -81,18 +77,17 @@ class LibraryFilterBar(QtWidgets.QWidget):
             s=QtWidgets.QFrame(); s.setFrameShape(QtWidgets.QFrame.Shape.VLine)
             s.setStyleSheet("color:#1e2d42;"); s.setFixedHeight(20); return s
 
-        for w in [self.edit_search, sep(), lbl("BPM:"), self.spin_bpm_min, lbl("–"), self.spin_bpm_max,
-                  sep(), lbl("Klucz:"), self.combo_key, sep(), lbl("Nastrój:"), self.combo_mood,
-                  sep(), lbl("Energia:"), self.spin_energy_min, lbl("–"), self.spin_energy_max,
+        # Usunięto pola MIN/MAX dla BPM i Energii na prośbę użytkownika
+        for w in [self.edit_search, sep(), lbl("Klucz:"), self.combo_key, sep(), lbl("Nastrój:"), self.combo_mood,
                   sep(), lbl("★:"), self.combo_rating, sep(), btn_reset]:
             layout.addWidget(w)
         layout.addStretch()
 
-        for widget in [self.edit_search,self.spin_bpm_min,self.spin_bpm_max,self.combo_key,
-                       self.combo_mood,self.spin_energy_min,self.spin_energy_max,self.combo_rating]:
-            if isinstance(widget, QtWidgets.QLineEdit): widget.textChanged.connect(self._emit)
-            elif isinstance(widget, (QtWidgets.QSpinBox,QtWidgets.QDoubleSpinBox)): widget.valueChanged.connect(self._emit)
-            else: widget.currentIndexChanged.connect(self._emit)
+        for widget in [self.edit_search, self.combo_key, self.combo_mood, self.combo_rating]:
+            if isinstance(widget, QtWidgets.QLineEdit):
+                widget.textChanged.connect(self._emit)
+            else:
+                widget.currentIndexChanged.connect(self._emit)
 
     def _emit(self): self.filter_changed.emit(self.current_filters())
 
@@ -100,19 +95,20 @@ class LibraryFilterBar(QtWidgets.QWidget):
         key = self.combo_key.currentText(); mood = self.combo_mood.currentText()
         return {
             "search_text": self.edit_search.text().strip() or None,
-            "bpm_min": self.spin_bpm_min.value() or None,
-            "bpm_max": self.spin_bpm_max.value() or None,
+            "bpm_min": None,   # Usunięto pola MIN/MAX na prośbę użytkownika
+            "bpm_max": None,
             "camelot_key": key if key != "—" else None,
             "mood": mood if mood != "—" else None,
-            "energy_min": self.spin_energy_min.value() or None,
-            "energy_max": self.spin_energy_max.value() or None,
+            "energy_min": None,
+            "energy_max": None,
             "rating_min": self.combo_rating.currentIndex() or None,
         }
 
     def reset_filters(self):
-        self.edit_search.clear(); self.spin_bpm_min.setValue(0); self.spin_bpm_max.setValue(0)
-        self.combo_key.setCurrentIndex(CAMELOT_KEYS.index("—")); self.combo_mood.setCurrentIndex(0)
-        self.spin_energy_min.setValue(0); self.spin_energy_max.setValue(0); self.combo_rating.setCurrentIndex(0)
+        self.edit_search.clear()
+        self.combo_key.setCurrentIndex(CAMELOT_KEYS.index("—"))
+        self.combo_mood.setCurrentIndex(0)
+        self.combo_rating.setCurrentIndex(0)
 
 
 class SimpleTrackModel(QtCore.QAbstractTableModel):

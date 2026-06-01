@@ -96,3 +96,118 @@ def _try_ffmpeg_waveform(audio_path: Path, output_path: Path, width: int, height
         return output_path.exists()
     except Exception:
         return False
+
+
+# ============================================================
+# REUSABLE PEAK EXTRACTION (librosa optional, with robust fallback)
+# Used by: DJPlayer WaveformWidget + library detail preview (no ffmpeg dep)
+# ============================================================
+
+_HAS_LIBROSA = False
+_librosa = None
+_np = None
+
+try:
+    import librosa as _librosa_mod
+    import numpy as _np_mod
+    _librosa = _librosa_mod
+    _np = _np_mod
+    _HAS_LIBROSA = True
+except ImportError:
+    pass
+
+
+def extract_peaks(audio_path: str | Path, num_points: int = 600) -> list[float]:
+    """
+    Wyciąga znormalizowane peaki [0.0-1.0] do rysowania waveformy.
+    - Priorytet: librosa (dokładne, szybkie z downsamplingiem)
+    - Fallback: proceduralna symulacja (zawsze działa, bez zależności)
+    Tłum i ostrzeżenia librosa żeby nie zaśmiecać konsoli.
+    """
+    path = Path(audio_path)
+    if not path.exists():
+        return _generate_fallback_peaks(num_points)
+
+    if _HAS_LIBROSA and _librosa is not None and _np is not None:
+        try:
+            import warnings
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", UserWarning)
+                warnings.simplefilter("ignore", FutureWarning)
+                y, sr = _librosa.load(str(path), sr=22050, mono=True, duration=None)
+            if len(y) == 0:
+                return _generate_fallback_peaks(num_points)
+
+            segment_length = max(1, len(y) // num_points)
+            peaks: list[float] = []
+            for i in range(num_points):
+                start = i * segment_length
+                end = min((i + 1) * segment_length, len(y))
+                segment = y[start:end]
+                peak = float(_np.max(_np.abs(segment))) if len(segment) > 0 else 0.0
+                peaks.append(min(1.0, peak))
+
+            max_val = max(peaks) if peaks else 1.0
+            if max_val > 0:
+                peaks = [p / max_val for p in peaks]
+            return peaks
+        except Exception:
+            pass  # fall through to fallback
+
+    return _generate_fallback_peaks(num_points)
+
+
+def _generate_fallback_peaks(num_points: int) -> list[float]:
+    """Proceduralna, przyjemna dla oka symulacja waveformy (bez zewnętrznych zależności)."""
+    import math
+    import random
+    peaks: list[float] = []
+    rng = random.Random(42)  # deterministic for same file feel
+    for i in range(num_points):
+        t = (i / num_points) * 220
+        # Bardziej "muzyczny" kształt (kilka harmonicznych + lekkie transjenty)
+        base = 0.22 + 0.48 * abs(math.sin(t * 1.85))
+        base += 0.18 * abs(math.sin(t * 0.7 + 1.2))
+        base += 0.09 * abs(math.sin(t * 3.9))
+        noise = rng.uniform(-0.045, 0.045)
+        val = max(0.06, min(0.98, base + noise))
+        peaks.append(val)
+    # Lekka normalizacja
+    m = max(peaks) or 1.0
+    return [p / m for p in peaks]
+
+
+def paint_waveform_pixmap(peaks: list[float], width: int, height: int,
+                          bg: str = "#0e1220", peak_color: str = "#39ff14",
+                          rms_color: str = "#1f6f3a") -> QtGui.QPixmap:
+    """
+    Rysuje klasyczną waveformę (peak + rms) na QPixmap – zero plików, zero ffmpeg.
+    Używane przez panel szczegółów w bibliotece (zamiast generate_waveform z ffmpeg).
+    """
+    from PyQt6 import QtGui
+    pix = QtGui.QPixmap(width, height)
+    pix.fill(QtGui.QColor(bg))
+    if not peaks:
+        return pix
+
+    painter = QtGui.QPainter(pix)
+    painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, False)
+    n = len(peaks)
+    mid = height // 2
+    pen_rms = QtGui.QPen(QtGui.QColor(rms_color), 1)
+    pen_peak = QtGui.QPen(QtGui.QColor(peak_color), 1)
+
+    for px in range(width):
+        idx = int(px / width * n)
+        if idx >= n:
+            idx = n - 1
+        amp = peaks[idx]
+        ph = int(amp * mid * 0.92)
+        rh = max(1, int(amp * mid * 0.32))
+        painter.setPen(pen_rms)
+        painter.drawLine(px, mid - rh, px, mid + rh)
+        painter.setPen(pen_peak)
+        painter.drawLine(px, mid - ph, px, mid - rh)
+        painter.drawLine(px, mid + rh, px, mid + ph)
+    painter.end()
+    return pix

@@ -5,37 +5,62 @@ from pathlib import Path
 from typing import Optional
 import logging
 
-from core.models import Track, CuePoint
-from core.waveform import WaveformData, generate_waveform_threadsafe
+from core.models import Track  # CuePoint używany wyłącznie w ui/dj/hotcue_manager.py
+from core.waveform import WaveformData, generate_waveform_threadsafe, extract_peaks
+
+# Nowa architektura (faza równoległa redesignu)
+try:
+    from ui.dj.deck_controller import DeckController
+    from ui.dj.views import (
+        FocusedDeckView,
+        ConsoleDeckView,
+        DualConsoleWidget,
+        MixerStrip,
+    )
+    _HAS_NEW_DJ_VIEWS = True
+    # logger jeszcze nie zdefiniowany – używamy print na poziomie modułu
+    print("[DJ] Nowa architektura zaimportowana pomyślnie (DeckController + views)")
+except Exception:
+    _HAS_NEW_DJ_VIEWS = False
+    DeckController = None
+    FocusedDeckView = None
+    ConsoleDeckView = None
+    DualConsoleWidget = None
+    MixerStrip = None
+    print("[DJ] Nowa architektura niedostępna – fallback do starego kodu")
 
 # Nowy, solidny backend audio
 from services.playback import PlaybackEngine, create_backend
 
-# Importy do zapisu/odczytu hotcue'ów z bazy
+# ------------------------------------------------------------------
+# HotcueManager + format_track_time – CZYSTY MODUŁ (faza final cleanup)
+# Przeniesione do ui/dj/hotcue_manager.py – ZERO zależności od tego monstrualnego pliku.
+# Usunięte ryzyko cyklu importów (deck_controller nie importuje już stąd).
+# Używa BOOTH_COLORS wewnętrznie. Pełna kompatybilność wstecz.
+# ------------------------------------------------------------------
 try:
-    from data.repository import (
-        get_cue_points_for_track,
-        save_cue_point,
-        delete_cue_point,
-    )
-    _HAS_CUE_REPOSITORY = True
-except ImportError:
-    _HAS_CUE_REPOSITORY = False
-    get_cue_points_for_track = None
-    save_cue_point = None
-    delete_cue_point = None
+    from ui.dj.hotcue_manager import HotcueManager, format_track_time
+    _HAS_HOTCUE_MANAGER = True
+except Exception:
+    _HAS_HOTCUE_MANAGER = False
+    HotcueManager = None  # type: ignore
+    def format_track_time(ms: int | None) -> str:  # fallback awaryjny
+        if ms is None:
+            return "0:00"
+        total = max(0, int(ms)) // 1000
+        m, s = divmod(total, 60)
+        return f"{m}:{s:02d}"
+    print("Nie udało się zaimportować HotcueManager z ui.dj.hotcue_manager – tryb awaryjny (logger niegotowy)")
 
-try:
-    import librosa
-    import numpy as np
-    _HAS_LIBROSA = True
-except ImportError:
-    _HAS_LIBROSA = False
-    librosa = None
-    np = None
+# (Usunięto martwe importy cue repo – HotcueManager + persystencja teraz wyłącznie w ui/dj/hotcue_manager.py)
 
 logger = logging.getLogger(__name__)
 
+
+# ------------------------------------------------------------------
+# REFACTOR: format_track_time + HotcueManager przeniesione do ui/dj/hotcue_manager.py
+# (patrz import na górze pliku). Ten plik używa re-eksportu – zero duplikacji.
+# ------------------------------------------------------------------
 
 class SectionLabel(QtWidgets.QLabel):
     """Spójny label sekcji w stylu Rekordbox (mały, mocny, z letter-spacing)."""
@@ -69,62 +94,23 @@ class HotcueGrid(QtWidgets.QWidget):
             grid.addWidget(pad, row, col)
 
 
+# Note: extract_peaks (and its internal _generate_fallback) now lives in core/waveform.py
+# for reuse by library detail panel (eliminates ffmpeg dependency for small previews).
+# We keep a thin local wrapper for logging + default num_points used by WaveformWidget.
 def extract_peaks_from_audio(audio_path: str | Path, num_points: int = 900) -> list[float]:
-    """
-    Wyciąga peaks z pliku audio używając librosa.
-    Zwraca listę float [0.0 - 1.0] o długości num_points.
-    """
-    if not _HAS_LIBROSA:
-        # Fallback do symulacji jeśli brak librosa
-        return _generate_fallback_peaks(num_points)
-
-    path = Path(audio_path)
-    if not path.exists():
-        return _generate_fallback_peaks(num_points)
-
     try:
-        # Ładujemy audio z downsamplingiem dla szybkości
-        y, sr = librosa.load(str(path), sr=22050, mono=True, duration=None)
-
-        if len(y) == 0:
-            return _generate_fallback_peaks(num_points)
-
-        # Dzielimy na segmenty i bierzemy max w każdym
-        segment_length = max(1, len(y) // num_points)
-        peaks = []
-
-        for i in range(num_points):
-            start = i * segment_length
-            end = min((i + 1) * segment_length, len(y))
-            segment = y[start:end]
-            if len(segment) > 0:
-                peak = float(np.max(np.abs(segment)))
-            else:
-                peak = 0.0
-            peaks.append(min(1.0, peak))
-
-        # Normalizacja
-        max_val = max(peaks) if peaks else 1.0
-        if max_val > 0:
-            peaks = [p / max_val for p in peaks]
-
-        return peaks
-
+        return extract_peaks(audio_path, num_points=num_points)
     except Exception as e:
         logger.warning(f"Failed to extract peaks from {audio_path}: {e}")
-        return _generate_fallback_peaks(num_points)
-
-
-def _generate_fallback_peaks(num_points: int) -> list[float]:
-    """Prosta symulacja na wypadek problemów z librosa."""
-    import math, random
-    peaks = []
-    for i in range(num_points):
-        t = (i / num_points) * 180
-        base = 0.3 + 0.5 * abs(math.sin(t * 1.7)) + 0.2 * abs(math.sin(t * 0.35))
-        noise = random.uniform(-0.06, 0.06)
-        peaks.append(max(0.08, min(0.97, base + noise)))
-    return peaks
+        # Last-resort local fallback (should never happen)
+        import math, random
+        peaks = []
+        for i in range(num_points):
+            t = (i / num_points) * 180
+            base = 0.3 + 0.5 * abs(math.sin(t * 1.7)) + 0.2 * abs(math.sin(t * 0.35))
+            noise = random.uniform(-0.06, 0.06)
+            peaks.append(max(0.08, min(0.97, base + noise)))
+        return peaks
 
 
 class WaveformRunnable(QtCore.QRunnable):
@@ -440,6 +426,13 @@ class WaveformWidget(QtWidgets.QWidget):
     def leaveEvent(self, event):
         self.update()
 
+    def time_at_x(self, x: int) -> int:
+        """Zwraca czas w ms odpowiadający pozycji x na waveformie."""
+        if self._duration_ms <= 0 or self.width() <= 0:
+            return 0
+        t = int(x / self.width() * self._duration_ms)
+        return max(0, min(t, self._duration_ms))
+
 
 class HotcuePad(QtWidgets.QPushButton):
     """
@@ -540,11 +533,32 @@ class HotcuePad(QtWidgets.QPushButton):
         super().mouseReleaseEvent(event)
 
 
+# ------------------------------------------------------------------
+# REFACTOR (final cleanup): HotcueManager + format_track_time
+# PRZENIESIONE do ui/dj/hotcue_manager.py
+# Ten plik importuje je u góry – brak duplikacji, zero ryzyka cyklu.
+# Stara implementacja usunięta.
+# ------------------------------------------------------------------
+
 class DeckWidget(QtWidgets.QFrame):
-    """Pojedynczy deck w DJ Playerze."""
+    """Professional single-deck widget used in dual-console DJ mode.
+
+    Contains full transport, 4/8 hotcues, loops, EQ, pitch, sync, memory, quantize.
+
+    # REFACTOR: Hotcue data layer extracted to HotcueManager (see class docstring).
+    All playback and UI behavior preserved exactly.
+    """
+
     track_dropped = QtCore.pyqtSignal(str)  # emituje ścieżkę pliku
 
-    def __init__(self, deck_label: str, playback_engine: PlaybackEngine = None, deck_id: str = "A", parent=None):
+    def __init__(
+        self,
+        deck_label: str,
+        playback_engine: PlaybackEngine | None = None,
+        deck_id: str = "A",
+        parent: QtWidgets.QWidget | None = None,
+    ) -> None:
+        # REFACTOR: Added explicit return type + | None union for modern typing.
         super().__init__(parent)
         self.deck_label = deck_label
         self.setObjectName("DeckPanel")
@@ -563,8 +577,11 @@ class DeckWidget(QtWidgets.QFrame):
         self._playhead_timer.setInterval(40)  # ~25 fps
         self._playhead_timer.timeout.connect(self._update_playhead)
 
-        # Hotcues: index (0-7 supported) -> time_ms ; visible count controlled by _hotcue_mode (default 4 for compat)
-        self._hotcues: dict[int, int] = {}   # hotcue_index -> time_ms
+        # Hotcues delegated to shared manager (REFACTOR: eliminates duplication with SinglePlayerView)
+        # The manager owns the dict + persistence. Widgets keep only their UI + snapping concerns.
+        self._hotcue_mgr: HotcueManager = HotcueManager(max_cues=8)
+        # Back-compat alias for any external code that may have read _hotcues directly (kept for safety)
+        self._hotcues: dict[int, int] = self._hotcue_mgr.hotcues  # will be refreshed on access where needed
 
         # Pętla (Loop)
         self._loop_in_ms: int | None = None
@@ -897,13 +914,21 @@ class DeckWidget(QtWidgets.QFrame):
         self._update_effective_bpm()
 
     def _format_time(self, ms: int) -> str:
-        """Local time formatter (mm:ss) for CUE / status tooltips."""
-        if ms is None:
-            return "0:00"
-        total_sec = max(0, int(ms)) // 1000
-        m = total_sec // 60
-        s = total_sec % 60
-        return f"{m}:{s:02d}"
+        """Local time formatter (mm:ss) for CUE / status tooltips.
+
+        # REFACTOR: Now delegates to module-level format_track_time to eliminate
+        # duplication with SinglePlayerView while preserving exact original behavior
+        # and call sites.
+        """
+        return format_track_time(ms)
+
+    def _sync_hotcues_alias(self) -> None:
+        """Internal: keep the legacy self._hotcues attribute in sync with the manager.
+
+        # REFACTOR: Temporary bridge for any code that still reads the old dict directly.
+        # Long-term the alias can be removed once all internal accesses are updated.
+        """
+        self._hotcues = self._hotcue_mgr.hotcues
 
     def _refresh_hotcue_remaining_tooltips(self, playhead_ms: int):
         """Update hotcue pad tooltips with remaining time/beat delta when playing (nice-to-have pro countdown)."""
@@ -1000,7 +1025,11 @@ class DeckWidget(QtWidgets.QFrame):
         QtCore.QTimer.singleShot(900, lambda: self._update_status("✓ Gotowy"))
 
     def _set_hotcue_from_waveform(self, time_ms: int):
-        """Shift + click waveform → set hotcue on first free visible pad (0..mode-1). Supports 8-mode (indices to 7). Quantized when Q ON."""
+        """Shift + click waveform → set hotcue on first free visible pad (0..mode-1). Supports 8-mode (indices to 7). Quantized when Q ON.
+
+        # REFACTOR: Now uses HotcueManager for storage + persistence (was direct dict + duplicated save).
+        # Snapping and pad selection logic unchanged.
+        """
         if not self.current_track:
             return
         time_ms = self._snap_to_beat(time_ms)
@@ -1008,52 +1037,69 @@ class DeckWidget(QtWidgets.QFrame):
         # Znajdź pierwszy wolny indeks
         max_idx = getattr(self, '_hotcue_mode', 4)
         for idx in range(max_idx):
-            if idx not in self._hotcues:
-                self._hotcues[idx] = time_ms
+            if self._hotcue_mgr.get(idx) is None:
+                self._hotcue_mgr.set(idx, time_ms)
+                self._sync_hotcues_alias()  # keep legacy _hotcues view fresh
                 self._update_hotcue_pad(idx)
                 self._save_hotcue_to_db(idx, time_ms)
                 return
 
         # Jeśli wszystkie zajęte — nadpisz pierwszy widoczny
         idx = 0
-        self._hotcues[idx] = time_ms
+        self._hotcue_mgr.set(idx, time_ms)
+        self._sync_hotcues_alias()
         self._update_hotcue_pad(idx)
         self._save_hotcue_to_db(idx, time_ms)
 
     def _set_hotcue_from_button(self, index: int):
-        """Przycisk na padzie (prawy / specjalny) — ustaw na aktualnej pozycji."""
+        """Przycisk na padzie (prawy / specjalny) — ustaw na aktualnej pozycji.
+
+        # REFACTOR: Storage + persistence now via HotcueManager (shared with SinglePlayerView).
+        """
         if not self.playback_engine or not self.current_track:
             return
         state = self.playback_engine.get_deck_state(self.deck_id)
         current_time = state.position_ms if state else 0
-        self._hotcues[index] = current_time
+        self._hotcue_mgr.set(index, current_time)
+        self._sync_hotcues_alias()
         self._update_hotcue_pad(index)
         self._save_hotcue_to_db(index, current_time)
 
     def _jump_to_hotcue(self, index: int):
-        """Klik na pad → skocz do hotcue jeśli istnieje. Ctrl+klik = usuń."""
+        """Klik na pad → skocz do hotcue jeśli istnieje. Ctrl+klik = usuń.
+
+        # REFACTOR: Hotcue data access now via manager (read + delete path).
+        # Core jump/delete semantics identical.
+        """
         modifiers = QtWidgets.QApplication.keyboardModifiers()
 
         if modifiers & QtCore.Qt.KeyboardModifier.ControlModifier:
             # Usuwanie hotcue
-            if index in self._hotcues:
-                del self._hotcues[index]
+            if self._hotcue_mgr.get(index) is not None:
+                self._hotcue_mgr.clear(index)
+                self._sync_hotcues_alias()
                 self._update_hotcue_pad(index)
                 self._delete_hotcue_from_db(index)
             return
 
         # Normalny skok
-        if index in self._hotcues and self.playback_engine:
-            self.playback_engine.seek_deck(self.deck_id, self._hotcues[index])
-            self.waveform.set_playhead(self._hotcues[index])
+        cue_time = self._hotcue_mgr.get(index)
+        if cue_time is not None and self.playback_engine:
+            self.playback_engine.seek_deck(self.deck_id, cue_time)
+            self.waveform.set_playhead(cue_time)
 
     def _update_hotcue_pad(self, index: int):
+        """Refresh a single pad's visual state from the (now manager-backed) hotcue data.
+
+        # REFACTOR: Reads from HotcueManager instead of direct dict (DeckWidget path).
+        """
         if index >= len(self.hotcue_pads):
             return
         pad = self.hotcue_pads[index]
-        if index in self._hotcues:
+        cue_time = self._hotcue_mgr.get(index)
+        if cue_time is not None:
             pad._has_cue = True
-            pad.set_cue_time(self._hotcues[index])
+            pad.set_cue_time(cue_time)
         else:
             pad._has_cue = False
             pad.set_cue_time(None)
@@ -1124,36 +1170,26 @@ class DeckWidget(QtWidgets.QFrame):
             self.hotcue_mode_btn.setText(str(num))
 
     def _save_hotcue_to_db(self, index: int, time_ms: int):
-        """Zapisuje hotcue do bazy (jeśli mamy track_id i dostęp do repo)."""
+        """Zapisuje hotcue do bazy (jeśli mamy track_id i dostęp do repo).
+
+        # REFACTOR: Now thin delegation to HotcueManager (removes duplication of
+        # CuePoint construction + save logic that lived in both DeckWidget and SinglePlayerView).
+        """
         if not self.current_track or not hasattr(self.current_track, 'id') or not self.current_track.id:
             return
-        if not _HAS_CUE_REPOSITORY or not save_cue_point:
-            return
-
-        try:
-            cue = CuePoint(
-                time_ms=time_ms,
-                cue_type="hotcue",
-                hotcue_index=index,
-                color=COLORS["hotcue"][index % len(COLORS["hotcue"])],
-            )
-            save_cue_point(self.current_track.id, cue)
-            logger.debug(f"{self.deck_label}: Hotcue {index} zapisany do bazy ({time_ms}ms)")
-        except Exception as e:
-            logger.warning(f"{self.deck_label}: Błąd zapisu hotcue {index}: {e}")
+        # Ensure manager knows the current track
+        self._hotcue_mgr.set_track_id(self.current_track.id)
+        self._hotcue_mgr.save_to_db(index, time_ms)
 
     def _delete_hotcue_from_db(self, index: int):
-        """Usuwa hotcue z bazy."""
+        """Usuwa hotcue z bazy.
+
+        # REFACTOR: Thin delegation to shared HotcueManager (was duplicated verbatim).
+        """
         if not self.current_track or not hasattr(self.current_track, 'id') or not self.current_track.id:
             return
-        if not _HAS_CUE_REPOSITORY or not delete_cue_point:
-            return
-
-        try:
-            delete_cue_point(self.current_track.id, hotcue_index=index)
-            logger.debug(f"{self.deck_label}: Hotcue {index} usunięty z bazy")
-        except Exception as e:
-            logger.warning(f"{self.deck_label}: Błąd usuwania hotcue {index}: {e}")
+        self._hotcue_mgr.set_track_id(self.current_track.id)
+        self._hotcue_mgr.delete_from_db(index)
 
     # ------------------------------------------------------------------ #
     # Pętle (Loop In / Out)
@@ -1257,31 +1293,27 @@ class DeckWidget(QtWidgets.QFrame):
             event.acceptProposedAction()
 
     def _load_hotcues_from_track(self, track_id: int):
-        """Wczytuje hotcue'e z bazy dla tracka."""
-        self._hotcues.clear()
+        """Wczytuje hotcue'e z bazy dla tracka.
+
+        # REFACTOR: Data loading now performed by HotcueManager.load_from_db;
+        # only UI pad refresh remains in the widget (structure improvement).
+        """
+        loaded = self._hotcue_mgr.load_from_db(track_id)
+        self._sync_hotcues_alias()
+
         for pad in self.hotcue_pads:
             pad._has_cue = False
             pad.set_cue_time(None)
             pad._update_style()
 
-        if not _HAS_CUE_REPOSITORY or not get_cue_points_for_track:
-            logger.debug(f"{self.deck_label}: Brak dostępu do repozytorium cue points")
-            return
+        for idx, t_ms in loaded.items():
+            if idx < len(self.hotcue_pads):
+                p = self.hotcue_pads[idx]
+                p._has_cue = True
+                p.set_cue_time(t_ms)
+                p._update_style()
 
-        try:
-            cues = get_cue_points_for_track(track_id)
-            for cue in cues:
-                if cue.hotcue_index is not None and 0 <= cue.hotcue_index < 8:
-                    self._hotcues[cue.hotcue_index] = cue.time_ms
-                    if cue.hotcue_index < len(self.hotcue_pads):
-                        p = self.hotcue_pads[cue.hotcue_index]
-                        p._has_cue = True
-                        p.set_cue_time(cue.time_ms)
-                        p._update_style()
-
-            logger.debug(f"{self.deck_label}: Wczytano {len(self._hotcues)} hotcue'ów z bazy")
-        except Exception as e:
-            logger.warning(f"{self.deck_label}: Błąd wczytywania hotcue'ów: {e}")
+        logger.debug(f"{self.deck_label}: Wczytano {len(loaded)} hotcue'ów z bazy (via HotcueManager)")
 
     def _seek(self, time_ms: int):
         if self.playback_engine:
@@ -1443,8 +1475,8 @@ class DeckWidget(QtWidgets.QFrame):
                             new_pos = min(new_pos, dur)
                         self.playback_engine.seek_deck(self.deck_id, new_pos)
                         self.waveform.set_playhead(new_pos)
-            except Exception:
-                pass  # phase is best-effort; never break sync on it
+            except Exception as exc:
+                logger.debug(f"Deck {self.deck_label}: phase alignment during sync failed (best-effort): {exc}")  # phase is best-effort; never break sync on it
 
             # Persistent visual SYNC state (cleared on manual pitch adjust)
             self._is_synced_to_other = True
@@ -1455,8 +1487,8 @@ class DeckWidget(QtWidgets.QFrame):
             try:
                 other._is_synced_to_other = False
                 other.sync_btn.setStyleSheet("font-size: 11px; font-weight: 700;")
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug(f"Sync: failed to clear other deck sync visual: {exc}")
         except Exception as e:
             logger.debug(f"Sync failed: {e}")
             self._update_status("Sync error")
@@ -1483,7 +1515,8 @@ class DeckWidget(QtWidgets.QFrame):
                 if st and st.duration_ms > 0:
                     snapped = max(0, min(snapped, st.duration_ms))
             return snapped
-        except Exception:
+        except Exception as exc:
+            logger.debug(f"Deck {self.deck_label}: quantize snap failed, using raw time: {exc}")
             return time_ms
 
     def _update_deck_backend_status(self):
@@ -1528,7 +1561,7 @@ class DeckWidget(QtWidgets.QFrame):
             "main_cue_ms": self._main_cue_ms,
             "loop_in_ms": self._loop_in_ms,
             "loop_out_ms": self._loop_out_ms,
-            "hotcues": dict(self._hotcues),  # supports 0-7
+            "hotcues": self._hotcue_mgr.hotcues,  # supports 0-7  # REFACTOR: via manager
             "pitch": self.pitch_slider.value() if hasattr(self, "pitch_slider") else 0,
             "trim": self.volume_slider.value() if hasattr(self, "volume_slider") else 85,
             "keylock": bool(self.keylock_btn.isChecked()) if hasattr(self, "keylock_btn") else False,
@@ -1613,7 +1646,10 @@ class DeckWidget(QtWidgets.QFrame):
                 pass
 
         # Hotcues snapshot (quick UI restore; DB may differ but this is session memory override)
-        self._hotcues = dict(mem.get("hotcues", {}))
+        # REFACTOR: Load into manager instead of raw dict
+        for idx, t in mem.get("hotcues", {}).items():
+            self._hotcue_mgr.set(idx, t)
+        self._sync_hotcues_alias()
         for i in range(len(self.hotcue_pads)):
             self._update_hotcue_pad(i)
 
@@ -1670,7 +1706,12 @@ class DeckWidget(QtWidgets.QFrame):
             except Exception:
                 pass
 
-    def load_track(self, track: Track):
+    def load_track(self, track: Track) -> None:
+        """Load a Track into this deck (engine + UI + hotcues from DB).
+
+        # REFACTOR: Added return annotation + note that hotcue loading now goes
+        # through the manager.
+        """
         # Ensure we have DB id for hotcue persistence if this track is in library
         if track and not getattr(track, 'id', None):
             try:
@@ -1678,8 +1719,8 @@ class DeckWidget(QtWidgets.QFrame):
                 dbt = get_track_by_path(track.path)
                 if dbt and dbt.id:
                     track = dbt
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug(f"Deck {self.deck_label}: DB lookup for hotcue track id failed: {exc}")
         self.current_track = track
         title = f"{track.artist or ''} - {track.title or ''}".strip(" -") or Path(track.path).name
         self.info_label.setText(title[:52])
@@ -1739,8 +1780,8 @@ class DeckWidget(QtWidgets.QFrame):
                 try:
                     if self.playback_engine:
                         last_err = self.playback_engine.deck(self.deck_id).get_last_error() or ""
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.debug(f"{self.deck_label}: get_last_error failed after load fail: {exc}")
                 msg = f"✗ Błąd ładowania" + (f" ({last_err})" if last_err else "")
                 logger.warning(f"{self.deck_label}: Nie udało się załadować pliku. {last_err}")
                 self._update_status(msg)
@@ -1769,8 +1810,8 @@ class DeckWidget(QtWidgets.QFrame):
         if self.playback_engine:
             try:
                 self.playback_engine.stop_deck(self.deck_id)
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug(f"{self.deck_label}: stop_deck on unload raised (ignored): {exc}")
         self._update_status("— Unloaded")
         logger.info(f"{self.deck_label}: Track unloaded")
 
@@ -1803,13 +1844,19 @@ class SinglePlayerView(QtWidgets.QFrame):
     - Simple volume
     - No EQ, no loops, no pitch/sync/memory/PFL/8-hotcues/crossfader
     Uses the shared PlaybackEngine (deck "A").
+
+    # REFACTOR: Now uses HotcueManager for hotcue state (same as DeckWidget)
+    # to eliminate the previous near-verbatim duplication of hotcue + DB code.
     """
 
-    def __init__(self, playback_engine: PlaybackEngine, parent=None):
+    def __init__(self, playback_engine: PlaybackEngine, parent: QtWidgets.QWidget | None = None) -> None:
+        # REFACTOR: Added type hints and return annotation.
         super().__init__(parent)
         self.playback_engine = playback_engine
         self.current_track: Optional[Track] = None
-        self._hotcues: dict[int, int] = {}   # 0-3 only (simple mode)
+        # REFACTOR: Use shared HotcueManager (max 4 for this simple view) instead of raw dict
+        self._hotcue_mgr: HotcueManager = HotcueManager(max_cues=4)
+        self._hotcues: dict[int, int] = self._hotcue_mgr.hotcues  # alias for compatibility during transition
         self._main_cue_ms: int = 0
         self._quantize_enabled: bool = True   # for sync compatibility with DeckWidget
 
@@ -1950,6 +1997,13 @@ class SinglePlayerView(QtWidgets.QFrame):
 
         self._playhead_timer.start()
 
+    def _sync_hotcues_alias(self) -> None:
+        """Keep legacy _hotcues alias in sync with manager (SinglePlayerView).
+
+        # REFACTOR: Bridge added for uniformity with DeckWidget + external sync code.
+        """
+        self._hotcues = self._hotcue_mgr.hotcues
+
     def resizeEvent(self, event):
         """Simple proportional scaling so nothing overlaps on window resize."""
         super().resizeEvent(event)
@@ -1999,107 +2053,115 @@ class SinglePlayerView(QtWidgets.QFrame):
         self.cue_btn.setToolTip(f"CUE @ {self._format_time(time_ms)} (double-click waveform to change)")
 
     def _set_hotcue_from_waveform(self, time_ms: int):
-        """Shift+click on waveform sets next free hotcue (0-3)."""
+        """Shift+click on waveform sets next free hotcue (0-3).
+
+        # REFACTOR: Storage + persistence delegated to HotcueManager (removes
+        # duplication with the equivalent method in DeckWidget).
+        """
         if not self.current_track:
             return
         for idx in range(4):
-            if idx not in self._hotcues:
-                self._hotcues[idx] = time_ms
+            if self._hotcue_mgr.get(idx) is None:
+                self._hotcue_mgr.set(idx, time_ms)
+                self._sync_hotcues_alias()
                 self._update_hotcue_pad(idx)
                 self._save_hotcue_to_db(idx, time_ms)
                 return
         # overwrite first
-        self._hotcues[0] = time_ms
+        self._hotcue_mgr.set(0, time_ms)
+        self._sync_hotcues_alias()
         self._update_hotcue_pad(0)
         self._save_hotcue_to_db(0, time_ms)
 
     def _set_hotcue_from_button(self, index: int):
+        """Right-click / set button on pad — capture current playhead.
+
+        # REFACTOR: Uses HotcueManager (shared implementation).
+        """
         if not self.playback_engine or not self.current_track:
             return
         state = self.playback_engine.get_deck_state("A")
         current = state.position_ms if state else 0
-        self._hotcues[index] = current
+        self._hotcue_mgr.set(index, current)
+        self._sync_hotcues_alias()
         self._update_hotcue_pad(index)
         self._save_hotcue_to_db(index, current)
 
     def _jump_to_hotcue(self, index: int):
+        """Jump (or Ctrl+delete) hotcue.
+
+        # REFACTOR: Data access + delete via HotcueManager (was raw dict).
+        """
         mods = QtWidgets.QApplication.keyboardModifiers()
         if mods & QtCore.Qt.KeyboardModifier.ControlModifier:
-            if index in self._hotcues:
-                del self._hotcues[index]
+            if self._hotcue_mgr.get(index) is not None:
+                self._hotcue_mgr.clear(index)
+                self._sync_hotcues_alias()
                 self._update_hotcue_pad(index)
                 self._delete_hotcue_from_db(index)
             return
-        if index in self._hotcues and self.playback_engine:
-            t = self._hotcues[index]
+        t = self._hotcue_mgr.get(index)
+        if t is not None and self.playback_engine:
             self.playback_engine.seek_deck("A", t)
             self.waveform.set_playhead(t)
 
     def _update_hotcue_pad(self, index: int):
+        """Refresh pad visuals from manager (SinglePlayerView).
+
+        # REFACTOR: Now reads via HotcueManager (matching DeckWidget change).
+        """
         if index >= len(self.hotcue_pads):
             return
         pad = self.hotcue_pads[index]
-        if index in self._hotcues:
+        cue_time = self._hotcue_mgr.get(index)
+        if cue_time is not None:
             pad._has_cue = True
-            pad.set_cue_time(self._hotcues[index])
+            pad.set_cue_time(cue_time)
         else:
             pad._has_cue = False
             pad.set_cue_time(None)
         pad._update_style()
 
-    # ---------------- DB hotcue helpers (duplicated minimal logic for isolation) ----------------
+    # ---------------- DB hotcue helpers (now thin delegations — duplication removed) ----------------
 
     def _save_hotcue_to_db(self, index: int, time_ms: int):
+        """# REFACTOR: Delegation to shared HotcueManager (was ~15 lines of duplicated try/except + CuePoint creation)."""
         if not self.current_track or not getattr(self.current_track, 'id', None):
             return
-        if not _HAS_CUE_REPOSITORY or not save_cue_point:
-            return
-        try:
-            cue = CuePoint(
-                time_ms=time_ms,
-                cue_type="hotcue",
-                hotcue_index=index,
-                color=COLORS["hotcue"][index % len(COLORS["hotcue"])],
-            )
-            save_cue_point(self.current_track.id, cue)
-        except Exception:
-            pass
+        self._hotcue_mgr.set_track_id(self.current_track.id)
+        self._hotcue_mgr.save_to_db(index, time_ms)
 
     def _delete_hotcue_from_db(self, index: int):
+        """# REFACTOR: Delegation to shared HotcueManager."""
         if not self.current_track or not getattr(self.current_track, 'id', None):
             return
-        if not _HAS_CUE_REPOSITORY or not delete_cue_point:
-            return
-        try:
-            delete_cue_point(self.current_track.id, hotcue_index=index)
-        except Exception:
-            pass
+        self._hotcue_mgr.set_track_id(self.current_track.id)
+        self._hotcue_mgr.delete_from_db(index)
 
     def _load_hotcues_from_track(self, track_id: int):
-        self._hotcues.clear()
+        """# REFACTOR: Data load via HotcueManager; only pad refresh kept locally."""
+        loaded = self._hotcue_mgr.load_from_db(track_id)
+        self._sync_hotcues_alias()
+
         for p in self.hotcue_pads:
             p._has_cue = False
             p.set_cue_time(None)
             p._update_style()
 
-        if not _HAS_CUE_REPOSITORY or not get_cue_points_for_track:
-            return
-        try:
-            cues = get_cue_points_for_track(track_id)
-            for cue in cues:
-                if cue.hotcue_index is not None and 0 <= cue.hotcue_index < 4:
-                    self._hotcues[cue.hotcue_index] = cue.time_ms
-                    if cue.hotcue_index < len(self.hotcue_pads):
-                        p = self.hotcue_pads[cue.hotcue_index]
-                        p._has_cue = True
-                        p.set_cue_time(cue.time_ms)
-                        p._update_style()
-        except Exception:
-            pass
+        for idx, t_ms in loaded.items():
+            if idx < len(self.hotcue_pads):
+                p = self.hotcue_pads[idx]
+                p._has_cue = True
+                p.set_cue_time(t_ms)
+                p._update_style()
 
     # ---------------- Track loading (public API used by DJPlayerWindow) ----------------
 
-    def load_track(self, track: Track):
+    def load_track(self, track: Track) -> None:
+        """Load a Track into the single player view (deck "A" in engine).
+
+        # REFACTOR: Signature + docstring improved. Hotcue loading now via manager.
+        """
         # Enrich id if possible (for hotcue persistence)
         if track and not getattr(track, 'id', None):
             try:
@@ -2107,8 +2169,8 @@ class SinglePlayerView(QtWidgets.QFrame):
                 dbt = get_track_by_path(track.path)
                 if dbt and getattr(dbt, 'id', None):
                     track = dbt
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug(f"SinglePlayerView: DB lookup for hotcue track id failed: {exc}")
 
         self.current_track = track
         title = f"{track.artist or ''} - {track.title or ''}".strip(" -") or Path(track.path).name
@@ -2126,7 +2188,9 @@ class SinglePlayerView(QtWidgets.QFrame):
         self.waveform.clear()
         self._main_cue_ms = 0
         self.cue_btn.setToolTip("CUE: jump to main cue (double-click waveform to set)")
-        self._hotcues.clear()
+        # REFACTOR: Clear via manager
+        self._hotcue_mgr.clear_all()
+        self._sync_hotcues_alias()
         for p in self.hotcue_pads:
             p._has_cue = False
             p.set_cue_time(None)
@@ -2157,8 +2221,8 @@ class SinglePlayerView(QtWidgets.QFrame):
                 try:
                     if self.playback_engine:
                         last_err = self.playback_engine.deck("A").get_last_error() or ""
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.debug(f"SinglePlayerView: get_last_error failed after load fail: {exc}")
                 self.time_label.setText("0:00 / 0:00")
                 err_msg = "✗ Błąd ładowania" + (f" ({last_err})" if last_err else "")
                 logger.warning(f"SinglePlayerView: Nie udało się załadować pliku. {last_err}")
@@ -2184,11 +2248,13 @@ class SinglePlayerView(QtWidgets.QFrame):
         QtCore.QThreadPool.globalInstance().start(runnable)
 
     def _format_time(self, ms: int) -> str:
-        if ms is None:
-            return "0:00"
-        total = max(0, int(ms)) // 1000
-        m, s = total // 60, total % 60
-        return f"{m}:{s:02d}"
+        """Local time formatter (mm:ss) for CUE / time label.
+
+        # REFACTOR: Now delegates to shared module-level format_track_time
+        # (extracted to address duplication between DeckWidget and SinglePlayerView).
+        # Preserves original behavior exactly.
+        """
+        return format_track_time(ms)
 
     def _update_playhead(self):
         if not self.playback_engine:
@@ -2336,24 +2402,48 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
             # Tworzymy wspólny silnik playbacku (VLC lub fallback)
             self.playback_engine = PlaybackEngine()
 
-            self.deck_a = DeckWidget(
-                "DECK A", playback_engine=self.playback_engine, deck_id="A"
-            )
-            self.deck_b = DeckWidget(
-                "DECK B", playback_engine=self.playback_engine, deck_id="B"
-            )
+            # === NOWA ARCHITEKTURA (równoległa integracja po Code Review Crew) ===
+            # Używamy helperów z tasku integracyjnego — czysty, powtarzalny wiring
+            if _HAS_NEW_DJ_VIEWS:
+                created_dual = self._create_dual_console_ui(main_layout)
+                self.dual_console = created_dual
+                if created_dual is None:
+                    # Awaryjny fallback do starego jeśli helper zawiódł
+                    _HAS_NEW_DJ_VIEWS = False  # lokalnie wymuś starą gałąź (nie wpływa globalnie)
+                else:
+                    # === NOWA ARCHITEKTURA AKTYWNA (primary path) ===
+                    logger.info("NEW ARCHITECTURE ACTIVE: DeckController + FocusedDeckView/ConsoleDeckView/DualConsoleWidget (pełny wiring drag&drop, skróty, mikser)")
+                    logger.info("Nowa architektura wzmocniona – stary DeckWidget/SinglePlayerView tylko jako pełny fallback.")
 
-            self.deck_a.track_dropped.connect(lambda path: self._load_dropped_track("A", path))
-            self.deck_b.track_dropped.connect(lambda path: self._load_dropped_track("B", path))
+            if not _HAS_NEW_DJ_VIEWS:
+                # Stara architektura (fallback) – używana TYLKO gdy nowa zawiedzie
+                logger.warning("Używamy STAREJ architektury DJ (DeckWidget + SinglePlayerView) – fallback")
+                self.deck_a = DeckWidget(
+                    "DECK A", playback_engine=self.playback_engine, deck_id="A"
+                )
+                self.deck_b = DeckWidget(
+                    "DECK B", playback_engine=self.playback_engine, deck_id="B"
+                )
 
-            main_layout.addWidget(self.deck_a)
-            main_layout.addWidget(self.deck_b)
-            self._console_widgets.extend([self.deck_a, self.deck_b])
+                self.deck_a.track_dropped.connect(lambda path: self._load_dropped_track("A", path))
+                self.deck_b.track_dropped.connect(lambda path: self._load_dropped_track("B", path))
+
+                main_layout.addWidget(self.deck_a)
+                main_layout.addWidget(self.deck_b)
+                self._console_widgets.extend([self.deck_a, self.deck_b])
 
             # Recent history per deck (for quick reloads, task requirement)
             self._recent_a: list[Track] = []
             self._recent_b: list[Track] = []
             self._MAX_RECENT = 8
+
+            # === SMOKE TEST READY (po final cleanup) ===
+            # Uruchom:
+            #   $env:LUMBAGO_SAFE_MODE=1; $env:LUMBAGO_SMOKE_SECONDS=3; python main.py
+            # Oczekuj w logach: "NEW ARCHITECTURE ACTIVE" (nowa architektura primary).
+            # Pełny manual checklist: crew/AGENT3_UI_Designer_Rekordbox_Redo.md (hotcues, waveform, drag&drop, tryby, mixer, skróty, DB persystencja).
+            # Testy: pytest tests/test_dj_hotcue_manager.py  (musi przejść po przeniesieniu)
+            # Po starcie w trybie console: DualConsoleWidget z dwoma ConsoleDeckView + DeckCtrl + MixerStrip (opcjonalny).
 
         except Exception as exc:
             logger.exception("Błąd podczas tworzenia decków w DJPlayerWindow")
@@ -2380,52 +2470,72 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
             self.deck_b = None
             # Nie return — pozwalamy na otwarcie okna z komunikatem błędu
 
-        # === GÓRNY MIXER STRIP (Master + HP Cue) — dodany jako uzupełnienie redesignu agentów ===
-        if self.deck_a and self.deck_b:
+        # === GÓRNY MIXER STRIP (Master + HP Cue + PFL) ===
+        # W nowej architekturze DualConsoleWidget ma własny mikser (cross/master/cue) — pomijamy stary
+        # Używamy MixerStrip gdzie możliwe jako alternatywa/globalny pasek (task integracji)
+        if self.deck_a and self.deck_b and not _HAS_NEW_DJ_VIEWS:
             self._build_mixer_strip(main_layout)
+        elif _HAS_NEW_DJ_VIEWS and MixerStrip is not None:
+            # Opcjonalny globalny MixerStrip na górze (dla PFL, master — cross jest w Dual)
+            try:
+                self.global_mixer = MixerStrip(self)
+                # Podłącz sygnały do engine (gdzie wspierane)
+                self.global_mixer.master_changed.connect(self._on_master_changed)
+                self.global_mixer.hp_changed.connect(self._on_hp_changed)
+                self.global_mixer.crossfader_changed.connect(self._on_global_crossfader)
+                self.global_mixer.pfl_changed.connect(self._on_pfl_changed)
+                main_layout.addWidget(self.global_mixer)
+                if hasattr(self, "_console_widgets"):
+                    self._console_widgets.append(self.global_mixer)
+                QtCore.QTimer.singleShot(0, self._apply_initial_mixer_values)
+            except Exception:
+                logger.debug("MixerStrip nie podłączony (fallback do Dual wewnętrznego)")
+                self.global_mixer = None
 
         # Fallback banner (clear but non-annoying) when QtMultimedia is active
         self._maybe_show_fallback_banner(main_layout)
 
-        # Crossfader — bigger, clearer, pro mixer look with center detent hint
-        cross_frame = QtWidgets.QFrame()
-        cross_frame.setStyleSheet(f"""
-            QFrame {{
-                background-color: {COLORS["panel"]};
-                border: 1px solid {COLORS["panel_border"]};
-                border-radius: 6px;
-                padding: 4px 8px;
-            }}
-        """)
-        cross = QtWidgets.QHBoxLayout(cross_frame)
-        cross.setContentsMargins(8, 4, 8, 4)
-        cross.setSpacing(6)
+        # Crossfader — bigger, clearer...
+        # W nowej architekturze POMIJAMY (DualConsoleWidget ma własny crossfader + master/cue podłączony bezpośrednio do engine)
+        if not _HAS_NEW_DJ_VIEWS:
+            cross_frame = QtWidgets.QFrame()
+            cross_frame.setStyleSheet(f"""
+                QFrame {{
+                    background-color: {COLORS["panel"]};
+                    border: 1px solid {COLORS["panel_border"]};
+                    border-radius: 6px;
+                    padding: 4px 8px;
+                }}
+            """)
+            cross = QtWidgets.QHBoxLayout(cross_frame)
+            cross.setContentsMargins(8, 4, 8, 4)
+            cross.setSpacing(6)
 
-        a_lbl = QtWidgets.QLabel("A")
-        a_lbl.setStyleSheet(f"color: {COLORS['accent']}; font-size: 14px; font-weight: 900; min-width: 18px;")
-        cross.addWidget(a_lbl)
+            a_lbl = QtWidgets.QLabel("A")
+            a_lbl.setStyleSheet(f"color: {COLORS['accent']}; font-size: 14px; font-weight: 900; min-width: 18px;")
+            cross.addWidget(a_lbl)
 
-        self.crossfader = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
-        self.crossfader.setRange(0, 100)
-        self.crossfader.setValue(50)
-        self.crossfader.setMinimumHeight(26)
-        self.crossfader.setToolTip("Crossfader — drag for A/B mix. Center = both decks audible")
-        cross.addWidget(self.crossfader, 1)
+            self.crossfader = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
+            self.crossfader.setRange(0, 100)
+            self.crossfader.setValue(50)
+            self.crossfader.setMinimumHeight(26)
+            self.crossfader.setToolTip("Crossfader — drag for A/B mix. Center = both decks audible")
+            cross.addWidget(self.crossfader, 1)
 
-        b_lbl = QtWidgets.QLabel("B")
-        b_lbl.setStyleSheet(f"color: {COLORS['accent']}; font-size: 14px; font-weight: 900; min-width: 18px;")
-        cross.addWidget(b_lbl)
+            b_lbl = QtWidgets.QLabel("B")
+            b_lbl.setStyleSheet(f"color: {COLORS['accent']}; font-size: 14px; font-weight: 900; min-width: 18px;")
+            cross.addWidget(b_lbl)
 
-        main_layout.addWidget(cross_frame)
-        self._console_widgets.append(cross_frame)
+            main_layout.addWidget(cross_frame)
+            self._console_widgets.append(cross_frame)
 
-        # Podłączamy crossfader + volume slidery do wspólnej logiki miksowania (z guardami)
-        if self.crossfader:
-            self.crossfader.valueChanged.connect(self._update_crossfader_volumes)
-        if self.deck_a and hasattr(self.deck_a, 'volume_slider') and self.deck_a.volume_slider:
-            self.deck_a.volume_slider.valueChanged.connect(self._update_crossfader_volumes)
-        if self.deck_b and hasattr(self.deck_b, 'volume_slider') and self.deck_b.volume_slider:
-            self.deck_b.volume_slider.valueChanged.connect(self._update_crossfader_volumes)
+            # Podłączamy crossfader + volume slidery do wspólnej logiki miksowania (stara architektura)
+            if self.crossfader:
+                self.crossfader.valueChanged.connect(self._update_crossfader_volumes)
+            if self.deck_a and hasattr(self.deck_a, 'volume_slider') and self.deck_a.volume_slider:
+                self.deck_a.volume_slider.valueChanged.connect(self._update_crossfader_volumes)
+            if self.deck_b and hasattr(self.deck_b, 'volume_slider') and self.deck_b.volume_slider:
+                self.deck_b.volume_slider.valueChanged.connect(self._update_crossfader_volumes)
 
         # Pasek przełączników widoczności (zawsze na dole)
         toggle_bar = QtWidgets.QHBoxLayout()
@@ -2469,8 +2579,9 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
         # Status bar
         self.setStatusBar(QtWidgets.QStatusBar())
 
-        # Inicjalne ustawienie głośności według crossfadera
-        QtCore.QTimer.singleShot(0, self._update_crossfader_volumes)
+        # Inicjalne ustawienie głośności – TYLKO stara architektura (nowa ma własny mikser w DualConsole)
+        if not _HAS_NEW_DJ_VIEWS:
+            QtCore.QTimer.singleShot(0, self._update_crossfader_volumes)
 
         # Pokazujemy czytelny status backendu na deckach (VLC / Qt / Brak) — defensywnie
         if hasattr(self, '_update_deck_backend_status'):
@@ -2479,17 +2590,33 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
             QtCore.QTimer.singleShot(80, self._update_backend_info_label)
 
         # ========== CREATE SINGLE PLAYER VIEW (inserted right after mode bar for clean toggle) ==========
+        # W nowej architekturze używamy helpera _create_focused_single_ui (FocusedDeckView + ctrl)
+        # Stary SinglePlayerView tylko w fallbacku. Alias single_player_view zawsze ustawiony.
         try:
-            self.single_player_view = SinglePlayerView(self.playback_engine, self)
-            # Insert immediately after the mode bar (index 1) so it sits cleanly below selector
-            main_layout.insertWidget(1, self.single_player_view)
-            self.single_player_view.setVisible(False)
-            # Also collect it (for defensive ops)
+            if _HAS_NEW_DJ_VIEWS:
+                # Helper już mógł stworzyć single_container — użyj go lub utwórz
+                if not hasattr(self, "single_container") or self.single_container is None:
+                    focused = self._create_focused_single_ui(main_layout)
+                    if focused:
+                        self.single_player_view = focused
+                else:
+                    # single_container już istnieje z dual creation — NIE wstawiaj ponownie (już w layout)
+                    self.single_player_view = getattr(self, "single_container", None)
+                    # Upewnij się że nie jest widoczny na starcie (domyślnie console)
+                    if self.single_player_view:
+                        self.single_player_view.setVisible(False)
+                if self.single_player_view:
+                    self.single_player_view.setVisible(False)
+            else:
+                self.single_player_view = SinglePlayerView(self.playback_engine, self)
+                main_layout.insertWidget(1, self.single_player_view)
+                self.single_player_view.setVisible(False)
+
             if not hasattr(self, "_console_widgets"):
                 self._console_widgets = []
-            # Note: single_player_view is NOT in _console_widgets — it is the alternative content
+            # single_player_view to widok alternatywny (nie console)
         except Exception as e:
-            logger.warning(f"Failed to create SinglePlayerView: {e}")
+            logger.warning(f"Failed to create SinglePlayerView / Focused: {e}")
             self.single_player_view = None
 
         # Akceptujemy dropy na całym oknie (fallback)
@@ -2507,17 +2634,38 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
         QtGui.QShortcut(QtGui.QKeySequence("Ctrl+8"), self, lambda: self._quick_load_hotcue(7))
 
     def _toggle_section(self, section: str, visible: bool):
-        if self.deck_a:
-            self.deck_a.set_visible_section(section, visible)
-        if self.deck_b:
-            self.deck_b.set_visible_section(section, visible)
+        # Nowa architektura: ConsoleDeckView / Focused nie mają set_visible_section (na razie pełny widok)
+        # Zachowujemy dla kompatybilności ze starym UI — defensywnie
+        if not _HAS_NEW_DJ_VIEWS:
+            if self.deck_a and hasattr(self.deck_a, "set_visible_section"):
+                self.deck_a.set_visible_section(section, visible)
+            if self.deck_b and hasattr(self.deck_b, "set_visible_section"):
+                self.deck_b.set_visible_section(section, visible)
 
     def _toggle_beatgrid(self, visible: bool):
-        if self.deck_a and hasattr(self.deck_a, "waveform"):
-            self.deck_a.waveform.set_beatgrid_visible(visible)
-        if self.deck_b and hasattr(self.deck_b, "waveform"):
-            self.deck_b.waveform.set_beatgrid_visible(visible)
-        # Update button text
+        # Wsparcie dla obu architektur
+        if _HAS_NEW_DJ_VIEWS:
+            # W dual: waveformy są wewnątrz ConsoleDeckView — ustaw przez dual jeśli ma API
+            if hasattr(self, "dual_console") and self.dual_console:
+                for deck_id in ("A", "B"):
+                    v = self.dual_console.get_deck_view(deck_id) if hasattr(self.dual_console, "get_deck_view") else None
+                    if v and hasattr(v, "waveform") and hasattr(v.waveform, "set_beatgrid_visible"):
+                        try: v.waveform.set_beatgrid_visible(visible)
+                        except Exception: pass
+            if hasattr(self, "single_container") and self.single_container:
+                if hasattr(self.single_container, "waveform") and hasattr(self.single_container.waveform, "set_beatgrid_visible"):
+                    try: self.single_container.waveform.set_beatgrid_visible(visible)
+                    except Exception: pass
+        else:
+            if self.deck_a and hasattr(self.deck_a, "waveform"):
+                self.deck_a.waveform.set_beatgrid_visible(visible)
+            if self.deck_b and hasattr(self.deck_b, "waveform"):
+                self.deck_b.waveform.set_beatgrid_visible(visible)
+        # Single view alias
+        spv = getattr(self, "single_player_view", None)
+        if spv and hasattr(spv, "waveform") and hasattr(spv.waveform, "set_beatgrid_visible"):
+            try: spv.waveform.set_beatgrid_visible(visible)
+            except Exception: pass
         if hasattr(self, "btn_beatgrid"):
             self.btn_beatgrid.setText("Beatgrid ✓" if visible else "Beatgrid")
 
@@ -2657,20 +2805,27 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
 
     def _update_crossfader_volumes(self):
         """
-        Crossfader steruje miksem A/B.
-        Volume slidery w deckach działają jako Trim/Gain (ustawiane jako trim w silniku).
+        Crossfader steruje miksem A/B (stara ścieżka).
+        W nowej architekturze (DualConsole) crossfader jest podłączony bezpośrednio w widoku — ta metoda jest no-op.
         """
-        if not self.playback_engine:
+        if _HAS_NEW_DJ_VIEWS:
+            return  # DualConsole + DeckController + engine obsługują to wewnętrznie
+        if not self.playback_engine or not hasattr(self, "crossfader") or not self.crossfader:
             return
 
         cross_value = (self.crossfader.value() / 50.0) - 1.0   # 0..100 → -1.0 .. +1.0
         self.playback_engine.set_crossfader(cross_value)
 
-        # Volume slidery decków = trim/gain (niezależny od crossfadera)
-        trim_a = self.deck_a.volume_slider.value() / 100.0
-        trim_b = self.deck_b.volume_slider.value() / 100.0
-        self.playback_engine.set_deck_trim("A", trim_a)
-        self.playback_engine.set_deck_trim("B", trim_b)
+        # Volume slidery decków = trim/gain (niezależny od crossfadera) — tylko stara architektura
+        try:
+            if self.deck_a and hasattr(self.deck_a, "volume_slider") and self.deck_a.volume_slider:
+                trim_a = self.deck_a.volume_slider.value() / 100.0
+                self.playback_engine.set_deck_trim("A", trim_a)
+            if self.deck_b and hasattr(self.deck_b, "volume_slider") and self.deck_b.volume_slider:
+                trim_b = self.deck_b.volume_slider.value() / 100.0
+                self.playback_engine.set_deck_trim("B", trim_b)
+        except Exception:
+            pass
 
     def _toggle_layout(self):
         """Przełącza między układem kompaktowym (pionowym) a szerokim (poziomym)."""
@@ -2723,14 +2878,104 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
             self._current_layout = "compact"
             self.btn_layout.setText("Układ: Kompaktowy")
 
-        QtCore.QTimer.singleShot(10, self._update_crossfader_volumes)
+        if not _HAS_NEW_DJ_VIEWS:
+            QtCore.QTimer.singleShot(10, self._update_crossfader_volumes)
+
+    # ------------------------------------------------------------------
+    # HELPERY DLA NOWEJ ARCHITEKTURY (integracja wiring)
+    # Tworzenie kontrolerów + widoków w stylu "dumb view + smart controller"
+    # Zachowujemy pełne zachowanie, polski w komentarzach.
+    # ------------------------------------------------------------------
+
+    def _create_deck_controllers(self):
+        """Helper #1: Tworzy parę DeckController (A/B) podłączoną do PlaybackEngine.
+        Używamy wyłącznie gdy _HAS_NEW_DJ_VIEWS. Zwraca (ctrl_a, ctrl_b) lub (None, None).
+        """
+        if not _HAS_NEW_DJ_VIEWS or DeckController is None or not hasattr(self, "playback_engine"):
+            return None, None
+        try:
+            ctrl_a = DeckController("A", self.playback_engine)
+            ctrl_b = DeckController("B", self.playback_engine)
+            logger.debug("Nowa architektura: DeckController A/B utworzone")
+            return ctrl_a, ctrl_b
+        except Exception as exc:
+            logger.exception(f"Błąd tworzenia DeckController: {exc}")
+            return None, None
+
+    def _create_dual_console_ui(self, main_layout: QtWidgets.QVBoxLayout):
+        """Helper #2: Buduje DualConsoleWidget (dwa ConsoleDeckView + własny mikser z crossfader/master/cue).
+        Podłączamy do layoutu, zapisujemy referencje. Zwraca dual lub None.
+        """
+        if not _HAS_NEW_DJ_VIEWS or DualConsoleWidget is None:
+            return None
+        try:
+            ctrl_a, ctrl_b = self._create_deck_controllers()
+            if not ctrl_a or not ctrl_b:
+                return None
+            self._deck_ctrl_a = ctrl_a
+            self._deck_ctrl_b = ctrl_b
+
+            dual = DualConsoleWidget(ctrl_a, ctrl_b, self.playback_engine, self)
+            main_layout.addWidget(dual)
+            self._console_widgets.extend([dual])
+
+            # Kompatybilność dla reszty kodu (deck_a/b wskazują na widoki ConsoleDeckView)
+            self.deck_a = dual.get_deck_view("A") if hasattr(dual, "get_deck_view") else None
+            self.deck_b = dual.get_deck_view("B") if hasattr(dual, "get_deck_view") else None
+
+            # Przygotuj też single_container (Focused) — ukryty na start
+            if FocusedDeckView is not None:
+                self.single_container = FocusedDeckView(ctrl_a, self)
+                self.single_container.setVisible(False)
+                main_layout.addWidget(self.single_container)
+            else:
+                self.single_container = None
+
+            logger.info("NEW ARCHITECTURE ACTIVE: DualConsoleWidget + 2x ConsoleDeckView + DeckController A/B + FocusedDeckView przygotowany (ukryty)")
+            logger.debug("Nowa architektura: DualConsoleWidget + FocusedDeckView gotowe")
+            return dual
+        except Exception as exc:
+            logger.exception(f"Błąd _create_dual_console_ui: {exc}")
+            return None
+
+    def _create_focused_single_ui(self, main_layout: QtWidgets.QVBoxLayout):
+        """Helper #3: Tworzy/wymienia FocusedDeckView jako single view (tryb 'Odtwarzacz').
+        Używany też fallbackowo w single_player_view.
+        """
+        if not _HAS_NEW_DJ_VIEWS or FocusedDeckView is None:
+            return None
+        try:
+            # Jeśli nie ma jeszcze kontrolera A — stwórz (dla pure single)
+            if not hasattr(self, "_deck_ctrl_a") or self._deck_ctrl_a is None:
+                ctrl_a, _ = self._create_deck_controllers()
+                self._deck_ctrl_a = ctrl_a
+                self._deck_ctrl_b = None  # w pure single B nie jest potrzebne
+
+            if self._deck_ctrl_a is None:
+                return None
+
+            focused = FocusedDeckView(self._deck_ctrl_a, self)
+            main_layout.insertWidget(1, focused)  # zaraz po mode bar
+            focused.setVisible(False)
+            self.single_container = focused
+            # Alias dla kompatybilności ze starym kodem (load_track_to_deck itp.)
+            self.single_player_view = focused
+            logger.info("NEW ARCHITECTURE ACTIVE: FocusedDeckView (tryb single) + DeckController")
+            logger.debug("Nowa architektura: FocusedDeckView (single) utworzony")
+            return focused
+        except Exception as exc:
+            logger.exception(f"Błąd _create_focused_single_ui: {exc}")
+            return None
 
     # ------------------------------------------------------------------
     # Player mode switching (Odtwarzacz vs Konsola DJ)
     # ------------------------------------------------------------------
 
     def _switch_player_mode(self, mode_id: int):
-        """Switch between clean single-deck view and full dual console."""
+        """Switch between clean single-deck view and full dual console.
+        Zaadaptowane dla nowej architektury (Focused + DualConsole + DeckController).
+        Zachowuje pełne zachowanie dla fallbacku starego kodu.
+        """
         is_single = (mode_id == 0)
         self._current_mode = "single" if is_single else "console"
 
@@ -2742,8 +2987,23 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
         spv = getattr(self, "single_player_view", None)
         if spv:
             spv.setVisible(is_single)
+            # Propagate current beatgrid visibility preference to single view on switch
+            if hasattr(self, "btn_beatgrid") and hasattr(spv, "waveform"):
+                try:
+                    spv.waveform.set_beatgrid_visible(self.btn_beatgrid.isChecked())
+                except Exception:
+                    pass
 
-        # Aggressively hide/show console content
+        # Nowa architektura - przełączanie kontenerów (DualConsole vs FocusedDeckView)
+        if _HAS_NEW_DJ_VIEWS:
+            if hasattr(self, "single_container") and self.single_container:
+                self.single_container.setVisible(is_single)
+            if hasattr(self, "dual_console") and self.dual_console:
+                self.dual_console.setVisible(not is_single)
+            # W nowej architekturze deck_a/b to widoki z Dual (ukryte razem z kontenerem)
+            # więc nie dotykamy ich bezpośrednio tutaj (kontener zarządza)
+
+        # Aggressively hide/show console content (działa dla obu architektur)
         for w in getattr(self, "_console_widgets", []):
             if w:
                 try:
@@ -2751,32 +3011,39 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
                 except Exception:
                     pass
 
-        # Extra safety: explicitly handle the main dual elements even if collection missed something
-        if hasattr(self, "deck_a"): 
-            try: self.deck_a.setVisible(not is_single)
-            except: pass
-        if hasattr(self, "deck_b"):
-            try: self.deck_b.setVisible(not is_single)
-            except: pass
+        # Extra safety dla starych elementów (cross_frame itp — tylko gdy istnieją)
         if hasattr(self, "cross_frame") and self.cross_frame:
             try: self.cross_frame.setVisible(not is_single)
-            except: pass
+            except Exception: pass
 
-        # Sync deck A state between views without destructive full reloads when possible
-        if spv and hasattr(self, "deck_a") and self.deck_a:
+        # Sync tylko gdy mamy stary single_player_view + stary deck_a (fallback path)
+        # W nowej architekturze sync jest prostszy (oba widoki subskrybują tego samego DeckController)
+        use_old_sync = (not _HAS_NEW_DJ_VIEWS) and spv and hasattr(self, "deck_a") and self.deck_a
+        if use_old_sync:
             try:
                 self._sync_deck_a_state_between_views(is_single)
+            except Exception as exc:
+                logger.warning(f"Mode switch sync failed (non-fatal): {exc}")
+        elif _HAS_NEW_DJ_VIEWS and is_single:
+            # W trybie single z nową architekturą — upewnij się że Focused ma aktualny playhead
+            try:
+                if self.playback_engine and hasattr(self, "_deck_ctrl_a") and self._deck_ctrl_a:
+                    state = self.playback_engine.get_deck_state("A")
+                    if state and hasattr(self.single_container, "waveform"):
+                        self.single_container.waveform.set_playhead(state.position_ms)
             except Exception:
                 pass
 
-    def _sync_deck_a_state_between_views(self, going_to_single: bool):
+    def _sync_deck_a_state_between_views(self, going_to_single: bool) -> None:
         """
         Robust bidirectional sync of Deck A <-> SinglePlayerView (same engine deck "A").
-        - Avoids full reload when same track (prevents waveform re-extraction, hotcue flicker).
-        - Supports up to 8 hotcues (Single visual pads are 0-3 only; higher cues stay in dict/DB).
-        - Syncs: track ref, _hotcues (0-7), _main_cue_ms, quantize, loop points (best effort).
-        - Forces pad + waveform marker refresh after lightweight copy.
+        Zaadaptowane: w nowej architekturze (DeckController) sync jest zbędny (oba widoki słuchają sygnałów tego samego kontrolera).
+        Metoda zachowana dla pełnej kompatybilności fallbacku.
         """
+        # W nowej architekturze — nic do roboty (wspólny DeckController + sygnały Qt)
+        if _HAS_NEW_DJ_VIEWS:
+            return
+
         spv = getattr(self, "single_player_view", None)
         da = getattr(self, "deck_a", None)
         if not spv or not da:
@@ -2795,7 +3062,17 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
                     return
 
                 # Lightweight sync of mutable DJ state
-                spv._hotcues = {k: v for k, v in da._hotcues.items() if 0 <= k < 4}  # visual limit in single
+                # REFACTOR: Prefer HotcueManager when present on either side (reduces raw dict coupling)
+                src_hotcues = da._hotcue_mgr.hotcues if hasattr(da, "_hotcue_mgr") else da._hotcues
+                if hasattr(spv, "_hotcue_mgr"):
+                    spv._hotcue_mgr.clear_all()
+                    for k, v in src_hotcues.items():
+                        if 0 <= k < 4:
+                            spv._hotcue_mgr.set(k, v)
+                    if hasattr(spv, "_sync_hotcues_alias"):
+                        spv._sync_hotcues_alias()
+                else:
+                    spv._hotcues = {k: v for k, v in src_hotcues.items() if 0 <= k < 4}
                 # keep higher indices in deck_a only (they survive in DB)
                 spv._main_cue_ms = getattr(da, '_main_cue_ms', 0) or 0
 
@@ -2821,10 +3098,27 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
                         st = self.playback_engine.get_deck_state("A") if self.playback_engine else None
                         if st:
                             spv.waveform.set_playhead(st.position_ms)
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        logger.debug(f"Sync playhead console→single failed: {exc}")
 
                 logger.debug("DJ sync: console→single (lightweight hotcue/main-cue copy)")
+
+                # Guarantee waveform peaks + beatgrid appear after lightweight mode switch (same track)
+                try:
+                    if hasattr(spv, "_load_waveform_async") and getattr(da, "current_track", None):
+                        dur = 0
+                        if self.playback_engine:
+                            st = self.playback_engine.get_deck_state("A")
+                            if st and st.duration_ms:
+                                dur = st.duration_ms
+                        if dur <= 0:
+                            dur = 180000
+                        spv._load_waveform_async(da.current_track.path, dur)
+                        bpm = getattr(da, "_original_bpm", None)
+                        if bpm:
+                            spv.waveform.set_bpm(bpm)
+                except Exception:
+                    pass
 
             else:
                 # Single → Console (dual)
@@ -2838,7 +3132,16 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
                     return
 
                 # Copy state back (Deck A supports full 0-7)
-                da._hotcues = dict(spv._hotcues)  # single only had 0-3, higher stay as they were in deck
+                # REFACTOR: Use manager when available on source/target for consistency
+                src_hotcues = spv._hotcue_mgr.hotcues if hasattr(spv, "_hotcue_mgr") else getattr(spv, "_hotcues", {})
+                if hasattr(da, "_hotcue_mgr"):
+                    da._hotcue_mgr.clear_all()
+                    for k, v in src_hotcues.items():
+                        da._hotcue_mgr.set(k, v)
+                    if hasattr(da, "_sync_hotcues_alias"):
+                        da._sync_hotcues_alias()
+                else:
+                    da._hotcues = dict(src_hotcues)
                 da._main_cue_ms = getattr(spv, '_main_cue_ms', 0) or 0
 
                 if hasattr(spv, '_quantize_enabled') and hasattr(da, '_quantize_enabled'):
@@ -2864,10 +3167,27 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
                         st = self.playback_engine.get_deck_state("A")
                         if st:
                             da.waveform.set_playhead(st.position_ms)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.debug(f"Sync playhead single→console failed: {exc}")
 
                 logger.debug("DJ sync: single→console (lightweight hotcue/main-cue copy)")
+
+                # Guarantee waveform on deck A after switch back from single
+                try:
+                    if hasattr(da, "_load_waveform_async") and getattr(spv, "current_track", None):
+                        dur = 0
+                        if self.playback_engine:
+                            st = self.playback_engine.get_deck_state("A")
+                            if st and st.duration_ms:
+                                dur = st.duration_ms
+                        if dur <= 0:
+                            dur = 180000
+                        da._load_waveform_async(spv.current_track.path, dur)
+                        bpm = getattr(spv, "_original_bpm", None) or getattr(spv, "current_track", None) and getattr(spv.current_track, "bpm", None)
+                        if bpm:
+                            da.waveform.set_bpm(bpm)
+                except Exception:
+                    pass
         except Exception as e:
             logger.warning(f"_sync_deck_a_state_between_views failed: {e}")
             # Last resort – do not crash the mode switch
@@ -2975,9 +3295,43 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
             event.accept()
 
     def load_track_to_deck(self, deck: str, track: Track):
+        """Ładuje track do wybranego decku.
+        Zaadaptowane pod nową architekturę: w przypadku Focused/ConsoleDeckView delegujemy do DeckController.load_track
+        (widoki są "dumb" i nie mają metody load_track).
+        Zachowane pełne zachowanie + recent + emit sygnału.
+        """
         d = deck.upper()
         is_single_mode = getattr(self, '_current_mode', 'console') == 'single'
 
+        # NOWA ARCHITEKTURA: używamy kontrolerów (jedno źródło prawdy)
+        if _HAS_NEW_DJ_VIEWS:
+            ctrl = self._deck_ctrl_a if d == "A" else self._deck_ctrl_b
+            target_view = self.deck_a if d == "A" else self.deck_b
+            if ctrl:
+                try:
+                    prev = getattr(ctrl, 'current_track', None)
+                    ctrl.load_track(track)
+                    self._push_recent(d, prev)
+                except Exception as e:
+                    logger.exception(f"load_track_to_deck (nowa arch, {d}) failed")
+            # W trybie single zawsze synchronizuj Focused (używa tego samego ctrl_a)
+            if d == "A" and hasattr(self, "single_player_view") and self.single_player_view:
+                # FocusedDeckView nie ma load_track — controller już zaktualizował stan i wyemitował sygnały
+                # Wystarczy lekkie odświeżenie referencji
+                try:
+                    if hasattr(self.single_player_view, "current_track"):
+                        self.single_player_view.current_track = track
+                except Exception:
+                    pass
+            if not is_single_mode and not _HAS_NEW_DJ_VIEWS:
+                QtCore.QTimer.singleShot(50, self._update_crossfader_volumes)
+            try:
+                self.deck_track_loaded.emit(d, track)
+            except Exception as exc:
+                logger.debug(f"deck_track_loaded emit failed: {exc}")
+            return
+
+        # === STARA ARCHITEKTURA (fallback) ===
         # Only touch physical dual decks when in console mode
         if not is_single_mode:
             if d == "A" and self.deck_a:
@@ -2996,16 +3350,14 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
                     logger.exception("load_track_to_deck B failed")
         else:
             # In single mode we drive everything through single_player_view (which also drives engine deck A).
-            # Avoid double load_track on deck_a here — single_player_view.load_track already does engine.load_deck("A", ...)
             if d == "A" and hasattr(self, "single_player_view") and self.single_player_view:
                 try:
                     self.single_player_view.load_track(track)
-                    # Keep a light reference on deck_a so indicators and memory features still see it
                     if self.deck_a:
                         self.deck_a.current_track = track
                 except Exception as e:
                     logger.warning(f"load_track_to_deck (single): {e}")
-                return   # important: do not fall through to the unconditional single sync below
+                return
 
         # Console mode or loading to B: keep SinglePlayerView in sync when loading to A
         if d == "A" and hasattr(self, "single_player_view") and self.single_player_view:
@@ -3014,21 +3366,44 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
             except Exception as e:
                 logger.warning(f"Failed to sync to single_player_view: {e}")
 
-        if not is_single_mode:
+        if not is_single_mode and not _HAS_NEW_DJ_VIEWS:
             QtCore.QTimer.singleShot(50, self._update_crossfader_volumes)
 
-        # Notify main window / library for indicators + bidirectional sync
         try:
             self.deck_track_loaded.emit(d, track)
-        except Exception:
-            pass  # if no listeners yet ok
+        except Exception as exc:
+            logger.debug(f"deck_track_loaded emit failed (no listeners?): {exc}")
 
     def unload_deck(self, deck: str):
         d = deck.upper()
+        # NOWA ARCHITEKTURA — delegacja do kontrolera (widoki nie mają unload_track)
+        if _HAS_NEW_DJ_VIEWS:
+            ctrl = self._deck_ctrl_a if d == "A" else self._deck_ctrl_b
+            if ctrl:
+                try:
+                    ctrl.unload_track()
+                except Exception:
+                    pass
+            self.deck_track_unloaded.emit(d)
+            # Wyczyść alias single jeśli A
+            if d == "A" and hasattr(self, "single_player_view") and self.single_player_view:
+                try:
+                    spv = self.single_player_view
+                    if hasattr(spv, "title_label"): spv.title_label.setText("Brak utworu — upuść plik lub załaduj z biblioteki")
+                    if hasattr(spv, "bpm_label"): spv.bpm_label.setText("— BPM")
+                    if hasattr(spv, "waveform") and hasattr(spv.waveform, "clear"): spv.waveform.clear()
+                    if hasattr(spv, "time_label"): spv.time_label.setText("0:00 / 0:00")
+                    if hasattr(spv, "current_track"): spv.current_track = None
+                    if hasattr(spv, "hotcue_grid") and hasattr(spv.hotcue_grid, "clear_all"):
+                        spv.hotcue_grid.clear_all()
+                except Exception:
+                    pass
+            return
+
+        # STARA ARCHITEKTURA
         if d == "A" and self.deck_a:
             self.deck_a.unload_track()
             self.deck_track_unloaded.emit("A")
-            # Also clear single player view (it uses deck A)
             if hasattr(self, "single_player_view") and self.single_player_view:
                 try:
                     self.single_player_view.title_label.setText("Brak utworu — upuść plik lub załaduj z biblioteki")
@@ -3037,7 +3412,12 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
                     self.single_player_view.time_label.setText("0:00 / 0:00")
                     self.single_player_view.play_btn.setText("▶  ODTWÓRZ")
                     self.single_player_view.current_track = None
-                    self.single_player_view._hotcues.clear()
+                    if hasattr(self.single_player_view, "_hotcue_mgr"):
+                        self.single_player_view._hotcue_mgr.clear_all()
+                        if hasattr(self.single_player_view, "_sync_hotcues_alias"):
+                            self.single_player_view._sync_hotcues_alias()
+                    else:
+                        self.single_player_view._hotcues.clear()
                     for p in self.single_player_view.hotcue_pads:
                         p._has_cue = False
                         p.set_cue_time(None)
@@ -3122,19 +3502,40 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
                 dbt = get_track_by_path(path)
                 if dbt and dbt.id:
                     track = dbt
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug(f"_load_dropped_track: DB lookup failed: {exc}")
             self.load_track_to_deck(deck, track)
         except Exception as e:
             logger.warning(f"Błąd ładowania upuszczonego tracka: {e}")
 
     def _global_play_pause(self):
-        """Spacja = Play/Pause na Deck A (domyślny aktywny deck)."""
-        self.deck_a._toggle_play()
+        """Spacja = Play/Pause na Deck A (domyślny aktywny deck).
+        Wspiera zarówno nową architekturę (DeckController) jak i stary DeckWidget.
+        """
+        # Nowa architektura — priorytet na kontroler
+        if _HAS_NEW_DJ_VIEWS and hasattr(self, "_deck_ctrl_a") and self._deck_ctrl_a:
+            try:
+                self._deck_ctrl_a.toggle_play()
+                return
+            except Exception:
+                pass
+        # Fallback stary
+        if self.deck_a and hasattr(self.deck_a, "_toggle_play"):
+            self.deck_a._toggle_play()
 
     def _quick_load_hotcue(self, index: int):
-        """Ctrl+1..8 = jump to hotcue on Deck A (full support for 8-hotcue mode; higher indices work via _hotcues dict even if pads hidden in 4-mode)."""
-        if self.deck_a:
+        """Ctrl+1..8 = jump to hotcue on Deck A.
+        Pełne wsparcie 8 hotcue'ów. W nowej architekturze delegujemy do DeckController.jump_hotcue.
+        """
+        # Nowa architektura
+        if _HAS_NEW_DJ_VIEWS and hasattr(self, "_deck_ctrl_a") and self._deck_ctrl_a:
+            try:
+                self._deck_ctrl_a.jump_hotcue(index)
+                return
+            except Exception:
+                pass
+        # Fallback stary
+        if self.deck_a and hasattr(self.deck_a, "_jump_to_hotcue"):
             self.deck_a._jump_to_hotcue(index)
 
     # ------------------------------------------------------------------
@@ -3144,26 +3545,64 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
     def _apply_initial_mixer_values(self):
         if not self.playback_engine:
             return
-        self.playback_engine.set_master_volume(self.master_slider.value() / 100.0)
-        # HP cue na razie tylko wizualny (później można podpiąć pod osobny output)
+        # W nowej architekturze master_slider może nie istnieć (Dual ma własny) — defensywnie
+        try:
+            if hasattr(self, "master_slider") and self.master_slider:
+                self.playback_engine.set_master_volume(self.master_slider.value() / 100.0)
+            else:
+                self.playback_engine.set_master_volume(0.85)
+        except Exception:
+            pass
         self._update_backend_info_label()
 
     def _on_master_changed(self, value: int):
-        self.master_value.setText(str(value))
+        # Obsługa zarówno starego paska jak i global_mixer (MixerStrip)
+        if hasattr(self, "master_value") and self.master_value:
+            self.master_value.setText(str(value))
+        if hasattr(self, "global_mixer") and self.global_mixer:
+            try: self.global_mixer.set_master(value)
+            except Exception: pass
         if self.playback_engine:
-            self.playback_engine.set_master_volume(value / 100.0)
+            try:
+                self.playback_engine.set_master_volume(value / 100.0)
+            except Exception:
+                pass
 
     def _on_hp_changed(self, value: int):
-        self.hp_value.setText(str(value))
-        # Na razie tylko UI — prawdziwy oddzielny output HP wymaga więcej (np. drugi device)
-        # Można tu później dodać ducking lub osobny volume dla cue.
+        if hasattr(self, "hp_value") and self.hp_value:
+            self.hp_value.setText(str(value))
+        if hasattr(self, "global_mixer") and self.global_mixer:
+            try: self.global_mixer.set_hp(value)
+            except Exception: pass
+        # Na razie tylko UI — prawdziwy oddzielny output HP wymaga więcej
 
     def _on_pfl_changed(self, deck: str, checked: bool):
-        # Wizualne wyróżnienie + przyszłe użycie (np. obniżenie drugiego decku w słuchawkach)
+        # Wsparcie dla starego + MixerStrip
         style = "background-color: #3dd9c3; color: #0f1623; font-weight: bold;" if checked else ""
-        btn = self.pfl_a if deck == "A" else self.pfl_b
-        btn.setStyleSheet(style)
+        btn = None
+        if hasattr(self, "pfl_a") and deck == "A": btn = self.pfl_a
+        elif hasattr(self, "pfl_b") and deck == "B": btn = self.pfl_b
+        if btn:
+            btn.setStyleSheet(style)
+        # W nowej architekturze PFL może też iść do ConsoleDeckView (status)
+        if _HAS_NEW_DJ_VIEWS:
+            try:
+                if deck == "A" and hasattr(self, "deck_a") and self.deck_a and hasattr(self.deck_a, "pfl_btn"):
+                    self.deck_a.pfl_btn.setChecked(checked)
+                elif deck == "B" and hasattr(self, "deck_b") and self.deck_b and hasattr(self.deck_b, "pfl_btn"):
+                    self.deck_b.pfl_btn.setChecked(checked)
+            except Exception:
+                pass
         logger.debug(f"PFL {deck}: {'ON' if checked else 'OFF'}")
+
+    def _on_global_crossfader(self, value: int):
+        """Obsługa crossfadera z MixerStrip (gdy używany jako globalny)."""
+        if self.playback_engine:
+            try:
+                pos = (value / 50.0) - 1.0
+                self.playback_engine.set_crossfader(pos)
+            except Exception:
+                pass
 
     def _do_sync(self):
         """Global mixer SYNC (legacy path) — delegates basic tempo match.

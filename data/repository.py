@@ -144,6 +144,7 @@ def update_track(track: Track) -> None:
             return
         _copy_track_to_orm(track, existing)
         existing.rating = track.rating
+        existing.date_modified = datetime.now(timezone.utc)
         session.commit()
 
 
@@ -156,6 +157,7 @@ def update_tracks(tracks: Iterable[Track]) -> None:
                 continue
             _copy_track_to_orm(track, existing)
             existing.rating = track.rating
+            existing.date_modified = datetime.now(timezone.utc)
         session.commit()
 
 
