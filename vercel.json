@@ -1,7 +1,6 @@
-﻿{
+{
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "echo \"Desktop PyQt6 app (Lumbago Music AI) - no web deployment required. Build skipped successfully.\"",
-  "outputDirectory": ".",
-  "framework": null,
+  "framework": "nextjs",
   "regions": ["iad1"]
 }
+

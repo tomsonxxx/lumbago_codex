@@ -43,3 +43,8 @@ docs/Lumbago_Blueprint_Extracted.txt
 
 # Temporary test / run outputs
 test_run_output.txt
+
+# Next.js
+.next/
+out/
+
