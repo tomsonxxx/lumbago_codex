@@ -14,7 +14,8 @@ from copy import deepcopy
 
 import logging
 
-from services.metadata_providers import MusicBrainzProvider
+from services.metadata_providers import MusicBrainzProvider, TheAudioDBProvider, ListenBrainzProvider
+from services.free_music_portals import FreeMusicPortalSearch
 from data.repository import get_metadata_cache, set_metadata_cache, list_tracks
 
 log = logging.getLogger(__name__)
@@ -79,6 +80,10 @@ LOCAL_SOURCE_LABELS = {
     "portal_search_traxsource": "Traxsource Search",
     "portal_search_junodownload": "Juno Download Search",
     "portal_search_audiomack": "Audiomack Search",
+    "direct_portal_theaudiodb": "TheAudioDB (public)",
+    "direct_portal_listenbrainz": "ListenBrainz (public)",
+    "direct_portal_lrclib": "LRCLIB (public lyrics)",
+    "direct_portal_lyricsovh": "Lyrics.ovh (public)",
     "portal_consensus": "Konsensus zrodel online",
 }
 METHOD_CATALOG = {
@@ -132,6 +137,10 @@ SOURCE_WEIGHTS: dict[str, float] = {
     "portal_search_traxsource": 0.78,
     "portal_search_junodownload": 0.76,
     "portal_search_audiomack": 0.76,
+    "direct_portal_theaudiodb": 0.81,
+    "direct_portal_listenbrainz": 0.80,
+    "direct_portal_lrclib": 0.65,
+    "direct_portal_lyricsovh": 0.55,
 }
 
 
@@ -1004,6 +1013,84 @@ class AutoMetadataFiller:
             )
         )
 
+        # NEW: also try direct public no-auth portals (TheAudioDB, ListenBrainz, LRCLIB, Lyrics.ovh etc)
+        # via FreeMusicPortalSearch — these often return genre/year/mood/lyrics/bpm when scrape misses.
+        # This is attempted on every online/mix fill so missing data can still be found.
+        try:
+            self._run_direct_public_portals(track, report)
+        except Exception:
+            pass  # never break fill on extra sources
+
+
+    def _run_direct_public_portals(self, track: Track, report: MetadataFillReport) -> None:
+        """Try direct API public portals (no keys) for fields often missing (genre, year, lyrics, mood, bpm).
+        Uses FreeMusicPortalSearch which has built-in public providers + new LRCLIB/Lyrics.ovh.
+        Applied only to fill blanks (copy_missing style).
+        """
+        # build a query similar to portal
+        artist = _sanitize_search_text(track.artist)
+        title = _sanitize_search_text(track.title)
+        if not title:
+            report.sources.append(SourceProbe("direct_public_portals", "Direct public portals", "miss", detail="Brak tytułu"))
+            return
+        q = f"{artist} - {title}".strip(" -") if artist else title
+        try:
+            portal_search = FreeMusicPortalSearch()  # no keys -> only public work
+            probes = portal_search.search_all(q)[:8]  # limit
+        except Exception as exc:
+            report.sources.append(SourceProbe("direct_public_portals", "Direct public portals", "error", detail=str(exc)))
+            return
+
+        before = deepcopy(track)
+        changed: list[str] = []
+        used_sources: list[str] = []
+        for probe in probes:
+            cand = probe.candidate
+            if not cand:
+                continue
+            # map from PortalCandidate attrs to track fields, only if missing
+            for field, val in (
+                ("title", cand.title),
+                ("artist", cand.artist),
+                ("album", cand.album),
+                ("genre", cand.genre),
+                ("year", cand.year),
+                ("publisher", cand.publisher),
+                ("lyrics", cand.lyrics),
+                ("mood", cand.mood),
+            ):
+                if val and not getattr(track, field, None):
+                    # use the apply logic for policy/clean
+                    if _apply_preferred_remote_value(track, field, val, source_confidence=0.80, policy=self.validation_policy):
+                        changed.append(field)
+            # special numeric
+            if cand.bpm and not getattr(track, "bpm", None):
+                try:
+                    track.bpm = float(cand.bpm)
+                    changed.append("bpm")
+                except Exception:
+                    pass
+            if cand.key and not getattr(track, "key", None):
+                track.key = cand.key
+                changed.append("key")
+            if cand.isrc and not getattr(track, "isrc", None):
+                track.isrc = cand.isrc
+                changed.append("isrc")
+            if probe.source_key not in used_sources:
+                used_sources.append(probe.source_key)
+
+        fields = _collect_changed_fields(before, track)
+        status = "hit" if changed else "miss"
+        report.sources.append(
+            SourceProbe(
+                "direct_public_portals",
+                "Direct public portals (TheAudioDB+ListenBrainz+LRCLIB+Lyrics.ovh+Deezer+...)",
+                status,
+                fields=fields or changed,
+                detail=f"public sources tried: {', '.join(used_sources[:5]) or 'none'}",
+            )
+        )
+
 
 def available_metadata_methods() -> dict[str, str]:
     return dict(METHOD_CATALOG)
@@ -1450,6 +1537,22 @@ def _apply_portal_candidate(
     if candidate.get("mood"):
         _apply_preferred_remote_value(
             track, "mood", candidate["mood"], source_confidence=0.82, policy=policy
+        )
+    if candidate.get("year"):
+        _apply_preferred_remote_value(
+            track, "year", candidate["year"], source_confidence=0.82, policy=policy
+        )
+    if candidate.get("publisher"):
+        _apply_preferred_remote_value(
+            track, "publisher", candidate["publisher"], source_confidence=0.82, policy=policy
+        )
+    if candidate.get("lyrics"):
+        _apply_preferred_remote_value(
+            track, "lyrics", candidate["lyrics"], source_confidence=0.78, policy=policy
+        )
+    if candidate.get("isrc"):
+        _apply_preferred_remote_value(
+            track, "isrc", candidate["isrc"], source_confidence=0.82, policy=policy
         )
 
     remixer = _extract_remixer_name(candidate_title) or _extract_remixer_name(track.title)

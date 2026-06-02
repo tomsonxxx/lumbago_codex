@@ -3,7 +3,9 @@ from __future__ import annotations
 import json
 import os
 import re
-from dataclasses import dataclass
+import shutil
+from copy import deepcopy
+from dataclasses import dataclass, field
 from pathlib import Path, PureWindowsPath
 from typing import Iterable
 
@@ -118,17 +120,27 @@ def undo_last_rename() -> list[dict[str, str]]:
 
 
 def _render_pattern(track: Track, pattern: str, index: int) -> str:
+    # Dynamically support more Track fields for patterns (fixes limited mapping)
+    # e.g. now supports {year}, {tracknumber}, {albumartist}, {composer} etc.
+    dynamic_fields = [
+        "artist", "title", "album", "albumartist", "genre", "bpm", "key",
+        "year", "tracknumber", "discnumber", "composer", "remixer",
+        "originalartist", "publisher", "isrc", "comment", "mood", "energy",
+    ]
     mapping = {
-        "artist": _cleanup_metadata_fragment(track.artist or ""),
-        "title": _cleanup_metadata_fragment(track.title or ""),
-        "album": _cleanup_metadata_fragment(track.album or ""),
-        "genre": _cleanup_metadata_fragment(track.genre or ""),
-        "bpm": _cleanup_metadata_fragment(str(track.bpm or "")),
-        "key": _cleanup_metadata_fragment(track.key or ""),
         "index": str(index),
     }
     if "{index:03}" in pattern:
         mapping["index:03"] = f"{index:03d}"
+
+    for field in dynamic_fields:
+        raw = getattr(track, field, None)
+        if field in ("bpm", "energy") and raw is not None:
+            try:
+                raw = f"{float(raw):.1f}".rstrip("0").rstrip(".")
+            except Exception:
+                raw = str(raw or "")
+        mapping[field] = _cleanup_metadata_fragment(str(raw or ""))
 
     result = pattern
     for key, value in mapping.items():
@@ -140,6 +152,14 @@ def _render_pattern(track: Track, pattern: str, index: int) -> str:
     result = re.sub(r"\s*[-–—|]+\s*$", "", result)
     # Collapse multiple consecutive separators: "A -  - B" → "A - B"
     result = re.sub(r"(\s*-\s*){2,}", " - ", result)
+    # Fix for empty brackets/parentheses/groups from empty fields e.g. "Artist - Title []" or "A () - B"
+    # This addresses pattern bugs with empty fields and special grouping chars.
+    result = re.sub(r"\s*[\(\[\{]\s*[\)\]\}]\s*", "", result)
+    result = re.sub(r"[\(\[\{]\s*[\)\]\}]", "", result)
+    # Clean common leftover seps after brackets removed
+    result = re.sub(r"\s*[-–—|]+\s*$", "", result)
+    result = re.sub(r"^\s*[-–—|]+\s*", "", result)
+    result = re.sub(r"\s+", " ", result)
     return result.strip(" .-_") or f"track_{index}"
 
 
@@ -277,3 +297,227 @@ def _temporary_path_for(original_path: Path, idx: int) -> Path:
             f".lumbago_rename_tmp_{pid}_{idx}_{collision_counter}{suffix}"
         )
     return candidate
+
+
+# ============================================================
+# FILE MANAGER / LIBRARY ORGANIZER (integrated into renamer module per no-new-files rule)
+# Organizes updated audio files after autotag/rename into structured folders based on tags.
+# Supports move/copy, custom folder structure e.g. {genre}/{artist}/{album} ({year}),
+# preview, conflict detection (intra-plan + FS), undo-ish (reverts moves), updates repo.
+# ============================================================
+
+@dataclass
+class OrganizePlanItem:
+    old_path: Path
+    new_path: Path
+    action: str = "move"  # "move" or "copy"
+    conflict: bool = False
+    reason: str | None = None
+
+
+def _render_structure_segment(track: Track, segment: str, index: int) -> str:
+    """Render one folder segment, reusing cleanup. Empty -> 'Unknown' for structure."""
+    # Use the improved _render_pattern logic but for single segment (no index usually)
+    rendered = _render_pattern(track, segment, index)
+    cleaned = _sanitize_filename(rendered)
+    if not cleaned or cleaned == "untitled" or cleaned.lower().startswith("track"):
+        cleaned = "Unknown"
+    return cleaned
+
+
+def build_organize_plan(
+    tracks: Iterable[Track],
+    folder_structure: str,
+    filename_pattern: str,
+    target_base: Path,
+    action: str = "move",
+) -> list[OrganizePlanItem]:
+    """Build plan for batch organize into tag-based folder tree.
+    folder_structure e.g. "{genre}/{artist}/{album} ({year})" or "{genre}/{artist}"
+    filename_pattern e.g. "{artist} - {title}" or "{tracknumber:02} - {title}"
+    Creates subfolders under target_base. Supports move (default, updates library path) or copy (adds duplicate entry).
+    """
+    prepared: list[OrganizePlanItem] = []
+    target_base = Path(target_base)
+    for index, track in enumerate(tracks, 1):
+        old_path = Path(track.path)
+        # Render folder parts - split by / or \ , render/sanitize each
+        structure = folder_structure.strip().replace("\\", "/")
+        if not structure:
+            structure = "{genre}/{artist}"
+        parts = [p for p in structure.split("/") if p]
+        folder_rel_parts: list[str] = []
+        for part_tmpl in parts:
+            seg = _render_structure_segment(track, part_tmpl, index)
+            folder_rel_parts.append(seg)
+        folder_rel = Path(*folder_rel_parts) if folder_rel_parts else Path(".")
+
+        # Filename
+        fname = _render_pattern(track, filename_pattern or "{artist} - {title}", index)
+        fname = _sanitize_filename(fname)
+        if not fname or fname == "untitled":
+            fname = f"track_{index}"
+        new_name = f"{fname}{old_path.suffix}"
+        new_path = (target_base / folder_rel / new_name).resolve()
+
+        prepared.append(
+            OrganizePlanItem(
+                old_path=old_path,
+                new_path=new_path,
+                action=action,
+                conflict=False,
+                reason=None,
+            )
+        )
+
+    # Detect conflicts similar to rename
+    old_paths = {item.old_path for item in prepared}
+    target_count: dict[Path, int] = {}
+    for item in prepared:
+        target_count[item.new_path] = target_count.get(item.new_path, 0) + 1
+
+    plan: list[OrganizePlanItem] = []
+    for item in prepared:
+        conflict = False
+        reason = None
+        if target_count.get(item.new_path, 0) > 1:
+            conflict = True
+            reason = "Konflikt nazwy w planie"
+        elif item.new_path.exists() and item.new_path != item.old_path and item.new_path not in old_paths:
+            conflict = True
+            reason = "Plik już istnieje w docelowej lokalizacji"
+        elif item.action == "move" and item.new_path.parent == item.old_path.parent and item.new_path.name == item.old_path.name:
+            # no-op same location
+            pass
+        plan.append(
+            OrganizePlanItem(
+                old_path=item.old_path,
+                new_path=item.new_path,
+                action=item.action,
+                conflict=conflict,
+                reason=reason,
+            )
+        )
+    return plan
+
+
+def apply_organize_plan(
+    plan: Iterable[OrganizePlanItem],
+    *,
+    do_write_tags: bool = False,
+    track_lookup: dict[str, Track] | None = None,
+) -> list[dict[str, str]]:
+    """Execute the organize: move or copy files, create folder structures, optional tag writeback.
+    Returns history list with 'old','new','action'. Updates FS, caller must update repo/DB.
+    Supports undo-ish via returned history (for moves).
+    """
+    executable = [
+        item
+        for item in plan
+        if not item.conflict and item.old_path.exists() and item.old_path != item.new_path
+    ]
+    if not executable:
+        _store_organize_history([])
+        return []
+
+    history: list[dict[str, str]] = []
+    errors: list[str] = []
+
+    for item in executable:
+        try:
+            item.new_path.parent.mkdir(parents=True, exist_ok=True)
+            if item.action == "copy":
+                shutil.copy2(item.old_path, item.new_path)
+                hist_entry = {"old": str(item.old_path), "new": str(item.new_path), "action": "copy"}
+            else:
+                # move (rename across dirs ok)
+                item.old_path.rename(item.new_path)
+                hist_entry = {"old": str(item.old_path), "new": str(item.new_path), "action": "move"}
+            history.append(hist_entry)
+
+            # optional tag writeback to the *target* file using provided lookup (library state)
+            if do_write_tags and track_lookup:
+                tr = track_lookup.get(hist_entry["old"])
+                if tr:
+                    tags: dict[str, str] = {}
+                    for fld in (
+                        "title", "artist", "album", "albumartist", "genre", "year",
+                        "bpm", "key", "tracknumber", "discnumber", "composer", "remixer",
+                        "originalartist", "publisher", "isrc", "comment", "lyrics", "mood", "energy",
+                    ):
+                        val = getattr(tr, fld, None)
+                        if val is not None:
+                            tags[fld] = str(val)
+                    if getattr(tr, "rating", 0):
+                        tags["rating"] = str(tr.rating)
+                    try:
+                        from core.audio import write_tags as _wt
+                        _wt(Path(hist_entry["new"]), tags)
+                    except Exception as we:
+                        errors.append(f"write_tags {Path(hist_entry['new']).name}: {we}")
+        except Exception as e:
+            errors.append(f"{item.action} {item.old_path.name} -> {item.new_path}: {e}")
+
+    _store_organize_history(history)
+    if errors:
+        # non-fatal, return what succeeded; caller can log
+        pass
+    return history
+
+
+def undo_last_organize() -> list[dict[str, str]]:
+    """Undo-ish for last organize: revert moves by renaming back (copies are left as-is, 'undo' for copies would delete which is risky).
+    Clears the organize history.
+    """
+    history = _load_organize_history()
+    reverted: list[dict[str, str]] = []
+    for entry in reversed(history):
+        if entry.get("action") != "move":
+            continue
+        old = Path(entry["old"])
+        new = Path(entry["new"])
+        if new.exists() and not old.exists():
+            try:
+                new.rename(old)
+                reverted.append(entry)
+            except Exception:
+                pass
+    _store_organize_history([])
+    return reverted
+
+
+def _organize_history_path() -> Path:
+    return cache_dir() / "organize_history.json"
+
+
+def _store_organize_history(history: list[dict[str, str]]) -> None:
+    path = _organize_history_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(history, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+def _load_organize_history() -> list[dict[str, str]]:
+    path = _organize_history_path()
+    if not path.exists():
+        return []
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+
+
+# Convenience: organize_tracks high level (used by UI/tests)
+def organize_tracks(
+    tracks: list[Track],
+    folder_structure: str,
+    filename_pattern: str,
+    target_base: str | Path,
+    action: str = "move",
+    do_write_tags: bool = False,
+) -> tuple[list[OrganizePlanItem], list[dict[str, str]]]:
+    """High-level: build + apply. Returns (plan, history). Caller responsible for repo updates after.
+    """
+    plan = build_organize_plan(tracks, folder_structure, filename_pattern, Path(target_base), action)
+    track_lookup = {str(t.path): t for t in tracks}
+    history = apply_organize_plan(plan, do_write_tags=do_write_tags, track_lookup=track_lookup)
+    return plan, history

@@ -121,11 +121,13 @@ class RateLimitedDiscogsProvider(DiscogsProvider):
 
 
 class FallbackMetadataChain:
-    def __init__(self, acoustid_provider=None, mb_provider=None, discogs_provider=None):
+    def __init__(self, acoustid_provider=None, mb_provider=None, discogs_provider=None, theaudiodb_provider=None, listenbrainz_provider=None):
         self._acoustid = acoustid_provider
         self._mb = mb_provider or RateLimitedMusicBrainzProvider()
         self._discogs = discogs_provider or RateLimitedDiscogsProvider()
-        self.stats = {"acoustid_hits":0,"mb_hits":0,"discogs_hits":0,"misses":0}
+        self._theaudiodb = theaudiodb_provider or TheAudioDBProvider()
+        self._listenbrainz = listenbrainz_provider or ListenBrainzProvider()
+        self.stats = {"acoustid_hits":0,"mb_hits":0,"discogs_hits":0,"theaudiodb_hits":0,"listenbrainz_hits":0,"misses":0}
 
     def enrich(self, track) -> dict | None:
         import logging; log = logging.getLogger(__name__)
@@ -135,6 +137,8 @@ class FallbackMetadataChain:
                 if r: self.stats["acoustid_hits"] += 1; return r
             except Exception as e: log.warning("AcoustID: %s", e)
         query = " ".join(filter(None,[getattr(track,'artist',''),getattr(track,'title','')])).strip()
+        artist = getattr(track, 'artist', None)
+        title = getattr(track, 'title', None)
         if query:
             try:
                 r = self._mb.search(query, limit=1)
@@ -144,11 +148,24 @@ class FallbackMetadataChain:
                 r = self._discogs.search(query, limit=1)
                 if r: self.stats["discogs_hits"] += 1; return r[0]
             except Exception as e: log.warning("Discogs: %s", e)
+            # New public sources for missing genre/year etc. — tried as fallback
+            try:
+                item = self._theaudiodb.search_track(artist, title)
+                if item:
+                    meta = self._theaudiodb.to_metadata(item)
+                    if meta: self.stats["theaudiodb_hits"] += 1; return meta
+            except Exception as e: log.warning("TheAudioDB: %s", e)
+            try:
+                data = self._listenbrainz.lookup(artist, title)
+                if data:
+                    meta = self._listenbrainz.to_metadata(data)
+                    if meta: self.stats["listenbrainz_hits"] += 1; return meta
+            except Exception as e: log.warning("ListenBrainz: %s", e)
         self.stats["misses"] += 1; return None
 
     def get_stats_summary(self) -> str:
         s = self.stats
-        return f"AcoustID:{s['acoustid_hits']} | MB:{s['mb_hits']} | Discogs:{s['discogs_hits']} | Puste:{s['misses']}"
+        return f"AcoustID:{s['acoustid_hits']} | MB:{s['mb_hits']} | Discogs:{s['discogs_hits']} | TheAudioDB:{s['theaudiodb_hits']} | ListenBrainz:{s['listenbrainz_hits']} | Puste:{s['misses']}"
 
 
 # ---------------------------------------------------------------------------
@@ -247,3 +264,158 @@ def _join_artist_credits(credits: list) -> str:
             if name:
                 parts.append(name + joinphrase)
     return "".join(parts).strip()
+
+
+# ---------------------------------------------------------------------------
+# Additional public no-auth network metadata providers (to find more data
+# like genre, year, mood, lyrics when MB/Discogs miss).
+# Prefer requests + cache.
+# ---------------------------------------------------------------------------
+
+class TheAudioDBProvider:
+    """Public API (key=2) — excellent for genre, mood, year, label, album.
+    Helps when 'nie wszystkie dane są nadal odnajdywane' for style fields.
+    """
+    BASE = "https://www.theaudiodb.com/api/v1/json/2"
+
+    def __init__(self, timeout: float = 7.0):
+        self.timeout = timeout
+        self.user_agent = "LumbagoMusicAI/1.0"
+
+    def search_track(self, artist: str | None, title: str | None) -> dict | None:
+        if not title:
+            return None
+        _CACHE_TTL = 7 * 24 * 3600
+        cache_key = f"theaudiodb:track:{(artist or '').lower()}:{title.lower()}"
+        try:
+            from data.repository import get_metadata_cache, set_metadata_cache
+            cached = get_metadata_cache(cache_key, max_age_seconds=_CACHE_TTL)
+            if cached:
+                return cached
+        except Exception:
+            set_metadata_cache = None  # type: ignore[assignment]
+
+        params: dict[str, str] = {}
+        if artist and title:
+            params = {"s": artist, "t": title}
+        elif title:
+            params = {"s": "", "t": title}
+        else:
+            params = {"s": artist or title or ""}
+        try:
+            resp = requests.get(
+                f"{self.BASE}/searchtrack.php",
+                params=params,
+                timeout=self.timeout,
+                headers={"User-Agent": self.user_agent},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            tracks = (data or {}).get("track") or []
+            result = tracks[0] if tracks else None
+            if result:
+                try:
+                    set_metadata_cache(cache_key, result, source="theaudiodb")
+                except Exception:
+                    pass
+            return result
+        except Exception:
+            return None
+
+    def to_metadata(self, item: dict) -> dict:
+        if not item:
+            return {}
+        meta: dict = {}
+        if t := item.get("strTrack"):
+            meta["title"] = t
+        if a := item.get("strArtist"):
+            meta["artist"] = a
+        if al := item.get("strAlbum"):
+            meta["album"] = al
+        if g := (item.get("strGenre") or item.get("strMood")):
+            meta["genre"] = g
+        if m := item.get("strMood"):
+            meta["mood"] = m
+        if y := item.get("intYearReleased"):
+            ys = str(y)
+            if len(ys) >= 4 and ys[:4].isdigit():
+                meta["year"] = ys[:4]
+        if l := item.get("strLabel"):
+            meta["publisher"] = l
+        if b := item.get("intBPM"):
+            try:
+                meta["bpm"] = float(b)
+            except Exception:
+                pass
+        return meta
+
+
+class ListenBrainzProvider:
+    """Public no-key API. Aggregates MB data simply. Good for year, label, album.
+    Fast fallback when primary MB search limited.
+    """
+    BASE = "https://api.listenbrainz.org/1/metadata/lookup"
+
+    def __init__(self, timeout: float = 7.0):
+        self.timeout = timeout
+        self.user_agent = "LumbagoMusicAI/1.0"
+
+    def lookup(self, artist: str | None, title: str | None) -> dict | None:
+        if not title:
+            return None
+        _CACHE_TTL = 14 * 24 * 3600
+        cache_key = f"listenbrainz:lookup:{(artist or '').lower()}:{title.lower()}"
+        try:
+            from data.repository import get_metadata_cache, set_metadata_cache
+            cached = get_metadata_cache(cache_key, max_age_seconds=_CACHE_TTL)
+            if cached:
+                return cached
+        except Exception:
+            set_metadata_cache = None  # type: ignore[assignment]
+
+        params = {
+            "artist_name": artist or "",
+            "recording_name": title,
+            "inc": "artist release",
+        }
+        try:
+            resp = requests.get(
+                self.BASE,
+                params=params,
+                timeout=self.timeout,
+                headers={"User-Agent": self.user_agent},
+            )
+            if resp.status_code != 200:
+                return None
+            data = resp.json()
+            if data:
+                try:
+                    set_metadata_cache(cache_key, data, source="listenbrainz")
+                except Exception:
+                    pass
+            return data
+        except Exception:
+            return None
+
+    def to_metadata(self, data: dict) -> dict:
+        if not data:
+            return {}
+        meta: dict = {}
+        recording = data.get("recording") or {}
+        release = recording.get("release") or data.get("release") or {}
+        artist_data = recording.get("artist") or data.get("artist") or {}
+        if n := recording.get("name") or data.get("recording_name"):
+            meta["title"] = n
+        an = artist_data.get("name") or (artist_data.get("artists") or [{}])[0].get("name")
+        if an:
+            meta["artist"] = an
+        if rn := release.get("name") or release.get("title"):
+            meta["album"] = rn
+        rd = str(release.get("date") or release.get("release_date") or "")
+        if rd and len(rd) >= 4 and rd[:4].isdigit():
+            meta["year"] = rd[:4]
+        if lbl := (release.get("label") or {}).get("name"):
+            meta["publisher"] = lbl
+        if mbid := recording.get("mbid"):
+            meta["musicbrainz_recordingid"] = mbid  # for link
+        return meta

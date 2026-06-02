@@ -19,6 +19,10 @@ def test_portal_catalog_contains_added_top_sources():
         "portal_search_traxsource",
         "portal_search_junodownload",
         "portal_search_audiomack",
+        "direct_portal_theaudiodb",
+        "direct_portal_listenbrainz",
+        "direct_portal_lrclib",
+        "direct_portal_lyricsovh",
         "portal_consensus",
     }
     assert expected <= set(LOCAL_SOURCE_LABELS)

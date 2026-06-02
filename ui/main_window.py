@@ -66,7 +66,7 @@ from ui.models import TrackGridDelegate, TrackTableModel
 from ui.playlist_dialog import PlaylistEditorDialog
 from ui.playlist_order_dialog import PlaylistOrderDialog
 from ui.recognition_queue import RecognitionBatchWorker
-from ui.renamer_dialog import RenamerDialog
+from ui.renamer_dialog import RenamerDialog, FileOrganizerDialog
 from ui.settings_dialog import ApiKeyCheckDialog, SettingsDialog
 from ui.tag_compare_dialog import TagCompareDialog
 from ui.theme import get_scale_factor
@@ -1172,6 +1172,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.btn_renamer.clicked.connect(self._open_renamer)
         layout.addWidget(self.btn_renamer)
 
+        # New File Manager integration: button for organize after autotag/rename
+        self.btn_organizer = AnimatedButton("Organizuj pliki")
+        self.btn_organizer.setToolTip("Zorganizuj zaktualizowane pliki audio w struktury folderów (Genre/Artist/Album/Year lub custom) - move/copy + DB update")
+        self.btn_organizer.clicked.connect(self._open_organizer)
+        layout.addWidget(self.btn_organizer)
+
         self.btn_settings = AnimatedButton("Ustawienia / API")
         self.btn_settings.setToolTip("Ustaw klucze API i konfigurację")
         self.btn_settings.clicked.connect(self._open_settings)
@@ -1884,6 +1890,49 @@ class MainWindow(QtWidgets.QMainWindow):
         dialog = RenamerDialog(tracks, self)
         if dialog.exec():
             self._load_tracks()
+            # Integrate: offer File Manager / organize after rename changes
+            self._offer_organize_after_change("Zmiana nazw zakończona.")
+
+    def _open_organizer(self):
+        """Open the new File Manager dialog for organizing audio files into structured folders based on tags.
+        Supports selection or falls back to library. Updates repo after FS.
+        """
+        tracks = self._selected_tracks()
+        if not tracks:
+            # allow all if none selected (common after batch autotag)
+            tracks = list_tracks()
+            if not tracks:
+                self._show_message("Brak utworów w bibliotece.")
+                return
+            if len(tracks) > 200:
+                # prevent accidental heavy op on huge libs
+                resp = QtWidgets.QMessageBox.question(
+                    self, "Duża biblioteka",
+                    f"Masz {len(tracks)} utworów. Organizować wszystkie? (może być wolne, zalecane zaznaczenie podzbioru)",
+                    QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No
+                )
+                if resp != QtWidgets.QMessageBox.StandardButton.Yes:
+                    return
+        dialog = FileOrganizerDialog(tracks, self)
+        if dialog.exec():
+            self._load_tracks()
+
+    def _offer_organize_after_change(self, context_msg: str = ""):
+        """Offer 'Organize files...' after renamer or autotag updates (integration point)."""
+        try:
+            msg = (context_msg + " ") if context_msg else ""
+            reply = QtWidgets.QMessageBox.question(
+                self,
+                "Organizuj pliki?",
+                f"{msg}Zorganizować zaktualizowane pliki audio w jednym miejscu (struktury folderów wg tagów, move/copy)?\n\n"
+                "Możesz też użyć przycisku 'Organizuj pliki' w toolbarze lub menu.",
+                QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
+                QtWidgets.QMessageBox.StandardButton.No
+            )
+            if reply == QtWidgets.QMessageBox.StandardButton.Yes:
+                self._open_organizer()
+        except Exception:
+            pass  # non critical
 
     def _open_xml_converter(self):
         dialog = XmlConverterDialog(self)
@@ -1927,6 +1976,7 @@ class MainWindow(QtWidgets.QMainWindow):
         selection_clear = selection_menu.addAction("Wyczyść zaznaczenie")
         selection_bulk = selection_menu.addAction("Edycja zbiorcza")
         selection_compare = selection_menu.addAction("Porównaj tagi")
+        organize_action = menu.addAction("Organizuj pliki (File Manager)")
         menu.addSeparator()
         col_menu = menu.addMenu("Kolumny")
         show_all_col = col_menu.addAction("Pokaż wszystkie")
@@ -2006,6 +2056,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self._bulk_edit()
         elif action == selection_compare:
             self._compare_tags()
+        elif action == organize_action:
+            self._open_organizer()
         elif action == show_all_col:
             for _, col in col_actions:
                 self.table_view.setColumnHidden(col, False)
@@ -2368,6 +2420,10 @@ class MainWindow(QtWidgets.QMainWindow):
                 f"Autotagowanie zakończone. Przetworzono: {processed}, zapisano: {updated}, błędy: {errors}"
             )
             _process_log(f"[autotag] done | processed={processed} updated={updated} errors={errors}")
+
+            # Integrate File Manager offer after autotag updates (as requested)
+            if updated > 0:
+                self._offer_organize_after_change(f"Autotag zaktualizował {updated} utworów.")
 
             # === NOWA LOGIKA TŁA (przez kolejkę AnalysisJob) ===
             settings = load_settings()
@@ -2952,6 +3008,7 @@ class MainWindow(QtWidgets.QMainWindow):
         QtGui.QShortcut(QtGui.QKeySequence("Ctrl+I"), self, activated=self._open_import_wizard)
         QtGui.QShortcut(QtGui.QKeySequence("Ctrl+D"), self, activated=self._open_duplicates)
         QtGui.QShortcut(QtGui.QKeySequence("Ctrl+R"), self, activated=self._open_renamer)
+        QtGui.QShortcut(QtGui.QKeySequence("Ctrl+Shift+O"), self, activated=self._open_organizer)
         QtGui.QShortcut(QtGui.QKeySequence("Ctrl+E"), self, activated=self._open_xml_converter)
         QtGui.QShortcut(QtGui.QKeySequence("Ctrl+T"), self, activated=self._run_ai_tagger)
         QtGui.QShortcut(QtGui.QKeySequence("Ctrl+Shift+D"), self, activated=self._toggle_detail_panel)
@@ -2971,6 +3028,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.btn_local_meta.setIcon(icon("tag.svg"))
         self.btn_duplicates.setIcon(icon("duplicates.svg"))
         self.btn_renamer.setIcon(icon("rename.svg"))
+        self.btn_organizer.setIcon(icon("dialog.svg"))  # reuse existing icon (no new assets)
         self.btn_settings.setIcon(icon("settings.svg"))
         self.settings_btn.setIcon(icon("settings.svg"))
         self.auto_tag_btn.setIcon(icon("magic.svg"))
@@ -2992,6 +3050,7 @@ class MainWindow(QtWidgets.QMainWindow):
         tools.addAction("Metadane lokalne", self._apply_local_metadata_selected)
         tools.addAction("Duplikaty", self._open_duplicates)
         tools.addAction("Zmiana nazw", self._open_renamer)
+        tools.addAction("Organizuj pliki (File Manager)", self._open_organizer)
         tools.addAction("Narzędzia XML", self._open_xml_converter)
         tools.addAction("Eksport playlisty do VirtualDJ XML", self._export_playlist_virtualdj)
         tools.addAction("Ustawienia", self._open_settings)
@@ -3187,6 +3246,7 @@ class MainWindow(QtWidgets.QMainWindow):
         tools_menu = self.toolbar_actions_menu.addMenu("Narzędzia")
         tools_menu.addAction("Wyszukaj duplikaty", self._open_duplicates)
         tools_menu.addAction("Zmiana nazw", self._open_renamer)
+        tools_menu.addAction("Organizuj pliki (File Manager)", self._open_organizer)
         tools_menu.addAction("Log procesów", self._open_process_log)
 
         self.toolbar_actions_menu.addSeparator()

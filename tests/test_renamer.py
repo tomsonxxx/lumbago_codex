@@ -1,5 +1,6 @@
 from pathlib import Path
 import tempfile
+import shutil
 
 from core.models import Track
 from core.renamer import (
@@ -7,6 +8,11 @@ from core.renamer import (
     apply_rename_plan,
     build_rename_plan,
     parse_filename_tags,
+    # new File Manager
+    build_organize_plan,
+    apply_organize_plan,
+    organize_tracks,
+    undo_last_organize,
 )
 
 
@@ -95,3 +101,98 @@ def test_build_rename_plan_marks_conflict_for_existing_external_file(tmp_path: P
 
     assert len(plan) == 1
     assert plan[0].conflict is True
+
+
+# ============================================================
+# NEW TESTS FOR FILE MANAGER / ORGANIZER (in existing test file)
+# ============================================================
+
+def test_build_organize_plan_creates_structured_paths_and_detects_conflict(tmp_path: Path):
+    base = tmp_path / "src"
+    base.mkdir()
+    f1 = base / "a.mp3"
+    f2 = base / "b.mp3"
+    f1.write_text("1", encoding="utf-8")
+    f2.write_text("2", encoding="utf-8")
+
+    tracks = [
+        Track(path=str(f1), artist="The Beatles", title="Hey Jude", album="Abbey Road", genre="Rock", year="1969"),
+        Track(path=str(f2), artist="The Beatles", title="Hey Jude", album="Abbey Road", genre="Rock", year="1969"),  # same -> conflict
+    ]
+    target = tmp_path / "organized"
+    plan = build_organize_plan(
+        tracks,
+        folder_structure="{genre}/{artist}/{album} ({year})",
+        filename_pattern="{title}",
+        target_base=target,
+        action="move",
+    )
+    assert len(plan) == 2
+    assert plan[0].conflict is True  # intra conflict on same target
+    assert "Rock" in str(plan[0].new_path)
+    assert "The Beatles" in str(plan[0].new_path)
+    assert "Abbey Road (1969)" in str(plan[0].new_path)
+
+
+def test_apply_organize_plan_move_updates_paths_and_creates_dirs(tmp_path: Path):
+    src = tmp_path / "library"
+    src.mkdir()
+    f = src / "song.mp3"
+    f.write_text("data", encoding="utf-8")
+
+    tracks = [Track(path=str(f), artist="Artist X", title="Song Y", genre="Electronic", album="Album Z", year="2020")]
+    target = tmp_path / "newlib"
+    plan, history = organize_tracks(
+        tracks,
+        folder_structure="{genre}/{artist}",
+        filename_pattern="{title}",
+        target_base=target,
+        action="move",
+        do_write_tags=False,
+    )
+    assert len(history) == 1
+    moved = target / "Electronic" / "Artist X" / "Song Y.mp3"
+    assert moved.exists()
+    assert not f.exists()  # was moved
+    assert history[0]["action"] == "move"
+    # Note: DB update tested via integration in dialog/main, here FS+plan
+
+
+def test_apply_organize_plan_copy_and_undo_ish(tmp_path: Path):
+    src = tmp_path / "lib2"
+    src.mkdir()
+    f = src / "t.mp3"
+    f.write_text("xx", encoding="utf-8")
+    tracks = [Track(path=str(f), artist="A", title="T", genre="G", album="", year="")]
+    target = tmp_path / "copydest"
+    plan, hist = organize_tracks(tracks, "{genre}", "{artist} - {title}", target, action="copy")
+    assert len(hist) == 1
+    assert hist[0]["action"] == "copy"
+    copied = target / "G" / "A - T.mp3"
+    assert copied.exists()
+    assert f.exists()  # original remains for copy
+
+    # undo should not affect copy
+    rev = undo_last_organize()
+    assert len(rev) == 0  # no moves to revert
+    assert copied.exists()
+
+
+def test_organize_plan_empty_fields_and_special_chars(tmp_path: Path):
+    src = tmp_path / "s"
+    src.mkdir()
+    f = src / "f.mp3"
+    f.write_text("", encoding="utf-8")
+    tracks = [Track(path=str(f), artist="A/B:C*", title="", genre="", album="")]
+    target = tmp_path / "o"
+    plan = build_organize_plan(tracks, "{genre}/{artist}", "{title}", target)
+    item = plan[0]
+    assert item.conflict is False
+    # empty genre -> Unknown, special in artist sanitized
+    assert "Unknown" in str(item.new_path)
+    # on Windows drive has :, so check no : in the path after drive or in name/folder parts from data
+    pstr = item.new_path.as_posix()
+    tail = pstr.split(":", 1)[-1] if ":" in pstr else pstr
+    assert ":" not in tail
+    assert "/" not in item.new_path.name  # filename no /
+    assert "A B C" in pstr  # sanitized artist folder

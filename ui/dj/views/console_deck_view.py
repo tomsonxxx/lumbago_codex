@@ -94,6 +94,8 @@ class ConsoleDeckView(QtWidgets.QFrame):
         self.setObjectName("DeckPanel")
         self.setStyleSheet(get_deck_panel_stylesheet())
 
+        self.setAcceptDrops(True)  # drag&drop z biblioteki bezpośrednio na deck (Rekordbox-like)
+
         self._setup_ui()
         self._connect_controller_signals()
         self._connect_widget_signals()
@@ -241,7 +243,7 @@ class ConsoleDeckView(QtWidgets.QFrame):
         hc_lbl.setStyleSheet(get_section_label_stylesheet())
         hc_col.addWidget(hc_lbl)
         self.hotcue_grid = HotcuePadGrid(
-            pad_size=BOOTH_SIZES.get("hotcue_pad_small", (76, 56))
+            pad_size=BOOTH_SIZES.get("hotcue_pad", (82, 62))  # full booth size (Rekordbox polish; splitter handles)
         )
         hc_col.addWidget(self.hotcue_grid)
         eq_hc.addLayout(hc_col, 1)
@@ -444,7 +446,7 @@ class ConsoleDeckView(QtWidgets.QFrame):
             else:
                 self.controller.status_changed.emit("Najpierw ustaw Loop In")
         elif chosen == act_loop_here:
-            bpm = self.controller._bpm or 128
+            bpm = getattr(self.controller, "_original_bpm", None) or getattr(self.controller, "_bpm", None) or 128
             loop_len_ms = int((4 * 60000) / bpm)
             self.controller.set_loop_points(click_ms, click_ms + loop_len_ms)
 
@@ -550,6 +552,11 @@ class ConsoleDeckView(QtWidgets.QFrame):
     def _on_sync_changed(self, active: bool) -> None:
         self.sync_btn.setChecked(active)
         self.sync_btn.setText("SYNC✓" if active else "SYNC")
+        # booth polish: highlight when synced (uses accent from palette via stylesheet if extended)
+        if active:
+            self.sync_btn.setStyleSheet("background-color: #166534; color: #e0f2e0; font-weight:900;")
+        else:
+            self.sync_btn.setStyleSheet("")  # revert to default from pro_row
 
     # ------------------------------------------------------------------
     # Pomocnicze dla DualConsoleWidget
@@ -569,6 +576,43 @@ class ConsoleDeckView(QtWidgets.QFrame):
 
     def get_waveform_widget(self):
         return self.waveform
+
+    # ------------------------------------------------------------------
+    # Drag & drop z library_widget (bezpośrednio na ten deck – pro UX)
+    # ------------------------------------------------------------------
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasFormat("application/x-lumbago-track-paths") or event.mimeData().hasUrls():
+            event.acceptProposedAction()
+
+    def dropEvent(self, event):
+        mime = event.mimeData()
+        paths = []
+        if mime.hasFormat("application/x-lumbago-track-paths"):
+            data = mime.data("application/x-lumbago-track-paths").data().decode()
+            paths = [p for p in data.split(",") if p]
+        elif mime.hasUrls():
+            for url in mime.urls():
+                if url.isLocalFile():
+                    paths.append(url.toLocalFile())
+        if paths:
+            try:
+                from pathlib import Path as PathLib
+                from core.models import Track
+                from data.repository import get_track_by_path
+                p = paths[0]
+                name = PathLib(p).stem
+                track = Track(path=p, title=name)
+                dbt = get_track_by_path(p)
+                if dbt and getattr(dbt, "id", None):
+                    track = dbt
+                self.controller.load_track(track)
+                # optional status
+                if hasattr(self, "status_label"):
+                    self.status_label.setText("✓ Załadowano via D&D")
+            except Exception as exc:
+                logger = __import__("logging").getLogger(__name__)
+                logger.warning(f"ConsoleDeckView drop error: {exc}")
+            event.acceptProposedAction()
 
 
 __all__ = ["ConsoleDeckView"]

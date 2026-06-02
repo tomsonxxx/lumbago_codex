@@ -47,45 +47,14 @@ logger = logging.getLogger(__name__)
 
 
 # ------------------------------------------------------------------
-# REFACTOR: format_track_time + HotcueManager przeniesione do ui/dj/hotcue_manager.py
-# (patrz import na górze pliku). Ten plik używa re-eksportu – zero duplikacji.
+# REFACTOR (UI polish): format_track_time + HotcueManager przeniesione do ui/dj/hotcue_manager.py
+# Stary kod legacy (SectionLabel, HotcueGrid, HotcuePad, WaveformRunnable) usunięty – sole new arch via ui/dj/
+# WaveformWidget zachowany (używany przez Focused/Console views) + ulepszony do użycia BOOTH_COLORS dla spójnego Rekordbox look.
 # ------------------------------------------------------------------
-
-class SectionLabel(QtWidgets.QLabel):
-    """Spójny label sekcji w stylu Rekordbox (mały, mocny, z letter-spacing)."""
-    def __init__(self, text: str, parent=None):
-        super().__init__(text, parent)
-        self.setStyleSheet(f"""
-            color: {COLORS.get('section_label', COLORS['text_muted'])};
-            font-size: 11px;
-            font-weight: 800;
-            letter-spacing: 1.2px;
-            padding-top: 4px;
-            padding-bottom: 2px;
-        """)
-
-
-class HotcueGrid(QtWidgets.QWidget):
-    """Profesjonalny grid hotcue'ów (domyślnie 2x4 = 8 padów). Łatwo zmienić na 1x4 lub 2x4."""
-    def __init__(self, num_cues: int = 8, pad_size=(88, 58), parent=None):
-        super().__init__(parent)
-        self.pads: list[HotcuePad] = []
-        grid = QtWidgets.QGridLayout(self)
-        grid.setSpacing(8)
-        grid.setContentsMargins(0, 0, 0, 0)
-
-        cols = 4
-        for i in range(num_cues):
-            pad = HotcuePad(i)
-            pad.setFixedSize(*pad_size)
-            self.pads.append(pad)
-            row, col = divmod(i, cols)
-            grid.addWidget(pad, row, col)
-
 
 # Note: extract_peaks (and its internal _generate_fallback) now lives in core/waveform.py
 # for reuse by library detail panel (eliminates ffmpeg dependency for small previews).
-# We keep a thin local wrapper for logging + default num_points used by WaveformWidget.
+# We keep a thin local wrapper for logging + default num_points used by WaveformWidget (legacy compat only).
 def extract_peaks_from_audio(audio_path: str | Path, num_points: int = 900) -> list[float]:
     try:
         return extract_peaks(audio_path, num_points=num_points)
@@ -102,54 +71,19 @@ def extract_peaks_from_audio(audio_path: str | Path, num_points: int = 900) -> l
         return peaks
 
 
-class WaveformRunnable(QtCore.QRunnable):
-    """Safe QRunnable for offloading librosa peak extraction to QThreadPool.
-    Replaces bare function (which caused TypeError on .start()).
-    Includes captured path token for stale-result protection.
-    """
-
-    def __init__(self, audio_path: str, duration_ms: int, waveform_widget: "WaveformWidget", token: str):
-        super().__init__()
-        self.setAutoDelete(True)
-        self._path = str(audio_path)
-        self._duration_ms = int(duration_ms)
-        self._waveform = waveform_widget
-        self._token = token
-
-    def run(self) -> None:
-        try:
-            peaks = extract_peaks_from_audio(self._path, num_points=900)
-            QtCore.QMetaObject.invokeMethod(
-                self._waveform,
-                "load_waveform",
-                QtCore.Qt.ConnectionType.QueuedConnection,
-                QtCore.Q_ARG(list, peaks),
-                QtCore.Q_ARG(int, self._duration_ms),
-                QtCore.Q_ARG(str, self._token or ""),
-            )
-        except Exception as e:
-            logger.warning(f"Waveform generation failed for {self._path}: {e}")
-
-
-# Pro DJ booth high-contrast dark theme (Rekordbox/Traktor level readability)
-# Optimized for dark rooms, quick glances, low eye strain
+# Pro DJ booth high-contrast dark theme – teraz alias do centralnej palety BOOTH_COLORS (Rekordbox polish)
+# Zachowany dla kompatybilności z WaveformWidget (który jest w tym pliku).
+# Używaj ui.dj.styles.BOOTH_COLORS w nowych widokach!
+from ui.dj.styles import BOOTH_COLORS
+# Compat alias for legacy code paths in this file (old _apply etc). Maps to booth for polish.
 COLORS = {
-    "bg": "#0a0e17",
-    "panel": "#121a28",
-    "panel_border": "#1f2a40",
-    "wave_bg": "#0c111c",
-    "wave_peak": "#4fd1ff",
-    "wave_rms": "#1e3a52",
-    "playhead": "#ff2d55",
-    "playhead_glow": "#ff6b8a",
-    "text": "#f4f7fc",
-    "text_muted": "#c5d0e0",
-    "accent": "#4fd1ff",
-    "accent_green": "#22c55e",
-    "warning": "#facc15",
-    "hotcue": ["#14b8a6", "#f59e0b", "#ec4899", "#6366f1"],
+    **BOOTH_COLORS,
+    "text": BOOTH_COLORS.get("text_primary", "#f0f4f8"),
+    "panel": BOOTH_COLORS.get("surface", "#12171f"),
+    "panel_border": BOOTH_COLORS.get("border", "#2a3442"),
+    "section_label": BOOTH_COLORS.get("text_muted", "#6b7688"),
     "hotcue_active": "#ffffff",
-    "loop": "#60a5fa",
+    "accent_green": BOOTH_COLORS.get("play", "#22c55e"),
 }
 
 
@@ -287,7 +221,8 @@ class WaveformWidget(QtWidgets.QWidget):
         pen_peak = QtGui.QPen(self._col_peak, 1)
         pen_rms = QtGui.QPen(self._col_rms, 1)
 
-        # Waveform (classic + gain feel)
+        # Waveform (classic + gain feel + energy tint for Rekordbox-style colored waveform by intensity)
+        energy_tint = QtGui.QColor(COLORS.get("accent_orange", "#ff8a00"))  # high energy sections (from booth palette)
         for px in range(w):
             idx = int(px / w * n)
             if idx >= n:
@@ -302,6 +237,14 @@ class WaveformWidget(QtWidgets.QWidget):
             painter.setPen(pen_peak)
             painter.drawLine(px, mid - ph, px, mid - rh)
             painter.drawLine(px, mid + rh, px, mid + ph)
+
+            # Energy coloring overlay (pro polish: intense parts get orange tint)
+            if amp > 0.65:
+                energy_pen = QtGui.QPen(energy_tint, 1)
+                energy_pen.setAlphaF(0.3 + (amp - 0.65) * 1.0)
+                painter.setPen(energy_pen)
+                painter.drawLine(px, mid - int(ph * 0.65), px, mid - rh)
+                painter.drawLine(px, mid + rh, px, mid + int(ph * 0.65))
 
         # Loop region (more visible)
         if self._loop_start_ms >= 0 and self._loop_end_ms > self._loop_start_ms and self._duration_ms > 0:
@@ -423,112 +366,7 @@ class WaveformWidget(QtWidgets.QWidget):
         return max(0, min(t, self._duration_ms))
 
 
-class HotcuePad(QtWidgets.QPushButton):
-    """
-    Pro-grade hotcue pad:
-    - Large, high-contrast, booth-friendly
-    - Clear set vs empty state
-    - Tooltip shows stored time (set on assignment)
-    - Better hover/active visuals
-    """
-    activated = QtCore.pyqtSignal(int)
-    set_requested = QtCore.pyqtSignal(int)
-
-    def __init__(self, index: int, parent=None):
-        super().__init__(parent)
-        self.index = index
-        self._has_cue = False
-        self._cue_time_ms: int | None = None
-        self.setFixedSize(72, 52)  # duże, wygodne pady w obu trybach (dual + single)
-        self.setText(f"{index + 1}")
-        self.setToolTip(f"Hotcue {index + 1}\nClick: jump  •  Ctrl+Click: clear  •  Right-click or long: set at playhead")
-        self._update_style()
-
-        # Make it feel more like hardware pads
-        self.setFocusPolicy(QtCore.Qt.FocusPolicy.NoFocus)
-
-    def _format_time(self, ms: int) -> str:
-        if ms is None:
-            return ""
-        total_sec = max(0, ms) // 1000
-        m = total_sec // 60
-        s = total_sec % 60
-        return f"{m}:{s:02d}"
-
-    def _update_style(self):
-        color = COLORS["hotcue"][self.index % len(COLORS["hotcue"])]
-        if self._has_cue:
-            # Filled, high visibility active state
-            self.setStyleSheet(f"""
-                QPushButton {{
-                    background-color: {color};
-                    color: {COLORS["bg"]};
-                    border: 2px solid {COLORS["hotcue_active"]};
-                    border-radius: 6px;
-                    font-weight: 800;
-                    font-size: 16px;
-                    letter-spacing: 0.5px;
-                }}
-                QPushButton:hover {{
-                    background-color: #ffffff;
-                    color: {COLORS["bg"]};
-                    border-color: {color};
-                }}
-                QPushButton:pressed {{
-                    background-color: #e0e7ff;
-                }}
-            """)
-        else:
-            # Empty but clearly colored outline (pro "available" look)
-            self.setStyleSheet(f"""
-                QPushButton {{
-                    background-color: #1a2233;
-                    color: {color};
-                    border: 2px solid {color};
-                    border-radius: 6px;
-                    font-weight: 700;
-                    font-size: 16px;
-                }}
-                QPushButton:hover {{
-                    background-color: #252f42;
-                    border-color: #ffffff;
-                    color: #ffffff;
-                }}
-                QPushButton:pressed {{
-                    background-color: {color};
-                    color: {COLORS["bg"]};
-                }}
-            """)
-
-    def set_cue_time(self, time_ms: int | None):
-        """Called when cue is set — updates tooltip with time for pro workflow."""
-        self._cue_time_ms = time_ms
-        if time_ms is not None:
-            tstr = self._format_time(time_ms)
-            self.setToolTip(f"Hotcue {self.index + 1}  •  {tstr}\nClick: jump here  •  Ctrl+Click: delete  •  Right-click: overwrite at playhead")
-        else:
-            self.setToolTip(f"Hotcue {self.index + 1}\nClick to jump (when set)  •  Ctrl+Click to clear  •  Right-click: set at playhead")
-        self.update()
-
-    def mouseReleaseEvent(self, event):
-        """Support left-click (jump/clear via modifiers in slot) + right-click to set (pro pad behavior)."""
-        if event.button() == QtCore.Qt.MouseButton.RightButton:
-            self.set_requested.emit(self.index)
-            event.accept()
-            return
-        # Left / other -> normal activation (slot decides jump vs ctrl-clear)
-        self.activated.emit(self.index)
-        # Let QPushButton do its pressed visuals etc.
-        super().mouseReleaseEvent(event)
-
-
-# ------------------------------------------------------------------
-# REFACTOR (final cleanup): HotcueManager + format_track_time
-# PRZENIESIONE do ui/dj/hotcue_manager.py
-# Ten plik importuje je u góry – brak duplikacji, zero ryzyka cyklu.
-# Stara implementacja usunięta.
-# ------------------------------------------------------------------
-
+# (stary HotcuePad usunięty – teraz wyłącznie w ui/dj/views/hotcue_pad.py używający get_hotcue_pad_stylesheet z 8 kolorami BOOTH)
 
 # === OLD DECKWIDGET + SINGLEPLAYERVIEW REMOVED (sole new DJ impl via ui/dj/* + DeckController + DualConsoleWidget) ===
 
@@ -820,6 +658,9 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
         QtGui.QShortcut(QtGui.QKeySequence("Ctrl+6"), self, lambda: self._quick_load_hotcue(5))
         QtGui.QShortcut(QtGui.QKeySequence("Ctrl+7"), self, lambda: self._quick_load_hotcue(6))
         QtGui.QShortcut(QtGui.QKeySequence("Ctrl+8"), self, lambda: self._quick_load_hotcue(7))
+        # Dodatkowe pro shortcuts (Rekordbox feel)
+        QtGui.QShortcut(QtGui.QKeySequence("Ctrl+Q"), self, self._toggle_quantize_a)
+        QtGui.QShortcut(QtGui.QKeySequence("Ctrl+S"), self, self._do_sync_a_b)  # quick sync A to B
 
     def _toggle_section(self, section: str, visible: bool):
         # Nowa architektura sole impl: views manage their own sections internally (no-op here for compat)
@@ -1198,16 +1039,9 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
             try: self.cross_frame.setVisible(not is_single)
             except Exception: pass
 
-        # Sync tylko gdy mamy stary single_player_view + stary deck_a (fallback path)
-        # W nowej architekturze sync jest prostszy (oba widoki subskrybują tego samego DeckController)
-        use_old_sync = False and spv and hasattr(self, "deck_a") and self.deck_a  # old arch removed, always new sync
-        if use_old_sync:
-            try:
-                self._sync_deck_a_state_between_views(is_single)
-            except Exception as exc:
-                logger.warning(f"Mode switch sync failed (non-fatal): {exc}")
-        elif True and is_single:  # new arch sole
-            # W trybie single z nową architekturą — upewnij się że Focused ma aktualny playhead
+        # Sync w nowej architekturze (sole): obsługiwany przez sygnały DeckController + widoki (zero duplikacji).
+        # Stara metoda _sync... usunięta w ramach polish/cleanup.
+        if is_single:
             try:
                 if self.playback_engine and hasattr(self, "_deck_ctrl_a") and self._deck_ctrl_a:
                     state = self.playback_engine.get_deck_state("A")
@@ -1215,163 +1049,6 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
                         self.single_container.waveform.set_playhead(state.position_ms)
             except Exception:
                 pass
-
-    def _sync_deck_a_state_between_views(self, going_to_single: bool) -> None:
-        """
-        In sole new arch (DeckController + views) sync is handled via signals/controllers.
-        Method kept for compatibility (no-op).
-        """
-        # W nowej architekturze — nic do roboty (wspólny DeckController + sygnały Qt)
-        if True:  # new architecture sole impl (old removed)
-            return
-
-        spv = getattr(self, "single_player_view", None)
-        da = getattr(self, "deck_a", None)
-        if not spv or not da:
-            return
-
-        try:
-            if going_to_single:
-                # Console (dual) → Single view
-                if not da.current_track:
-                    return
-                same_track = (spv.current_track is da.current_track) or \
-                             (getattr(spv.current_track, 'path', None) == getattr(da.current_track, 'path', None))
-
-                if not same_track:
-                    spv.load_track(da.current_track)
-                    return
-
-                # Lightweight sync of mutable DJ state
-                # REFACTOR: Prefer HotcueManager when present on either side (reduces raw dict coupling)
-                src_hotcues = da._hotcue_mgr.hotcues if hasattr(da, "_hotcue_mgr") else da._hotcues
-                if hasattr(spv, "_hotcue_mgr"):
-                    spv._hotcue_mgr.clear_all()
-                    for k, v in src_hotcues.items():
-                        if 0 <= k < 4:
-                            spv._hotcue_mgr.set(k, v)
-                    if hasattr(spv, "_sync_hotcues_alias"):
-                        spv._sync_hotcues_alias()
-                else:
-                    spv._hotcues = {k: v for k, v in src_hotcues.items() if 0 <= k < 4}
-                # keep higher indices in deck_a only (they survive in DB)
-                spv._main_cue_ms = getattr(da, '_main_cue_ms', 0) or 0
-
-                # Copy a few pro states if present
-                if hasattr(da, '_quantize_enabled'):
-                    # Single has no quantize toggle exposed, but we can store it
-                    spv._quantize_enabled = getattr(da, '_quantize_enabled', True)
-
-                # Refresh pads (single only has 4)
-                for i in range(4):
-                    if hasattr(spv, '_update_hotcue_pad'):
-                        spv._update_hotcue_pad(i)
-
-                # Update waveform main cue / loop if single supports it (defensive)
-                if hasattr(spv, 'waveform'):
-                    if getattr(da, '_loop_in_ms', None) and getattr(da, '_loop_out_ms', None):
-                        spv.waveform.set_loop(da._loop_in_ms, da._loop_out_ms)
-                    else:
-                        spv.waveform.clear_loop()
-
-                    # Pull live playhead from engine so waveform doesn't jump on mode switch
-                    try:
-                        st = self.playback_engine.get_deck_state("A") if self.playback_engine else None
-                        if st:
-                            spv.waveform.set_playhead(st.position_ms)
-                    except Exception as exc:
-                        logger.debug(f"Sync playhead console→single failed: {exc}")
-
-                logger.debug("DJ sync: console→single (lightweight hotcue/main-cue copy)")
-
-                # Guarantee waveform peaks + beatgrid appear after lightweight mode switch (same track)
-                try:
-                    if hasattr(spv, "_load_waveform_async") and getattr(da, "current_track", None):
-                        dur = 0
-                        if self.playback_engine:
-                            st = self.playback_engine.get_deck_state("A")
-                            if st and st.duration_ms:
-                                dur = st.duration_ms
-                        if dur <= 0:
-                            dur = 180000
-                        spv._load_waveform_async(da.current_track.path, dur)
-                        bpm = getattr(da, "_original_bpm", None)
-                        if bpm:
-                            spv.waveform.set_bpm(bpm)
-                except Exception:
-                    pass
-
-            else:
-                # Single → Console (dual)
-                if not spv.current_track:
-                    return
-                same_track = (da.current_track is spv.current_track) or \
-                             (getattr(da.current_track, 'path', None) == getattr(spv.current_track, 'path', None))
-
-                if not same_track:
-                    da.load_track(spv.current_track)
-                    return
-
-                # Copy state back (Deck A supports full 0-7)
-                # REFACTOR: Use manager when available on source/target for consistency
-                src_hotcues = spv._hotcue_mgr.hotcues if hasattr(spv, "_hotcue_mgr") else getattr(spv, "_hotcues", {})
-                if hasattr(da, "_hotcue_mgr"):
-                    da._hotcue_mgr.clear_all()
-                    for k, v in src_hotcues.items():
-                        da._hotcue_mgr.set(k, v)
-                    if hasattr(da, "_sync_hotcues_alias"):
-                        da._sync_hotcues_alias()
-                else:
-                    da._hotcues = dict(src_hotcues)
-                da._main_cue_ms = getattr(spv, '_main_cue_ms', 0) or 0
-
-                if hasattr(spv, '_quantize_enabled') and hasattr(da, '_quantize_enabled'):
-                    da._quantize_enabled = spv._quantize_enabled
-
-                # Refresh all visible pads on deck A (4 or 8 depending on current mode)
-                if hasattr(da, '_rebuild_hotcue_pads'):
-                    # safest: ask deck to refresh its current pad set
-                    for i in range(min(8, len(getattr(da, 'hotcue_pads', [])))):
-                        if hasattr(da, '_update_hotcue_pad'):
-                            da._update_hotcue_pad(i)
-                else:
-                    for i in range(4):
-                        if hasattr(da, '_update_hotcue_pad'):
-                            da._update_hotcue_pad(i)
-
-                # Loop (single view doesn't expose loop UI, so we only push if deck already had it)
-                # Nothing to pull from single for loop here.
-
-                # Pull live playhead from engine
-                try:
-                    if hasattr(da, 'waveform') and self.playback_engine:
-                        st = self.playback_engine.get_deck_state("A")
-                        if st:
-                            da.waveform.set_playhead(st.position_ms)
-                except Exception as exc:
-                    logger.debug(f"Sync playhead single→console failed: {exc}")
-
-                logger.debug("DJ sync: single→console (lightweight hotcue/main-cue copy)")
-
-                # Guarantee waveform on deck A after switch back from single
-                try:
-                    if hasattr(da, "_load_waveform_async") and getattr(spv, "current_track", None):
-                        dur = 0
-                        if self.playback_engine:
-                            st = self.playback_engine.get_deck_state("A")
-                            if st and st.duration_ms:
-                                dur = st.duration_ms
-                        if dur <= 0:
-                            dur = 180000
-                        da._load_waveform_async(spv.current_track.path, dur)
-                        bpm = getattr(spv, "_original_bpm", None) or getattr(spv, "current_track", None) and getattr(spv.current_track, "bpm", None)
-                        if bpm:
-                            da.waveform.set_bpm(bpm)
-                except Exception:
-                    pass
-        except Exception as e:
-            logger.warning(f"_sync_deck_a_state_between_views failed: {e}")
-            # Last resort – do not crash the mode switch
 
     def _apply_base_style(self):
         """Rich pro dark booth stylesheet — high contrast, larger controls, readable everywhere."""
@@ -1887,3 +1564,15 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
                 self._console_widgets.append(banner)
         except Exception:
             pass
+
+    # ------------------------------------------------------------------
+    # Dodatkowe skróty klawiszowe (UI polish – integracja z pro workflow)
+    # ------------------------------------------------------------------
+    def _toggle_quantize_a(self):
+        if hasattr(self, "_deck_ctrl_a") and self._deck_ctrl_a:
+            self._deck_ctrl_a.toggle_quantize()
+
+    def _do_sync_a_b(self):
+        if hasattr(self, "_deck_ctrl_a") and hasattr(self, "_deck_ctrl_b") and self._deck_ctrl_a and self._deck_ctrl_b:
+            self._deck_ctrl_a.do_sync(self._deck_ctrl_b)
+            self._deck_ctrl_a.status_changed.emit("SYNC A->B (Ctrl+S)")

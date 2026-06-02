@@ -236,12 +236,15 @@ def update_track_paths_bulk(history: list[dict[str, str]]) -> None:
     if not history:
         return
     Session = get_session_factory()
+    now = datetime.now(timezone.utc)
     with Session() as session:
         for entry in history:
+            # Fix: also set date_modified on path change (consistent with update_track/update_tracks)
+            # DB update now correctly reflects the rename as a modification.
             session.execute(
                 update(TrackOrm)
                 .where(TrackOrm.path == entry["old"])
-                .values(path=entry["new"])
+                .values(path=entry["new"], date_modified=now)
             )
         session.commit()
 

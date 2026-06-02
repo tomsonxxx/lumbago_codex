@@ -3,7 +3,7 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from html import unescape
-from typing import Callable
+from typing import Any, Callable
 import re
 from urllib.parse import quote_plus
 
@@ -21,6 +21,11 @@ class PortalCandidate:
     year: str | None = None
     publisher: str | None = None
     url: str | None = None
+    lyrics: str | None = None
+    mood: str | None = None
+    bpm: float | None = None
+    key: str | None = None
+    isrc: str | None = None
 
 
 @dataclass
@@ -50,6 +55,8 @@ class FreeMusicPortalSearch:
         ("audius", "Audius"),
         ("archiveorg", "Internet Archive"),
         ("jiosaavn", "JioSaavn"),
+        ("lrclib", "LRCLIB"),
+        ("lyricsovh", "Lyrics.ovh"),
     )
 
     _SOUNDCLOUD_CLIENT_ID: str | None = None
@@ -89,6 +96,8 @@ class FreeMusicPortalSearch:
             "audius": self._search_audius,
             "archiveorg": self._search_archiveorg,
             "jiosaavn": self._search_jiosaavn,
+            "lrclib": self._search_lrclib,
+            "lyricsovh": self._search_lyricsovh,
         }
 
     def search_all(self, query: str) -> list[PortalProbe]:
@@ -620,6 +629,110 @@ class FreeMusicPortalSearch:
         )
         return PortalProbe(key, label, candidate, "OK")
 
+    def _search_lrclib(self, query: str) -> PortalProbe:
+        """LRCLIB — całkowicie bezpłatne, bez klucza API, publiczne API.
+        Zwraca lyrics (plain/synced), tytuł, artystę, album. Świetne do uzupełniania
+        lyrics gdy inne źródła nie mają. Endpoint: /api/search .
+        """
+        key, label = "lrclib", "LRCLIB"
+        artist, title = _split_query(query)
+        if not title:
+            return PortalProbe(key, label, None, "Nie można podzielić zapytania")
+        params = {
+            "track_name": title[:120],
+            "artist_name": (artist or "")[:120],
+        }
+        album = None
+        # spróbuj wyciągnąć album z query jeśli jest
+        if " - " in query and query.count(" - ") >= 2:
+            parts = [p.strip() for p in query.split(" - ")]
+            if len(parts) >= 3:
+                album = parts[1]
+                params["album_name"] = album[:120]
+        try:
+            resp = self.session.get(
+                "https://lrclib.net/api/search",
+                params=params,
+                timeout=self.timeout,
+                headers={"User-Agent": self.user_agent, "Accept": "application/json"},
+            )
+        except Exception as exc:
+            return PortalProbe(key, label, None, f"Błąd: {exc}")
+        if resp.status_code != 200:
+            return PortalProbe(key, label, None, f"HTTP {resp.status_code}")
+        try:
+            data = resp.json()
+        except Exception:
+            data = []
+        if not isinstance(data, list) or not data:
+            return PortalProbe(key, label, None, "Brak wyników")
+        # wybierz najlepszy match
+        best = None
+        best_score = -1.0
+        q_artist = (artist or "").lower()
+        q_title = title.lower()
+        for item in data[:10]:
+            if not isinstance(item, dict):
+                continue
+            it = _clean_lyrics_text(item.get("trackName"))
+            ia = _clean_lyrics_text(item.get("artistName"))
+            local_score = 0.0
+            if it:
+                local_score += _simple_token_sim(q_title, it.lower()) * 0.7
+            if ia:
+                local_score += _simple_token_sim(q_artist, ia.lower()) * 0.3
+            if local_score > best_score:
+                best = item
+                best_score = local_score
+        if not best or best_score < 0.4:
+            return PortalProbe(key, label, None, "Brak wystarczająco dobrego dopasowania")
+        lyrics = _clean_lyrics_text(best.get("plainLyrics")) or _clean_lyrics_text(best.get("syncedLyrics"))
+        candidate = PortalCandidate(
+            source_key=key,
+            source_label=label,
+            title=_clean_lyrics_text(best.get("trackName")),
+            artist=_clean_lyrics_text(best.get("artistName")),
+            album=_clean_lyrics_text(best.get("albumName")),
+            lyrics=lyrics,
+            url=f"https://lrclib.net/track/{best.get('id')}" if best.get("id") else None,
+        )
+        return PortalProbe(key, label, candidate, "OK")
+
+    def _search_lyricsovh(self, query: str) -> PortalProbe:
+        """Lyrics.ovh — bezpłatne API bez klucza (public).
+        Proste wyszukiwanie lyrics po artist/title. Użyteczne jako fallback dla lyrics.
+        """
+        key, label = "lyricsovh", "Lyrics.ovh"
+        artist, title = _split_query(query)
+        if not artist or not title:
+            return PortalProbe(key, label, None, "Wymagany artysta i tytuł")
+        try:
+            resp = self.session.get(
+                f"https://api.lyrics.ovh/v1/{requests.utils.quote(artist)}/{requests.utils.quote(title)}",
+                timeout=self.timeout,
+                headers={"User-Agent": self.user_agent, "Accept": "application/json"},
+            )
+        except Exception as exc:
+            return PortalProbe(key, label, None, f"Błąd: {exc}")
+        if resp.status_code >= 400:
+            return PortalProbe(key, label, None, f"HTTP {resp.status_code}")
+        try:
+            payload = resp.json()
+        except Exception:
+            payload = {}
+        lyrics = _clean_lyrics_text(payload.get("lyrics")) if isinstance(payload, dict) else None
+        if not lyrics:
+            return PortalProbe(key, label, None, "Brak lyrics")
+        candidate = PortalCandidate(
+            source_key=key,
+            source_label=label,
+            title=title,
+            artist=artist,
+            lyrics=lyrics,
+            url="https://api.lyrics.ovh",
+        )
+        return PortalProbe(key, label, candidate, "OK")
+
     def _search_musicbrainz(self, query: str) -> PortalProbe:
         key, label = "musicbrainz_portal", "MusicBrainz"
         resp = self.session.get(
@@ -766,3 +879,38 @@ def _split_query(query: str) -> tuple[str, str]:
         left, right = query.split(" - ", 1)
         return left.strip(), right.strip()
     return "", query.strip()
+
+
+# ---------------------------------------------------------------------------
+# Helpers for new public lyrics sources (LRCLIB, Lyrics.ovh) and general
+# ---------------------------------------------------------------------------
+
+def _clean_lyrics_text(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    # unescape html entities if any
+    try:
+        from html import unescape as _unesc
+        text = _unesc(text)
+    except Exception:
+        pass
+    text = re.sub(r"\s+", " ", text).strip()
+    # drop obvious noise
+    if text.lower() in {"", "null", "none", "n/a", "brak", "-"}:
+        return None
+    return text or None
+
+
+def _simple_token_sim(a: str, b: str) -> float:
+    if not a or not b:
+        return 0.0
+    ta = set(a.split())
+    tb = set(b.split())
+    if not ta or not tb:
+        return 0.0
+    inter = len(ta & tb)
+    union = len(ta | tb)
+    return inter / union if union else 0.0

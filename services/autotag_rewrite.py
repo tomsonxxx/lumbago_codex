@@ -138,6 +138,8 @@ class UnifiedAutoTagger:
                 self._search_ai,           # AI batch (największy zysk po preload)
                 self._search_itunes,
                 self._search_deezer,
+                self._search_theaudiodb,
+                self._search_listenbrainz,
             )
         else:
             # === TRYB PEŁNY (wszystkie pola + tło) ===
@@ -146,6 +148,8 @@ class UnifiedAutoTagger:
                 self._search_itunes,
                 self._search_deezer,
                 self._search_discogs,
+                self._search_theaudiodb,
+                self._search_listenbrainz,
                 self._search_lrclib,
                 self._search_lyrics_ovh,
                 self._search_ai,
@@ -571,6 +575,98 @@ class UnifiedAutoTagger:
             title=rec_title or track.title,
             artist=rec_artist or track.artist,
             album=rec_album,
+        )
+
+    def _search_theaudiodb(self, track: Track) -> Candidate | None:
+        """Public TheAudioDB (key '2') — genre/mood/year/label/BPM great for missing data."""
+        track = _track_with_filename_identity(track)
+        artist = _clean_text(track.artist)
+        title = _clean_text(track.title)
+        if not title:
+            return None
+        params: dict[str, str] = {}
+        if artist and title:
+            params = {"s": artist, "t": title}
+        elif title:
+            params = {"s": "", "t": title}
+        try:
+            resp = requests.get(
+                "https://www.theaudiodb.com/api/v1/json/2/searchtrack.php",
+                params=params,
+                headers={"Accept": "application/json", "User-Agent": _USER_AGENT},
+                timeout=12,
+            )
+            resp.raise_for_status()
+            tracks = (resp.json() or {}).get("track") or []
+        except Exception:
+            return None
+        if not tracks:
+            return None
+        item = tracks[0]
+        genre = item.get("strGenre") or item.get("strMood")
+        year = str(item.get("intYearReleased") or "") or None
+        if year and (len(year) < 4 or not year[:4].isdigit()):
+            year = None
+        bpm = None
+        try:
+            if item.get("intBPM"):
+                bpm = float(item.get("intBPM"))
+        except Exception:
+            pass
+        score = 78 if (genre or year) else 60
+        return Candidate(
+            source="TheAudioDB",
+            score=score,
+            title=_to_clean_str(item.get("strTrack")) or track.title,
+            artist=_to_clean_str(item.get("strArtist")) or track.artist,
+            album=_to_clean_str(item.get("strAlbum")),
+            genre=genre,
+            year=year,
+            publisher=_to_clean_str(item.get("strLabel")),
+            bpm=bpm,
+            mood=_to_clean_str(item.get("strMood")),
+        )
+
+    def _search_listenbrainz(self, track: Track) -> Candidate | None:
+        """Public ListenBrainz (no key) — reliable year/album/label from MB aggregate."""
+        track = _track_with_filename_identity(track)
+        artist = _clean_text(track.artist)
+        title = _clean_text(track.title)
+        if not title:
+            return None
+        try:
+            resp = requests.get(
+                "https://api.listenbrainz.org/1/metadata/lookup",
+                params={"artist_name": artist or "", "recording_name": title, "inc": "artist release"},
+                headers={"Accept": "application/json", "User-Agent": _USER_AGENT},
+                timeout=10,
+            )
+            if resp.status_code != 200:
+                return None
+            data = resp.json()
+        except Exception:
+            return None
+        recording = data.get("recording") or {}
+        release = recording.get("release") or data.get("release") or {}
+        rec_title = recording.get("name") or data.get("recording_name")
+        artist_name = None
+        ad = recording.get("artist") or data.get("artist") or {}
+        artist_name = ad.get("name") or (ad.get("artists") or [{}])[0].get("name")
+        year = None
+        rd = str(release.get("date") or release.get("release_date") or "")
+        if rd and len(rd) >= 4 and rd[:4].isdigit():
+            year = rd[:4]
+        pub = (release.get("label") or {}).get("name")
+        if not rec_title and not artist_name:
+            return None
+        return Candidate(
+            source="ListenBrainz",
+            score=80,
+            title=_to_clean_str(rec_title) or track.title,
+            artist=_to_clean_str(artist_name) or track.artist,
+            album=_to_clean_str(release.get("name") or release.get("title")),
+            year=year,
+            publisher=pub,
         )
 
     def _search_discogs(self, track: Track) -> Candidate | None:

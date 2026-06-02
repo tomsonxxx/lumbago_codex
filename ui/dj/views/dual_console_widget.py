@@ -31,6 +31,7 @@ from ui.dj.deck_controller import DeckController
 from ui.dj.views.console_deck_view import ConsoleDeckView
 from ui.dj.styles import (
     BOOTH_SIZES,
+    BOOTH_COLORS,
     get_deck_panel_stylesheet,
     get_section_label_stylesheet,
     get_slider_stylesheet,
@@ -92,13 +93,14 @@ class DualConsoleWidget(QtWidgets.QWidget):
 
         # === GLOBALNY MIXER + CROSSFADER ===
         mixer_frame = QtWidgets.QFrame()
+        c = BOOTH_COLORS  # use central (imported via styles)
         mixer_frame.setStyleSheet(
-            """
-            QFrame {
-                background-color: #0f141c;
-                border: 1px solid #2a3442;
+            f"""
+            QFrame {{
+                background-color: {c["wave_bg"]};
+                border: 1px solid {c["border"]};
                 border-radius: 8px;
-            }
+            }}
             """
         )
         mixer_layout = QtWidgets.QVBoxLayout(mixer_frame)

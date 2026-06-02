@@ -183,3 +183,25 @@ def test_search_all_runs_portal_providers_in_parallel(monkeypatch):
 
     assert [probe.source_key for probe in probes] == ["one", "two"]
     assert max_active == 2
+
+
+def test_lrclib_provider_parses_result():
+    payload = [
+        {"id": 123, "trackName": "Fade to Black", "artistName": "Metallica", "albumName": "Ride the Lightning", "plainLyrics": "Lala lyrics here\nmore lines"},
+    ]
+    search = FreeMusicPortalSearch()
+    search.session = _StubSession({"lrclib.net/api/search": _FakeResponse(json_data=payload)})
+    probe = search._search_lrclib("Metallica - Fade to Black")
+    assert probe.candidate is not None
+    assert probe.candidate.title == "Fade to Black"
+    assert probe.candidate.lyrics and "Lala lyrics" in probe.candidate.lyrics
+
+
+def test_lyricsovh_provider_parses_result():
+    payload = {"lyrics": "Some synced or plain lyrics text for the song."}
+    search = FreeMusicPortalSearch()
+    search.session = _StubSession({"api.lyrics.ovh/v1/": _FakeResponse(json_data=payload)})
+    probe = search._search_lyricsovh("Metallica - Fade to Black")
+    assert probe.candidate is not None
+    assert "lyrics text" in (probe.candidate.lyrics or "")
+    assert probe.candidate.artist == "Metallica"

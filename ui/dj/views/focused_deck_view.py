@@ -91,6 +91,8 @@ class FocusedDeckView(QtWidgets.QFrame):
         self.setObjectName("DeckPanel")
         self.setStyleSheet(get_deck_panel_stylesheet())
 
+        self.setAcceptDrops(True)  # direct drag&drop z library do focused (single)
+
         # Dużo powietrza – dokładnie jak w specyfikacji AGENT 3
         self._setup_ui()
         self._connect_controller_signals()
@@ -526,6 +528,40 @@ class FocusedDeckView(QtWidgets.QFrame):
     def get_waveform_widget(self):
         """Dla zewnętrznego dostępu (np. testy, resize)."""
         return self.waveform
+
+    # Drag & drop bezpośredni na focused deck (single player mode)
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasFormat("application/x-lumbago-track-paths") or event.mimeData().hasUrls():
+            event.acceptProposedAction()
+
+    def dropEvent(self, event):
+        mime = event.mimeData()
+        paths = []
+        if mime.hasFormat("application/x-lumbago-track-paths"):
+            data = mime.data("application/x-lumbago-track-paths").data().decode()
+            paths = [p for p in data.split(",") if p]
+        elif mime.hasUrls():
+            for url in mime.urls():
+                if url.isLocalFile():
+                    paths.append(url.toLocalFile())
+        if paths:
+            try:
+                from pathlib import Path as PathLib
+                from core.models import Track
+                from data.repository import get_track_by_path
+                p = paths[0]
+                name = PathLib(p).stem
+                track = Track(path=p, title=name)
+                dbt = get_track_by_path(p)
+                if dbt and getattr(dbt, "id", None):
+                    track = dbt
+                self.controller.load_track(track)
+                if hasattr(self, "status_label"):
+                    self.status_label.setText("✓ D&D loaded")
+            except Exception as exc:
+                import logging
+                logging.getLogger(__name__).warning(f"FocusedDeckView drop: {exc}")
+            event.acceptProposedAction()
 
 
 # Re-eksport dla wygody

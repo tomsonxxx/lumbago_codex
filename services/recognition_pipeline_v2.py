@@ -65,6 +65,8 @@ SOURCE_CONFIDENCE = {
     "jiosaavn": 0.71,
     "archiveorg": 0.70,
     "genius": 0.68,
+    "lrclib": 0.66,
+    "lyricsovh": 0.56,
     "filename": 0.52,
     "folder_structure": 0.45,
 }

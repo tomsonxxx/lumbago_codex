@@ -168,17 +168,29 @@ class MetadataPipelineV2:
 
         for field_name, extra_items in (extra_evidence_by_field or {}).items():
             for payload in extra_items:
-                value = payload.get("value")
+                # Support both FieldEvidence objects (from tests/other) and dicts
+                if hasattr(payload, "value"):
+                    value = getattr(payload, "value", None)
+                    src = getattr(payload, "source", None)
+                    conf = getattr(payload, "confidence", 0.0)
+                    ver = getattr(payload, "verified", False)
+                    ts = getattr(payload, "timestamp", None)
+                else:
+                    value = payload.get("value") if isinstance(payload, dict) else None
+                    src = payload.get("source") if isinstance(payload, dict) else None
+                    conf = payload.get("confidence", 0.0) if isinstance(payload, dict) else 0.0
+                    ver = payload.get("verified", False) if isinstance(payload, dict) else False
+                    ts = payload.get("timestamp") if isinstance(payload, dict) else None
                 if not _has_value(value):
                     continue
                 evidence_by_field.setdefault(field_name, []).append(
                     FieldEvidence(
                         field_name=field_name,
                         value=value,
-                        source=_normalize_source_name(payload.get("source")),
-                        confidence=float(payload.get("confidence", 0.0)),
-                        verified=bool(payload.get("verified", False)),
-                        timestamp=payload.get("timestamp") or observed_at,
+                        source=_normalize_source_name(src),
+                        confidence=float(conf),
+                        verified=bool(ver),
+                        timestamp=ts or observed_at,
                     )
                 )
 
