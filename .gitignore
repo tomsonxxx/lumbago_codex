@@ -25,6 +25,10 @@ htmlcov/
 .claude/
 .codex/
 
+# Note: .claude-plugin/, .codex-plugin/, .cursor-plugin/ are intentionally tracked
+# (lightweight vercel-plugin manifests only; see AGENTS.md "Agent Tooling").
+# Heavy plugin content is in user cache after running the `npx plugins add` command.
+
 # IDE
 .vscode/
 .idea/
