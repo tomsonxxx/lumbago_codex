@@ -49,6 +49,10 @@ class MixerStrip(QtWidgets.QFrame):
         layout.addWidget(self.master_slider)
         layout.addWidget(self.master_value)
 
+        # Krok 6: menu PPM dla master
+        self.master_slider.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
+        self.master_slider.customContextMenuRequested.connect(self._show_master_menu)
+
         layout.addSpacing(16)
 
         # HP CUE
@@ -63,6 +67,10 @@ class MixerStrip(QtWidgets.QFrame):
         self.hp_slider.valueChanged.connect(self._on_hp_changed)
         layout.addWidget(self.hp_slider)
         layout.addWidget(self.hp_value)
+
+        # Krok 6: menu PPM dla HP Cue
+        self.hp_slider.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
+        self.hp_slider.customContextMenuRequested.connect(self._show_hp_menu)
 
         layout.addSpacing(16)
 
@@ -80,6 +88,12 @@ class MixerStrip(QtWidgets.QFrame):
         layout.addWidget(self.pfl_a)
         layout.addWidget(self.pfl_b)
 
+        # Krok 6: menu PPM dla PFL buttons
+        self.pfl_a.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
+        self.pfl_b.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
+        self.pfl_a.customContextMenuRequested.connect(lambda p: self._show_pfl_menu(p, "A"))
+        self.pfl_b.customContextMenuRequested.connect(lambda p: self._show_pfl_menu(p, "B"))
+
         layout.addStretch(1)
 
         # CROSSFADER (duży, wyraźny)
@@ -95,6 +109,10 @@ class MixerStrip(QtWidgets.QFrame):
         self.crossfader.setMinimumHeight(32)
         self.crossfader.setStyleSheet(get_slider_stylesheet("horizontal"))
         cross_box.addWidget(self.crossfader, 1)
+
+        # Krok 6: menu PPM dla crossfader
+        self.crossfader.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
+        self.crossfader.customContextMenuRequested.connect(self._show_crossfader_menu)
 
         b_lbl = QtWidgets.QLabel("B")
         b_lbl.setStyleSheet(f"color: {c['accent']}; font-weight: 900; font-size: 14px;")
@@ -128,3 +146,33 @@ class MixerStrip(QtWidgets.QFrame):
         self.crossfader.blockSignals(True)
         self.crossfader.setValue(value)
         self.crossfader.blockSignals(False)
+
+    def _show_master_menu(self, pos):
+        menu = QtWidgets.QMenu(self)
+        menu.addAction("Reset do 85")
+        menu.addAction("Ustaw 100")
+        menu.addAction("Ustaw 50")
+        menu.addAction("Mute Master")
+        menu.exec(self.master_slider.mapToGlobal(pos))
+
+    def _show_hp_menu(self, pos):
+        menu = QtWidgets.QMenu(self)
+        menu.addAction("Reset do 70")
+        menu.addAction("Ustaw 100")
+        menu.addAction("Mute Cue")
+        menu.exec(self.hp_slider.mapToGlobal(pos))
+
+    def _show_pfl_menu(self, pos, deck: str):
+        menu = QtWidgets.QMenu(self)
+        menu.addAction(f"Toggle PFL {deck}")
+        menu.addAction(f"Reset PFL {deck}")
+        menu.exec((self.pfl_a if deck == "A" else self.pfl_b).mapToGlobal(pos))
+
+    def _show_crossfader_menu(self, pos):
+        menu = QtWidgets.QMenu(self)
+        menu.addAction("Wyśrodkuj (50)")
+        menu.addAction("Pełne A (0)")
+        menu.addAction("Pełne B (100)")
+        menu.addSeparator()
+        menu.addAction("Reset curve")
+        menu.exec(self.crossfader.mapToGlobal(pos))

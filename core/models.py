@@ -154,6 +154,7 @@ class BeatMarker:
 
 
 @dataclass
+@dataclass
 class AnalysisJob:
     track_id: int
     job_type: str

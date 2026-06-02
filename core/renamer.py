@@ -310,7 +310,7 @@ def _temporary_path_for(original_path: Path, idx: int) -> Path:
 class OrganizePlanItem:
     old_path: Path
     new_path: Path
-    action: str = "move"  # "move" or "copy"
+    action: str = "move"  # "move", "copy", or "delete" (for post-tag cleanup)
     conflict: bool = False
     reason: str | None = None
 
@@ -335,12 +335,26 @@ def build_organize_plan(
     """Build plan for batch organize into tag-based folder tree.
     folder_structure e.g. "{genre}/{artist}/{album} ({year})" or "{genre}/{artist}"
     filename_pattern e.g. "{artist} - {title}" or "{tracknumber:02} - {title}"
-    Creates subfolders under target_base. Supports move (default, updates library path) or copy (adds duplicate entry).
+    Creates subfolders under target_base. Supports move (default, updates library path), copy (adds duplicate entry), or delete (post-tagging cleanup, removes from FS + DB).
+    For delete, folder_structure/filename_pattern are ignored.
     """
     prepared: list[OrganizePlanItem] = []
     target_base = Path(target_base)
     for index, track in enumerate(tracks, 1):
         old_path = Path(track.path)
+        if action == "delete":
+            # For delete, ignore folder/fname templates. Mark for removal.
+            prepared.append(
+                OrganizePlanItem(
+                    old_path=old_path,
+                    new_path=old_path,  # dummy, not used
+                    action="delete",
+                    conflict=False,
+                    reason=None,
+                )
+            )
+            continue
+
         # Render folder parts - split by / or \ , render/sanitize each
         structure = folder_structure.strip().replace("\\", "/")
         if not structure:
@@ -374,13 +388,17 @@ def build_organize_plan(
     old_paths = {item.old_path for item in prepared}
     target_count: dict[Path, int] = {}
     for item in prepared:
-        target_count[item.new_path] = target_count.get(item.new_path, 0) + 1
+        if item.action != "delete":
+            target_count[item.new_path] = target_count.get(item.new_path, 0) + 1
 
     plan: list[OrganizePlanItem] = []
     for item in prepared:
         conflict = False
         reason = None
-        if target_count.get(item.new_path, 0) > 1:
+        if item.action == "delete":
+            # Delete has no target conflict (existence checked at apply time)
+            pass
+        elif target_count.get(item.new_path, 0) > 1:
             conflict = True
             reason = "Konflikt nazwy w planie"
         elif item.new_path.exists() and item.new_path != item.old_path and item.new_path not in old_paths:
@@ -414,7 +432,7 @@ def apply_organize_plan(
     executable = [
         item
         for item in plan
-        if not item.conflict and item.old_path.exists() and item.old_path != item.new_path
+        if not item.conflict and item.old_path.exists() and (item.action == "delete" or item.old_path != item.new_path)
     ]
     if not executable:
         _store_organize_history([])
@@ -425,36 +443,40 @@ def apply_organize_plan(
 
     for item in executable:
         try:
-            item.new_path.parent.mkdir(parents=True, exist_ok=True)
-            if item.action == "copy":
-                shutil.copy2(item.old_path, item.new_path)
-                hist_entry = {"old": str(item.old_path), "new": str(item.new_path), "action": "copy"}
+            if item.action == "delete":
+                if item.old_path.exists():
+                    item.old_path.unlink()
+                hist_entry = {"old": str(item.old_path), "new": "", "action": "delete"}
             else:
-                # move (rename across dirs ok)
-                item.old_path.rename(item.new_path)
-                hist_entry = {"old": str(item.old_path), "new": str(item.new_path), "action": "move"}
+                item.new_path.parent.mkdir(parents=True, exist_ok=True)
+                if item.action == "copy":
+                    shutil.copy2(item.old_path, item.new_path)
+                    hist_entry = {"old": str(item.old_path), "new": str(item.new_path), "action": "copy"}
+                else:
+                    # move (rename across dirs ok)
+                    item.old_path.rename(item.new_path)
+                    hist_entry = {"old": str(item.old_path), "new": str(item.new_path), "action": "move"}
+                # optional tag writeback to the *target* file using provided lookup (library state)
+                if do_write_tags and track_lookup:
+                    tr = track_lookup.get(hist_entry["old"])
+                    if tr:
+                        tags: dict[str, str] = {}
+                        for fld in (
+                            "title", "artist", "album", "albumartist", "genre", "year",
+                            "bpm", "key", "tracknumber", "discnumber", "composer", "remixer",
+                            "originalartist", "publisher", "isrc", "comment", "lyrics", "mood", "energy",
+                        ):
+                            val = getattr(tr, fld, None)
+                            if val is not None:
+                                tags[fld] = str(val)
+                        if getattr(tr, "rating", 0):
+                            tags["rating"] = str(tr.rating)
+                        try:
+                            from core.audio import write_tags as _wt
+                            _wt(Path(hist_entry["new"]), tags)
+                        except Exception as we:
+                            errors.append(f"write_tags {Path(hist_entry['new']).name}: {we}")
             history.append(hist_entry)
-
-            # optional tag writeback to the *target* file using provided lookup (library state)
-            if do_write_tags and track_lookup:
-                tr = track_lookup.get(hist_entry["old"])
-                if tr:
-                    tags: dict[str, str] = {}
-                    for fld in (
-                        "title", "artist", "album", "albumartist", "genre", "year",
-                        "bpm", "key", "tracknumber", "discnumber", "composer", "remixer",
-                        "originalartist", "publisher", "isrc", "comment", "lyrics", "mood", "energy",
-                    ):
-                        val = getattr(tr, fld, None)
-                        if val is not None:
-                            tags[fld] = str(val)
-                    if getattr(tr, "rating", 0):
-                        tags["rating"] = str(tr.rating)
-                    try:
-                        from core.audio import write_tags as _wt
-                        _wt(Path(hist_entry["new"]), tags)
-                    except Exception as we:
-                        errors.append(f"write_tags {Path(hist_entry['new']).name}: {we}")
         except Exception as e:
             errors.append(f"{item.action} {item.old_path.name} -> {item.new_path}: {e}")
 

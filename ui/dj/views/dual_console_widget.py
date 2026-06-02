@@ -128,6 +128,10 @@ class DualConsoleWidget(QtWidgets.QWidget):
         self.crossfader.setStyleSheet(get_slider_stylesheet("horizontal"))
         self.crossfader.setToolTip("Crossfader — środek = oba decki słyszalne. Przeciągnij A↔B")
 
+        # Krok 6: menu PPM dla crossfader w dual
+        self.crossfader.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
+        self.crossfader.customContextMenuRequested.connect(self._show_dual_cross_menu)
+
         b_lbl = QtWidgets.QLabel("B")
         b_lbl.setStyleSheet("color:#00e0ff; font-size:16px; font-weight:900; min-width:18px;")
         b_lbl.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
@@ -156,6 +160,11 @@ class DualConsoleWidget(QtWidgets.QWidget):
         self.master_val.setStyleSheet(get_value_label_stylesheet())
         master_box.addWidget(self.master_slider)
         master_box.addWidget(self.master_val, 0, QtCore.Qt.AlignmentFlag.AlignCenter)
+
+        # Krok 6: menu PPM dla master w dual
+        self.master_slider.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
+        self.master_slider.customContextMenuRequested.connect(self._show_dual_master_menu)
+
         vols.addLayout(master_box)
 
         # Cue / Headphone
@@ -173,6 +182,11 @@ class DualConsoleWidget(QtWidgets.QWidget):
         self.cue_val.setStyleSheet(get_value_label_stylesheet())
         cue_box.addWidget(self.cue_slider)
         cue_box.addWidget(self.cue_val, 0, QtCore.Qt.AlignmentFlag.AlignCenter)
+
+        # Krok 6: menu PPM dla cue w dual
+        self.cue_slider.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
+        self.cue_slider.customContextMenuRequested.connect(self._show_dual_cue_menu)
+
         vols.addLayout(cue_box)
 
         vols.addStretch(1)
@@ -203,6 +217,27 @@ class DualConsoleWidget(QtWidgets.QWidget):
         # Wizualnie
         self.master_val.setText("85")
         self.cue_val.setText("70")
+
+    def _show_dual_cross_menu(self, pos):
+        menu = QtWidgets.QMenu(self)
+        menu.addAction("Wyśrodkuj crossfader")
+        menu.addAction("Pełne A")
+        menu.addAction("Pełne B")
+        menu.exec(self.crossfader.mapToGlobal(pos))
+
+    def _show_dual_master_menu(self, pos):
+        menu = QtWidgets.QMenu(self)
+        menu.addAction("Reset Master 85")
+        menu.addAction("Master 100")
+        menu.addAction("Master 50")
+        menu.exec(self.master_slider.mapToGlobal(pos))
+
+    def _show_dual_cue_menu(self, pos):
+        menu = QtWidgets.QMenu(self)
+        menu.addAction("Reset Cue 70")
+        menu.addAction("Cue 100")
+        menu.addAction("Mute Cue")
+        menu.exec(self.cue_slider.mapToGlobal(pos))
 
     def _on_crossfader_changed(self, value: int) -> None:
         """0..100 → -1.0 (A) ... 0 (center) ... +1.0 (B)"""

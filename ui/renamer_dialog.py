@@ -207,8 +207,9 @@ class FileOrganizerDialog(QtWidgets.QDialog):
 
         info = QtWidgets.QLabel(
             "Zorganizuj wybrane/zaktualizowane pliki audio w struktury folderów wg tagów (np. po autotag lub rename). "
-            "Obsługuje Move (aktualizuje ścieżki w bibliotece) lub Copy (dodaje duplikaty wpisów). "
-            "Podgląd, konflikty, opcjonalny writeback tagów, cofanie ruchów."
+            "Obsługuje Move (aktualizuje ścieżki w bibliotece), Copy (dodaje duplikaty) lub Delete (usuń + wyczyść z bazy) - idealne po tagowaniu. "
+            "Wybierz szablon folderów np. {genre}/{artist}/{album} ({year}) aby unikąć płaskiej struktury iTunes. "
+            "Podgląd, konflikty, writeback tagów, cofanie ruchów."
         )
         info.setWordWrap(True)
         layout.addWidget(info)
@@ -243,7 +244,12 @@ class FileOrganizerDialog(QtWidgets.QDialog):
         opts_row = QtWidgets.QHBoxLayout()
         opts_row.addWidget(QtWidgets.QLabel("Akcja:"))
         self.action_combo = QtWidgets.QComboBox()
-        self.action_combo.addItems(["move (przenieś + zaktualizuj bibliotekę)", "copy (skopiuj + dodaj wpis w bibliotece)"])
+        self.action_combo.addItems([
+            "move (przenieś + zaktualizuj bibliotekę)",
+            "copy (skopiuj + dodaj wpis w bibliotece)",
+            "delete (usuń pliki + wyczyść z biblioteki) - ostrożnie! (po otagowaniu)"
+        ])
+        self.action_combo.setToolTip("Wybierz akcję dla wybranych plików po pracy (tagowanie itp.). Delete nie używa szablonów folderów.")
         opts_row.addWidget(self.action_combo)
         self.write_cb = QtWidgets.QCheckBox("Zapisz metadane do tagów w nowych plikach")
         self.write_cb.setChecked(True)
@@ -290,21 +296,36 @@ class FileOrganizerDialog(QtWidgets.QDialog):
     def _preview(self):
         try:
             base = Path(self.target_dir.text().strip() or (Path.home() / "Music" / "Organized"))
-            action = "copy" if self.action_combo.currentIndex() == 1 else "move"
-            self._plan = build_organize_plan(
-                self._tracks,
-                self.folder_struct.text().strip(),
-                self.file_pattern.text().strip(),
-                base,
-                action=action,
-            )
+            idx = self.action_combo.currentIndex()
+            action = "delete" if idx == 2 else ("copy" if idx == 1 else "move")
+            if action == "delete":
+                # For delete, folder/fname templates ignored; use dummy base
+                base = Path(self.target_dir.text().strip() or (Path.home() / "Music" / "Organized"))
+                self._plan = build_organize_plan(
+                    self._tracks,
+                    "{genre}",  # dummy
+                    "{title}",  # dummy
+                    base,
+                    action="delete",
+                )
+            else:
+                self._plan = build_organize_plan(
+                    self._tracks,
+                    self.folder_struct.text().strip(),
+                    self.file_pattern.text().strip(),
+                    base,
+                    action=action,
+                )
             self.table.setRowCount(0)
             conflicts = 0
             for item in self._plan:
                 row = self.table.rowCount()
                 self.table.insertRow(row)
                 self.table.setItem(row, 0, QtWidgets.QTableWidgetItem(str(item.old_path)))
-                self.table.setItem(row, 1, QtWidgets.QTableWidgetItem(str(item.new_path)))
+                if item.action == "delete":
+                    self.table.setItem(row, 1, QtWidgets.QTableWidgetItem("(do usunięcia)"))
+                else:
+                    self.table.setItem(row, 1, QtWidgets.QTableWidgetItem(str(item.new_path)))
                 act_item = QtWidgets.QTableWidgetItem(item.action)
                 self.table.setItem(row, 2, act_item)
                 status = "OK" if not item.conflict else f"Konflikt: {item.reason}"
@@ -314,7 +335,7 @@ class FileOrganizerDialog(QtWidgets.QDialog):
                 if item.conflict:
                     status_item.setForeground(QtCore.Qt.GlobalColor.red)
                 self.table.setItem(row, 3, status_item)
-            self.status_label.setText(f"Plan: {len(self._plan)} plików, konflikty: {conflicts}. Baza: {base}")
+            self.status_label.setText(f"Plan: {len(self._plan)} plików, konflikty: {conflicts}. Baza: {base} (delete ignoruje strukturę)")
         except Exception as e:
             QtWidgets.QMessageBox.critical(self, "Błąd podglądu", str(e))
 
@@ -325,22 +346,39 @@ class FileOrganizerDialog(QtWidgets.QDialog):
             return
         try:
             base = Path(self.target_dir.text().strip())
-            action = "copy" if self.action_combo.currentIndex() == 1 else "move"
+            idx = self.action_combo.currentIndex()
+            action = "delete" if idx == 2 else ("copy" if idx == 1 else "move")
             # re-build to be fresh? but use current plan
             track_lookup = {str(t.path): t for t in self._tracks}
             self._history = apply_organize_plan(
                 self._plan,
-                do_write_tags=self.write_cb.isChecked(),
+                do_write_tags=self.write_cb.isChecked() and action != "delete",
                 track_lookup=track_lookup,
             )
             # NOW update library/repo after FS ops (key requirement)
             if self._history:
-                from data.repository import update_track_paths_bulk, upsert_tracks
+                from data.repository import update_track_paths_bulk, upsert_tracks, list_tracks
                 from copy import deepcopy as _deep
 
                 moves = [{"old": h["old"], "new": h["new"]} for h in self._history if h.get("action") == "move"]
                 if moves:
                     update_track_paths_bulk(moves)
+
+                deletes = [h for h in self._history if h.get("action") == "delete"]
+                if deletes:
+                    # Remove from DB (simple path match)
+                    # Note: for production better batch delete by path, here use repo if avail
+                    try:
+                        from data.repository import get_session_factory
+                        from data.schema import TrackOrm
+                        Session = get_session_factory()
+                        with Session() as sess:
+                            for d in deletes:
+                                sess.query(TrackOrm).filter(TrackOrm.path == d["old"]).delete()
+                            sess.commit()
+                    except Exception as de:
+                        # fallback: nothing, or log
+                        pass
 
                 copies = [h for h in self._history if h.get("action") == "copy"]
                 if copies:

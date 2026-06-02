@@ -436,8 +436,12 @@ class TrackFilterProxy(QtCore.QSortFilterProxyModel):
         if self.search_text and self.search_text not in search_blob:
             return False
 
-        if self.genre and self.genre.lower() not in genre.lower():
-            return False
+        if self.genre:
+            g = self.genre.lower()
+            genre_lower = genre.lower()
+            tags_blob = " ".join(t.value.lower() for t in (track.tags or [])) if track else ""
+            if g not in genre_lower and g not in tags_blob:
+                return False
 
         if self.key and self.key.lower() not in key.lower():
             return False
@@ -464,6 +468,8 @@ class TrackFilterProxy(QtCore.QSortFilterProxyModel):
 
             "remixer": str(track.remixer or ""),
             "mood": str(track.mood or ""),
+            "tags": " ".join(t.value for t in (track.tags or [])),
+            "subgenre": str(track.genre or "") + " " + " ".join(t.value for t in (track.tags or [])),
         }
         if self.search_category and self.search_category != "all":
             return field_values.get(self.search_category, "").lower()
@@ -1264,6 +1270,8 @@ class MainWindow(QtWidgets.QMainWindow):
             [
                 "Wszystkie pola",
                 "Genre",
+                "Subgenre / Gatunki szczegółowe",
+                "Tags / Tagi AI",
                 "Date",
                 "BPM",
                 "Key",
@@ -1274,7 +1282,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 "Mood",
             ]
         )
-        self.search_category.setToolTip("Wybierz kategorie wyszukiwania")
+        self.search_category.setToolTip("Wybierz kategorię wyszukiwania. 'Subgenre / Gatunki szczegółowe' szuka precyzyjnie w gatunkach i tagach AI (Deep House, Melodic Techno itp. – nie tylko broad EDM)")
         self.search_category.currentIndexChanged.connect(self._apply_filters)
         row.addWidget(self.search_category)
 
@@ -1310,8 +1318,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.genre_input = QtWidgets.QLineEdit()
         self.genre_input.setObjectName("FilterInput")
-        self.genre_input.setPlaceholderText("Gatunek")
-        self.genre_input.setToolTip("Filtrowanie po gatunku")
+        self.genre_input.setPlaceholderText("Gatunek / Subgatunek")
+        self.genre_input.setToolTip("Filtrowanie po gatunku lub subgatunku (w tym tagi AI jak 'Melodic Techno', 'Deep House'). Szuka też w tagach szczegółowych.")
         self.genre_input.textChanged.connect(self._apply_filters)
         row.addWidget(self.genre_input)
 
@@ -1514,6 +1522,8 @@ class MainWindow(QtWidgets.QMainWindow):
         category_map = {
             "Wszystkie pola": "all",
             "Genre": "genre",
+            "Subgenre / Gatunki szczegółowe": "subgenre",
+            "Tags / Tagi AI": "tags",
             "Date": "date",
             "BPM": "bpm",
             "Key": "key",
@@ -3148,11 +3158,14 @@ class MainWindow(QtWidgets.QMainWindow):
         bpm_max = rules.get("bpm_max")
         filtered: list[Track] = []
         for track in tracks:
-            blob = f"{track.title or ''} {track.artist or ''} {track.album or ''}".lower()
+            tags_str = " ".join(t.value for t in (track.tags or []))
+            blob = f"{track.title or ''} {track.artist or ''} {track.album or ''} {track.genre or ''} {tags_str}".lower()
             if search and search not in blob:
                 continue
-            if genre and genre not in (track.genre or "").lower():
-                continue
+            if genre:
+                g = genre
+                if g not in (track.genre or "").lower() and g not in " ".join(t.value.lower() for t in (track.tags or [])):
+                    continue
             if key and key not in (track.key or "").lower():
                 continue
             if bpm_min is not None and track.bpm is not None and track.bpm < bpm_min:

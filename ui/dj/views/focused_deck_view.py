@@ -227,6 +227,12 @@ class FocusedDeckView(QtWidgets.QFrame):
         self.mem_r_btn.setFixedSize(36, 28)
         self.mem_r_btn.setToolTip("Odtwórz zapamiętany stan decku")
 
+        # Krok 6: menu PPM dla memory w focused
+        self.mem_s_btn.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
+        self.mem_r_btn.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
+        self.mem_s_btn.customContextMenuRequested.connect(self._show_memory_menu)
+        self.mem_r_btn.customContextMenuRequested.connect(self._show_memory_menu)
+
         adv.addWidget(QtWidgets.QLabel(""), 1)  # lewe powietrze
         adv.addWidget(self.quantize_btn, 0)
         adv.addWidget(self.sync_btn, 0)
@@ -309,7 +315,7 @@ class FocusedDeckView(QtWidgets.QFrame):
     def _handle_waveform_shift_click(self, time_ms: int) -> None:
         """
         Shift + click na waveform = ustaw pierwszy wolny hotcue (0-7).
-        Dokładnie zachowanie ze starego DeckWidget / SinglePlayerView.
+        Dokładnie zachowanie z poprzedniej implementacji (DeckWidget / SinglePlayerView).
         Mała logika wyboru indeksu – reszta (snap + persist + sygnał) w kontrolerze.
         """
         if not self.controller.current_track:
@@ -344,6 +350,15 @@ class FocusedDeckView(QtWidgets.QFrame):
         )
         if ok:
             self.controller.set_hotcue_label(index, text.strip() or None)
+
+    def _show_memory_menu(self, pos: QtCore.QPoint) -> None:
+        """Menu dla memory S/R w focused."""
+        menu = QtWidgets.QMenu(self)
+        menu.addAction("Zapisz stan (Save Memory)")
+        menu.addAction("Odtwórz stan (Recall Memory)")
+        menu.addSeparator()
+        menu.addAction("Wyczyść pamięć")
+        menu.exec(self.mem_s_btn.mapToGlobal(pos))
 
     def _show_waveform_context_menu(self, pos: QtCore.QPoint) -> None:
         """Menu kontekstowe PPM na waveformie – z precyzyjną pozycją kliknięcia."""

@@ -32,6 +32,7 @@ def init_db() -> None:
     engine = get_engine()
     Base.metadata.create_all(engine)
     _ensure_track_columns(engine)
+    _ensure_analysis_job_columns(engine)
 
 
 def _ensure_track_columns(engine) -> None:
@@ -64,6 +65,45 @@ def _ensure_track_columns(engine) -> None:
                 continue
             conn.execute(text(f"ALTER TABLE tracks ADD COLUMN {name} {dtype}"))
         conn.commit()
+
+
+def _ensure_analysis_job_columns(engine) -> None:
+    required = {
+        "parameters": "TEXT",
+    }
+    with engine.connect() as conn:
+        rows = conn.execute(text("PRAGMA table_info(analysis_jobs)")).fetchall()
+        existing = {row[1] for row in rows}
+        for name, dtype in required.items():
+            if name in existing:
+                continue
+            conn.execute(text(f"ALTER TABLE analysis_jobs ADD COLUMN {name} {dtype}"))
+        conn.commit()
+
+    # Migrate old data: if parameters was accidentally stored in error_msg (pre-fix), move it.
+    with engine.connect() as conn:
+        try:
+            rows = conn.execute(text(
+                "SELECT id, error_msg, parameters FROM analysis_jobs WHERE parameters IS NULL AND error_msg LIKE '{%'"
+            )).fetchall()
+            for row in rows:
+                job_id, err, _ = row
+                conn.execute(text(
+                    "UPDATE analysis_jobs SET parameters = :p, error_msg = NULL WHERE id = :id"
+                ), {"p": err, "id": job_id})
+            if rows:
+                conn.commit()
+        except Exception:
+            pass
+
+
+def _parse_json_safe(text: str | None) -> dict | None:
+    if not text:
+        return None
+    try:
+        return json.loads(text)
+    except Exception:
+        return None
 
 
 _TRACK_META_FIELDS = [
@@ -546,12 +586,18 @@ def create_analysis_job(
             status="pending",
         )
         if parameters:
-            job_orm.error_msg = json.dumps(parameters, ensure_ascii=False)
+            job_orm.parameters = json.dumps(parameters, ensure_ascii=False)
 
         session.add(job_orm)
         session.commit()
         session.refresh(job_orm)
 
+        params = None
+        if job_orm.parameters:
+            try:
+                params = json.loads(job_orm.parameters)
+            except Exception:
+                params = None
         return AnalysisJob(
             job_id=job_orm.id,
             track_id=job_orm.track_id,
@@ -561,6 +607,7 @@ def create_analysis_job(
             created_at=job_orm.created_at,
             updated_at=job_orm.updated_at,
             error_msg=job_orm.error_msg,
+            parameters=params,
         )
 
 
@@ -586,6 +633,7 @@ def get_pending_analysis_jobs(limit: int = 10) -> list[AnalysisJob]:
                 created_at=row.created_at,
                 updated_at=row.updated_at,
                 error_msg=row.error_msg,
+                parameters=_parse_json_safe(row.parameters),
             )
             for row in rows
         ]
@@ -632,6 +680,7 @@ def get_analysis_jobs_for_track(track_id: int) -> list[AnalysisJob]:
                 created_at=row.created_at,
                 updated_at=row.updated_at,
                 error_msg=row.error_msg,
+                parameters=_parse_json_safe(row.parameters),
             )
             for row in rows
         ]

@@ -196,3 +196,19 @@ def test_organize_plan_empty_fields_and_special_chars(tmp_path: Path):
     assert ":" not in tail
     assert "/" not in item.new_path.name  # filename no /
     assert "A B C" in pstr  # sanitized artist folder
+
+
+def test_apply_organize_plan_delete_removes_file_and_history(tmp_path: Path):
+    src = tmp_path / "libdel"
+    src.mkdir()
+    f = src / "delme.mp3"
+    f.write_text("to-delete", encoding="utf-8")
+    tracks = [Track(path=str(f), artist="Del", title="Me", genre="X")]
+    target = tmp_path / "ignored_for_delete"
+    plan, hist = organize_tracks(tracks, "{genre}", "{title}", target, action="delete")
+    assert len(hist) == 1
+    assert hist[0]["action"] == "delete"
+    assert not f.exists()
+    # undo for delete should do nothing (risky, not supported)
+    rev = undo_last_organize()
+    assert len(rev) == 0

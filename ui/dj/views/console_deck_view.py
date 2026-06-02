@@ -211,6 +211,12 @@ class ConsoleDeckView(QtWidgets.QFrame):
         self.pfl_btn.setStyleSheet(get_section_label_stylesheet().replace("10px", "11px"))
         self.pfl_btn.clicked.connect(self._on_pfl_toggled)
 
+        # Krok 6: menu PPM dla SYNC i PFL
+        self.sync_btn.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
+        self.pfl_btn.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
+        self.sync_btn.customContextMenuRequested.connect(self._show_sync_menu)
+        self.pfl_btn.customContextMenuRequested.connect(self._show_pfl_btn_menu)
+
         self.quantize_btn = QtWidgets.QPushButton("Q")
         self.quantize_btn.setCheckable(True)
         self.quantize_btn.setChecked(True)
@@ -262,6 +268,12 @@ class ConsoleDeckView(QtWidgets.QFrame):
         self.mem_r_btn.setFixedSize(32, 26)
         self.mem_r_btn.setToolTip("Recall Memory")
 
+        # Krok 6: menu PPM dla memory
+        self.mem_s_btn.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
+        self.mem_r_btn.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
+        self.mem_s_btn.customContextMenuRequested.connect(self._show_memory_menu)
+        self.mem_r_btn.customContextMenuRequested.connect(self._show_memory_menu)
+
         self.loop_in_btn = QtWidgets.QPushButton("IN")
         self.loop_in_btn.setFixedSize(40, 26)
         self.loop_out_btn = QtWidgets.QPushButton("OUT")
@@ -278,6 +290,13 @@ class ConsoleDeckView(QtWidgets.QFrame):
         mem_loop.addWidget(self.loop_in_btn, 0)
         mem_loop.addWidget(self.loop_out_btn, 0)
         mem_loop.addWidget(self.loop_toggle_btn, 0)
+
+        # Krok 6: indywidualne menu PPM dla loop buttons
+        for btn in (self.loop_in_btn, self.loop_out_btn, self.loop_toggle_btn):
+            btn.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
+        self.loop_in_btn.customContextMenuRequested.connect(lambda p: self._show_loop_menu(p, "IN"))
+        self.loop_out_btn.customContextMenuRequested.connect(lambda p: self._show_loop_menu(p, "OUT"))
+        self.loop_toggle_btn.customContextMenuRequested.connect(lambda p: self._show_loop_menu(p, "LOOP"))
         mem_loop.addStretch(1)
 
         main.addLayout(mem_loop, 0)
@@ -399,6 +418,43 @@ class ConsoleDeckView(QtWidgets.QFrame):
         )
         if ok:
             self.controller.set_hotcue_label(index, text.strip() or None)
+
+    def _show_loop_menu(self, pos: QtCore.QPoint, which: str) -> None:
+        """Indywidualne menu dla przycisków loop."""
+        menu = QtWidgets.QMenu(self)
+        if which == "IN":
+            menu.addAction("Ustaw Loop In w aktualnej pozycji")
+            menu.addAction("Wyczyść Loop In")
+        elif which == "OUT":
+            menu.addAction("Ustaw Loop Out w aktualnej pozycji")
+            menu.addAction("Wyczyść Loop Out")
+        else:
+            menu.addAction("Włącz/Wyłącz LOOP")
+            menu.addAction("Wyczyść loop")
+            menu.addAction("Podwój długość loopa")
+            menu.addAction("Pół długości loopa")
+        menu.exec(self.loop_in_btn.mapToGlobal(pos) if which == "IN" else self.loop_out_btn.mapToGlobal(pos) if which == "OUT" else self.loop_toggle_btn.mapToGlobal(pos))
+
+    def _show_memory_menu(self, pos: QtCore.QPoint) -> None:
+        """Menu dla S/R memory."""
+        menu = QtWidgets.QMenu(self)
+        menu.addAction("Zapisz aktualny stan (Memory Save)")
+        menu.addAction("Przywołaj ostatni zapis (Memory Recall)")
+        menu.addSeparator()
+        menu.addAction("Wyczyść pamięć")
+        menu.exec(self.mem_s_btn.mapToGlobal(pos))
+
+    def _show_sync_menu(self, pos: QtCore.QPoint) -> None:
+        menu = QtWidgets.QMenu(self)
+        menu.addAction("Wymuś resync")
+        menu.addAction("Włącz/Wyłącz Auto-Sync")
+        menu.exec(self.sync_btn.mapToGlobal(pos))
+
+    def _show_pfl_btn_menu(self, pos: QtCore.QPoint) -> None:
+        menu = QtWidgets.QMenu(self)
+        menu.addAction("Toggle PFL")
+        menu.addAction("Ustaw głośność cue")
+        menu.exec(self.pfl_btn.mapToGlobal(pos))
 
     def _show_waveform_context_menu(self, pos: QtCore.QPoint) -> None:
         """Menu kontekstowe PPM na waveformie – z precyzyjną pozycją kliknięcia."""

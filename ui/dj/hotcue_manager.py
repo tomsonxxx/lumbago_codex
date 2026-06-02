@@ -8,7 +8,7 @@ PRZENIESIONE z ui/dj_player_window.py (faza final cleanup AGENT3 + parallel).
 Cele:
 - Usunięcie ryzyka cyklu importów (deck_controller.py importował z monstrualnego pliku)
 - Czysty re-eksport bez zależności od dj_player_window
-- Pełna kompatybilność z DeckController (nowa architektura) + starym kodem (DeckWidget, SinglePlayerView)
+- Pełna kompatybilność z DeckController (nowa architektura)
 - Użycie centralnej palety BOOTH_COLORS (zamiast lokalnego COLORS)
 
 HotcueManager jest UI-agnostyczny. Nie wykonuje snapów ani seeków – to zadanie właściciela (kontrolera/widoku).
@@ -47,7 +47,7 @@ logger = logging.getLogger(__name__)
 
 # ------------------------------------------------------------------
 # REFACTOR: Wspólny czysty helper formatowania czasu
-# Wyodrębniony z duplikacji w DeckWidget / SinglePlayerView / DeckController.
+# Wyodrębniony z duplikacji (poprzednie DeckWidget / SinglePlayerView / DeckController).
 # Pure function – zero side effects, zero Qt.
 # ------------------------------------------------------------------
 

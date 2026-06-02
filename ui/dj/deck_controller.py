@@ -3,19 +3,19 @@ ui/dj/deck_controller.py
 
 KLUCZOWY KONTROLER DECKU – centralizuje całą logikę DJ bez duplikacji.
 
-Przeniesiona logika z DeckWidget + SinglePlayerView:
-- async waveform loading (lokalny WaveformRunnable + token anty-stale, wyłącznie core.waveform)
+Logika scentralizowana (wyodrębniona w fazie redesignu z poprzednich DeckWidget/SinglePlayerView):
+- async waveform loading (WaveformRunnable + token, wyłącznie core.waveform)
 - snap_to_beat (quantize Rekordbox-style)
 - memory S/R (session snapshot)
 - quantize toggle
-- hotcue pełna delegacja do istniejącego HotcueManager (zachowana persystencja DB)
+- hotcue delegacja + HotcueManager (persystencja DB)
 - playhead timer (40-45ms)
 - stany: sync, keylock, original_bpm, main_cue
-- sygnały Qt do czystego podłączenia widoków
+- sygnały Qt do podłączenia widoków (dumb views)
 
-Zachowuje 100% kompatybilność z:
-- PlaybackEngine (load_deck, toggle_deck, seek_deck, set_deck_rate, get_deck_state itd.)
-- HotcueManager (tymczasowo z ui.dj_player_window – pełna persystencja hotcue_index + color)
+Pełna kompatybilność z:
+- PlaybackEngine
+- HotcueManager (ui/dj/hotcue_manager.py – persystencja)
 
 Zero inline logic w widokach. Widoki tylko subskrybują sygnały i wołają metody.
 
@@ -136,7 +136,7 @@ class DeckController(QtCore.QObject):
         self.deck_id = deck_id
         self.playback_engine = playback_engine
 
-        # --- Stan wewnętrzny (przeniesiony z DeckWidget + SinglePlayerView) ---
+        # --- Stan wewnętrzny (wyodrębniony z poprzednich implementacji) ---
         self.current_track: Track | None = None
         self._original_bpm: float | None = None
         self._main_cue_ms: int = 0
@@ -300,7 +300,7 @@ class DeckController(QtCore.QObject):
     def snap_to_beat(self, time_ms: int) -> int:
         """
         Quantize do najbliższego beatu używając oryginalnego BPM.
-        Dokładnie taka sama logika jak w DeckWidget._snap_to_beat.
+        Dokładnie taka sama logika jak poprzednio w DeckWidget._snap_to_beat.
         """
         if not getattr(self, "_quantize_enabled", False):
             return time_ms
@@ -586,7 +586,7 @@ class DeckController(QtCore.QObject):
     def _load_waveform_async(self, audio_path: str, duration_ms: int) -> None:
         """
         Centralne async ładowanie waveform z tokenem anty-stale.
-        Przeniesione z DeckWidget/SinglePlayerView – teraz tylko w jednym miejscu.
+        Przeniesione z poprzednich widoków – teraz scentralizowane w jednym miejscu.
         Widoki wywołują request_waveform_load gdy mają widget.
         """
         if not audio_path:
