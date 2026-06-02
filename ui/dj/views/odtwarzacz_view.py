@@ -134,6 +134,7 @@ class OdtwarzaczView(QtWidgets.QFrame):
         self.cue_btn.setFixedSize(*cue_size)
         self.cue_btn.setStyleSheet(get_transport_button_stylesheet("cue"))
         self.cue_btn.clicked.connect(self.controller.set_cue)
+        self.cue_btn.setToolTip("Ustaw punkt CUE na bieżącej pozycji (lub skocz do istniejącego). EFEKT: następny PLAY zacznie odtwarzanie od tego punktu cue w załadowanym pliku audio (nie zmienia pliku).")
 
         # PLAY / toggle (duży)
         play_size = BOOTH_SIZES.get("transport_play", (96, 58))
@@ -141,6 +142,7 @@ class OdtwarzaczView(QtWidgets.QFrame):
         self.play_btn.setFixedSize(*play_size)
         self.play_btn.setStyleSheet(get_transport_button_stylesheet("play"))
         self.play_btn.clicked.connect(self._on_play_or_pause_clicked)
+        self.play_btn.setToolTip("Rozpocznij lub wznów odtwarzanie załadowanego pliku audio. EFEKT: uruchamia silnik playback na fizycznym pliku (od pozycji lub cue jeśli blisko startu). Kliknij ponownie by pauzować.")
 
         # STOP
         stop_size = BOOTH_SIZES.get("transport_stop", (68, 52))
@@ -148,6 +150,7 @@ class OdtwarzaczView(QtWidgets.QFrame):
         self.stop_btn.setFixedSize(*stop_size)
         self.stop_btn.setStyleSheet(get_transport_button_stylesheet("stop"))
         self.stop_btn.clicked.connect(self.controller.stop)
+        self.stop_btn.setToolTip("Zatrzymaj odtwarzanie i wróć do punktu CUE (lub 0). EFEKT: stop silnika + reset playhead do cue w załadowanym pliku (nie usuwa pliku z decku).")
 
         trans.addWidget(self.cue_btn)
         trans.addWidget(self.play_btn)
@@ -281,17 +284,24 @@ class OdtwarzaczView(QtWidgets.QFrame):
     # Drag & drop z pełnym repo lookup (identycznie jak w main window / _load_dropped_track)
     # ------------------------------------------------------------------
     def dragEnterEvent(self, event: QtGui.QDragEnterEvent) -> None:
-        if event.mimeData().hasUrls():
+        mime = event.mimeData()
+        if mime.hasFormat("application/x-lumbago-track-paths") or mime.hasUrls():
             event.acceptProposedAction()
         else:
             event.ignore()
 
     def dropEvent(self, event: QtGui.QDropEvent) -> None:
-        urls = event.mimeData().urls()
-        if urls:
-            local = urls[0].toLocalFile()
-            if local:
-                self._load_dropped_track(local)
+        mime = event.mimeData()
+        paths = []
+        if mime.hasFormat("application/x-lumbago-track-paths"):
+            data = mime.data("application/x-lumbago-track-paths").data().decode()
+            paths = [p for p in data.split(",") if p]
+        elif mime.hasUrls():
+            for url in mime.urls():
+                if url.isLocalFile():
+                    paths.append(url.toLocalFile())
+        if paths:
+            self._load_dropped_track(paths[0])
         event.acceptProposedAction()
 
     def _load_dropped_track(self, path: str) -> None:
