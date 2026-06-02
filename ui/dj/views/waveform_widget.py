@@ -26,6 +26,9 @@ class WaveformWidget(QtWidgets.QWidget):
 
     Used by OdtwarzaczView (MVP single) + Focused/Console (dual).
     Colors: ui/dj/styles.BOOTH_COLORS.
+
+    FILE vs STREAM: interakcje (seek, double) = STREAM ops (pozycja w audio z pliku).
+    Drag load = FILE op (w viewach).
     """
     seek_requested = QtCore.pyqtSignal(int)
     cue_set_requested = QtCore.pyqtSignal(int)   # Shift + click
@@ -40,8 +43,10 @@ class WaveformWidget(QtWidgets.QWidget):
         self.setMouseTracking(True)
         self.setCursor(QtGui.QCursor(QtCore.Qt.CursorShape.PointingHandCursor))
         self.setToolTip(
-            "Waveform: Click=seek • Shift+Click=set hotcue • "
-            "Double-click=set main CUE")
+            "Waveform: Click=seek (zmiana pozycji w streamie) • Shift+Click=set hotcue (w dual) • "
+            "Double-click=set main CUE + seek (dla cue logic w odt: play od cue jeśli near0). "
+            "EFEKT: operacja na streamie z załadowanego PLIKU (load pliku = osobna drag op). "
+            "Nie nakłada się na load; air/scalowalny.")
 
         # Data
         self._peaks: list[float] = []

@@ -1,7 +1,38 @@
 # Memory — Lumbago Music AI (DJ Player Project)
 
-**Data ostatniej aktualizacji:** Maj 2026 (po dużym sprzątaniu repozytorium)  
-**Cel pliku:** Pełna, trwała pamięć projektu — wszystko co zostało omówione, zbudowane, naprawione i postanowione od początku pracy nad DJ Playerem.
+**Data ostatniej aktualizacji:** Czerwiec 2026 (po pełnej organizacji dokumentacji, impl single Odtwarzacz MVP per SZPIEG spec, team review, push)
+
+**Cel pliku (dla nowych programistów/agentów):** 
+Ten plik jest **centralną, żywą "encyklopedią" projektu**. Po przeczytaniu go (zawsze na początku nowej sesji) każdy nowy programista lub agent AI musi mieć **kompletny, aktualny pogląd** na:
+- Zasady prowadzenia projektu i komunikacji.
+- Aktualny poziom prac / stan (co działa, co w toku, co problematic).
+- Hierarchię crew/agentów (w tym SZPIEG jako nadrzędny research).
+- Jak dokumentować własne ruchy (zawsze w ten sam sposób: update memory + HISTORY + AGENTS/CLAUDE + crew/SZPIEG archive + code docstrings + todo_write dla complex + clear commit msg). Dokumenty muszą być stale uzupełniane, aby wiele odrębnych zespołów mogło pracować równolegle bez tracenia wątku.
+
+**Zasady dokumentacji (obowiązkowe dla wszystkich):**
+- Zawsze aktualizuj memory.md (ten plik) na końcu sesji lub po major changes (postęp, decyzje, problemy, SZPIEG findings).
+- Aktualizuj docs/HISTORY.md z chronologicznymi milestone'ami.
+- Dla research fragmentów: używaj SZPIEG, zapisuj w crew/SZPIEG_agent_spec_and_archive.md (encyklopedia "sposoby na wszystko").
+- Update AGENTS.md, CLAUDE.md, crew/ pliki (CHECKLIST, LISTA), Checklist.md przy zmianach w crew/hierarchy/process.
+- W kodzie: dodawaj/aktualizuj docstrings komentujące adherence do spec (SZPIEG Build Spec jest nadrzędny).
+- Używaj todo_write dla multi-step/complex tasks (jak ten).
+- Commit często z jasnym message (co zrobione, odniesienia do docs/spec).
+- Język: wszystko po polsku (user requirement).
+- Cel: traceability + parallelism (multiple teams/agents bez utraty kontekstu).
+
+**Aktualny fokus projektu:** DJ Player (PyQt6) — single "Odtwarzacz" MVP jako primary (basics: poprawne wczytanie pliku z drag z tabeli + repo lookup, play/pause/stop z cue logic, clean readable UI bez overlap/dużej gęstości, dużo powietrza, scalability/resize/multi-monitor, compact pilot-like mode z animacją (spinning indicator), EFFECT tooltips na każdym elemencie, drag&drop, podstawowy feedback waveform/title/time/BPM). Dual "Konsola DJ" zachowany ale secondary. Opcja A (legacy cleanup) zakończona — nowa architektura sole (OdtwarzaczView + SimpleDeckController + QStacked w window).
+
+**Crew/Hierarchy (2026, z SZPIEG):**
+- SZPIEG (SPY): Nadrzędny research lead. Dla konkretnych wąskich fragmentów tworzy listy 10-15+ przykładów z real software, analizuje implementacje/opinie, rozróżnienia (plik vs strumień, compact/simple/pro), EFFECT tooltips. Tworzy Build Spec binding dla zespołu. Decyduje wybory gdy brak ścisłego "copy X" (konsultuje, punktuje przydatność dla Lumbago). Encyklopedia w crew/SZPIEG_.... Side tasks od innych (wyjątkowe, za consent).
+- Reszta: Plan (wnioski/rewerk plans + hierarchy), Designer/Writer/Fixer/Tester (impl dokładnie per SZPIEG spec + team plans). Pełne wnioski z zespołu wymagane przed impl.
+- Proces: SZPIEG research → Plan raport + team → impl exact → update all docs/archiva.
+
+Patrz crew/SZPIEG_agent_spec_and_archive.md dla pełnego research + Build Spec (single Odtwarzacz: transport, layout, drag, compact+anim, tooltips, etc.).
+
+---
+
+**Data ostatniej aktualizacji (stara sekcja poniżej dla historii):** Maj 2026 (po dużym sprzątaniu repozytorium)  
+**Cel pliku (historyczny):** Pełna, trwała pamięć projektu — wszystko co zostało omówione, zbudowane, naprawione i postanowione od początku pracy nad DJ Playerem.
 
 ---
 
@@ -80,38 +111,68 @@ Użytkownik wielokrotnie wracał do tematu naprawiania błędów ładowania i od
 
 ---
 
-## 5. Aktualny stan (maj 2026)
+## 5. Aktualny stan (czerwiec 2026 — po full org docs + impl single Odtwarzacz MVP + SZPIEG + push)
 
-**Co działa dobrze:**
-- Pełny, profesjonalny DJ Player z dwoma trybami
-- 4/8 hotcue’ów z persystencją
-- Waveform + muzyczny beatgrid
-- Memory, SYNC z fazą, Quantize, Recent History
-- Stabilne ładowanie i odtwarzanie (VLC jako główny backend)
-- Dobra integracja z biblioteką
-- CI z automatyczną instalacją VLC + odporne testy
+**Główne osiągnięcia (zastosowane wszystkie zmiany do tego momentu):**
+- **Opcja A (legacy cleanup):** Zakończona. Usunięto wszystkie guardy _HAS_NEW/_use_new, hybrydowe bloki STARA/NEW, martwe klasy DeckWidget/SinglePlayerView, _build_mixer_strip, stare cross/toggle. Nowa architektura sole (DeckController + views dla dual; OdtwarzaczView + SimpleDeckController dla single). Plik dj_player_window.py dramatycznie uproszczony.
+- **Single "Odtwarzacz" MVP (primary focus per user "Zacznij od pojedynczego"):** Pełna impl basics per SZPIEG Build Spec + Plan team review (exact match, high pressure):
+  - Clean, readable, no-overlap UI: VBox z dużo powietrza (margins 32/24, spacing 18+), dominant waveform stretch7 min260, header title+BPM, time center, large centered transport (CUE/PLAY/STOP).
+  - Load file: drag from table (full repo lookup get_track_by_path + enrich Track), file dialog.
+  - Playback basics: play/pause/stop (toggle on PLAY, cue logic "near 0 prefer _main_cue", stop to cue), via SimpleDeckController + PlaybackEngine (VLC prio).
+  - Feedback: waveform with playhead+beatgrid, title/time/BPM update, status.
+  - Drag&drop: from library table to player (mime + urls, highlight, position target in single).
+  - Compact pilot-like mode: set_compact_mode (mini sizes, icons, _CompactSpinIndicator anim spinning CD/vinyl/eq via timer/paint, react to playing; toggle in window).
+  - Scalability: Expanding/stretch, resizeEvent (dynamic), QStacked in window for clean single/dual switch (eliminates visibility hacks/overlaps).
+  - EFFECT tooltips everywhere (1-2 zdania "EFEKT: co się stanie z plikiem/pozycją/UI/stream"; file vs stream rozróżnienie).
+  - Default mode: single "Odtwarzacz" (per user).
+  - Visibility/switch: clean, odt always visible in single, dual hidden.
+- **SZPIEG Agent:** W pełni zintegrowany jako kluczowy research lead. Pełny research + Build Spec dla single Odtwarzacz (lista 12+ przykładów z real soft: Rekordbox/Serato/Traktor/Mixxx/..., opinie pro/users, techniki). Encyklopedia w crew/SZPIEG_agent_spec_and_archive.md (z Plan team review wnioskami + Writer impl exact). Nadrzędny dla zespołu. Hierarchy rethink w docs.
+- **Dokumentacja:** W pełni uporządkowana (patrz sekcja "Dla nowych..." na górze). memory.md jako centralna encyklopedia (zasady, stan, SZPIEG, jak dokumentować). Update wszystkich: AGENTS/CLAUDE/HISTORY/crew/CHECKLIST/LISTA/Checklist. Nowi agenci/devi muszą czytać memory + crew/SZPIEG + aktualizować je + code docs + todo + commit.
+- **Testy:** Smoke OK, pytest ~44+ pass (relevant DJ/playback/ui), headless odt smoke, manual CHECKLIST paths (resize, drag, no-overlap, single, cue/play/stop, compact, tooltips).
+- **Git:** Zmiany zebrane (Opcja A, single reworks per spec, docs org, SZPIEG). Gotowe do push.
 
-**Co jest w miarę stabilne, ale może wymagać dalszej pracy:**
-- Synchronizacja stanu między trybami (działa, ale warto monitorować przy dalszych zmianach)
-- Czytelność UI (użytkownik był bardzo wymagający – przy kolejnych zmianach warto od razu sprawdzać feedback)
+**Co jest w miarę stabilne, ale może wymagać dalszej pracy (z archives + SZPIEG/Plan):**
+- Pełna integracja single z biblioteką (now playing indicators, batch).
+- Compact mode dalsze polish (zawsze-on-top? więcej anim?).
+- Playback reliability (VLC install dla user, fallback Qt).
+- Więcej SZPIEG research na troublesome (visibility edge, cue consistency full, file vs stream future).
 
-**Otwarte / potencjalne tematy na przyszłość:**
-- Rysowanie markerów hotcue’ów bezpośrednio na waveformie
-- Jeszcze lepsze komunikaty błędów przy problemach z plikami audio
+**Otwarte / potencjalne tematy na przyszłość (SZPIEG będzie research):**
+- Side tasks dla SZPIEG (visibility/overlap review, compact anim ex, file/stream implications, drag chain, scalability).
+- Dodatkowe w single (hotcues grid jako opcja, pitch? — ale tylko po basics solid).
+- Multi-team parallelism via docs.
+
+## 6. SZPIEG Agent (kluczowy research/spy agent — dodany 2026, nadrzędny)
+- **Rola:** Nadrzędny agent do głębokich badań konkretnych fragmentów UI/UX/wzorców w oprogramowaniu (DJ/audio/file tools). Tworzy listy min. 10-15 przykładów **tylko dla zadanego wąskiego fragmentu**, analizuje implementacje, opinie (użytkownicy + pro DJ/producenci), screenshoty, fora, docs, etc.
+- **Instrukcje na stałe:** Szuka "jak to zrobili inni" (techniki, kolejność, metody dokładnie), rozróżnienia (plik audio vs strumień dźwięku, compact/simple/pro modes, tooltipy z EFEKTEM akcji 1-2 zdania), encyklopedia findings w dedykowanym pliku (crew/SZPIEG_agent_spec_and_archive.md).
+- **Hierarchia:** SZPIEG research lead — jego Build Spec nadrzędny dla zespołu. Decyduje o wyborach metod gdy brak ścisłego "copy X" (konsultuje z resztą, punktuje przydatność). Inni dostają spec jako primary. Możliwe side tasks od innych agentów (wyjątkowe, za zgodą usera).
+- **Archiva:** Oddzielny plik crew/SZPIEG_... + update memory/HISTORY/AGENTS/CLAUDE/Checklist/RECOVERY/crew przy każdym research. Tworzy "sposoby na wszystko" dla pokrewnych tematów.
+- **Pierwsze zadanie:** Single "Odtwarzacz" (transport basics play/pause/stop, clean layout bez overlap, drag from table, compact modes, tooltips EFFECT, air/scalability, file vs stream). Pełny raport + Build Spec w crew/SZPIEG_agent_spec_and_archive.md.
+- **2026-06-02 Writer:** Dokładna impl reworks per spec+plan (QStack solidify, EFFECT expand, compact+spinning anim, resize, cue/drag+safety, testy, docs). Patrz SZPIEG archiwum + HISTORY. Smoke/pytest OK.
+- **Wpływ:** Ma pchnąć projekt do przodu przez informed, nie-powierzchowne wybory. Pamiętać na stałe, uwzględniać w crew re-think.
 - Pełniejsze testy integracyjne całego playera z biblioteką
 - Ewentualne dodatkowe opcje zaawansowane (np. więcej kontroli nad loopami, beatjump itd.)
 
 ---
 
-## 6. Jak korzystać z tego pliku w nowych sesjach
+## 7. Jak korzystać z tego pliku w nowych sesjach (dla nowych agentów/programistów — OBOWIĄZKOWE)
 
-1. Na początku nowej rozmowy poproś AI o przeczytanie `memory.md`.
-2. AI powinno od razu przełączyć się na język polski.
-3. Przed większymi zmianami lub na koniec sesji – aktualizuj ten plik.
-4. Najważniejsze jest zachowanie:
-   - Historii decyzji (dlaczego coś zrobiliśmy tak, a nie inaczej)
-   - Bolesnych lekcji (jakie błędy się powtarzały)
-   - Feedbacku użytkownika (szczególnie negatywnego – to one napędzały największe poprawy)
+1. **Zawsze na początku:** Poproś AI o przeczytanie `memory.md` (ten plik) + `crew/SZPIEG_agent_spec_and_archive.md` + AGENTS.md/CLAUDE.md.
+2. AI musi przełączyć się na język polski i potwierdzić zrozumienie zasad (hierarchia z SZPIEG jako lead, dokumentacja ruchów w ten sam sposób).
+3. **Dokumentuj WSZYSTKO tak samo:** 
+   - Używaj todo_write dla complex/multi-step.
+   - Aktualizuj memory.md (postęp, decyzje, SZPIEG findings, state).
+   - Aktualizuj docs/HISTORY.md (milestones).
+   - Dla fragmentów: używaj SZPIEG, zapisuj w crew/SZPIEG_ (encyklopedia).
+   - Update AGENTS/CLAUDE/crew/CHECKLIST/LISTA/Checklist przy crew/hierarchy/process changes.
+   - W kodzie: docstrings z odniesieniami do spec (SZPIEG Build Spec nadrzędny — implementuj exactly).
+   - Commit często z jasnym message (odniesienia do docs/spec).
+4. **Cel:** Kompletny pogląd dla nowego (zasady, aktualny stan, jak dokumentować aby nie tracić wątku w multi-team).
+5. Przed większymi zmianami lub na koniec — aktualizuj docs. SZPIEG research + team wnioski przed impl.
+
+**Ten plik + crew/SZPIEG + AGENTS/CLAUDE/HISTORY są "pamięcią instytucjonalną". Im bardziej szczegółowy/szczery/zaktualizowany, tym łatwiej pracować równolegle bez utraty kontekstu.**
+
+## 8. Duże sprzątanie repozytorium (maj 2026) + kontynuacja (czerwiec)
 
 ---
 

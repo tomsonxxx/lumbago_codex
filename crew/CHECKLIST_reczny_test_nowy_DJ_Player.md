@@ -1,12 +1,14 @@
 # CHECKLIST – Ręczny test nowego DJ Playera (po redesignie AGENT 3)
 
-**Status na teraz (po równoległej integracji):**
-- Nowa architektura aktywna jako primary (`_HAS_NEW_DJ_VIEWS = True`)
-- `DeckController` + `FocusedDeckView` / `ConsoleDeckView` / `DualConsoleWidget` + `MixerStrip` + `MemoryControls` podłączone
-- HotcueManager w czystym module (`ui/dj/hotcue_manager.py`) – zero ryzyka cyklu
-- Stary kod (`DeckWidget` / `SinglePlayerView`) jako pełny fallback
-- Smoke + podstawowe testy DJ przechodzą
-- Logi "NEW ARCHITECTURE ACTIVE" obecne
+**Status na teraz (po równoległej integracji + SZPIEG research + Writer reworks per spec):**
+- Nowa architektura aktywna jako primary (Odtwarzacz MVP single via OdtwarzaczView + SimpleDeckController dla basics; dual/console nietknięte)
+- SZPIEG agent (crew/SZPIEG_agent_spec_and_archive.md) — nadrzędne badania dla fragmentów (single Odtwarzacz transport/layout/drag/compact/tooltips/EFFECT + file vs stream). Build Spec nadrzędny. Encyklopedia findings.
+- Crew hierarchy rethink: SZPIEG jako research lead (decyduje wybory metod, konsultuje, punktuje; side tasks możliwe). Zespół dostarcza wnioski/rewerk plans przed impl.
+- Podstawy single: load file (drag+repo lookup), play/pause/stop (z cue logic), clean air layout, drag from table, tooltips z EFEKTEM, compact support + anim spin CD, QStacked cleanup, resize dynamic, safety prompt, file/stream clarity.
+- Smoke + podstawowe testy DJ przechodzą (Writer: smoke exit0, pytest 44 pass, python -c odt smoke OK; manual CHECKLIST covered: resize/drag/no-overlap/single/cue-play/compact).
+- Logi "NEW ARCHITECTURE ACTIVE" + "Odtwarzacz MVP" obecne
+- Research z SZPIEG (Rekordbox/Serato/Traktor/Mixxx/etc. patterns) zastosowany do tooltips, drag, layout, compact.
+- 2026-06-02: Writer impl reworks (kroki 1-7 per Plan) — QStacked, EFFECT expand, compact+spinning, resize, cue/drag+safety, testy, docs update. Exact match spec. Status: gotowe do review.
 
 **Jak uruchomić do testów:**
 ```powershell

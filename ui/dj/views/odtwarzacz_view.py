@@ -21,6 +21,68 @@ from ui.dj.styles import (
 logger = logging.getLogger(__name__)
 
 
+class _CompactSpinIndicator(QtWidgets.QWidget):
+    """
+    Pilot-like animated play indicator (spinning CD/vinyl/eq style).
+    Używa timer + paintEvent dla rotacji (per SZPIEG: anim via timer/paint).
+    Reacts to play_state: start() / stop() spin.
+    W compact mode pokazywany obok tytułu lub w transporcie.
+    Lekki, skalowalny, nie wymaga external assets.
+    """
+    def __init__(self, parent=None, size: int = 22):
+        super().__init__(parent)
+        self._size = size
+        self.setFixedSize(size, size)
+        self._angle = 0.0
+        self._spinning = False
+        self._timer = QtCore.QTimer(self)
+        self._timer.setInterval(50)  # ~20fps smooth
+        self._timer.timeout.connect(self._tick)
+        self.setToolTip("Wskaźnik odtwarzania (spinning CD-like). Aktywny podczas PLAY (stream).")
+
+    def start(self):
+        if not self._spinning:
+            self._spinning = True
+            self._timer.start()
+            self.update()
+
+    def stop(self):
+        if self._spinning:
+            self._spinning = False
+            self._timer.stop()
+            self._angle = 0.0
+            self.update()
+
+    def _tick(self):
+        self._angle = (self._angle + 12) % 360  # deg per tick, clockwise like vinyl
+        self.update()
+
+    def paintEvent(self, event):
+        p = QtGui.QPainter(self)
+        p.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, True)
+        w, h = self.width(), self.height()
+        cx, cy = w / 2, h / 2
+        r = min(w, h) / 2 - 2
+        c = BOOTH_COLORS
+        # Vinyl/CD like: dark circle + grooves + highlight
+        p.setPen(QtGui.QPen(QtGui.QColor(c.get("border_strong", "#3a4556")), 2))
+        p.setBrush(QtGui.QBrush(QtGui.QColor(c.get("surface_elev", "#1a212c"))))
+        p.drawEllipse(cx - r, cy - r, 2*r, 2*r)
+        # Spinning lines (eq bars or spokes)
+        p.setPen(QtGui.QPen(QtGui.QColor(c.get("accent", "#00e0ff")), 1.5))
+        for i in range(6):
+            a = (self._angle + i * 60) * 3.14159 / 180.0
+            x1 = cx + r * 0.3 * (1 if i % 2 == 0 else 0.6)
+            y1 = cy + r * 0.3 * (1 if i % 2 == 0 else 0.6)
+            x2 = cx + r * 0.85 * (1 if i % 2 == 0 else 0.7)
+            y2 = cy + r * 0.85 * (1 if i % 2 == 0 else 0.7)
+            p.drawLine(int(cx + (x1-cx)*0.6), int(cy + (y1-cy)*0.6), int(cx + (x2-cx)*0.6), int(cy + (y2-cy)*0.6))
+        # Center dot
+        p.setBrush(QtGui.QBrush(QtGui.QColor(c.get("play", "#22c55e"))))
+        p.drawEllipse(cx-2, cy-2, 4, 4)
+        p.end()
+
+
 def _format_ms(ms: int | None) -> str:
     """Prosty formatter ms → m:ss (dla czasu i statusu)."""
     if ms is None or ms < 0:
@@ -35,11 +97,14 @@ class OdtwarzaczView(QtWidgets.QFrame):
     """
     Minimalny widok single player "Odtwarzacz" MVP (QFrame).
 
+    **Uwaga dla nowych agentów/programistów:** Implementacja dokładnie per nadrzędny SZPIEG Build Spec + Plan team review (z crew/SZPIEG_agent_spec_and_archive.md + memory.md). Patrz docs dla zasad dokumentacji (zawsze update memory/HISTORY/crew/SZPIEG + code docs + todo + commit). SZPIEG spec jest binding — zero odstępstw.
+
     Skupiony TYLKO na podstawach (per zadanie):
     - poprawne ładowanie pliku (z lookup repo w drop + load)
     - podstawowy playback: play/pause/stop (via SimpleDeckController)
     - wizualizacje: title/time/BPM/duży waveform+playhead+beatgrid
     - czysty layout z powietrzem (VBox + marginesy/stretch)
+    - compact pilot mode z animacją (spinning indicator), EFFECT tooltips, scalability, drag, file vs stream clarity.
 
     Hierarchia layoutu (VBox, margins ~32/24, spacing 18):
     - Header HBox: [TRACK TITLE 18px bold stretch]          [BPM 32px 900 accent]
@@ -66,9 +131,11 @@ class OdtwarzaczView(QtWidgets.QFrame):
         self._current_duration_ms: int = 0
         self._current_track: Track | None = None
         self._is_playing: bool = False
+        self._compact: bool = False
 
         self.setObjectName("OdtwarzaczPanel")
-        self.setStyleSheet(get_deck_panel_stylesheet())
+        self._normal_stylesheet = get_deck_panel_stylesheet()
+        self.setStyleSheet(self._normal_stylesheet)
 
         self.setAcceptDrops(True)
 
@@ -76,8 +143,24 @@ class OdtwarzaczView(QtWidgets.QFrame):
         self._connect_controller_signals()
         self._connect_widget_signals()
 
+        # Initial apply (default non-compact uses normal sizes)
+        self._apply_compact_ui()
+
+        # Overall EFFECT tooltip for the odt panel (air + drag + file/stream clarity)
+        self.setToolTip(
+            "Odtwarzacz (single preview): czysty, skalowalny widok z powietrzem. "
+            "Drag z tabeli biblioteki = load PLIKU (mime + repo lookup + highlight safety). "
+            "Transport = STREAM playback z pliku (play near cue, stop->cue). "
+            "Compact toggle w oknie rodzica. ResizeEvent dla skalowalności. "
+            "EFEKT: nie zachodzi na dual, nie nadpisuje metadanych."
+        )
+
     def _setup_ui(self) -> None:
-        """VBox z powietrzem + hierarchia z designu (dostosowana do MVP basics)."""
+        """VBox z powietrzem + hierarchia z designu (dostosowana do MVP basics).
+        FILE vs STREAM: wszystkie load_* = operacje na PLIKU (ścieżka dysku + DB lookup + waveform peaks).
+        Transport (play/pause/stop/seek) = operacje na STREAMIE (dźwięk z załadowanego pliku via engine).
+        Komentarze i guardy w metodach.
+        """
         layout = QtWidgets.QVBoxLayout(self)
         # Dużo powietrza: 32px boki, 24 góra/dół, spacing 18 (per spec + "32px etc")
         layout.setContentsMargins(32, 24, 32, 24)
@@ -96,7 +179,13 @@ class OdtwarzaczView(QtWidgets.QFrame):
         self.title_label.setSizePolicy(
             QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Preferred
         )
+        self.title_label.setToolTip("Tytuł i artysta załadowanego pliku audio. EFEKT: pokazuje metadane z Track (z DB lub filename). Upuść inny plik by zmienić załadowany plik (load = FILE op).")
         header.addWidget(self.title_label, 1)
+
+        # Compact spin indicator (pilot-like, hidden by default; shown+spins in compact+play)
+        self._spin_indicator = _CompactSpinIndicator(self, size=20)
+        self._spin_indicator.setVisible(False)
+        header.addWidget(self._spin_indicator, 0)
 
         self.bpm_label = QtWidgets.QLabel("— BPM")
         self.bpm_label.setStyleSheet(get_bpm_label_stylesheet())
@@ -104,6 +193,7 @@ class OdtwarzaczView(QtWidgets.QFrame):
             QtCore.Qt.AlignmentFlag.AlignRight
             | QtCore.Qt.AlignmentFlag.AlignVCenter)
         self.bpm_label.setMinimumWidth(100)
+        self.bpm_label.setToolTip("BPM utworu (z metadanych lub analizy). EFEKT: wpływa na beatgrid waveformu. Wartość z pliku/DB, nie zmienia pliku.")
         header.addWidget(self.bpm_label, 0)
 
         layout.addLayout(header)
@@ -115,12 +205,19 @@ class OdtwarzaczView(QtWidgets.QFrame):
         self.waveform.setSizePolicy(
             QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Expanding
         )
+        # Expand tooltip on wave for EFFECT (file/stream + drag)
+        self.waveform.setToolTip(
+            "Waveform: Click=seek (strumień) • Double-click=seek + set main CUE (dla play near0). "
+            "EFEKT: zmienia pozycję w streamie z załadowanego PLIKU (nie load nowego pliku). "
+            "Drag&drop z biblioteki ładuje nowy PLIK. Shift+click ignorowane w odt (no advanced)."
+        )
         layout.addWidget(self.waveform, 7)
 
         # === TIME (center, fixed, 0 stretch, 18px mono) ===
         self.time_label = QtWidgets.QLabel("0:00 / 0:00")
         self.time_label.setStyleSheet(get_time_label_stylesheet())
         self.time_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        self.time_label.setToolTip("Pozycja / czas trwania. EFEKT: aktualizowane z playhead streamu (timer 40ms z engine state). Nie wpływa na plik.")
         layout.addWidget(self.time_label, 0)
 
         # === LARGE CENTERED TRANSPORT (3 buttons, reuse transport styles + sizes) ===
@@ -165,6 +262,7 @@ class OdtwarzaczView(QtWidgets.QFrame):
             f"color: {BOOTH_COLORS.get('text_muted', '#6b7688')}; font-size: 11px;"
         )
         self.status_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        self.status_label.setToolTip("Status decku (load/play/cue/set). EFEKT: informacyjny; nie wykonuje akcji. File ops w load, stream ops w transport.")
         layout.addWidget(self.status_label, 0)
 
         # Oddychanie na dole
@@ -250,6 +348,31 @@ class OdtwarzaczView(QtWidgets.QFrame):
             self.play_btn.setText("▶  ODTWÓRZ")
 
         self.status_label.setText("— Gotowy (tryb Odtwarzacz MVP)")
+        if hasattr(self, "_spin_indicator"):
+            self._spin_indicator.stop()
+
+    def resizeEvent(self, event):
+        """Scalability polish (per SZPIEG/Plan): dynamic on resize (multi-res, stretch).
+        Zachowuje air, dominant wave, no-overlap. W compact mniejsze bazowe.
+        """
+        super().resizeEvent(event)
+        # Dynamic tweak: ensure min wave respects current size in non-compact
+        if not self._compact and hasattr(self, "waveform"):
+            try:
+                avail_h = max(60, self.height() - 120)  # rough for header+time+trans+status+air
+                cur_min = self.waveform.minimumHeight()
+                target = min(260, max(120, avail_h))
+                if target != cur_min:
+                    self.waveform.setMinimumHeight(target)
+            except Exception:
+                pass
+        # Ensure spin size scales a bit in compact
+        if self._compact and hasattr(self, "_spin_indicator"):
+            try:
+                s = max(16, min(28, self.width() // 30))
+                self._spin_indicator.setFixedSize(s, s)
+            except Exception:
+                pass
 
     def _on_playhead_changed(self, ms: int) -> None:
         if hasattr(self.waveform, "set_playhead"):
@@ -267,6 +390,8 @@ class OdtwarzaczView(QtWidgets.QFrame):
         self._is_playing = bool(playing)
         if hasattr(self, "play_btn"):
             self.play_btn.setText("❚❚  PAUZA" if playing else "▶  ODTWÓRZ")
+        # Compact anim react (spin CD only when playing + compact)
+        self._update_compact_play_state(playing)
 
     def _on_status_changed(self, text: str) -> None:
         self.status_label.setText(text)
@@ -286,11 +411,29 @@ class OdtwarzaczView(QtWidgets.QFrame):
     def dragEnterEvent(self, event: QtGui.QDragEnterEvent) -> None:
         mime = event.mimeData()
         if mime.hasFormat("application/x-lumbago-track-paths") or mime.hasUrls():
+            # Highlight for drag UX (per spec: highlight+position safety)
+            self.setStyleSheet(
+                self._normal_stylesheet.replace(
+                    "border: 1px solid #2a3442;",
+                    "border: 2px solid #00e0ff; background-color: #1a212c;"
+                ) if hasattr(self, "_normal_stylesheet") else get_deck_panel_stylesheet()
+            )
+            pos = event.position().toPoint() if hasattr(event, "position") else event.pos()
+            logger.debug(f"Odt dragEnter at pos {pos} (mime ok, FILE load pending)")
             event.acceptProposedAction()
         else:
             event.ignore()
 
+    def dragLeaveEvent(self, event: QtGui.QDragLeaveEvent) -> None:
+        # Reset highlight
+        if hasattr(self, "_normal_stylesheet"):
+            self.setStyleSheet(self._normal_stylesheet)
+        super().dragLeaveEvent(event)
+
     def dropEvent(self, event: QtGui.QDropEvent) -> None:
+        # Reset highlight on drop
+        if hasattr(self, "_normal_stylesheet"):
+            self.setStyleSheet(self._normal_stylesheet)
         mime = event.mimeData()
         paths = []
         if mime.hasFormat("application/x-lumbago-track-paths"):
@@ -301,11 +444,32 @@ class OdtwarzaczView(QtWidgets.QFrame):
                 if url.isLocalFile():
                     paths.append(url.toLocalFile())
         if paths:
+            pos = event.position().toPoint() if hasattr(event, "position") else event.pos()
+            logger.debug(f"Odt drop at pos {pos} -> load FILE {paths[0]}")
+            # Safety (lock/prompt per spec): confirm if stream playing (FILE load during playback)
+            if getattr(self, "_is_playing", False):
+                try:
+                    from PyQt6.QtWidgets import QMessageBox
+                    resp = QMessageBox.question(
+                        self, "Odtwarzacz — Safety",
+                        "Trwa odtwarzanie (stream). Załadować nowy PLIK i zatrzymać?\n(EFEKT: stop + load nowego pliku z cue=0)",
+                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                        QMessageBox.StandardButton.No
+                    )
+                    if resp != QMessageBox.StandardButton.Yes:
+                        event.acceptProposedAction()
+                        return
+                except Exception:
+                    pass  # non-fatal, proceed
             self._load_dropped_track(paths[0])
         event.acceptProposedAction()
 
     def _load_dropped_track(self, path: str) -> None:
-        """Pełny lookup z repo jak w dj_player_window._load_dropped_track."""
+        """Pełny lookup z repo jak w dj_player_window._load_dropped_track.
+        To jest FILE op: drop = załaduj PLIK (lookup DB, set current_track, waveform token, cue=0).
+        Po tym transport (play) używa STREAMU z pliku.
+        Drag highlight/position obsługiwane przez mime w dragEnter/drop + parent window.
+        """
         try:
             name = Path(path).stem
             track = Track(path=path, title=name)
@@ -321,3 +485,99 @@ class OdtwarzaczView(QtWidgets.QFrame):
         except Exception as e:
             msg = "Błąd ładowania upuszczonego tracka w OdtwarzaczView"
             logger.warning(f"{msg}: {e}")
+
+    # ------------------------------------------------------------------
+    # Compact mode (pilot-like) + animated indicator (per SZPIEG Build Spec step 3)
+    # set_compact_mode, collapse sizes, react to play_state, spin CD-like.
+    # Modular: sizes from styles.BOOTH_SIZES compact_*, anim self contained.
+    # ------------------------------------------------------------------
+    def set_compact_mode(self, compact: bool) -> None:
+        """Włącz/wyłącz tryb compact (mały pilot). Zmienia rozmiary, fonty, min wave, pokazuje spin ind.
+        Zachowuje cue logic, air (mniejsze), drag, scalability.
+        Toggle z dj_player_window (przycisk).
+        """
+        if self._compact == bool(compact):
+            return
+        self._compact = bool(compact)
+        try:
+            if hasattr(self.controller, "set_compact_mode"):
+                self.controller.set_compact_mode(compact)
+        except Exception:
+            pass
+        self._apply_compact_ui()
+
+    def _apply_compact_ui(self) -> None:
+        compact = self._compact
+        sizes = BOOTH_SIZES
+        if compact:
+            # Collapse sizes (pilot-like mini)
+            play_s = sizes.get("compact_transport_play", (52, 32))
+            cue_s = sizes.get("compact_transport_cue", (42, 28))
+            stop_s = sizes.get("compact_transport_stop", (36, 28))
+            wave_min = sizes.get("compact_waveform_min_height", 80)
+            bpm_f = sizes.get("compact_bpm_font", 14)
+            title_f = sizes.get("compact_title_font", 11)
+            time_f = sizes.get("compact_time_font", 10)
+            stat_f = sizes.get("compact_status_font", 9)
+            # smaller margins for pilot
+            self.layout().setContentsMargins(8, 6, 8, 6)
+            self.layout().setSpacing(6)
+        else:
+            play_s = sizes.get("transport_play", (96, 58))
+            cue_s = sizes.get("transport_cue", (78, 52))
+            stop_s = sizes.get("transport_stop", (68, 52))
+            wave_min = sizes.get("waveform_min_height_single", 260)
+            bpm_f = 32
+            title_f = 18
+            time_f = 16
+            stat_f = 11
+            self.layout().setContentsMargins(32, 24, 32, 24)
+            self.layout().setSpacing(18)
+
+        # Apply transport sizes
+        if hasattr(self, "play_btn"):
+            self.play_btn.setFixedSize(*play_s)
+        if hasattr(self, "cue_btn"):
+            self.cue_btn.setFixedSize(*cue_s)
+        if hasattr(self, "stop_btn"):
+            self.stop_btn.setFixedSize(*stop_s)
+
+        # Wave min (dominant but smaller in compact)
+        if hasattr(self, "waveform"):
+            self.waveform.setMinimumHeight(wave_min)
+
+        # Fonts
+        if hasattr(self, "title_label"):
+            self.title_label.setStyleSheet(
+                f"font-size: {title_f}px; font-weight: 700; "
+                f"color: {BOOTH_COLORS['text_primary']};")
+        if hasattr(self, "bpm_label"):
+            self.bpm_label.setStyleSheet(
+                f"color: {BOOTH_COLORS['accent']}; font-size: {bpm_f}px; font-weight: 900; "
+                "font-family: \"Consolas\", \"JetBrains Mono\", monospace;"
+            )
+        if hasattr(self, "time_label"):
+            self.time_label.setStyleSheet(
+                f"color: {BOOTH_COLORS['text_secondary']}; font-size: {time_f}px; font-weight: 700; "
+                "font-family: \"Consolas\", \"JetBrains Mono\", monospace;"
+            )
+        if hasattr(self, "status_label"):
+            self.status_label.setStyleSheet(
+                f"color: {BOOTH_COLORS.get('text_muted', '#6b7688')}; font-size: {stat_f}px;"
+            )
+
+        # Spin indicator visible only in compact (pilot)
+        if hasattr(self, "_spin_indicator"):
+            self._spin_indicator.setVisible(compact)
+            if not compact:
+                self._spin_indicator.stop()
+
+        self.updateGeometry()
+
+    def _update_compact_play_state(self, playing: bool) -> None:
+        """React to play_state for anim (spin when playing in compact)."""
+        if hasattr(self, "_spin_indicator") and self._compact:
+            if playing:
+                self._spin_indicator.start()
+            else:
+                self._spin_indicator.stop()

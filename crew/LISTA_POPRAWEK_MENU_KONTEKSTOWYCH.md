@@ -113,6 +113,9 @@
 
 **Status ogólny**: Cała lista zadań z menu kontekstowych ukończona. Poprzednie zadania z przeszłości zweryfikowane i podpięte.
 
+**SZPIEG + crew rethink (2026):** Dodano kluczowego agenta SZPIEG (nadrzędne research dla konkretnych fragmentów, encyklopedia w crew/SZPIEG_..., Build Spec binding). Hierarchia: SZPIEG research lead (konsultuje, punktuje przydatność dla TEGO projektu, side tasks od teamu z consent). Zespół (Designer/Writer/Fixer/Tester) dostarcza pełne wnioski/rewerk plans przed impl. Pamiętać instrukcje na stałe w archiwach. Pierwszy research: single Odtwarzacz basics — przekazano do impl wg spec (transport, layout, drag, compact, EFFECT tooltips, air, scalability, file vs stream). Postępy w odtwarzacz_view + simple_controller + integracja w dj_player_window (default single, visibility, drag fix, tooltips).
+**2026-06-02 Writer:** Pełna impl 7 kroków Plan (QStacked solidify w dj_player_window, expand EFFECT+docs, compact+spinning CD anim, scalability resize, cue/drag+safety prompt, testy smoke/pytest/python-c, update docs/SZPIEG). Exact match. OK.
+
 **Opcja A (legacy cleanup)**: Zakończona. Usunięto wszystkie guardy _HAS_NEW_DJ_VIEWS / _use_new, hybrydowe if True/False, martwe bloki "# === STARA ARCHITEKTURA", stare metody DeckWidget/SinglePlayerView (usunięte wcześniej), _build_mixer_strip, _update_crossfader_volumes, _toggle_layout starej wersji. Uproszczono load/unload/stop/_global_*/_quick_* itp. do sole new paths (DeckController + views). Przywrócono użyteczne narzędzia (recent/load/stopall) w kompaktowym pasku. Bez utraty funkcjonalności. Smoke + pytest (168 passed) + importy OK.
 
 Plik z listą poprawek: crew/LISTA_POPRAWEK_MENU_KONTEKSTOWYCH.md (utworzony wcześniej).

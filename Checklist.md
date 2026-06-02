@@ -1,7 +1,8 @@
 # Checklist — Lumbago Music AI (Stan projektu)
 
 > **Uwaga:** Projekt jest obecnie skupiony wyłącznie na wersji Desktop (PyQt6).  
-> Wersje Web MVP (FastAPI + React), tagerv2 (React standalone) i planowana migracja na WinUI 3 zostały usunięte z aktywnego repozytorium w maju 2026 w celu uproszczenia i skupienia na głównej aplikacji desktopowej + DJ Playerze.  
+> Wersze Web MVP (FastAPI + React), tagerv2 (React standalone) i planowana migracja na WinUI 3 zostały usunięte z aktywnego repozytorium w maju 2026 w celu uproszczenia i skupienia na głównej aplikacji desktopowej + DJ Playerze.
+> 2026-06-02: Writer zakończył reworks single Odtwarzacz per SZPIEG spec (QStack, compact anim spin, EFFECT, scalability, safety). Patrz crew/SZPIEG_agent_spec_and_archive.md + docs/HISTORY. Smoke/pytest OK.
 > Poniższa checklist dotyczy tylko aktualnej wersji Desktop.  
 > Wygenerowano: 2026-04-28. Ostatnia aktualizacja po sprzątaniu: 2026-05.
 

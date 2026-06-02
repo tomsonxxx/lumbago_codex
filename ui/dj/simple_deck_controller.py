@@ -91,6 +91,7 @@ class SimpleDeckController(QtCore.QObject):
             f"SimpleDeckController {self.deck_id} utworzony "
             f"(MVP Odtwarzacz, engine={playback_engine.__class__.__name__})"
         )
+        self._compact: bool = False  # for future sync / state (view drives UI compact)
 
     # ------------------------------------------------------------------
     # Public API – basics only
@@ -100,6 +101,9 @@ class SimpleDeckController(QtCore.QObject):
         Załaduj utwór (z DB lookup dla pełnych danych jak w full path).
         Ustawia _main_cue_ms=0, load engine, emit track + bpm + status.
         Waveform request jest delegowany do widoku (po sygnale) via request_waveform_load.
+
+        FILE vs STREAM: ta metoda = FILE load (ścieżka, DB, engine.load_deck przygotowuje plik).
+        Nie uruchamia streamu (playback). Cue reset do 0.
         """
         if not track:
             return
@@ -123,7 +127,7 @@ class SimpleDeckController(QtCore.QObject):
         duration = 0
         if self.playback_engine:
             try:
-                success = self.playback_engine.load_deck(self.deck_id, track.path)
+                success = self.playback_engine.load_deck(self.deck_id, track.path)  # FILE prep
             except Exception as e:
                 logger.exception(f"SimpleDeck {self.deck_id}: wyjątek przy load_deck: {e}")
                 success = False
@@ -162,7 +166,10 @@ class SimpleDeckController(QtCore.QObject):
         self.status_changed.emit("— Wyczyszczono")
 
     def play(self) -> None:
-        """Start playback. Jeśli pos near 0 – preferuj _main_cue_ms (per spec)."""
+        """Start playback. Jeśli pos near 0 – preferuj _main_cue_ms (per spec).
+        To jest STREAM op (play_deck na załadowanym pliku).
+        Cue logic: prefer cue jeśli blisko 0 (bezpieczne preview z punktu).
+        """
         if not self.playback_engine:
             return
         try:
@@ -176,7 +183,7 @@ class SimpleDeckController(QtCore.QObject):
                         self.playhead_changed.emit(cue)
                     except Exception:
                         pass
-            self.playback_engine.play_deck(self.deck_id)
+            self.playback_engine.play_deck(self.deck_id)  # STREAM start
             if not self._playhead_timer.isActive():
                 self._playhead_timer.start()
             self.play_state_changed.emit(True)
@@ -185,7 +192,7 @@ class SimpleDeckController(QtCore.QObject):
             logger.warning(f"SimpleDeck {self.deck_id} play błąd: {e}")
 
     def pause(self) -> None:
-        """Pauza + stop timera."""
+        """Pauza + stop timera. STREAM op."""
         if not self.playback_engine:
             return
         try:
@@ -197,7 +204,7 @@ class SimpleDeckController(QtCore.QObject):
             logger.warning(f"SimpleDeck {self.deck_id} pause błąd: {e}")
 
     def stop(self) -> None:
-        """Stop + timer off + playhead do cue (lub 0)."""
+        """Stop + timer off + playhead do cue (lub 0). STREAM + cue reset."""
         if not self.playback_engine:
             return
         try:
@@ -211,7 +218,7 @@ class SimpleDeckController(QtCore.QObject):
             logger.warning(f"SimpleDeck {self.deck_id} stop błąd: {e}")
 
     def seek(self, time_ms: int) -> None:
-        """Seek bez snap (brak quantize w MVP)."""
+        """Seek bez snap (brak quantize w MVP). STREAM position change."""
         if not self.playback_engine:
             return
         try:
@@ -226,7 +233,9 @@ class SimpleDeckController(QtCore.QObject):
             logger.warning(f"SimpleDeck {self.deck_id} seek błąd: {e}")
 
     def set_cue(self) -> None:
-        """Ustaw _main_cue_ms na bieżącej pozycji (dla play prefer logic)."""
+        """Ustaw _main_cue_ms na bieżącej pozycji (dla play prefer logic).
+        Nie zmienia pliku, tylko pozycję cue dla tego streamu.
+        """
         if not self.playback_engine:
             return
         try:
@@ -273,6 +282,14 @@ class SimpleDeckController(QtCore.QObject):
                     pass
         except Exception:
             pass
+
+    def set_compact_mode(self, compact: bool) -> None:
+        """Store compact flag (UI driven in view; controller for consistency/extend).
+        Per spec: extend compact to simple + odt.
+        """
+        self._compact = bool(compact)
+        # No direct UI here; view listens/reacts. Status for debug.
+        self.status_changed.emit("compact on" if compact else "compact off")
 
 
 # ------------------------------------------------------------------

@@ -92,3 +92,17 @@ Vercel plugin (https://github.com/vercel/vercel-plugin) is registered for this p
 - Relevant here because of `vercel.json` + `app/` (Next.js presence layer added to support Vercel deploys for the desktop project) and any future web-facing work.
 
 To re-run / update: `npx plugins add vercel/vercel-plugin --target <claude-code|codex|cursor> --scope project --yes`
+
+## Crew Hierarchy Update (2026 — SZPIEG Agent)
+- **SZPIEG (SPY):** Kluczowy, nadrzędny research/spy agent. Dla konkretnych wąskich fragmentów (np. single player transport, compact modes, tooltip effects, drag UX, file vs audio ops) tworzy listy 10-15+ przykładów z real software (Rekordbox, Serato, Traktor, Mixxx, niche tools, compact players etc.), analizuje implementacje, opinie pro DJ + users z forów/screenshotów/docs, rozróżnienia (plik vs strumień, compact/simple/pro, EFFECT tooltips).
+- **Instrukcje nadrzędne:** Szuka "jak ZOSTAŁO ZROBIONE" (techniki, kolejność, metody dokładnie), encyklopedia w crew/SZPIEG_agent_spec_and_archive.md. Gdy brak ścisłego "copy X" — SZPIEG decyduje o metodzie (konsultuje z resztą, punktuje przydatność dla TEGO projektu). Jego Build Spec jest binding dla designer/writer/fixer/tester.
+- **Side tasks:** Inni agenci mogą zlecać SZPIEG-owi research side tasks (wyjątkowe, za zgodą usera) gdy prace stoją.
+- **Hierarchia rethink:** SZPIEG jako research lead pcha projekt do przodu. Zespół (Designer, Writer, Fixer, Tester, Plan, General) dostaje spec jako primary, dostarcza wnioski/rewerk plans. Pełny opis wniosków z teamu wymagany przed impl. Update AGENTS/CLAUDE/memory/HISTORY/Checklist/RECOVERY/crew przy każdym research.
+- **Archiva:** Dedykowany plik crew/SZPIEG_... dla findings + encyklopedia (odnosić się do poprzednich dla pokrewnych tematów). Tworzy "sposoby na wszystko".
+- **Pierwszy research:** Single "Odtwarzacz" MVP (load file, play/pause/stop basics, clean air layout no overlap, drag from table, tooltips with EFFECT, compact pilot-like with animation, scalability). Pełny raport + Build Spec w crew/SZPIEG_agent_spec_and_archive.md — stosować dokładnie przy impl.
+- **Dla tego projektu:** Wybierać rozwiązania najlepsze dla single player basics (clean, readable, functional, scalable) — nie fan wszystkich programów na liście, ale niektóre wzory do naśladowania/kopiowania części (np. large centered transport + separate CUE z Rekordbox/Serato, modular compact z Mixxx/Traktor, EFFECT tooltips, air + dominant waveform, drag with lookup + safety, animated play indicator z Winamp-like).
+- **2026-06-02 Writer impl:** Pełne reworks wg spec (QStacked, EFFECT wszędzie, compact+spinning CD anim via timer/paint, resizeEvent, safety prompt, drag highlight, docs file/stream). Testy OK. Zaktualizowano archiwa. Patrz crew/SZPIEG... + HISTORY.
+
+**Dla nowych agentów/programistów:** Zawsze najpierw przeczytaj memory.md (centralna encyklopedia z zasadami, stanem, SZPIEG, jak dokumentować ruchy w identyczny sposób aby multi-team nie traciło wątku). Potem crew/SZPIEG_agent_spec_and_archive.md (encyklopedia research + nadrzędny Build Spec), AGENTS.md/CLAUDE.md (crew/hierarchy).
+
+See crew/SZPIEG_agent_spec_and_archive.md for full spec, instructions, archive of findings, Build Spec. memory.md jest primary living doc.

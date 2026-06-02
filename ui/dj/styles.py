@@ -274,6 +274,15 @@ BOOTH_SIZES = {
     "pitch_slider_width": 180,
     "eq_slider_height": 100,
     "crossfader_height": 34,
+    # Compact / pilot-like sizes (per SZPIEG spec for single odt)
+    "compact_transport_play": (52, 32),
+    "compact_transport_cue": (42, 28),
+    "compact_transport_stop": (36, 28),
+    "compact_waveform_min_height": 80,
+    "compact_bpm_font": 14,
+    "compact_title_font": 11,
+    "compact_time_font": 10,
+    "compact_status_font": 9,
 }
 
 def get_button_stylesheet(variant: str = "default") -> str:
