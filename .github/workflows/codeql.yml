@@ -74,7 +74,7 @@ jobs:
 
     - name: Install dependencies
       if: matrix.language == 'javascript-typescript'
-      run: npm ci
+      run: npm ci --legacy-peer-deps || npm install --legacy-peer-deps --no-audit --no-fund
 
     # Add any setup steps before running the `github/codeql-action/init` action.
     # This includes steps like installing compilers or runtimes (`actions/setup-node`
