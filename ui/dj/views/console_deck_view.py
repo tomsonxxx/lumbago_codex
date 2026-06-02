@@ -50,8 +50,9 @@ from ui.dj.styles import (
     get_slider_stylesheet,
 )
 
+# WaveformWidget extracted (ui/dj/views/waveform_widget.py)
 try:
-    from ui.dj_player_window import WaveformWidget
+    from ui.dj.views.waveform_widget import WaveformWidget
 except Exception:  # pragma: no cover
     WaveformWidget = None  # type: ignore
 

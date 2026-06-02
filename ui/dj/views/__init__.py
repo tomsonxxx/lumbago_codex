@@ -19,6 +19,7 @@ from .memory_controls import MemoryControls
 from .focused_deck_view import FocusedDeckView
 from .console_deck_view import ConsoleDeckView
 from .dual_console_widget import DualConsoleWidget
+from .odtwarzacz_view import OdtwarzaczView
 
 __all__ = [
     "HotcuePad",
@@ -32,4 +33,6 @@ __all__ = [
     "FocusedDeckView",
     "ConsoleDeckView",
     "DualConsoleWidget",
+    # Minimal Odtwarzacz MVP single (task)
+    "OdtwarzaczView",
 ]

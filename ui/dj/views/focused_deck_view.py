@@ -50,10 +50,10 @@ from ui.dj.styles import (
     get_slider_stylesheet,
 )
 
-# WaveformWidget – aktualnie mieszka w dj_player_window (faza przejściowa)
+# WaveformWidget – extracted to dedicated module (clean separation, task 1)
 # W pełni zachowuje seek_requested, cue_set_requested (Shift+click), double_clicked
 try:
-    from ui.dj_player_window import WaveformWidget
+    from ui.dj.views.waveform_widget import WaveformWidget
 except Exception:  # pragma: no cover
     WaveformWidget = None  # type: ignore
 
