@@ -210,8 +210,17 @@ class UnifiedAutoTagger:
             filename_title and not filename_artist and _normalize(filename_title) == _normalize(track.title)
         )
 
+        # Pola do aktualizacji z kandydata (w tym 'genre')
+        # Upewnij się, że metoda apply_best_match() zawiera logikę przypisującą genre (i inne pola metadanych)
+        fields_to_update = [
+            'title', 'artist', 'album', 'albumartist', 'year', 'genre',
+            'bpm', 'key', 'mood', 'tracknumber', 'discnumber', 'composer',
+            'rating', 'comment', 'lyrics', 'isrc', 'publisher', 'grouping',
+            'copyright', 'remixer'
+        ]
+
         mapping: dict[str, Any] = {}
-        for field_name in _CANDIDATE_TRACK_FIELDS:
+        for field_name in fields_to_update:
             if (
                 protect_filename_identity
                 and field_name in {"title", "artist"}
@@ -1104,31 +1113,6 @@ def _candidate_for_field(candidates: list[Candidate], field_name: str) -> Candid
         if _has_meaningful_candidate_value(field_name, value):
             return candidate
     return None
-
-
-_CANDIDATE_TRACK_FIELDS = (
-    "title",
-    "artist",
-    "album",
-    "albumartist",
-    "year",
-    "tracknumber",
-    "discnumber",
-    "composer",
-    "genre",
-    "rating",
-    "mood",
-    "key",
-    "bpm",
-    "energy",
-    "comment",
-    "lyrics",
-    "isrc",
-    "publisher",
-    "grouping",
-    "copyright",
-    "remixer",
-)
 
 
 def _has_meaningful_candidate_value(field_name: str, value: Any) -> bool:
