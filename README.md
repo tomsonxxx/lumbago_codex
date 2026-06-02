@@ -44,3 +44,26 @@ pyinstaller pyinstaller.spec --noconfirm
 ```powershell
 pytest
 ```
+
+## Kompatybilność z Vercel i narzędziami agentów
+
+Projekt jest **wyłącznie desktopowy** (PyQt6 + DJ Player). Wersje web i inne zostały usunięte.
+
+Dla poprawnego działania na platformie Vercel (obejście wykrywania `main.py` jako funkcji serverless) dodano minimalną, nieaktywną warstwę Next.js:
+
+- `vercel.json` (framework: "nextjs")
+- `app/` (prosty App Router z `layout.tsx` zawierającym `import { SpeedInsights } from "@vercel/speed-insights/next"`)
+- `package.json` ze skryptami build/dev Next
+
+**vercel-plugin** (https://github.com/vercel/vercel-plugin) jest zarejestrowany w repo (manifesty `.claude-plugin/`, `.codex-plugin/`, `.cursor-plugin/` — lekkie pliki JSON).
+
+Aby załadować skills, agentów (ai-architect, deployment-expert, performance-optimizer) i komendy Vercel/Next.js do Claude Code / Cursor / Codex:
+
+```powershell
+npx plugins add vercel/vercel-plugin --target claude-code --scope project --yes
+# analogicznie dla codex lub cursor
+```
+
+Pełna treść (26 skills: nextjs, vercel-cli, deployments-cicd itd.) trafia do cache agenta (`~/.claude/plugins/cache/...`). Po instalacji zrestartuj narzędzie agenta.
+
+To nie jest pełna aplikacja web — tylko obecność wymagana przez Vercel + wsparcie dla AI agentów pracujących z tym repo.

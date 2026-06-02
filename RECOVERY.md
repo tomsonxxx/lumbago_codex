@@ -1,5 +1,7 @@
 # RECOVERY — Konsolidacja repozytorium 2026-05-16
 
+> **Uwaga (czerwiec 2026):** Później dodano z powrotem minimalną warstwę Next.js (`app/`, `vercel.json`) wyłącznie dla kompatybilności deployu na Vercel oraz vercel-plugin dla agentów. Nie przywrócono pełnej aplikacji web.
+
 ## Commit przed konsolidacją
 ```
 1f5047c8 chore(vercel): skip all deployments — web app removed

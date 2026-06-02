@@ -133,6 +133,17 @@ Na żądanie użytkownika przeprowadzono gruntowne porządki:
 - Zaktualizowano dokumentację (README, user_guide.md, memory.md), aby jasno komunikować, że projekt jest wyłącznie desktopowy (PyQt6).
 - Repozytorium jest teraz czyste i skupione wyłącznie na aplikacji desktopowej + DJ Playerze.
 
+## Dodatki po sprzątaniu (czerwiec 2026)
+
+- Dodano **minimalną warstwę Next.js** (`app/`, `vercel.json` z `"framework": "nextjs"`, `@vercel/speed-insights`, skrypty build) wyłącznie w celu poprawnego deploymentu na Vercel (lumbago-codex). Bez niej platforma błędnie wykrywała `main.py` jako funkcję serverless. Nie jest to reaktywacja pełnej aplikacji web — to tylko obecność kompatybilnościowa.
+- Zainstalowano i zarejestrowano **vercel-plugin** (manifesty `.claude-plugin/`, `.codex-plugin/`, `.cursor-plugin/` dodane do repo). 
+  - Umożliwia agentom (Claude Code, Codex, Cursor) dostęp do 26 skills Vercel/Next.js (m.in. nextjs, vercel-cli, deployments-cicd, ai-sdk, workflow) oraz specjalistów (ai-architect, deployment-expert, performance-optimizer).
+  - Rejestracja: `npx plugins add vercel/vercel-plugin --target claude-code --scope project --yes` (i dla pozostałych targetów).
+  - Treść ląduje w cache użytkownika (`~/.claude/plugins/cache/vercel/...`); manifesty w repo są lekkie.
+- Zaktualizowano AGENTS.md, CLAUDE.md, README.md oraz Checklist.md o informacje o pluginie i warstwie Vercel.
+- Naprawiono serię crashy runtime (DJ Player UnboundLocalError, TypeError None duration/bpm w beatgrid, UnicodeDecodeError w subprocessach na Windows cp1250, fix apply_best_match w autotagu).
+- Wypchnięto na main + uporządkowano (rebase, czysty working tree, 160 testów zielonych).
+
 Po sprzątaniu zweryfikowano:
 - Struktura: core/, data/, services/, ui/, tests/, main.py na poziomie głównym.
 - Brak folderów web/react/winui.

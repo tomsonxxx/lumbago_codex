@@ -175,6 +175,7 @@ Szczegóły historyczne znajdują się w `docs/HISTORY.md` i `RECOVERY.md`.
 - [x] Desktop CI (`desktop-ci.yml`) — pytest na Windows + build PyInstaller
 - [x] CodeQL (`codeql.yml`) — security scanning (Python)
 - [x] CLAUDE.md — dokumentacja dla AI assistants
+- [x] vercel-plugin (manifesty .claude-plugin/ itp. w repo) + minimalna warstwa Next.js (`app/`, vercel.json framework nextjs, SpeedInsights) — wyłącznie dla kompatybilności deployu na Vercel i wsparcia agentów (Claude/Cursor/Codex) skillsami Vercel/Next.js. Nie jest to pełna aplikacja web (stara web MVP usunięta).
 - [ ] (P2) Automatyczne testy E2E (Playwright/Cypress)
 - [ ] (P2) Coverage report w CI
 - [ ] (P2) Automatyczny release do GitHub Releases po tagu
