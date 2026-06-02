@@ -62,7 +62,8 @@ def test_unified_autotagger_picks_best_candidate(monkeypatch):
 def test_apply_best_match_updates_track():
     service = UnifiedAutoTagger(_settings())
     track = Track(path="x.mp3", title="Old", artist="Old Artist", album=None, genre=None, bpm=None, key=None)
-    result = type("R", (), {"best_match": Candidate(source="MusicBrainz", score=90, title="New Title", artist="New Artist", album="New Album", genre="Trance", bpm=128.0, key="8A", mood="energetic", energy=0.8)})()
+    candidate = Candidate(source="MusicBrainz", score=90, title="New Title", artist="New Artist", album="New Album", genre="Trance", bpm=128.0, key="8A", mood="energetic")
+    result = type("R", (), {"best_match": candidate, "candidates": [candidate]})()
 
     changed = service.apply_best_match(track, result)
 
