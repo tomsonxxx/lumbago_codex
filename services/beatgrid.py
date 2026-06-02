@@ -39,9 +39,9 @@ def camelot_range_filter(tracks_with_keys: list[tuple[str,str]], root: str, step
     return [ident for ident, k in tracks_with_keys if k.strip().upper() in compatible]
 
 
-def compute_beatgrid(duration_seconds: float, bpm: float, start_offset: float = 0.0) -> list[float]:
+def compute_beatgrid(duration_seconds: float | None, bpm: float | None, start_offset: float = 0.0) -> list[float]:
     """Return beat timestamps (seconds) for a simple fixed-tempo beatgrid."""
-    if duration_seconds <= 0 or bpm <= 0:
+    if duration_seconds is None or duration_seconds <= 0 or bpm is None or bpm <= 0:
         return []
     interval = 60.0 / bpm
     if interval <= 0:
@@ -54,11 +54,14 @@ def compute_beatgrid(duration_seconds: float, bpm: float, start_offset: float = 
     return beats
 
 
-def auto_cue_points(duration_seconds: float, intro_seconds: float = 0.0, outro_padding_seconds: float = 10.0) -> tuple[int, int]:
+def auto_cue_points(duration_seconds: float | None, intro_seconds: float = 0.0, outro_padding_seconds: float = 10.0) -> tuple[int, int]:
     """
     Return cue-in and cue-out in milliseconds.
     cue_in starts at intro_seconds, cue_out ends before the track tail.
+    Handles None duration gracefully (returns 0,0).
     """
+    if duration_seconds is None or duration_seconds <= 0:
+        return 0, 0
     duration_seconds = max(0.0, duration_seconds)
     cue_in_ms = int(max(0.0, intro_seconds) * 1000)
     cue_out_seconds = max(0.0, duration_seconds - max(0.0, outro_padding_seconds))

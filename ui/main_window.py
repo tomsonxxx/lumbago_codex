@@ -530,10 +530,13 @@ class LoudnessWorker(QtCore.QRunnable):
         updated: list[Track] = []
         total = len(self.tracks)
         for idx, track in enumerate(self.tracks, 1):
-            cue_in, cue_out = auto_cue_points(track.duration)
-            track.cue_in_ms = cue_in
-            track.cue_out_ms = cue_out
-            beatgrid = compute_beatgrid(track.duration, track.bpm)
+            dur = track.duration or 0.0
+            bpm = track.bpm or 0.0
+            if track.duration:
+                cue_in, cue_out = auto_cue_points(dur)
+                track.cue_in_ms = cue_in
+                track.cue_out_ms = cue_out
+            beatgrid = compute_beatgrid(dur, bpm)
             save_analysis_cache(
                 Path(track.path),
                 {
@@ -2547,7 +2550,10 @@ class MainWindow(QtWidgets.QMainWindow):
             self._show_message("Zaznacz co najmniej jeden utwór.")
             return
         for track in tracks:
-            cue_in, cue_out = auto_cue_points(track.duration)
+            if track.duration:
+                cue_in, cue_out = auto_cue_points(track.duration)
+            else:
+                cue_in, cue_out = 0, 0
             track.cue_in_ms = cue_in
             track.cue_out_ms = cue_out
             save_analysis_cache(

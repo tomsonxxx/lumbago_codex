@@ -8,26 +8,15 @@ import logging
 from core.models import Track  # CuePoint używany wyłącznie w ui/dj/hotcue_manager.py
 from core.waveform import WaveformData, generate_waveform_threadsafe, extract_peaks
 
-# Nowa architektura (faza równoległa redesignu)
-try:
-    from ui.dj.deck_controller import DeckController
-    from ui.dj.views import (
-        FocusedDeckView,
-        ConsoleDeckView,
-        DualConsoleWidget,
-        MixerStrip,
-    )
-    _HAS_NEW_DJ_VIEWS = True
-    # logger jeszcze nie zdefiniowany – używamy print na poziomie modułu
-    print("[DJ] Nowa architektura zaimportowana pomyślnie (DeckController + views)")
-except Exception:
-    _HAS_NEW_DJ_VIEWS = False
-    DeckController = None
-    FocusedDeckView = None
-    ConsoleDeckView = None
-    DualConsoleWidget = None
-    MixerStrip = None
-    print("[DJ] Nowa architektura niedostępna – fallback do starego kodu")
+# Nowa architektura (faza równoległa redesignu) - sole implementation, hardcoded
+from ui.dj.deck_controller import DeckController
+from ui.dj.views import (
+    FocusedDeckView,
+    ConsoleDeckView,
+    DualConsoleWidget,
+    MixerStrip,
+)
+print("[DJ] Nowa architektura zaimportowana pomyślnie (DeckController + views) - sole impl")
 
 # Nowy, solidny backend audio
 from services.playback import PlaybackEngine, create_backend
@@ -2402,35 +2391,20 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
             # Tworzymy wspólny silnik playbacku (VLC lub fallback)
             self.playback_engine = PlaybackEngine()
 
-            # === NOWA ARCHITEKTURA (równoległa integracja po Code Review Crew) ===
+            # === NOWA ARCHITEKTURA (sole implementation) ===
             # Używamy helperów z tasku integracyjnego — czysty, powtarzalny wiring
-            if _HAS_NEW_DJ_VIEWS:
+            # Nowa architektura zawsze (import succeeded)
+            try:
                 created_dual = self._create_dual_console_ui(main_layout)
                 self.dual_console = created_dual
                 if created_dual is None:
-                    # Awaryjny fallback do starego jeśli helper zawiódł
-                    _HAS_NEW_DJ_VIEWS = False  # lokalnie wymuś starą gałąź (nie wpływa globalnie)
-                else:
-                    # === NOWA ARCHITEKTURA AKTYWNA (primary path) ===
-                    logger.info("NEW ARCHITECTURE ACTIVE: DeckController + FocusedDeckView/ConsoleDeckView/DualConsoleWidget (pełny wiring drag&drop, skróty, mikser)")
-                    logger.info("Nowa architektura wzmocniona – stary DeckWidget/SinglePlayerView tylko jako pełny fallback.")
-
-            if not _HAS_NEW_DJ_VIEWS:
-                # Stara architektura (fallback) – używana TYLKO gdy nowa zawiedzie
-                logger.warning("Używamy STAREJ architektury DJ (DeckWidget + SinglePlayerView) – fallback")
-                self.deck_a = DeckWidget(
-                    "DECK A", playback_engine=self.playback_engine, deck_id="A"
-                )
-                self.deck_b = DeckWidget(
-                    "DECK B", playback_engine=self.playback_engine, deck_id="B"
-                )
-
-                self.deck_a.track_dropped.connect(lambda path: self._load_dropped_track("A", path))
-                self.deck_b.track_dropped.connect(lambda path: self._load_dropped_track("B", path))
-
-                main_layout.addWidget(self.deck_a)
-                main_layout.addWidget(self.deck_b)
-                self._console_widgets.extend([self.deck_a, self.deck_b])
+                    raise RuntimeError("dual console creation returned None")
+                # === NOWA ARCHITEKTURA AKTYWNA (primary path) ===
+                logger.info("NEW ARCHITECTURE ACTIVE: DeckController + FocusedDeckView/ConsoleDeckView/DualConsoleWidget (pełny wiring drag&drop, skróty, mikser)")
+                logger.info("Nowa architektura - sole impl (stary DeckWidget/SinglePlayerView usunięty)")
+            except Exception as e:
+                logger.exception("Nowa architektura zawiodła przy tworzeniu UI - nie ma fallbacku")
+                raise  # re-raise to be caught by outer except and show error dialog
 
             # Recent history per deck (for quick reloads, task requirement)
             self._recent_a: list[Track] = []
@@ -2473,9 +2447,10 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
         # === GÓRNY MIXER STRIP (Master + HP Cue + PFL) ===
         # W nowej architekturze DualConsoleWidget ma własny mikser (cross/master/cue) — pomijamy stary
         # Używamy MixerStrip gdzie możliwe jako alternatywa/globalny pasek (task integracji)
-        if self.deck_a and self.deck_b and not _HAS_NEW_DJ_VIEWS:
+        _use_new = getattr(self, "_use_new_dj_views", True)
+        if self.deck_a and self.deck_b and not _use_new:
             self._build_mixer_strip(main_layout)
-        elif _HAS_NEW_DJ_VIEWS and MixerStrip is not None:
+        elif _use_new and MixerStrip is not None:
             # Opcjonalny globalny MixerStrip na górze (dla PFL, master — cross jest w Dual)
             try:
                 self.global_mixer = MixerStrip(self)
@@ -2497,7 +2472,8 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
 
         # Crossfader — bigger, clearer...
         # W nowej architekturze POMIJAMY (DualConsoleWidget ma własny crossfader + master/cue podłączony bezpośrednio do engine)
-        if not _HAS_NEW_DJ_VIEWS:
+        _use_new = getattr(self, "_use_new_dj_views", True)
+        if not _use_new:
             cross_frame = QtWidgets.QFrame()
             cross_frame.setStyleSheet(f"""
                 QFrame {{
@@ -2580,7 +2556,8 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
         self.setStatusBar(QtWidgets.QStatusBar())
 
         # Inicjalne ustawienie głośności – TYLKO stara architektura (nowa ma własny mikser w DualConsole)
-        if not _HAS_NEW_DJ_VIEWS:
+        _use_new = getattr(self, "_use_new_dj_views", True)
+        if not _use_new:
             QtCore.QTimer.singleShot(0, self._update_crossfader_volumes)
 
         # Pokazujemy czytelny status backendu na deckach (VLC / Qt / Brak) — defensywnie
@@ -2593,7 +2570,8 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
         # W nowej architekturze używamy helpera _create_focused_single_ui (FocusedDeckView + ctrl)
         # Stary SinglePlayerView tylko w fallbacku. Alias single_player_view zawsze ustawiony.
         try:
-            if _HAS_NEW_DJ_VIEWS:
+            _use_new = getattr(self, "_use_new_dj_views", True)
+            if _use_new:
                 # Helper już mógł stworzyć single_container — użyj go lub utwórz
                 if not hasattr(self, "single_container") or self.single_container is None:
                     focused = self._create_focused_single_ui(main_layout)
@@ -2636,7 +2614,7 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
     def _toggle_section(self, section: str, visible: bool):
         # Nowa architektura: ConsoleDeckView / Focused nie mają set_visible_section (na razie pełny widok)
         # Zachowujemy dla kompatybilności ze starym UI — defensywnie
-        if not _HAS_NEW_DJ_VIEWS:
+        if False:  # old architecture removed (sole new DJ impl)
             if self.deck_a and hasattr(self.deck_a, "set_visible_section"):
                 self.deck_a.set_visible_section(section, visible)
             if self.deck_b and hasattr(self.deck_b, "set_visible_section"):
@@ -2644,7 +2622,7 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
 
     def _toggle_beatgrid(self, visible: bool):
         # Wsparcie dla obu architektur
-        if _HAS_NEW_DJ_VIEWS:
+        if True:  # new architecture sole impl (old removed)
             # W dual: waveformy są wewnątrz ConsoleDeckView — ustaw przez dual jeśli ma API
             if hasattr(self, "dual_console") and self.dual_console:
                 for deck_id in ("A", "B"):
@@ -2808,7 +2786,7 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
         Crossfader steruje miksem A/B (stara ścieżka).
         W nowej architekturze (DualConsole) crossfader jest podłączony bezpośrednio w widoku — ta metoda jest no-op.
         """
-        if _HAS_NEW_DJ_VIEWS:
+        if True:  # new architecture sole impl (old removed)
             return  # DualConsole + DeckController + engine obsługują to wewnętrznie
         if not self.playback_engine or not hasattr(self, "crossfader") or not self.crossfader:
             return
@@ -2878,7 +2856,7 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
             self._current_layout = "compact"
             self.btn_layout.setText("Układ: Kompaktowy")
 
-        if not _HAS_NEW_DJ_VIEWS:
+        if False:  # old architecture removed (sole new DJ impl)
             QtCore.QTimer.singleShot(10, self._update_crossfader_volumes)
 
     # ------------------------------------------------------------------
@@ -2889,9 +2867,9 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
 
     def _create_deck_controllers(self):
         """Helper #1: Tworzy parę DeckController (A/B) podłączoną do PlaybackEngine.
-        Używamy wyłącznie gdy _HAS_NEW_DJ_VIEWS. Zwraca (ctrl_a, ctrl_b) lub (None, None).
+        # Używamy wyłącznie w nowej architekturze. Zwraca (ctrl_a, ctrl_b) lub (None, None).
         """
-        if not _HAS_NEW_DJ_VIEWS or DeckController is None or not hasattr(self, "playback_engine"):
+        if False or DeckController is None or not hasattr(self, "playback_engine"):  # old arch removed
             return None, None
         try:
             ctrl_a = DeckController("A", self.playback_engine)
@@ -2906,7 +2884,7 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
         """Helper #2: Buduje DualConsoleWidget (dwa ConsoleDeckView + własny mikser z crossfader/master/cue).
         Podłączamy do layoutu, zapisujemy referencje. Zwraca dual lub None.
         """
-        if not _HAS_NEW_DJ_VIEWS or DualConsoleWidget is None:
+        if False or DualConsoleWidget is None:  # old arch removed
             return None
         try:
             ctrl_a, ctrl_b = self._create_deck_controllers()
@@ -2942,7 +2920,7 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
         """Helper #3: Tworzy/wymienia FocusedDeckView jako single view (tryb 'Odtwarzacz').
         Używany też fallbackowo w single_player_view.
         """
-        if not _HAS_NEW_DJ_VIEWS or FocusedDeckView is None:
+        if False or FocusedDeckView is None:  # old arch removed
             return None
         try:
             # Jeśli nie ma jeszcze kontrolera A — stwórz (dla pure single)
@@ -2995,7 +2973,7 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
                     pass
 
         # Nowa architektura - przełączanie kontenerów (DualConsole vs FocusedDeckView)
-        if _HAS_NEW_DJ_VIEWS:
+        if True:  # new architecture sole impl (old removed)
             if hasattr(self, "single_container") and self.single_container:
                 self.single_container.setVisible(is_single)
             if hasattr(self, "dual_console") and self.dual_console:
@@ -3018,13 +2996,13 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
 
         # Sync tylko gdy mamy stary single_player_view + stary deck_a (fallback path)
         # W nowej architekturze sync jest prostszy (oba widoki subskrybują tego samego DeckController)
-        use_old_sync = (not _HAS_NEW_DJ_VIEWS) and spv and hasattr(self, "deck_a") and self.deck_a
+        use_old_sync = False and spv and hasattr(self, "deck_a") and self.deck_a  # old arch removed, always new sync
         if use_old_sync:
             try:
                 self._sync_deck_a_state_between_views(is_single)
             except Exception as exc:
                 logger.warning(f"Mode switch sync failed (non-fatal): {exc}")
-        elif _HAS_NEW_DJ_VIEWS and is_single:
+        elif True and is_single:  # new arch sole
             # W trybie single z nową architekturą — upewnij się że Focused ma aktualny playhead
             try:
                 if self.playback_engine and hasattr(self, "_deck_ctrl_a") and self._deck_ctrl_a:
@@ -3041,7 +3019,7 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
         Metoda zachowana dla pełnej kompatybilności fallbacku.
         """
         # W nowej architekturze — nic do roboty (wspólny DeckController + sygnały Qt)
-        if _HAS_NEW_DJ_VIEWS:
+        if True:  # new architecture sole impl (old removed)
             return
 
         spv = getattr(self, "single_player_view", None)
@@ -3304,7 +3282,7 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
         is_single_mode = getattr(self, '_current_mode', 'console') == 'single'
 
         # NOWA ARCHITEKTURA: używamy kontrolerów (jedno źródło prawdy)
-        if _HAS_NEW_DJ_VIEWS:
+        if True:  # new architecture sole impl (old removed)
             ctrl = self._deck_ctrl_a if d == "A" else self._deck_ctrl_b
             target_view = self.deck_a if d == "A" else self.deck_b
             if ctrl:
@@ -3323,7 +3301,7 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
                         self.single_player_view.current_track = track
                 except Exception:
                     pass
-            if not is_single_mode and not _HAS_NEW_DJ_VIEWS:
+            if not is_single_mode and False:  # old arch removed
                 QtCore.QTimer.singleShot(50, self._update_crossfader_volumes)
             try:
                 self.deck_track_loaded.emit(d, track)
@@ -3366,7 +3344,7 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
             except Exception as e:
                 logger.warning(f"Failed to sync to single_player_view: {e}")
 
-        if not is_single_mode and not _HAS_NEW_DJ_VIEWS:
+        if not is_single_mode and False:  # old arch removed
             QtCore.QTimer.singleShot(50, self._update_crossfader_volumes)
 
         try:
@@ -3377,7 +3355,7 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
     def unload_deck(self, deck: str):
         d = deck.upper()
         # NOWA ARCHITEKTURA — delegacja do kontrolera (widoki nie mają unload_track)
-        if _HAS_NEW_DJ_VIEWS:
+        if True:  # new architecture sole impl (old removed)
             ctrl = self._deck_ctrl_a if d == "A" else self._deck_ctrl_b
             if ctrl:
                 try:
@@ -3513,7 +3491,7 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
         Wspiera zarówno nową architekturę (DeckController) jak i stary DeckWidget.
         """
         # Nowa architektura — priorytet na kontroler
-        if _HAS_NEW_DJ_VIEWS and hasattr(self, "_deck_ctrl_a") and self._deck_ctrl_a:
+        if True and hasattr(self, "_deck_ctrl_a") and self._deck_ctrl_a:  # new arch sole
             try:
                 self._deck_ctrl_a.toggle_play()
                 return
@@ -3528,7 +3506,7 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
         Pełne wsparcie 8 hotcue'ów. W nowej architekturze delegujemy do DeckController.jump_hotcue.
         """
         # Nowa architektura
-        if _HAS_NEW_DJ_VIEWS and hasattr(self, "_deck_ctrl_a") and self._deck_ctrl_a:
+        if True and hasattr(self, "_deck_ctrl_a") and self._deck_ctrl_a:  # new arch sole
             try:
                 self._deck_ctrl_a.jump_hotcue(index)
                 return
@@ -3585,7 +3563,7 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
         if btn:
             btn.setStyleSheet(style)
         # W nowej architekturze PFL może też iść do ConsoleDeckView (status)
-        if _HAS_NEW_DJ_VIEWS:
+        if True:  # new architecture sole impl (old removed)
             try:
                 if deck == "A" and hasattr(self, "deck_a") and self.deck_a and hasattr(self.deck_a, "pfl_btn"):
                     self.deck_a.pfl_btn.setChecked(checked)

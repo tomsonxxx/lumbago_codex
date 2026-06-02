@@ -62,7 +62,8 @@ def _run_ffmpeg(args: list[str], timeout: int = 120) -> tuple[int, str]:
         result = subprocess.run(
             args,
             capture_output=True,
-            text=True,
+            encoding='utf-8',
+            errors='replace',
             check=False,
             timeout=timeout
         )
