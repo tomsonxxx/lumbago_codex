@@ -248,9 +248,15 @@ class UnifiedAutoTagger:
             if field_name in _LOCALLY_MEASURED and _has_value(current):
                 continue
 
-            # For genre, prefer more specific values among candidates
-            if field_name == "genre" and candidates:
-                incoming = _best_specific_genre(candidates, current)
+            # For genre, prefer more specific values among candidates when available.
+            # Never clobber a good value coming from best_match when the candidates
+            # list is empty or provides no usable genre (fixes best_match-only results).
+            if field_name == "genre":
+                if candidates:
+                    specific = _best_specific_genre(candidates, current)
+                    if specific:
+                        incoming = specific
+                # else: no candidates -> keep incoming from best_match fallback (or None)
 
             if current != incoming:
                 setattr(track, field_name, incoming)
