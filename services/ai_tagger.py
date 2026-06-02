@@ -90,6 +90,69 @@ def _validate_result(result: AnalysisResult) -> AnalysisResult:
     return _dc_replace(result, **kw) if kw else result
 
 
+def _candidates_from_filename(path_or_stem: str | Path) -> list[dict[str, str]]:
+    """Generate plausible artist/title (and other) candidates by trying common
+    DJ/collector filename patterns. Used to rescue files that have ZERO embedded
+    metadata (filename is the only source of truth).
+
+    Tries multiple separators, strips junk (bitrate, [FLAC], (Official), track nums, years),
+    and produces several (artist, title) guesses. First good web match wins.
+    """
+    # Accept either a full path (with real audio ext) or a bare stem (may contain internal dots like '01.Artist - Title').
+    # pathlib .stem would mis-cut on bare stems with dots, so detect real audio suffix.
+    p = Path(str(path_or_stem))
+    audio_exts = {'.mp3', '.flac', '.m4a', '.mp4', '.wav', '.ogg', '.aac', '.aiff'}
+    if p.suffix and p.suffix.lower() in audio_exts:
+        stem = p.stem
+    else:
+        stem = p.name
+    s = stem.strip()
+
+    # common junk removal (320, flac tags, video, year in parens, leading track#)
+    s = re.sub(r'\s*[\(\[]\s*(?:320|128|flac|mp3|wav|web|hq|official|video|lyrics?).*?[\)\]]', '', s, flags=re.I)
+    s = re.sub(r'\s*\b(?:320kbps|128kbps|flac|mp3|wav|webrip)\b.*$', '', s, flags=re.I)
+    s = re.sub(r'(?<=\s)(?:320|128|192|256)\s*$', '', s)  # trailing bare bitrate
+    s = re.sub(r'\s*[\(\[]\d{4}[\)\]]', '', s)
+    s = re.sub(r'^\s*\d{1,3}[\s\.\-_–—]+', '', s)  # 01. or 01- or 01_
+
+    candidates: list[dict[str, str]] = []
+    seen = set()
+
+    seps = [' - ', ' – ', ' — ', ' _ ', '__', '_', ' -', '-', '–', '—']
+    for sep in seps:
+        if sep in s:
+            parts = [p.strip() for p in s.split(sep) if p.strip()]
+            if len(parts) >= 2:
+                art = parts[0]
+                tit = ' '.join(parts[1:])
+                key = (art.lower(), tit.lower())
+                if key not in seen and art and tit:
+                    seen.add(key)
+                    candidates.append({"artist": art, "title": tit})
+            if len(parts) >= 3:
+                art, tit = parts[0], parts[1]
+                key = (art.lower(), tit.lower())
+                if key not in seen and art and tit:
+                    seen.add(key)
+                    candidates.append({"artist": art, "title": tit})
+
+    if not candidates:
+        # last resort: split tokens roughly in half
+        tokens = [t for t in re.split(r'[\s_\-–—\.]+', s) if t]
+        if len(tokens) >= 2:
+            mid = max(1, len(tokens) // 2)
+            art = ' '.join(tokens[:mid])
+            tit = ' '.join(tokens[mid:])
+            if art and tit:
+                candidates.append({"artist": art, "title": tit})
+
+    # also a "full stem as title, empty artist" fallback for AI to handle
+    if not candidates:
+        candidates.append({"artist": "", "title": s})
+
+    return candidates[:6]
+
+
 class DatabaseTagger:
     """Enriches tracks using AcoustID fingerprint → MusicBrainz lookup.
     Falls back to MusicBrainz text search when no AcoustID key is configured."""
@@ -116,9 +179,21 @@ class DatabaseTagger:
                                               source="AcoustID+MusicBrainz")
 
         # --- path 2: MB text search → fetch full recording by MBID ---
+        # Use smart filename candidates when no tags at all (common for naked files)
         query = " ".join(filter(None, [track.artist, track.title])).strip()
+        cands = []
         if not query:
-            query = Path(track.path).stem
+            cands = _candidates_from_filename(track.path)
+            if cands:
+                # prefer first non-empty artist+title pair for MB search (much better recall than raw stem)
+                for c in cands:
+                    q = " ".join(filter(None, [c.get("artist"), c.get("title")])).strip()
+                    if q:
+                        query = q
+                        break
+            if not query:
+                query = Path(track.path).stem
+
         recordings = self._mb.search(query, limit=1)
         if recordings:
             rec = recordings[0]
@@ -130,6 +205,68 @@ class DatabaseTagger:
                     if meta:
                         return _mb_meta_to_result(meta, confidence=0.78,
                                                   source="MusicBrainz text search")
+
+        # Try other candidates explicitly (helps when first split was wrong)
+        for c in (cands or _candidates_from_filename(track.path))[1:]:
+            q = " ".join(filter(None, [c.get("artist"), c.get("title")])).strip()
+            if not q or q == query:
+                continue
+            recs = self._mb.search(q, limit=1)
+            if recs:
+                rec = recs[0]
+                rid = rec.get("id")
+                if rid:
+                    full = self._mb.get_recording(rid)
+                    if full:
+                        meta = _parse_mb_recording(full)
+                        if meta:
+                            return _mb_meta_to_result(meta, confidence=0.72,
+                                                      source="MusicBrainz filename candidate")
+
+        # Filename-only web rescue via free portals (Deezer, iTunes, Last.fm, ListenBrainz, TheAudioDB, Discogs etc.)
+        # This fulfills broader "wyszukiwania w internecie" for naked files where MB text search misses.
+        try:
+            best_q = query
+            if not best_q or best_q == Path(track.path).stem:
+                for c in (cands or _candidates_from_filename(track.path)):
+                    qq = " ".join(filter(None, [c.get("artist"), c.get("title")])).strip()
+                    if qq:
+                        best_q = qq
+                        break
+            if best_q:
+                from services.free_music_portals import FreeMusicPortalSearch
+                agg = FreeMusicPortalSearch(max_workers=4)
+                probes = agg.search_all(best_q)
+                for probe in probes:
+                    cand = getattr(probe, "candidate", None)
+                    if cand and (cand.artist or cand.title):
+                        # Build a lightweight result from the best portal hit
+                        meta = {
+                            "title": cand.title,
+                            "artist": cand.artist,
+                            "album": cand.album,
+                            "year": cand.year,
+                            "genre": cand.genre,
+                            "publisher": cand.publisher,
+                        }
+                        # Filter None
+                        meta = {k: v for k, v in meta.items() if v}
+                        if meta:
+                            res = AnalysisResult(
+                                title=meta.get("title"),
+                                artist=meta.get("artist"),
+                                album=meta.get("album"),
+                                year=meta.get("year"),
+                                genre=meta.get("genre"),
+                                publisher=meta.get("publisher"),
+                                description=f"Filename rescue via {probe.source_label}",
+                                confidence=0.65,
+                                source=f"portals:{probe.source_key}",
+                            )
+                            return res
+        except Exception:
+            # Never let portal rescue break the whole tagger
+            pass
 
         return AnalysisResult(description="Database: no match", confidence=0.0)
 
@@ -640,6 +777,22 @@ def _build_prompt(
     if folder and folder not in (".", ".."):
         known_lines.append(f"Folder: {folder}")
 
+    # When tags are (almost) empty, provide explicit parsed candidates from filename.
+    # This dramatically improves recall for "naked" files named in typical DJ styles.
+    try:
+        cands = _candidates_from_filename(track.path)
+        useful = [c for c in cands if c.get("artist") or c.get("title")]
+        if useful and (not getattr(track, "artist", None) or not getattr(track, "title", None)):
+            cand_lines = []
+            for c in useful[:3]:
+                a = c.get("artist") or "?"
+                t = c.get("title") or "?"
+                cand_lines.append(f"artist=\"{a}\" title=\"{t}\"")
+            if cand_lines:
+                known_lines.append("Kandydaci z nazwy pliku (użyj jeśli pasują; AI + web search): " + " | ".join(cand_lines))
+    except Exception:
+        pass
+
     # Audio technical context
     if track.duration:
         mins, secs = divmod(int(track.duration), 60)
@@ -702,7 +855,8 @@ def _build_prompt(
         "Use '&' for collaborations, 'feat.' for features.\n"
         "9) COMPOSER: For hip-hop/electronic, extract producer name (prod. X) as composer.\n"
         "10) ORIGINAL ARTIST: For covers, put original performer in originalArtist.\n"
-        "11) COMMENT: One short factual sentence about the track.\n"
+        "11) FILENAME ONLY rescue: When almost no tags are present, the 'Kandydaci z nazwy pliku' (or raw filename) will be provided. You MUST use them as primary hint for artist/title. Combine with your knowledge and common web/DB matches for the genre/subgenre/year. If multiple candidates, pick the most plausible for electronic/DJ music.\n"
+        "12) COMMENT: One short factual sentence about the track.\n"
         "12) COPYRIGHT: Label and year, e.g. '2007 Universal Records'.\n"
         "13) Latin alphabet only.\n"
         + clean_note
