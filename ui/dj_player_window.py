@@ -367,8 +367,8 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Lumbago DJ Player")
-        self.setMinimumSize(620, 520)
-        self.resize(680, 580)
+        self.setMinimumSize(980, 720)
+        self.resize(1100, 820)  # larger default for booth console with 2x large waveforms + 8-pad grids + mixer (Rekordbox-like)
 
         central = QtWidgets.QWidget()
         self.setCentralWidget(central)
@@ -484,26 +484,13 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
             self.deck_b = None
             # Nie return — pozwalamy na otwarcie okna z komunikatem błędu
 
-        # === GÓRNY MIXER STRIP (Master + HP Cue + PFL) ===
-        # W sole new arch: DualConsoleWidget ma własny mikser (cross/master/cue) wewnątrz.
-        # Opcjonalny globalny MixerStrip na górze (dla PFL, master — cross jest w Dual) dla stand-alone wygody.
-        if MixerStrip is not None:
-            try:
-                self.global_mixer = MixerStrip(self)
-                self.global_mixer.master_changed.connect(self._on_master_changed)
-                self.global_mixer.hp_changed.connect(self._on_hp_changed)
-                self.global_mixer.crossfader_changed.connect(self._on_global_crossfader)
-                self.global_mixer.pfl_changed.connect(self._on_pfl_changed)
-                main_layout.addWidget(self.global_mixer)
-                if hasattr(self, "_console_widgets"):
-                    self._console_widgets.append(self.global_mixer)
-                QtCore.QTimer.singleShot(0, self._apply_initial_mixer_values)
-            except Exception:
-                logger.debug("MixerStrip nie podłączony (DualConsole ma własny)")
-                self.global_mixer = None
+        # Fallback banner (clear but non-annoying) when QtMultimedia is active
+        self._maybe_show_fallback_banner(main_layout)
 
-        # === KOMPAKTOWY PASEK NARZĘDZI (Recent + Load + STOP ALL + backend) dla stand-alone pro use ===
-        # Zachowane po usunięciu starego _build_mixer_strip w Opcja A. Działa dla obu trybów.
+        # === KOMPAKTOWY PASEK NARZĘDZI (Recent + Load + STOP ALL + backend info) ===
+        # W sole new arch DualConsole ma już własny pełny mikser (cross/master/cue + PPM).
+        # Nie dodajemy duplikatu global_mixer (unikamy nakładania się kontrolek i chaosu).
+        # Pasek narzędzi jest mały i użyteczny do szybkiego ładowania/recent/stop.
         try:
             tools = QtWidgets.QHBoxLayout()
             tools.setContentsMargins(4, 2, 4, 2)
@@ -516,108 +503,64 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
             self.recent_btn_a.setText("Recent A ▾")
             self.recent_btn_a.setMenu(self.recent_menu_a)
             self.recent_btn_a.setPopupMode(QtWidgets.QToolButton.ToolButtonPopupMode.InstantPopup)
-            self.recent_btn_a.setFixedHeight(22)
-            self.recent_btn_a.setStyleSheet("font-size: 9px; padding: 0 6px;")
+            self.recent_btn_a.setFixedHeight(20)
+            self.recent_btn_a.setStyleSheet("font-size: 8px; padding: 0 4px;")
             tools.addWidget(self.recent_btn_a)
 
             self.recent_btn_b = QtWidgets.QToolButton()
             self.recent_btn_b.setText("Recent B ▾")
             self.recent_btn_b.setMenu(self.recent_menu_b)
             self.recent_btn_b.setPopupMode(QtWidgets.QToolButton.ToolButtonPopupMode.InstantPopup)
-            self.recent_btn_b.setFixedHeight(22)
-            self.recent_btn_b.setStyleSheet("font-size: 9px; padding: 0 6px;")
+            self.recent_btn_b.setFixedHeight(20)
+            self.recent_btn_b.setStyleSheet("font-size: 8px; padding: 0 4px;")
             tools.addWidget(self.recent_btn_b)
 
             self.recent_menu_a.aboutToShow.connect(lambda: self._populate_recent_menu("A", self.recent_menu_a))
             self.recent_menu_b.aboutToShow.connect(lambda: self._populate_recent_menu("B", self.recent_menu_b))
 
-            tools.addSpacing(8)
+            tools.addSpacing(6)
 
-            # Load dialogs
             load_a = QtWidgets.QPushButton("Load A…")
             load_b = QtWidgets.QPushButton("Load B…")
-            load_a.setFixedWidth(64)
-            load_b.setFixedWidth(64)
-            load_a.setStyleSheet("font-size: 9px;")
-            load_b.setStyleSheet("font-size: 9px;")
+            load_a.setFixedWidth(58)
+            load_b.setFixedWidth(58)
+            load_a.setStyleSheet("font-size: 8px;")
+            load_b.setStyleSheet("font-size: 8px;")
             load_a.clicked.connect(lambda: self._load_file_dialog("A"))
             load_b.clicked.connect(lambda: self._load_file_dialog("B"))
             tools.addWidget(load_a)
             tools.addWidget(load_b)
 
-            tools.addSpacing(8)
+            tools.addSpacing(6)
 
-            # Global controls
             stop_all_btn = QtWidgets.QPushButton("■ STOP ALL")
-            stop_all_btn.setFixedWidth(72)
-            stop_all_btn.setStyleSheet("font-size: 9px; font-weight: 700; color: #ff6b6b;")
+            stop_all_btn.setFixedWidth(66)
+            stop_all_btn.setStyleSheet("font-size: 8px; font-weight: 700; color: #ff6b6b;")
             stop_all_btn.clicked.connect(self.stop_all_decks)
             tools.addWidget(stop_all_btn)
 
             unload_all_btn = QtWidgets.QPushButton("Unload All")
-            unload_all_btn.setFixedWidth(68)
-            unload_all_btn.setStyleSheet("font-size: 9px;")
+            unload_all_btn.setFixedWidth(60)
+            unload_all_btn.setStyleSheet("font-size: 8px;")
             unload_all_btn.clicked.connect(self.unload_all)
             tools.addWidget(unload_all_btn)
 
             tools.addStretch(1)
 
-            # Backend info
             self.backend_info_label = QtWidgets.QLabel("")
-            self.backend_info_label.setStyleSheet(f"color: {COLORS.get('text_muted', '#6b7688')}; font-size: 9px;")
+            self.backend_info_label.setStyleSheet(f"color: {COLORS.get('text_muted', '#6b7688')}; font-size: 8px;")
             tools.addWidget(self.backend_info_label)
 
             tools_w = QtWidgets.QWidget()
             tools_w.setLayout(tools)
             main_layout.addWidget(tools_w)
-            if hasattr(self, "_console_widgets"):
-                self._console_widgets.append(tools_w)
+            # Nie dodajemy do _console_widgets, żeby pasek Recent/Load/STOP był zawsze widoczny (nawet w trybie single "Odtwarzacz").
             QtCore.QTimer.singleShot(120, self._update_backend_info_label)
         except Exception:
-            logger.debug("Tools bar (recent/load/stop) nie utworzony")
+            logger.debug("Tools bar nie utworzony")
 
-        # Fallback banner (clear but non-annoying) when QtMultimedia is active
-        self._maybe_show_fallback_banner(main_layout)
-
-        # UWAGA: W sole new architecture (DualConsoleWidget + ConsoleDeckView) crossfader jest wewnętrzny w widoku dual.
-        # Stary crossfader block (poza Dual) usunięty w Opcja A cleanup.
-
-        # Pasek przełączników widoczności (zawsze na dole)
-        toggle_bar = QtWidgets.QHBoxLayout()
-        toggle_bar.addWidget(QtWidgets.QLabel("Pokaż / Ukryj:"))
-
-        self.btn_hotcues = QtWidgets.QPushButton("Hotcues")
-        self.btn_loops = QtWidgets.QPushButton("Loops")
-        self.btn_beatgrid = QtWidgets.QPushButton("Beatgrid ✓")   # domyślnie włączony
-        self.btn_energy = QtWidgets.QPushButton("Energy")
-        self.btn_eq = QtWidgets.QPushButton("EQ ✓")               # domyślnie włączony
-
-        for btn in (self.btn_hotcues, self.btn_loops, self.btn_beatgrid, self.btn_energy, self.btn_eq):
-            btn.setCheckable(True)
-            btn.setChecked(True)
-            btn.setFixedHeight(24)
-            toggle_bar.addWidget(btn)
-
-        toggle_bar.addStretch(1)
-
-        # Przełączanie układu
-        self.btn_layout = QtWidgets.QPushButton("Układ: Kompaktowy")
-        self.btn_layout.setCheckable(True)
-        self.btn_layout.clicked.connect(self._toggle_layout)
-        toggle_bar.addWidget(self.btn_layout)
-
-        self._current_layout = "compact"  # compact lub wide
-
-        toggle_container = QtWidgets.QWidget()
-        toggle_container.setLayout(toggle_bar)
-        main_layout.addWidget(toggle_container)
-        self._console_widgets.append(toggle_container)
-
-        # Połączenia przełączników
-        self.btn_hotcues.toggled.connect(lambda v: self._toggle_section("hotcues", v))
-        self.btn_loops.toggled.connect(lambda v: self._toggle_section("loops", v))
-        self.btn_beatgrid.toggled.connect(self._toggle_beatgrid)
-        # EQ already always visible + per-deck controls
+        # UWAGA: W sole new architecture nie ma już globalnych toggle'ów "Pokaż/Ukryj" (hotcues/eq/loop zawsze widoczne w deck views per redesign).
+        # Usunięto martwy pasek przełączników i btn_layout (były przyczyną nakładania się elementów i marnowania miejsca).
 
         self._apply_base_style()
 
@@ -670,7 +613,9 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
         pass
 
     def _toggle_beatgrid(self, visible: bool):
-        # Sole new architecture: waveformy wewnątrz ConsoleDeckView / FocusedDeckView
+        # Sole new architecture: waveformy wewnątrz ConsoleDeckView / FocusedDeckView.
+        # Globalny toggle przycisk usunięty (beatgrid jest zawsze widoczny i muzykalny w booth redesign).
+        # Metoda zachowana dla kompatybilności (np. ewentualne skróty).
         for deck_id in ("A", "B"):
             try:
                 if hasattr(self, "dual_console") and self.dual_console:
@@ -685,15 +630,12 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
                     self.single_container.waveform.set_beatgrid_visible(visible)
         except Exception:
             pass
-        # Single view alias (FocusedDeckView)
         spv = getattr(self, "single_player_view", None)
         if spv and hasattr(spv, "waveform") and hasattr(spv.waveform, "set_beatgrid_visible"):
             try:
                 spv.waveform.set_beatgrid_visible(visible)
             except Exception:
                 pass
-        if hasattr(self, "btn_beatgrid"):
-            self.btn_beatgrid.setText("Beatgrid ✓" if visible else "Beatgrid")
 
     # _build_mixer_strip i _update_crossfader_volumes usunięte w Opcja A (sole new architecture).
     # Funkcjonalność recent/load/stopall zachowana w kompaktowym pasku narzędzi (dodany poniżej po global_mixer).
@@ -701,12 +643,8 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
 
     def _toggle_layout(self):
         """W sole new architecture (DualConsoleWidget) układy side-by-side są wewnątrz Dual (QSplitter).
-        Ten toggle jest no-op dla nowego redesignu (Rekordbox-style). Przycisk zachowany dla kompatybilności UI."""
-        # W trybie single lub dual: splitter wewnątrz DualConsoleWidget lub Focused zarządza rozmiarem.
-        # Nie reparentujemy już decków bezpośrednio (były w starej architekturze).
-        if hasattr(self, "btn_layout"):
-            self.btn_layout.setText("Układ: Side-by-side (nowy)")
-        logger.debug("_toggle_layout: no-op under sole new DJ architecture (use splitter in DualConsoleWidget)")
+        Ten toggle jest no-op (przycisk i logika usunięte w cleanup)."""
+        logger.debug("_toggle_layout: no-op (splitter w DualConsoleWidget zarządza layoutem)")
 
     # ------------------------------------------------------------------
     # HELPERY DLA NOWEJ ARCHITEKTURY (integracja wiring)
@@ -751,6 +689,8 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
                 self.single_container = None
 
             logger.info("NEW ARCHITECTURE ACTIVE: DualConsoleWidget + 2x ConsoleDeckView + DeckController A/B + FocusedDeckView")
+            # Upewnij się że initial mixing jest zaaplikowane (master/cross/trim) nawet bez global_mixer
+            QtCore.QTimer.singleShot(50, self._apply_initial_mixer_values)
             return dual
         except Exception as exc:
             logger.exception(f"Błąd _create_dual_console_ui: {exc}")
@@ -797,12 +737,12 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
         spv = getattr(self, "single_player_view", None)
         if spv:
             spv.setVisible(is_single)
-            # Propagate current beatgrid visibility preference to single view on switch
-            if hasattr(self, "btn_beatgrid") and hasattr(spv, "waveform"):
-                try:
-                    spv.waveform.set_beatgrid_visible(self.btn_beatgrid.isChecked())
-                except Exception:
-                    pass
+            # Beatgrid domyślnie włączony w nowym redesignie (musical, BPM-aware). Propagujemy przy switchu.
+            try:
+                if hasattr(spv, "waveform") and hasattr(spv.waveform, "set_beatgrid_visible"):
+                    spv.waveform.set_beatgrid_visible(True)
+            except Exception:
+                pass
 
         # Sole new: przełączanie kontenerów (DualConsole vs FocusedDeckView)
         if hasattr(self, "single_container") and self.single_container:
@@ -919,8 +859,19 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
                     paths.append(url.toLocalFile())
 
         if paths:
-            # Domyślnie ładujemy do Deck A
-            self._load_dropped_track("A", paths[0])
+            # Lepsze targetowanie A/B po pozycji dropu (lewa połowa okna = A, prawa = B).
+            # Działa intuicyjnie w trybie dual console. W single zawsze A.
+            pos = event.position().toPoint() if hasattr(event, "position") else event.pos()
+            if getattr(self, "_current_mode", "console") == "single" or not hasattr(self, "dual_console") or not self.dual_console:
+                deck = "A"
+            else:
+                deck = "A" if pos.x() < (self.width() / 2) else "B"
+
+            self._load_dropped_track(deck, paths[0])
+            # Jeśli multi-select, ładujemy resztę do drugiego decku (pro UX)
+            if len(paths) > 1:
+                other = "B" if deck == "A" else "A"
+                self._load_dropped_track(other, paths[1])
             event.acceptProposedAction()
 
     def closeEvent(self, event):
@@ -1101,12 +1052,18 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
     def _apply_initial_mixer_values(self):
         if not self.playback_engine:
             return
-        # master_slider może być w global_mixer lub wewnątrz Dual (defensywnie)
         try:
-            if hasattr(self, "master_slider") and self.master_slider:
-                self.playback_engine.set_master_volume(self.master_slider.value() / 100.0)
-            else:
-                self.playback_engine.set_master_volume(0.85)
+            # Dual ma własne slidery i woła set_master_volume / cross w _apply_initial_mixer.
+            # Tu defensywnie ustawiamy sensowne defaulty jeśli nic nie ustawiło.
+            # (master 0.85, cross 0.0 = center)
+            self.playback_engine.set_master_volume(0.85)
+            self.playback_engine.set_crossfader(0.0)
+            # Per-deck trim default (jeśli engine wspiera)
+            try:
+                self.playback_engine.set_deck_trim("A", 0.85)
+                self.playback_engine.set_deck_trim("B", 0.85)
+            except Exception:
+                pass
         except Exception:
             pass
         self._update_backend_info_label()
