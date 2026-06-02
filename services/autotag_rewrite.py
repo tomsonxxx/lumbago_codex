@@ -249,7 +249,7 @@ class UnifiedAutoTagger:
                 continue
 
             # For genre, prefer more specific values among candidates
-            if field_name == "genre":
+            if field_name == "genre" and candidates:
                 incoming = _best_specific_genre(candidates, current)
 
             if current != incoming:
