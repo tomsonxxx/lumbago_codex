@@ -617,7 +617,7 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
                     raise RuntimeError("dual console creation returned None")
                 # === NOWA ARCHITEKTURA AKTYWNA (primary path) ===
                 logger.info("NEW ARCHITECTURE ACTIVE: DeckController + FocusedDeckView/ConsoleDeckView/DualConsoleWidget (pełny wiring drag&drop, skróty, mikser)")
-                logger.info("Nowa architektura - sole impl (stary DeckWidget/SinglePlayerView całkowicie usunięty w cleanup)")
+                logger.info("Nowa architektura - sole impl (stary DeckWidget/SinglePlayerView całkowicie usunięty)")
             except Exception as e:
                 logger.exception("Nowa architektura zawiodła przy tworzeniu UI - nie ma fallbacku")
                 raise  # re-raise to be caught by outer except and show error dialog
@@ -782,9 +782,8 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
         if hasattr(self, '_update_backend_info_label'):
             QtCore.QTimer.singleShot(80, self._update_backend_info_label)
 
-        # ========== CREATE SINGLE PLAYER VIEW (inserted right after mode bar for clean toggle) ==========
-        # W nowej architekturze używamy helpera _create_focused_single_ui (FocusedDeckView + ctrl)
-        # Stary SinglePlayerView tylko w fallbacku. Alias single_player_view zawsze ustawiony.
+        # ========== CREATE FOCUSED SINGLE VIEW (new sole arch) ==========
+        # Uses _create_focused_single_ui + DualConsole aliases. No old SinglePlayerView.
         try:
             _use_new = getattr(self, "_use_new_dj_views", True)
             if _use_new:
@@ -801,16 +800,11 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
                         self.single_player_view.setVisible(False)
                 if self.single_player_view:
                     self.single_player_view.setVisible(False)
-            else:
-                self.single_player_view = SinglePlayerView(self.playback_engine, self)
-                main_layout.insertWidget(1, self.single_player_view)
-                self.single_player_view.setVisible(False)
-
+            # sole new: single_player_view is the Focused/Console alias set above or in _create_*
             if not hasattr(self, "_console_widgets"):
                 self._console_widgets = []
-            # single_player_view to widok alternatywny (nie console)
         except Exception as e:
-            logger.warning(f"Failed to create SinglePlayerView / Focused: {e}")
+            logger.warning(f"Failed to create focused single view: {e}")
             self.single_player_view = None
 
         # Akceptujemy dropy na całym oknie (fallback)
@@ -1224,9 +1218,8 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
 
     def _sync_deck_a_state_between_views(self, going_to_single: bool) -> None:
         """
-        Robust bidirectional sync of Deck A <-> SinglePlayerView (same engine deck "A").
-        Zaadaptowane: w nowej architekturze (DeckController) sync jest zbędny (oba widoki słuchają sygnałów tego samego kontrolera).
-        Metoda zachowana dla pełnej kompatybilności fallbacku.
+        In sole new arch (DeckController + views) sync is handled via signals/controllers.
+        Method kept for compatibility (no-op).
         """
         # W nowej architekturze — nic do roboty (wspólny DeckController + sygnały Qt)
         if True:  # new architecture sole impl (old removed)
@@ -1547,7 +1540,7 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
                     logger.warning(f"load_track_to_deck (single): {e}")
                 return
 
-        # Console mode or loading to B: keep SinglePlayerView in sync when loading to A
+        # Console or B: keep the single/focused view in sync when loading to A (new arch alias)
         if d == "A" and hasattr(self, "single_player_view") and self.single_player_view:
             try:
                 self.single_player_view.load_track(track)
