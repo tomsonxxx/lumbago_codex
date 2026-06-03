@@ -51,12 +51,12 @@ def get_deck_panel_stylesheet() -> str:
     """Zwraca stylesheet dla głównego panelu decku (surface + border)."""
     c = BOOTH_COLORS
     return f"""
-        QFrame#DeckPanel, DeckConsoleView, FocusedDeckView {{
+        QFrame#DeckPanel, DeckConsoleView, FocusedDeckView, QFrame#OdtwarzaczPanel, OdtwarzaczView {{
             background-color: {c["surface"]};
             border: 1px solid {c["border"]};
             border-radius: 10px;
         }}
-        QFrame#DeckPanel:hover {{
+        QFrame#DeckPanel:hover, QFrame#OdtwarzaczPanel:hover {{
             border-color: {c["border_strong"]};
         }}
     """
