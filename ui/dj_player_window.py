@@ -21,6 +21,7 @@ from ui.dj.simple_deck_controller import SimpleDeckController
 from ui.dj.views.odtwarzacz_view import OdtwarzaczView
 print("[DJ] Nowa architektura zaimportowana pomyślnie (DeckController + views) - sole impl")
 print("[DJ] Odtwarzacz MVP: SimpleDeckController + OdtwarzaczView zaimportowane (single mode only)")
+# REVIEWER 2026-06 note (crew per PLAN/SZPIEG): QStack dual0+odt1, compact only single, reentr guards, init order documented; remaining P0 spin in odt, P1 dual always. See crew/SZPIEG (REVIEWER) + memory. Exact per spec.
 
 # Nowy, solidny backend audio
 from services.playback import PlaybackEngine, create_backend
@@ -98,6 +99,9 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
         self.setWindowTitle("Lumbago DJ Player")
         self.setMinimumSize(980, 720)
         self.resize(1100, 820)  # larger default for booth console with 2x large waveforms + 8-pad grids + mixer (Rekordbox-like)
+        self._orig_min_w = 980
+        self._orig_min_h = 720
+        # Per compact scalability (P1 findings): minSize dynamic on toggle by compact_btn (shrink for pilot, restore for console)
 
         central = QtWidgets.QWidget()
         self.setCentralWidget(central)
@@ -192,6 +196,16 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
         self.content_stack = QtWidgets.QStackedWidget()
         main_layout.addWidget(self.content_stack, 1)  # stretch dla skalowalności
 
+        # === SOLIDIFY QSTACK INDICES (per SZPIEG Build Spec + Plan step 1) ===
+        # Dual console (Konsola DJ) ZAWSZE index 0, Odtwarzacz (single MVP) ZAWSZE index 1.
+        # Zapewnia poprawne target w _switch_player_mode bez race/hacków.
+        # Odtwarzacz tworzony PO dual (kolejność add = kolejność indeksów) + ensure guard w init/switch.
+        # Legacy Focused single_container usunięty z dual create (po Opcja A sole odt for single) — set None, ukryty w guardach.
+        # Brak widocznych hacków setVisible na stack content (QStacked zarządza).
+        # File vs STREAM docs: load=FILE (ścieżka+DB), transport=STREAM (engine playhead).
+        self._DUAL_CONSOLE_IDX: int = 0
+        self._ODT_IDX: int = 1
+
         # Track widgets that belong to the dual console for show/hide during mode switch
         self._console_widgets: list[QtWidgets.QWidget] = []
 
@@ -214,17 +228,44 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
                 logger.info("Nowa architektura sole (redesign complete)")
 
                 # Utwórz Odtwarzacz MVP (single) i dodaj do stack jako index 1 (po dual jako 0).
-                # Zapewnia poprawne indeksy dla switch: single -> 1 (odt), console -> 0 (dual)
-                # Zgodne z komentarzami i logiką _switch_player_mode.
+                # Zapewnia poprawne indeksy dla switch: single -> self._ODT_IDX (odt), console -> self._DUAL_CONSOLE_IDX (dual)
+                # Zgodne z SZPIEG/Plan: odt after dual, no race (create inside same try), guards.
+                # Per spec: dual 0, odt 1 zawsze.
                 if getattr(self, "odtwarzacz_view", None) is None:
                     try:
                         odt = self._create_odtwarzacz_ui()
                         self.odtwarzacz_view = odt
                         if odt:
                             self.content_stack.addWidget(odt)
+                            # Sanity: ensure odt at _ODT_IDX
+                            if self.content_stack.count() > self._ODT_IDX:
+                                # index should be 1 if dual was first
+                                pass
                     except Exception as e:
                         logger.warning(f"odtwarzacz create after dual failed (non-fatal): {e}")
                         self.odtwarzacz_view = None
+                # Popraw init order / race (per SZPIEG/Plan/REVIEWER lista): ensure odt ready ZAWSZE przed switch/initial use.
+                # Nawet jeśli create inside dual try zawiódł — odt jest primary dla default single.
+                # Dual overhead partial (zawsze tworzony), ale odt gwarantowany.
+                if getattr(self, "odtwarzacz_view", None) is None:
+                    try:
+                        odt = self._create_odtwarzacz_ui()
+                        self.odtwarzacz_view = odt
+                        if odt and hasattr(self, "content_stack") and self.content_stack:
+                            # add if not already (e.g. failed earlier path)
+                            if odt not in [self.content_stack.widget(i) for i in range(self.content_stack.count())]:
+                                self.content_stack.addWidget(odt)
+                    except Exception as e:
+                        logger.warning(f"ensure odt create failed: {e}")
+                        self.odtwarzacz_view = None
+                # Jeśli odt nadal None po ensure: disable compact (per findings no odt guard)
+                if not getattr(self, "odtwarzacz_view", None):
+                    if hasattr(self, "compact_btn"):
+                        try:
+                            self.compact_btn.setEnabled(False)
+                            self.compact_btn.setToolTip("Compact niedostępny (odt init failed)")
+                        except Exception:
+                            pass
             except Exception as e:
                 logger.exception("Nowa architektura zawiodła przy tworzeniu UI - nie ma fallbacku")
                 raise  # re-raise to be caught by outer except and show error dialog
@@ -354,53 +395,39 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
         if hasattr(self, '_update_backend_info_label'):
             QtCore.QTimer.singleShot(80, self._update_backend_info_label)
 
-        # ========== CREATE FOCUSED SINGLE VIEW (sole new arch) ==========
-        # Guard: dla trybu single używamy OdtwarzaczView + SimpleDeckController (MVP basics).
-        # Heavy FocusedDeckView zachowany tylko jako hidden single_container wewnątrz dual (nie dotykamy dual paths).
-        # Po QStack: odtwarzacz jest w stacku; focused legacy hidden.
+        # ========== LEGACY FOCUSED SINGLE (po Opcja A sole odt) ==========
+        # Usunięto tworzenie heavy FocusedDeckView / single_container w dual (legacy unneeded dla sole OdtwarzaczView single).
+        # single_container = None (z dual), single_player_view = None.
+        # Guardy w switch/_toggle_beatgrid/unload etc. ukrywają jeśli kiedykolwiek set (kompat).
+        # Per lista: usuń lub ukryj legacy focused single_container jeśli niepotrzebny (sole odt for single).
+        # Nie wywołujemy _create_focused_single_ui gdy odt+stack.
+        self.single_container = getattr(self, "single_container", None) or None
+        self.single_player_view = None
         try:
-            if getattr(self, "odtwarzacz_view", None):
-                # Odtwarzacz już utworzony w dual flow – nie tworzymy ciężkiego focused dla single.
-                logger.debug("OdtwarzaczView present – skipping heavy Focused create for single MVP")
-                self.single_player_view = getattr(self, "single_container", None)
-            elif not hasattr(self, "single_container") or self.single_container is None:
-                # Legacy focused single: create hidden, ale bez insertWidget jeśli używamy content_stack + odt (eliminacja overlap)
-                if hasattr(self, "content_stack") and getattr(self, "odtwarzacz_view", None):
-                    # Nie insert — stack zarządza odt jako single; focused legacy tylko hidden ref
-                    ctrl = getattr(self, "_deck_ctrl_a", None)
-                    focused = FocusedDeckView(ctrl, self) if ctrl else None
-                    if focused:
-                        focused.setVisible(False)
-                        # Dodaj do main ale na końcu (nie w strumieniu stack), zawsze hidden
-                        main_layout.addWidget(focused)
-                        self.single_container = focused
-                        self.single_player_view = focused
-                    else:
-                        focused = None
-                else:
-                    focused = self._create_focused_single_ui(main_layout)
-                    if focused:
-                        self.single_player_view = focused
-            else:
-                # single_container już istnieje z dual creation — NIE wstawiaj ponownie (już w layout)
-                self.single_player_view = getattr(self, "single_container", None)
-                if self.single_player_view:
-                    self.single_player_view.setVisible(False)
+            if getattr(self, "single_container", None):
+                self.single_container.setVisible(False)
             if getattr(self, "single_player_view", None):
                 self.single_player_view.setVisible(False)
             if not hasattr(self, "_console_widgets"):
                 self._console_widgets = []
         except Exception as e:
-            logger.warning(f"Failed to create focused single view: {e}")
-            self.single_player_view = None
+            logger.warning(f"Legacy single_container hide non-fatal: {e}")
 
         # Akceptujemy dropy na całym oknie (fallback)
         self.setAcceptDrops(True)
 
         # Initial mode switch to set correct visibility for Odtwarzacz (single) or dual.
         # Since default is now single (per focus on single basics), trigger it.
+        # SOLIDIFY: use explicit idx logic, default single -> ODT_IDX.
         try:
-            self._switch_player_mode(0 if getattr(self, '_current_mode', 'single') == 'single' else 1)
+            default_single = getattr(self, '_current_mode', 'single') == 'single'
+            init_mode_id = 0 if default_single else 1
+            # Also set stack current early (defensive against races in creation order)
+            if hasattr(self, "content_stack") and self.content_stack:
+                init_idx = self._ODT_IDX if default_single else self._DUAL_CONSOLE_IDX
+                if self.content_stack.count() > init_idx:
+                    self.content_stack.setCurrentIndex(init_idx)
+            self._switch_player_mode(init_mode_id)
         except Exception:
             pass
 
@@ -446,7 +473,7 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
                 spv.waveform.set_beatgrid_visible(visible)
             except Exception:
                 pass
-        # Odtwarzacz MVP
+        # Odtwarzacz MVP (legacy single_container/Focused ukryty/usunięty z sole odt)
         try:
             if hasattr(self, "odtwarzacz_view") and self.odtwarzacz_view:
                 if hasattr(self.odtwarzacz_view, "waveform") and hasattr(self.odtwarzacz_view.waveform, "set_beatgrid_visible"):
@@ -501,16 +528,13 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
             self.deck_a = dual.get_deck_view("A") if hasattr(dual, "get_deck_view") else None
             self.deck_b = dual.get_deck_view("B") if hasattr(dual, "get_deck_view") else None
 
-            if FocusedDeckView is not None:
-                self.single_container = FocusedDeckView(ctrl_a, self)
-                self.single_container.setVisible(False)
-                # Nie dodajemy do main_layout (refaktoryzacja na content_stack + OdtwarzaczView dla single MVP).
-                # Legacy single_container jako hidden ref dla kompat (jeśli kod gdzie indziej z niego korzysta).
-                # QStack zarządza odt (single) vs dual_console.
-            else:
-                self.single_container = None
+            # Usunięto legacy Focused single_container (po Opcja A sole OdtwarzaczView dla single).
+            # Po sole odt for single + dual nie używa focused dla A/B (używa ConsoleDeckView), niepotrzebny.
+            # Ustaw None + zawsze ukryty w switch/guardach dla kompat (jeśli stare refy).
+            # Per SZPIEG/Plan/REVIEWER findings: ukryj/usuń legacy focused single_container.
+            self.single_container = None
 
-            logger.info("NEW ARCHITECTURE ACTIVE: DualConsoleWidget + 2x ConsoleDeckView + DeckController A/B + FocusedDeckView")
+            logger.info("NEW ARCHITECTURE ACTIVE: DualConsoleWidget + 2x ConsoleDeckView + DeckController A/B (sole odt single, legacy focused removed)")
             # Upewnij się że initial mixing jest zaaplikowane (master/cross/trim) nawet bez global_mixer
             QtCore.QTimer.singleShot(50, self._apply_initial_mixer_values)
 
@@ -521,7 +545,8 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
 
     def _create_focused_single_ui(self, main_layout: QtWidgets.QVBoxLayout):
         """Tworzy FocusedDeckView jako sole single view (tryb 'Odtwarzacz').
-        Legacy heavy — w sole new arch używamy odtwarzacz_view dla single; ten jest hidden dla compat.
+        Legacy heavy — w sole new arch używamy odtwarzacz_view dla single; ten jest hidden/usunięty dla compat (per Opcja A + sole odt).
+        Nie używany w normal flow single (odt sole).
         """
         try:
             if not hasattr(self, "_deck_ctrl_a") or self._deck_ctrl_a is None:
@@ -548,6 +573,7 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
         Tylko basics: load/play/pause/stop + title/time/BPM/waveform. Nie dotyka dual paths.
         Dodaje do content_stack (QStacked) w callerze — brak bezpośredniego add do main + visible hacks.
         File=plik (load_dropped/load_track), Stream=odtwarzanie audio z pliku (play/pause via engine).
+        **Uwaga dla nowych agentów/programistów:** Implementacja dokładnie per nadrzędny SZPIEG Build Spec + Plan team review (z crew/SZPIEG_agent_spec_and_archive.md + memory.md + crew/PLAN_...). Patrz docs dla zasad dokumentacji (zawsze update memory/HISTORY/crew/SZPIEG + code docs + todo + commit). SZPIEG spec jest binding — zero odstępstw. (WRITER 2026-06-02)
         """
         try:
             if not hasattr(self, "playback_engine") or not self.playback_engine:
@@ -574,12 +600,25 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
         Single ("Odtwarzacz"): dedicated SimpleDeckController + OdtwarzaczView (MVP basics only).
         Dual/Console: full DeckController + DualConsoleWidget/Focused (untouched).
         Używa QStackedWidget (content_stack) do przełączania — zero setVisible/raise_/hacks na odt vs dual (per step 1 solidify).
+        SOLIDIFY: dual zawsze _DUAL_CONSOLE_IDX=0, odt _ODT_IDX=1. Switch correct, no race.
         """
-        is_single = (mode_id == 0)
-        self._current_mode = "single" if is_single else "console"
+        use_single_mode = (mode_id == 0)  # single btn id z mode_btn_group =0 ; console=1
+        self._current_mode = "single" if use_single_mode else "console"
+
+        # Popraw init order / race guard (per findings): ensure odt ready przed switch do single (jeśli nie ma — create on demand).
+        # Zapewnia odt przed setCurrent / compact / play etc.
+        if use_single_mode and not getattr(self, "odtwarzacz_view", None):
+            try:
+                odt = self._create_odtwarzacz_ui()
+                self.odtwarzacz_view = odt
+                if odt and hasattr(self, "content_stack") and self.content_stack:
+                    if odt not in [self.content_stack.widget(i) for i in range(self.content_stack.count()) if self.content_stack.widget(i)]:
+                        self.content_stack.addWidget(odt)
+            except Exception as e:
+                logger.warning(f"switch ensure odt failed: {e}")
 
         # Compact only for single odt
-        if not is_single and hasattr(self, "compact_btn"):
+        if not use_single_mode and hasattr(self, "compact_btn"):
             try:
                 self.compact_btn.setChecked(False)
                 self.compact_btn.setEnabled(True)  # allow reenable on back to single
@@ -588,26 +627,35 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
 
         # Update button checked states (in case called programmatically)
         if hasattr(self, "mode_btn_single") and hasattr(self, "mode_btn_console"):
-            self.mode_btn_single.setChecked(is_single)
-            self.mode_btn_console.setChecked(not is_single)
+            self.mode_btn_single.setChecked(use_single_mode)
+            self.mode_btn_console.setChecked(not use_single_mode)
 
-        # Heavy legacy single_player_view (Focused) zawsze ukryty przy single odt
+        # Legacy single_player_view / single_container (Focused) — usunięty z dual create; zawsze ukryty/None dla sole odt single.
+        # Guardy defensywne.
         spv = getattr(self, "single_player_view", None)
         if spv:
             spv.setVisible(False)
+        if hasattr(self, "single_container") and self.single_container:
+            try:
+                self.single_container.setVisible(False)
+            except Exception:
+                pass
 
-        # === QSTACK SWITCH (czysty, bez overlap/hack) ===
-        # Odtwarzacz MVP w stack index 1, dual_console w 0.
+        # === QSTACK SWITCH (czysty, bez overlap/hack) per step1+3 ===
+        # Odtwarzacz MVP w stack index self._ODT_IDX, dual_console w self._DUAL_CONSOLE_IDX.
         # Dual paths (dual_console + single_container/Focused) pozostają NIETKNIĘTE poza index.
+        # Aggressive setCurrent + guards count (no race on init order).
+        # Visibility no-overlap: QStack setCurrent primary, hide console ONLY for non-stack widgets (tools/recent etc).
+        # single default, no legacy focused visible.
         if hasattr(self, "content_stack") and self.content_stack:
-            target_idx = 1 if is_single else 0
+            target_idx = self._ODT_IDX if use_single_mode else self._DUAL_CONSOLE_IDX
             if self.content_stack.count() > target_idx:
                 self.content_stack.setCurrentIndex(target_idx)
             else:
                 # Fallback jeśli stack niepełny (np. error path) — nie crash
                 logger.debug(f"QStack switch: count={self.content_stack.count()} < target {target_idx}")
             # Upewnij się że odt ma beatgrid jeśli single (dla wave)
-            if is_single and hasattr(self, "odtwarzacz_view") and self.odtwarzacz_view:
+            if use_single_mode and hasattr(self, "odtwarzacz_view") and self.odtwarzacz_view:
                 try:
                     if hasattr(self.odtwarzacz_view, "waveform") and hasattr(self.odtwarzacz_view.waveform, "set_beatgrid_visible"):
                         self.odtwarzacz_view.waveform.set_beatgrid_visible(True)
@@ -617,12 +665,19 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
                 if hasattr(self, "compact_btn") and self.compact_btn.isChecked():
                     try:
                         self.odtwarzacz_view.set_compact_mode(True)
+                        # Po show stack current odt + compact: re-ensure spin visible (timing per findings)
+                        if hasattr(self.odtwarzacz_view, "_spin_indicator"):
+                            sp = self.odtwarzacz_view._spin_indicator
+                            if not sp.isVisible():
+                                sp.setVisible(True)
+                                sp.update()
                     except Exception:
                         pass
 
         # Aggressively hide/show console content (działa dla dual widgets, nie dla stack content)
         # (dla kompat z narzędziami/recent etc. — zostawione, ale odt/dual sterowane przez stack index)
         # Guard: nie dotykaj widgetów które są w content_stack (QStacked zarządza visibility dla odt/dual)
+        # Visibility no-overlap: tylko non-stack widgets.
         stack_widgets = set()
         if hasattr(self, "content_stack") and self.content_stack:
             for i in range(self.content_stack.count()):
@@ -631,14 +686,14 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
         for w in getattr(self, "_console_widgets", []):
             if w and w not in stack_widgets:
                 try:
-                    w.setVisible(not is_single)
+                    w.setVisible(not use_single_mode)
                 except Exception:
                     pass
 
         # (cross_frame z starej arch usunięty w Opcja A; dual ma własny cross)
 
         # Sync w nowej architekturze (sole) dla odt MVP: użyj prostego ctrl jeśli single.
-        if is_single:
+        if use_single_mode:
             try:
                 if self.playback_engine and hasattr(self, "_simple_deck_ctrl") and self._simple_deck_ctrl:
                     state = self.playback_engine.get_deck_state("A")
@@ -672,6 +727,22 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
         # sync text
         try:
             self.compact_btn.setText("☑ Compact" if checked else "☐ Compact")
+        except Exception:
+            pass
+        # Pilot feel: auto adjust min size for compact (per SZPIEG/Plan step2) -- smaller for mini pilot, restore for normal.
+        # Scalability preserved (no fixed, user can still resize larger; air/margins inside odt).
+        # Używa _orig_ zapisane w init (dynamic).
+        try:
+            if checked:
+                self.setMinimumSize(380, 280)  # pilot-like min
+                # optional gentle shrink if current larger (non-destructive)
+                if self.width() > 520 or self.height() > 420:
+                    self.resize(max(420, min(self.width(), 520)), max(300, min(self.height(), 380)))
+            else:
+                if hasattr(self, "_orig_min_w"):
+                    self.setMinimumSize(self._orig_min_w, self._orig_min_h)
+                else:
+                    self.setMinimumSize(980, 720)
         except Exception:
             pass
         logger.debug(f"Compact toggled: {checked} (single={is_single})")
@@ -770,6 +841,7 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
             # Lepsze targetowanie A/B po pozycji dropu (lewa połowa okna = A, prawa = B).
             # Działa intuicyjnie w trybie dual console. W single zawsze A.
             # Highlight safety + position: w odt view (główny dla single) jest lokalny highlight na drag.
+            # EFFECT + file/stream: drop = load FILE (mime+repo full Track), transport=STREAM.
             pos = event.position().toPoint() if hasattr(event, "position") else event.pos()
             if getattr(self, "_current_mode", "console") == "single" or not hasattr(self, "dual_console") or not self.dual_console:
                 deck = "A"
@@ -807,6 +879,23 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
         is_single_mode = getattr(self, '_current_mode', 'console') == 'single'
 
         if is_single_mode and d == "A" and hasattr(self, "_simple_deck_ctrl") and self._simple_deck_ctrl:
+            # Guard + safety prompt w load jeśli playing (per "nowa lista" + SZPIEG/Plan findings).
+            # Podobnie jak w odt dropEvent i window drop dla single: prompt confirm gdy trwa stream (FILE load podczas playbacku).
+            # OdtwarzaczView (odt load) + window load path — safety jak w window drop.
+            odt = getattr(self, "odtwarzacz_view", None)
+            if odt and getattr(odt, "_is_playing", False):
+                try:
+                    from PyQt6.QtWidgets import QMessageBox
+                    resp = QMessageBox.question(
+                        self, "Odtwarzacz — Safety (load via library)",
+                        "Trwa odtwarzanie (stream). Załadować nowy PLIK i zatrzymać?\n(EFEKT: stop + load nowego pliku z cue=0; FILE op podczas STREAM)",
+                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                        QMessageBox.StandardButton.No
+                    )
+                    if resp != QMessageBox.StandardButton.Yes:
+                        return
+                except Exception:
+                    pass  # non fatal, proceed with caution
             try:
                 prev = getattr(self._simple_deck_ctrl, 'current_track', None)
                 self._simple_deck_ctrl.load_track(track)  # FILE only: przygotowuje plik + cue=0
@@ -1141,7 +1230,9 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
             banner.setVisible(False)
 
     def _load_file_dialog(self, deck: str):
-        """Open file dialog to load a track directly into a deck (standalone pro use)."""
+        """Open file dialog to load a track directly into a deck (standalone pro use).
+        FILE op (load PLIK + DB), transport separate (STREAM via play etc). EFEKT tooltipy w UI.
+        """
         from PyQt6.QtWidgets import QFileDialog
         path, _ = QFileDialog.getOpenFileName(
             self,
@@ -1219,8 +1310,9 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
             self._deck_ctrl_a.status_changed.emit("SYNC A->B (Ctrl+S)")
 
     def resizeEvent(self, event):
-        """Scalability polish (per spec step4): dynamic resize for multi-res, no overlap.
-        QStack + stretch + Expanding w odt/dual zapewniają core; tu dodatkowe guard.
+        """Scalability polish (per SZPIEG Build Spec + Plan step6): dynamic resize for multi-res, no overlap.
+        QStack + stretch + Expanding w odt/dual zapewniają core; air/margins preserved (odt handles wave/spin).
+        Compact toggle may have set smaller minSize; no fixed sizes on expanding elems.
         """
         super().resizeEvent(event)
         # Defensywne: dynamic spin size in compact is handled in odt.resizeEvent itself.

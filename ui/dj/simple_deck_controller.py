@@ -102,8 +102,11 @@ class SimpleDeckController(QtCore.QObject):
         Ustawia _main_cue_ms=0, load engine, emit track + bpm + status.
         Waveform request jest delegowany do widoku (po sygnale) via request_waveform_load.
 
-        FILE vs STREAM: ta metoda = FILE load (ścieżka, DB, engine.load_deck przygotowuje plik).
-        Nie uruchamia streamu (playback). Cue reset do 0.
+        FILE vs STREAM (per SZPIEG spec + Plan lista): 
+        load_track = operacja na PLIKU (fizyczna ścieżka dysku + DB lookup + waveform peaks + cue=0 reset).
+        Nie uruchamia playback/stream (to jest transport w play/pause/stop/seek).
+        Guard: load nie zmienia stanu playing (nie overwrite stream).
+        Komentarze/guards w load vs transport paths (odt/controller/window).
         """
         if not track:
             return
@@ -152,7 +155,9 @@ class SimpleDeckController(QtCore.QObject):
         self.track_loaded.emit(track)
 
     def unload(self) -> None:
-        """Zatrzymaj + wyczyść (dla single)."""
+        """Zatrzymaj + wyczyść (dla single).
+        FILE context (clear loaded track); cue/stream state reset. EFEKT: unload = FILE clear (nie wpływa na oryginalny plik na dysku).
+        """
         self.current_track = None
         self._main_cue_ms = 0
         self._original_bpm = None
@@ -169,8 +174,15 @@ class SimpleDeckController(QtCore.QObject):
         """Start playback. Jeśli pos near 0 – preferuj _main_cue_ms (per spec).
         To jest STREAM op (play_deck na załadowanym pliku).
         Cue logic: prefer cue jeśli blisko 0 (bezpieczne preview z punktu).
+        Reliability (step4): guard no track/compact state, engine fallback.
+        FILE vs STREAM: play = strumień (transport), load = plik (wcześniej).
+        Guard reentr/play during load: engine handles; cue during play OK (set_cue updates _main_cue live).
         """
         if not self.playback_engine:
+            self.status_changed.emit("⚠ Brak silnika (engine fallback)")
+            return
+        if not getattr(self, 'current_track', None):
+            self.status_changed.emit("— Brak utworu — load FILE najpierw")
             return
         try:
             state = self.playback_engine.get_deck_state(self.deck_id)
@@ -195,6 +207,8 @@ class SimpleDeckController(QtCore.QObject):
         """Pauza + stop timera. STREAM op."""
         if not self.playback_engine:
             return
+        if not getattr(self, 'current_track', None):
+            return
         try:
             self.playback_engine.pause_deck(self.deck_id)
             self._playhead_timer.stop()
@@ -204,13 +218,26 @@ class SimpleDeckController(QtCore.QObject):
             logger.warning(f"SimpleDeck {self.deck_id} pause błąd: {e}")
 
     def stop(self) -> None:
-        """Stop + timer off + playhead do cue (lub 0). STREAM + cue reset."""
+        """Stop + timer off + playhead do cue (lub 0). STREAM + cue reset.
+        Per SZPIEG/Plan step4: stop to cue (seek after stop_deck so position returns in file/stream).
+        Guard no track.
+        """
         if not self.playback_engine:
+            return
+        if not getattr(self, 'current_track', None):
+            self.playhead_changed.emit(0)
+            self.play_state_changed.emit(False)
             return
         try:
             self.playback_engine.stop_deck(self.deck_id)
             self._playhead_timer.stop()
             cue = getattr(self, "_main_cue_ms", 0) or 0
+            # Actual return to cue position (stop to cue)
+            try:
+                if cue > 0:
+                    self.playback_engine.seek_deck(self.deck_id, cue)
+            except Exception:
+                pass
             self.playhead_changed.emit(cue)
             self.play_state_changed.emit(False)
             self.status_changed.emit("■ Stop")
@@ -218,7 +245,9 @@ class SimpleDeckController(QtCore.QObject):
             logger.warning(f"SimpleDeck {self.deck_id} stop błąd: {e}")
 
     def seek(self, time_ms: int) -> None:
-        """Seek bez snap (brak quantize w MVP). STREAM position change."""
+        """Seek bez snap (brak quantize w MVP). STREAM position change.
+        EFEKT: zmienia pozycję w streamie (playhead w załadowanym PLIKU); cue/position in file.
+        """
         if not self.playback_engine:
             return
         try:
@@ -235,8 +264,11 @@ class SimpleDeckController(QtCore.QObject):
     def set_cue(self) -> None:
         """Ustaw _main_cue_ms na bieżącej pozycji (dla play prefer logic).
         Nie zmienia pliku, tylko pozycję cue dla tego streamu.
+        Cue during play supported (STREAM pos, FILE unchanged). Reliability: guard no track.
         """
         if not self.playback_engine:
+            return
+        if not getattr(self, 'current_track', None):
             return
         try:
             state = self.playback_engine.get_deck_state(self.deck_id)

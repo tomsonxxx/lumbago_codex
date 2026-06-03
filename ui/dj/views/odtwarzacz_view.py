@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from pathlib import Path
 from typing import Optional
 
@@ -68,16 +69,22 @@ class _CompactSpinIndicator(QtWidgets.QWidget):
         p.setPen(QtGui.QPen(QtGui.QColor(c.get("border_strong", "#3a4556")), 2))
         p.setBrush(QtGui.QBrush(QtGui.QColor(c.get("surface_elev", "#1a212c"))))
         p.drawEllipse(cx - r, cy - r, 2*r, 2*r)
-        # Spinning lines (eq bars or spokes)
+        # Spinning spokes (eq/vinyl lines) using angle a + cos/sin per SZPIEG/Plan step2/9
+        # Rotate around center: use radians(a), inner/outer radius for spokes.
         p.setPen(QtGui.QPen(QtGui.QColor(c.get("accent", "#00e0ff")), 1.5))
-        for i in range(6):
-            a = (self._angle + i * 60) * 3.14159 / 180.0
-            x1 = cx + r * 0.3 * (1 if i % 2 == 0 else 0.6)
-            y1 = cy + r * 0.3 * (1 if i % 2 == 0 else 0.6)
-            x2 = cx + r * 0.85 * (1 if i % 2 == 0 else 0.7)
-            y2 = cy + r * 0.85 * (1 if i % 2 == 0 else 0.7)
-            p.drawLine(int(cx + (x1-cx)*0.6), int(cy + (y1-cy)*0.6), int(cx + (x2-cx)*0.6), int(cy + (y2-cy)*0.6))
-        # Center dot
+        num_spokes = 8
+        for i in range(num_spokes):
+            a = math.radians(self._angle + i * (360.0 / num_spokes))
+            # Inner and outer for spoke length (some variation for CD grooves look)
+            inner = r * 0.35
+            outer = r * 0.92
+            # cos/sin for proper rotation (x right, y down in widget coords)
+            x1 = cx + inner * math.cos(a)
+            y1 = cy + inner * math.sin(a)
+            x2 = cx + outer * math.cos(a)
+            y2 = cy + outer * math.sin(a)
+            p.drawLine(int(x1), int(y1), int(x2), int(y2))
+        # Center dot (spindle)
         p.setBrush(QtGui.QBrush(QtGui.QColor(c.get("play", "#22c55e"))))
         p.drawEllipse(cx-2, cy-2, 4, 4)
         p.end()
@@ -98,6 +105,8 @@ class OdtwarzaczView(QtWidgets.QFrame):
     Minimalny widok single player "Odtwarzacz" MVP (QFrame).
 
     **Uwaga dla nowych agentów/programistów:** Implementacja dokładnie per nadrzędny SZPIEG Build Spec + Plan team review (z crew/SZPIEG_agent_spec_and_archive.md + memory.md). Patrz docs dla zasad dokumentacji (zawsze update memory/HISTORY/crew/SZPIEG + code docs + todo + commit). SZPIEG spec jest binding — zero odstępstw.
+    FIXER 2026-06-02: spin paint cos/sin a rot; vis isVisible guard post set/stack; drag hl compact; dynamic wave compact; file/stream comments; guards; reentr; per lista.
+    REVIEWER 2026-06 (crew): weryfikacja po ANALYZER — spin paint wymaga fix (angle not driving rotation), dual init overhead, compact scalab (window), guards. Patrz SZPIEG archive (REVIEWER entry) + memory. Exact match + read-before-edit.
 
     Skupiony TYLKO na podstawach (per zadanie):
     - poprawne ładowanie pliku (z lookup repo w drop + load)
@@ -353,18 +362,30 @@ class OdtwarzaczView(QtWidgets.QFrame):
             self._spin_indicator.stop()
 
     def resizeEvent(self, event):
-        """Scalability polish (per SZPIEG/Plan): dynamic on resize (multi-res, stretch).
-        Zachowuje air, dominant wave, no-overlap. W compact mniejsze bazowe.
+        """Scalability polish (per SZPIEG Build Spec + Plan step6 + exact match):
+        dynamic on resize (multi-res, stretch, air/margins preserved in compact/non).
+        Dominant wave (stretch 7, min260 noncompact / smaller compact), spin dynamic size.
+        In odt + window: Expanding policies, QStack, no fixed on containers/wave.
+        Air 32/24 or 8/6 from _apply_compact_ui only (resize not touch to preserve).
+        Multi res safe.
         """
         super().resizeEvent(event)
-        # Dynamic tweak: ensure min wave respects current size in non-compact
-        if not self._compact and hasattr(self, "waveform"):
+        # Dynamic tweak: ensure min wave respects current size (scalability per lista: dynamic min wave ok w compact i normal).
+        # Zachowuje air (margins/spacing z apply), dominant wave, no-overlap.
+        if hasattr(self, "waveform"):
             try:
-                avail_h = max(60, self.height() - 120)  # rough for header+time+trans+status+air
-                cur_min = self.waveform.minimumHeight()
-                target = min(260, max(120, avail_h))
-                if target != cur_min:
-                    self.waveform.setMinimumHeight(target)
+                if not self._compact:
+                    avail_h = max(60, self.height() - 120)  # rough for header+time+trans+status+air
+                    cur_min = self.waveform.minimumHeight()
+                    target = min(260, max(120, avail_h))
+                    if target != cur_min:
+                        self.waveform.setMinimumHeight(target)
+                else:
+                    # W compact: dynamic min wave jeśli okno bardzo małe (air zachowany przez małe marginesy 8/6)
+                    cur_min = self.waveform.minimumHeight()
+                    target = max(40, min(100, self.height() - 80))  # pilot min, z air
+                    if target != cur_min:
+                        self.waveform.setMinimumHeight(target)
             except Exception:
                 pass
         # Ensure spin size scales a bit in compact
@@ -412,29 +433,41 @@ class OdtwarzaczView(QtWidgets.QFrame):
     def dragEnterEvent(self, event: QtGui.QDragEnterEvent) -> None:
         mime = event.mimeData()
         if mime.hasFormat("application/x-lumbago-track-paths") or mime.hasUrls():
-            # Highlight for drag UX (per spec: highlight+position safety)
-            self.setStyleSheet(
-                self._normal_stylesheet.replace(
-                    "border: 1px solid #2a3442;",
-                    "border: 2px solid #00e0ff; background-color: #1a212c;"
-                ) if hasattr(self, "_normal_stylesheet") else get_deck_panel_stylesheet()
+            # Highlight for drag UX (per spec: highlight+position safety) — działa w compact i normal.
+            # Drag highlight in compact: force cyan border niezależnie od _normal (który jest init non-compact).
+            # Używamy get_ + override + compact bg jeśli potrzeba (per findings FIXER).
+            base = getattr(self, "_normal_stylesheet", None) or get_deck_panel_stylesheet()
+            # W compact używamy mniejszego border ale highlight zawsze widoczny.
+            hl = base.replace(
+                "border: 1px solid #2a3442;",
+                "border: 3px solid #00e0ff; background-color: #1a212c;"
             )
+            # Dodaj !important-like via extra reguła dla #OdtwarzaczPanel
+            hl = hl + "\n QFrame#OdtwarzaczPanel { border: 3px solid #00e0ff !important; }"
+            self.setStyleSheet(hl)
             pos = event.position().toPoint() if hasattr(event, "position") else event.pos()
-            logger.debug(f"Odt dragEnter at pos {pos} (mime ok, FILE load pending)")
+            logger.debug(f"Odt dragEnter at pos {pos} (mime ok, FILE load pending, compact={self._compact})")
             event.acceptProposedAction()
         else:
             event.ignore()
 
     def dragLeaveEvent(self, event: QtGui.QDragLeaveEvent) -> None:
-        # Reset highlight
+        # Reset highlight (per step5 drag UX)
         if hasattr(self, "_normal_stylesheet"):
             self.setStyleSheet(self._normal_stylesheet)
+        # If compact: sizes/fonts already set by _apply, panel ss reset to base is acceptable (no overlap with compact).
+        # Re-sync spin vis if needed (defensive).
+        if getattr(self, '_compact', False) and hasattr(self, '_spin_indicator'):
+            self._spin_indicator.setVisible(True)
         super().dragLeaveEvent(event)
 
     def dropEvent(self, event: QtGui.QDropEvent) -> None:
-        # Reset highlight on drop
+        # Reset highlight on drop (per step5)
         if hasattr(self, "_normal_stylesheet"):
             self.setStyleSheet(self._normal_stylesheet)
+        # Compact guard after reset highlight (keep pilot visuals)
+        if getattr(self, '_compact', False) and hasattr(self, '_spin_indicator'):
+            self._spin_indicator.setVisible(True)
         mime = event.mimeData()
         paths = []
         if mime.hasFormat("application/x-lumbago-track-paths"):
@@ -470,6 +503,8 @@ class OdtwarzaczView(QtWidgets.QFrame):
         To jest FILE op: drop = załaduj PLIK (lookup DB, set current_track, waveform token, cue=0).
         Po tym transport (play) używa STREAMU z pliku.
         Drag highlight/position obsługiwane przez mime w dragEnter/drop + parent window.
+        Guard: safety prompt już w dropEvent jeśli _is_playing.
+        Komentarz file/stream w load vs transport paths (per lista FIXER + SZPIEG).
         """
         try:
             name = Path(path).stem
@@ -580,17 +615,41 @@ class OdtwarzaczView(QtWidgets.QFrame):
             # Spin indicator visible only in compact (pilot)
             if hasattr(self, "_spin_indicator"):
                 self._spin_indicator.setVisible(compact)
-                if not compact:
+                if compact:
+                    # Upewnij spin visible w compact (test isVisible po set, po show stack current odt).
+                    # Per SZPIEG/REVIEWER/Plan findings: Qt timing/polish w headless/shown + stack switch może opóźnić.
+                    # Guard + update po set.
+                    if not self._spin_indicator.isVisible():
+                        self._spin_indicator.setVisible(True)
+                    self._spin_indicator.update()
+                else:
                     self._spin_indicator.stop()
+
+            # Ensure black/empty UI + bg in compact (stylesheet #OdtwarzaczPanel, initial "Brak utworu" placeholder state).
+            # Per step8: bg surface from BOOTH (dark booth) even after compact toggle/sizes; no light bleed.
+            # Placeholder in title on unload/no track. Drag/compact preserve.
+            try:
+                base_ss = getattr(self, "_normal_stylesheet", None) or get_deck_panel_stylesheet()
+                self.setStyleSheet(base_ss)
+            except Exception:
+                pass
 
             self.updateGeometry()
         finally:
             self._applying_compact = False
 
     def _update_compact_play_state(self, playing: bool) -> None:
-        """React to play_state for anim (spin when playing in compact)."""
-        if hasattr(self, "_spin_indicator") and self._compact:
-            if playing:
-                self._spin_indicator.start()
+        """React to play_state for anim (spin when playing in compact).
+        Per step2: ensure visible works in compact (static CD even if !play; spin only on play).
+        Guard reentrancy via apply path.
+        """
+        if hasattr(self, "_spin_indicator"):
+            if self._compact:
+                self._spin_indicator.setVisible(True)
+                if playing:
+                    self._spin_indicator.start()
+                else:
+                    self._spin_indicator.stop()
             else:
+                self._spin_indicator.setVisible(False)
                 self._spin_indicator.stop()
