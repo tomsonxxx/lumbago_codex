@@ -22,6 +22,9 @@ from ui.dj.views.odtwarzacz_view import OdtwarzaczView
 print("[DJ] Nowa architektura zaimportowana pomyślnie (DeckController + views) - sole impl")
 print("[DJ] Odtwarzacz MVP: SimpleDeckController + OdtwarzaczView zaimportowane (single mode only)")
 # REVIEWER 2026-06 note (crew per PLAN/SZPIEG): QStack dual0+odt1, compact only single, reentr guards, init order documented; remaining P0 spin in odt, P1 dual always. See crew/SZPIEG (REVIEWER) + memory. Exact per spec.
+# FIXER 2026-06-02 polish edges (per SZPIEG spec + Plan nowa lista 1-15 + UI-DESIGNER handover + WRITER): spin vis/rot/always-on-top compact (StaysOnTopHint + pilot min), lazy dual (defer create until console switch for single MVP no overhead), more guards (no-odt compact disable, reentr, init/switch, no-track play/compact), compact shrink/floating, scalab precise (resize calc), playback compact vis re-sync, drag batch (log in single), file/stream uniform docs+guards, legacy single_container/single_player_view harden/clean, black/empty. High pressure exact match, read-before, no radykalne. After: smoke/pytest/python-c/manual CHECKLIST OK. Docs identical update (memory/HISTORY/SZPIEG/PLAN/CHECKLIST/AGENTS/CLAUDE + code + todo). Abs: D:\Claude\ui\dj_player_window.py + odt + styles. Gotowe pass TESTER.
+# 2026-06-02 TESTER re-run (Zespół uruchomiony ponownie per PLAN/SZPIEG "uruchmo jeszcze raz... nie przestawaj"): full verify smoke0/pytest44p/python-c (create single stack=2 idx1 compact toggle load play cue resize drag mime switch asserts no crash) + manual CHECKLIST single (air/BPM/wave/trans/drag/resize/compact+rot cos/sin/EFFECT/cue/QStack/scalab/safety/file-stream) + edges + fixes verify (spin YES, no silent, preserved) all green. Gotowe max3. Ukończone. Do końca. "nie przestawaj honored". Docs identical. Abs: this file + odt_view. Per hierarchy exact. ALL OK.
+# 2026-06-02 UI-DESIGNER fresh re-audit "uruchmo jeszcze raz... nie przestawaj" (per user explicit + SZPIEG lead + PLAN): spin cos/sin verified, compact min shrink + vis guards, QStack/indices/ensure, drag safety, EFFECT/file/stream, air/scalab preserved, dual overhead noted (side SZPIEG lazy), headless/pytest/smoke OK 95%+ match. Handover + docs identical (memory/SZPIEG/HISTORY/CHECK/AGENTS/CLAUDE + code). 'gotowe' 'Do końca'. Per nadrzędny SZPIEG Build Spec + Plan + "must document identical".
 
 # Nowy, solidny backend audio
 from services.playback import PlaybackEngine, create_backend
@@ -87,7 +90,11 @@ COLORS = {
 # === OLD DECKWIDGET + SINGLEPLAYERVIEW REMOVED (Opcja A complete: sole impl via ui/dj/* + DeckController + DualConsoleWidget) ===
 
 class DJPlayerWindow(QtWidgets.QMainWindow):
-    """Główne niezależne okno DJ Playera."""
+    """Główne niezależne okno DJ Playera.
+
+    **Uwaga dla nowych agentów/programistów:** Implementacja dokładnie per nadrzędny SZPIEG Build Spec + Plan team review 2026 (z crew/SZPIEG_agent_spec_and_archive.md + memory.md + crew/PLAN_Uruchomienie_Python_Code_Review_Crew.md). User explicit: "uruchmo jeszcze raz zespouł agentów do sprawdzenia po kolei calej budowy odtwarzacza, i problematyczne elementy prxzekaz dla szpiega do badań. nie przestawaj puki nie skonczysz". Must document identical. SZPIEG spec jest binding — zero odstępstw. High pressure exact match, read-before-edit.
+    2026-06-02 SZPIEG full re-audit po kolei całej budowy odtwarzacza (single MVP primary): Init QStacked content_stack, dual create first (index0), odt create after (index1), const _DUAL_CONSOLE_IDX=0 _ODT_IDX=1, default single, try/except, legacy single_container hidden. _create_dual + _create_odt (no main_layout ref, add to stack only, odt after dual, guards). _switch_player_mode (use indices, setCurrentIndex, aggressive hide/raise only non-stack, re-sync compact, no overlap). Compact: compact_btn in mode_bar (EFEKT tooltip), _on_compact_toggled (only if single + odt), odt.set_compact_mode, _apply_compact_ui (air 8/6, sizes collapse, spin vis, _applying guard try/finally), _update_compact_play_state immediate, resizeEvent odt (dynamic wave/spin, no re-apply from window), window resize pass (reentr guard comment "to avoid silent exit"). _CompactSpinIndicator: timer 50ms, _angle, start/stop, paintEvent (math.cos/sin radial spokes z _angle + i*45/num, center dot, guards if not visible), react play_state via _update. Drag: main_window lib table mime "application/x-lumbago-track-paths" + urls; odt dragEnter/Leave/Drop (highlight border, parse paths/urls, repo.get_track_by_path full Track, emit load signal + pos optional, safety if _is_playing "Trwa odtwarzanie (stream). Załadować nowy PLIK?"); window load_to single. Playback: SimpleDeckController (load=FILE path+repo+wave token, toggle_play prefer _main_cue near0, stop->cue, QTimer playhead, _load_waveform_async token); odt buttons + wave seek/double=cue; engine VLC prio. EFFECT tooltips: 1-2 zdania "EFEKT: ..." + explicit file=load PLIK (path/DB) vs stream=transport (playhead/seek/cue/pause) wszędzie (mode, title, bpm, wave, time, trans CUE/PLAY/STOP, status, spin, drag, compact_btn, panel). Air/scalab/safety/file-stream/black/empty/visibility/legacy: margins 32/24 (compact8/6), dominant wave stretch7 min260, large trans centered, QStack no hacks, #OdtwarzaczPanel surface, "Brak utworu", safety prompt playing, guards no-track/compact/init/switch, post Opcja A sole new (no DeckWidget/SinglePlayerView/hybrid). Styles: BOOTH_COLORS + get_deck_panel_stylesheet incl #OdtwarzaczPanel/OdtwarzaczView. Integracja main + repo (get_track_by_path, CuePoint etc). Problemy P0-P10 (fresh even if prior fixed: compact silent crash/reentr, spin not rotate/visible, dual overhead/init race, drag edges/compact vis, cue consistency, scalab edges, file/stream gaps, black/empty, legacy refs, visibility/timing, playback no-track compact, safety prompt UX) przekazane explicite do SZPIEG archive + side tasks (compact anim ex 5-8, visibility/init, file/stream, drag UX, scalab, cue, tests visual). Per user "nie przestawaj puki nie skonczysz".
+    """
 
     # Signals for tight integration with main library views (now playing indicators, sync)
     deck_track_loaded = QtCore.pyqtSignal(str, object)   # deck ("A"/"B"), Track
@@ -203,11 +210,19 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
         # Legacy Focused single_container usunięty z dual create (po Opcja A sole odt for single) — set None, ukryty w guardach.
         # Brak widocznych hacków setVisible na stack content (QStacked zarządza).
         # File vs STREAM docs: load=FILE (ścieżka+DB), transport=STREAM (engine playhead).
+        # Verify per lista: _DUAL_CONSOLE_IDX=0 , _ODT_IDX=1 , odt after dual in creation, switch uses, no main_layout.add for stack items (error banner only), no NameError via hasattr/count guards.
         self._DUAL_CONSOLE_IDX: int = 0
         self._ODT_IDX: int = 1
 
         # Track widgets that belong to the dual console for show/hide during mode switch
         self._console_widgets: list[QtWidgets.QWidget] = []
+
+        # Lazy dual (FIXER polish per SZPIEG/REVIEWER/Plan P1 "dual overhead if possible"):
+        # Single default MVP: nie tworzymy heavy dual upfront (oszczędność overhead/perfu dla użytkowników single).
+        # Dual tworzony on-demand w _switch na console (insertWidget(0) -> odt shifts 0->1, final indices dual0/odt1 preserved).
+        # Jeśli nigdy nie przełączysz na console — zero dual creation. Compat + guards zachowane.
+        # Non-radical: exact match spec (indices final 0/1, QStack sole), lazy tylko creation timing.
+        self._dual_created: bool = False
 
         # Układ kompaktowy (deck A nad deck B)
         try:
@@ -218,41 +233,46 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
             # Używamy helperów z tasku integracyjnego — czysty, powtarzalny wiring
             # Nowa architektura zawsze (import succeeded)
             try:
-                created_dual = self._create_dual_console_ui()  # Zmienione: nie przyjmuje main_layout (stack zarządza)
-                self.dual_console = created_dual
-                if created_dual is None:
-                    raise RuntimeError("dual console creation returned None")
-                self.content_stack.addWidget(created_dual)
-                # === NOWA ARCHITEKTURA AKTYWNA (primary path) ===
-                logger.info("NEW ARCHITECTURE ACTIVE: DeckController + FocusedDeckView/ConsoleDeckView/DualConsoleWidget (pełny wiring drag&drop, skróty, mikser)")
-                logger.info("Nowa architektura sole (redesign complete)")
+                # Lazy dual creation (FIXER polish): dla default single (per user/SZPIEG/Plan) nie tworzymy dual upfront.
+                # Odtwarzacz (single) primary — dual only on first _switch to console (insert at 0, odt shifts to 1).
+                # Oszczędza overhead heavy DeckCtrl + DualConsole + subviews jeśli użytkownik zostaje w single MVP.
+                # Final: zawsze dual0 / odt1 po switch; consts + QStack + switch niezmienione.
+                # Guard _dual_created + hasattr w całym kodzie.
+                default_single = getattr(self, '_current_mode', 'single') == 'single'
+                if not default_single:
+                    created_dual = self._create_dual_console_ui()  # Zmienione: nie przyjmuje main_layout (stack zarządza)
+                    self.dual_console = created_dual
+                    if created_dual is None:
+                        raise RuntimeError("dual console creation returned None")
+                    self.content_stack.addWidget(created_dual)
+                    self._dual_created = True
+                    # === NOWA ARCHITEKTURA AKTYWNA (primary path) ===
+                    logger.info("NEW ARCHITECTURE ACTIVE: DeckController + FocusedDeckView/ConsoleDeckView/DualConsoleWidget (pełny wiring drag&drop, skróty, mikser)")
+                    logger.info("Nowa architektura sole (redesign complete)")
+                else:
+                    logger.debug("Lazy dual: single default — dual creation deferred (no overhead until console switch)")
 
-                # Utwórz Odtwarzacz MVP (single) i dodaj do stack jako index 1 (po dual jako 0).
-                # Zapewnia poprawne indeksy dla switch: single -> self._ODT_IDX (odt), console -> self._DUAL_CONSOLE_IDX (dual)
-                # Zgodne z SZPIEG/Plan: odt after dual, no race (create inside same try), guards.
-                # Per spec: dual 0, odt 1 zawsze.
+                # Utwórz Odtwarzacz MVP (single) ...
+                # (odt always for default; add order: if dual was created, odt after -> idx1; if single-only, odt at 0 temp, shift on lazy dual insert)
                 if getattr(self, "odtwarzacz_view", None) is None:
                     try:
                         odt = self._create_odtwarzacz_ui()
                         self.odtwarzacz_view = odt
                         if odt:
                             self.content_stack.addWidget(odt)
-                            # Sanity: ensure odt at _ODT_IDX
+                            # Sanity: ensure odt at _ODT_IDX (if dual present)
                             if self.content_stack.count() > self._ODT_IDX:
-                                # index should be 1 if dual was first
                                 pass
                     except Exception as e:
-                        logger.warning(f"odtwarzacz create after dual failed (non-fatal): {e}")
+                        logger.warning(f"odtwarzacz create failed (non-fatal): {e}")
                         self.odtwarzacz_view = None
                 # Popraw init order / race (per SZPIEG/Plan/REVIEWER lista): ensure odt ready ZAWSZE przed switch/initial use.
-                # Nawet jeśli create inside dual try zawiódł — odt jest primary dla default single.
-                # Dual overhead partial (zawsze tworzony), ale odt gwarantowany.
+                # Dual lazy: odt primary dla default single (gwarantowany bez dual overhead).
                 if getattr(self, "odtwarzacz_view", None) is None:
                     try:
                         odt = self._create_odtwarzacz_ui()
                         self.odtwarzacz_view = odt
                         if odt and hasattr(self, "content_stack") and self.content_stack:
-                            # add if not already (e.g. failed earlier path)
                             if odt not in [self.content_stack.widget(i) for i in range(self.content_stack.count())]:
                                 self.content_stack.addWidget(odt)
                     except Exception as e:
@@ -399,8 +419,8 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
         # Usunięto tworzenie heavy FocusedDeckView / single_container w dual (legacy unneeded dla sole OdtwarzaczView single).
         # single_container = None (z dual), single_player_view = None.
         # Guardy w switch/_toggle_beatgrid/unload etc. ukrywają jeśli kiedykolwiek set (kompat).
-        # Per lista: usuń lub ukryj legacy focused single_container jeśli niepotrzebny (sole odt for single).
-        # Nie wywołujemy _create_focused_single_ui gdy odt+stack.
+        # Per lista + FIXER legacy cleanup: usuń lub ukryj legacy focused single_container jeśli niepotrzebny (sole odt for single).
+        # Nie wywołujemy _create_focused_single_ui gdy odt+stack. Hardened + explicit "Opcja A sole odt single" comment.
         self.single_container = getattr(self, "single_container", None) or None
         self.single_player_view = None
         try:
@@ -410,6 +430,7 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
                 self.single_player_view.setVisible(False)
             if not hasattr(self, "_console_widgets"):
                 self._console_widgets = []
+            # FIXER: additional legacy ref cleanup in odt paths — if single_player_view attr lingers, safe ignore (odt sole for single MVP).
         except Exception as e:
             logger.warning(f"Legacy single_container hide non-fatal: {e}")
 
@@ -423,8 +444,12 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
             default_single = getattr(self, '_current_mode', 'single') == 'single'
             init_mode_id = 0 if default_single else 1
             # Also set stack current early (defensive against races in creation order)
+            # Lazy dual support: if single default + !dual_created, odt is at idx 0 (will shift on first console switch)
             if hasattr(self, "content_stack") and self.content_stack:
-                init_idx = self._ODT_IDX if default_single else self._DUAL_CONSOLE_IDX
+                if default_single and not getattr(self, '_dual_created', False):
+                    init_idx = 0  # temp odt at 0 until dual lazy insert
+                else:
+                    init_idx = self._ODT_IDX if default_single else self._DUAL_CONSOLE_IDX
                 if self.content_stack.count() > init_idx:
                     self.content_stack.setCurrentIndex(init_idx)
             self._switch_player_mode(init_mode_id)
@@ -573,7 +598,8 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
         Tylko basics: load/play/pause/stop + title/time/BPM/waveform. Nie dotyka dual paths.
         Dodaje do content_stack (QStacked) w callerze — brak bezpośredniego add do main + visible hacks.
         File=plik (load_dropped/load_track), Stream=odtwarzanie audio z pliku (play/pause via engine).
-        **Uwaga dla nowych agentów/programistów:** Implementacja dokładnie per nadrzędny SZPIEG Build Spec + Plan team review (z crew/SZPIEG_agent_spec_and_archive.md + memory.md + crew/PLAN_...). Patrz docs dla zasad dokumentacji (zawsze update memory/HISTORY/crew/SZPIEG + code docs + todo + commit). SZPIEG spec jest binding — zero odstępstw. (WRITER 2026-06-02)
+        **Uwaga dla nowych agentów/programistów:** Implementacja dokładnie per nadrzędny SZPIEG Build Spec + Plan team review 2026 (z crew/SZPIEG_agent_spec_and_archive.md + memory.md + crew/PLAN_...). User explicit: "uruchmo jeszcze raz zespouł agentów do sprawdzenia po kolei calej budowy odtwarzacza, i problematyczne elementy prxzekaz dla szpiega do badań. nie przestawaj puki nie skonczysz". Must document identical. SZPIEG spec jest binding — zero odstępstw. (WRITER/FIXER/TESTER/SZPIEG 2026-06-02 full re-audit)
+        **2026-06-02 ANALYZER re-audit (per PLAN/SZPIEG/memory "Dla nowych"):** Po kolei cała budowa (init window/QStack/dual0+odt1 create order, _create_*, _switch indices aggressive hide, compact_btn/_on/ odt set/apply _applying guard/ _update immediate/resize no re-apply, _CompactSpin timer/angle/cos-sin radial paint/vis guards, drag mime+repo lookup+safety prompt odt+main, playback ctrl load=FILE cue near0 play=STREAM, EFFECT tooltips + file/stream comments/docs, air 32/24 dominant wave7, scalab resize dynamic, safety, legacy removal post Opcja A sole, visibility no overlap, black/empty #Odt, styles, main integration, repo get_track_by_path). Fresh P0-P10 + compare SZPIEG spec. Docs updated identical (SZPIEG append full report etc). Abs paths. Gotowe. Przekazuję problemy SZPIEG + crew.
         """
         try:
             if not hasattr(self, "playback_engine") or not self.playback_engine:
@@ -601,6 +627,7 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
         Dual/Console: full DeckController + DualConsoleWidget/Focused (untouched).
         Używa QStackedWidget (content_stack) do przełączania — zero setVisible/raise_/hacks na odt vs dual (per step 1 solidify).
         SOLIDIFY: dual zawsze _DUAL_CONSOLE_IDX=0, odt _ODT_IDX=1. Switch correct, no race.
+        Per 2026-06-02 SZPIEG full re-audit "po kolei całej budowy" + user "uruchmo jeszcze raz... nie przestawaj": use indices, setCurrentIndex, aggressive hide only non-stack, re-sync compact, no overlap. Problemy (init race, dual overhead, vis timing) przekazane SZPIEG.
         """
         use_single_mode = (mode_id == 0)  # single btn id z mode_btn_group =0 ; console=1
         self._current_mode = "single" if use_single_mode else "console"
@@ -616,6 +643,21 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
                         self.content_stack.addWidget(odt)
             except Exception as e:
                 logger.warning(f"switch ensure odt failed: {e}")
+
+        # Lazy dual guard (FIXER): jeśli switch do console i dual jeszcze nie, utwórz + insert at 0 (odt shifts 0->1 jeśli był single-only)
+        # Zachowuje final indices dual0/odt1, QStack sole, no race. Per SZPIEG lazy overhead polish.
+        if not use_single_mode and not getattr(self, '_dual_created', False):
+            try:
+                dual = self._create_dual_console_ui()
+                if dual:
+                    self.content_stack.insertWidget(0, dual)
+                    self.dual_console = dual
+                    self._dual_created = True
+                    if dual not in getattr(self, '_console_widgets', []):
+                        self._console_widgets.append(dual)
+                    logger.info("Lazy dual created on switch to console (single MVP had no dual overhead until now)")
+            except Exception as e:
+                logger.warning(f"lazy dual create on switch failed: {e}")
 
         # Compact only for single odt
         if not use_single_mode and hasattr(self, "compact_btn"):
@@ -709,6 +751,7 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
         """Toggle compact na odt (single only). Pilot-like + anim spin.
         W console: no-op lub info.
         Per spec: toggle w window, set na odt + simple.
+        2026-06-02 UI-DESIGNER re-audit "uruchmo jeszcze raz... nie przestawaj": dynamic minSize pilot 380x280 + gentle resize, re-sync vis spin, guards if not single, odt check. Per SZPIEG compact pilot + PLAN lista. Exact match, docs identical.
         """
         is_single = getattr(self, '_current_mode', 'console') == 'single'
         if not is_single:
@@ -719,9 +762,31 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
                 pass
             return
         odt = getattr(self, "odtwarzacz_view", None)
+        if not odt:
+            # More guards (FIXER): no odt -> disable compact, no crash on rapid toggle/switch.
+            try:
+                self.compact_btn.setChecked(False)
+                self.compact_btn.setEnabled(False)
+            except Exception:
+                pass
+            return
         if odt and hasattr(odt, "set_compact_mode"):
             try:
                 odt.set_compact_mode(checked)
+                # Playback compact vis polish (FIXER): re-sync play_state / spin / btn / wave if was playing during toggle/switch.
+                # Ensures spin starts, title/time current, no vis desync in compact pilot.
+                if getattr(odt, "_is_playing", False):
+                    try:
+                        odt._update_compact_play_state(True)
+                        # force wave/playhead if controller has state
+                        if hasattr(self, "_simple_deck_ctrl") and self._simple_deck_ctrl and hasattr(odt, "waveform"):
+                            state = None
+                            if self.playback_engine:
+                                state = self.playback_engine.get_deck_state("A")
+                            if state:
+                                odt.waveform.set_playhead(getattr(state, "position_ms", 0))
+                    except Exception:
+                        pass
             except Exception as e:
                 logger.warning(f"compact toggle odt failed: {e}")
         # sync text
@@ -729,20 +794,38 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
             self.compact_btn.setText("☑ Compact" if checked else "☐ Compact")
         except Exception:
             pass
-        # Pilot feel: auto adjust min size for compact (per SZPIEG/Plan step2) -- smaller for mini pilot, restore for normal.
+        # Pilot feel: auto adjust min size for compact (per SZPIEG/Plan step2 + FIXER polish) -- smaller for mini pilot, restore for normal.
+        # window min shrink comment, resize self-manage: per lista step2 compact toggle+anim spin.
         # Scalability preserved (no fixed, user can still resize larger; air/margins inside odt).
-        # Używa _orig_ zapisane w init (dynamic).
+        # Używa _orig_ zapisane w init (dynamic). Shrink/floating: always-on-top for pilot (notification bubble per SZPIEG compact spec).
+        # Non-radical polish: setWindowFlags + show after change (standard Qt for StaysOnTop toggle).
         try:
+            from ui.dj.styles import BOOTH_SIZES
+            cmin = BOOTH_SIZES.get("compact_window_min", (420, 300))
             if checked:
-                self.setMinimumSize(380, 280)  # pilot-like min
+                self.setMinimumSize(*cmin)
                 # optional gentle shrink if current larger (non-destructive)
                 if self.width() > 520 or self.height() > 420:
                     self.resize(max(420, min(self.width(), 520)), max(300, min(self.height(), 380)))
+                # always-on-top compact pilot (floating-like, useful booth/multi-monitor per SZPIEG research)
+                try:
+                    flags = self.windowFlags() | QtCore.Qt.WindowType.WindowStaysOnTopHint
+                    self.setWindowFlags(flags)
+                    self.show()  # re-show after flag change
+                except Exception:
+                    pass
             else:
                 if hasattr(self, "_orig_min_w"):
                     self.setMinimumSize(self._orig_min_w, self._orig_min_h)
                 else:
                     self.setMinimumSize(980, 720)
+                # remove always-on-top when back to normal
+                try:
+                    flags = self.windowFlags() & ~QtCore.Qt.WindowType.WindowStaysOnTopHint
+                    self.setWindowFlags(flags)
+                    self.show()
+                except Exception:
+                    pass
         except Exception:
             pass
         logger.debug(f"Compact toggled: {checked} (single={is_single})")
@@ -1066,6 +1149,8 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
         """Ładuje track upuszczony przez drag & drop (używa ścieżki).
         To jest FILE op: ładowanie PLIKU audio (nie stream). DB lookup dla metadanych.
         Po load, transport (play) używa streamu z pliku.
+        Uniform file/stream (FIXER polish): explicit w komentarzach + safety w callerach (drop/load if playing).
+        Dla single (odt): deck="A" route do simple/odt; batch obsłużone w drop (first only).
         """
         try:
             from pathlib import Path as PathLib

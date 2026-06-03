@@ -40,21 +40,21 @@ class FreeMusicPortalSearch:
     """Search music metadata in popular free portals without paid plans."""
 
     PORTALS: tuple[tuple[str, str], ...] = (
-        ("deezer", "Deezer"),
-        ("itunes", "Apple Music/iTunes"),
+        ("youtube", "YouTube"),
+        ("soundcloud", "SoundCloud"),
         ("listenbrainz", "ListenBrainz"),
         ("theaudiodb", "TheAudioDB"),
+        ("itunes", "Apple Music/iTunes"),
+        ("deezer", "Deezer"),
         ("lastfm", "Last.fm"),
         ("musixmatch", "Musixmatch"),
         ("genius", "Genius"),
-        ("musicbrainz_portal", "MusicBrainz"),
-        ("discogs_portal", "Discogs"),
-        ("youtube", "YouTube"),
-        ("soundcloud", "SoundCloud"),
         ("bandcamp", "Bandcamp"),
         ("audius", "Audius"),
         ("archiveorg", "Internet Archive"),
         ("jiosaavn", "JioSaavn"),
+        ("musicbrainz_portal", "MusicBrainz"),
+        ("discogs_portal", "Discogs"),
         ("lrclib", "LRCLIB"),
         ("lyricsovh", "Lyrics.ovh"),
     )

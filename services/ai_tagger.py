@@ -168,15 +168,48 @@ class DatabaseTagger:
         self._mb = mb or RateLimitedMusicBrainzProvider()
 
     def analyze(self, track: Track) -> AnalysisResult:
-        # --- path 1: AcoustID fingerprint → MB MBID lookup ---
-        mbid = self._resolve_mbid_via_acoustid(track)
-        if mbid:
-            recording = self._mb.get_recording(mbid)
-            if recording:
-                meta = _parse_mb_recording(recording)
-                if meta:
-                    return _mb_meta_to_result(meta, confidence=0.93,
-                                              source="AcoustID+MusicBrainz")
+        # First pass: sanitize filename and try fast portal validation on the raw cleaned stem.
+        # YouTube and SoundCloud are intentionally checked before heavier legacy sources.
+        try:
+            from services.free_music_portals import FreeMusicPortalSearch
+
+            raw_stem = Path(track.path).stem.replace("_", " ").replace(".", " ").strip()
+            cleaned_seed = re.sub(
+                r"\s*[\(\[]\s*(?:320|128|flac|mp3|wav|web|hq|official|video|lyrics?|preview|bootleg|free download).*?[\)\]]",
+                "",
+                raw_stem,
+                flags=re.I,
+            )
+            cleaned_seed = re.sub(r"\s*\b(?:320kbps|128kbps|flac|mp3|wav|webrip)\b.*$", "", cleaned_seed, flags=re.I)
+            cleaned_seed = re.sub(r"(?<=\s)(?:320|128|192|256)\s*$", "", cleaned_seed)
+            cleaned_seed = re.sub(r"\s+", " ", cleaned_seed).strip(" -_")
+
+            if cleaned_seed:
+                agg = FreeMusicPortalSearch(max_workers=4)
+                probes = agg.search_all(cleaned_seed)
+                for probe in probes:
+                    if probe.source_key not in {"youtube", "soundcloud"}:
+                        continue
+                    cand = getattr(probe, "candidate", None)
+                    if cand and (cand.artist or cand.title):
+                        meta = {
+                            "title": cand.title,
+                            "artist": cand.artist,
+                            "album": cand.album,
+                            "year": cand.year,
+                            "genre": cand.genre,
+                            "publisher": cand.publisher,
+                        }
+                        meta = {k: v for k, v in meta.items() if v}
+                        if meta:
+                            return _mb_meta_to_result(
+                                meta,
+                                confidence=0.68,
+                                source=f"First-pass portal rescue via {probe.source_label}",
+                            )
+        except Exception:
+            # Never let portal rescue break the whole tagger
+            pass
 
         # --- path 2: MB text search → fetch full recording by MBID ---
         # Use smart filename candidates when no tags at all (common for naked files)
@@ -223,8 +256,20 @@ class DatabaseTagger:
                             return _mb_meta_to_result(meta, confidence=0.72,
                                                       source="MusicBrainz filename candidate")
 
-        # Filename-only web rescue via free portals (Deezer, iTunes, Last.fm, ListenBrainz, TheAudioDB, Discogs etc.)
-        # This fulfills broader "wyszukiwania w internecie" for naked files where MB text search misses.
+        # Emergency queue: AcoustID fingerprint and legacy web rescue are tried last.
+        # These remain available for hard cases, but no longer lead the pipeline.
+        mbid = self._resolve_mbid_via_acoustid(track)
+        if mbid:
+            recording = self._mb.get_recording(mbid)
+            if recording:
+                meta = _parse_mb_recording(recording)
+                if meta:
+                    return _mb_meta_to_result(meta, confidence=0.93,
+                                              source="AcoustID+MusicBrainz")
+
+        # Legacy emergency queue: filename-only web rescue via free portals
+        # (Deezer, iTunes, Last.fm, ListenBrainz, TheAudioDB, Discogs etc.).
+        # This remains available for hard cases, but is deliberately last.
         try:
             best_q = query
             if not best_q or best_q == Path(track.path).stem:
@@ -240,7 +285,6 @@ class DatabaseTagger:
                 for probe in probes:
                     cand = getattr(probe, "candidate", None)
                     if cand and (cand.artist or cand.title):
-                        # Build a lightweight result from the best portal hit
                         meta = {
                             "title": cand.title,
                             "artist": cand.artist,
@@ -249,21 +293,13 @@ class DatabaseTagger:
                             "genre": cand.genre,
                             "publisher": cand.publisher,
                         }
-                        # Filter None
                         meta = {k: v for k, v in meta.items() if v}
                         if meta:
-                            res = AnalysisResult(
-                                title=meta.get("title"),
-                                artist=meta.get("artist"),
-                                album=meta.get("album"),
-                                year=meta.get("year"),
-                                genre=meta.get("genre"),
-                                publisher=meta.get("publisher"),
-                                description=f"Filename rescue via {probe.source_label}",
+                            return _mb_meta_to_result(
+                                meta,
                                 confidence=0.65,
-                                source=f"portals:{probe.source_key}",
+                                source=f"Legacy portal rescue via {probe.source_label}",
                             )
-                            return res
         except Exception:
             # Never let portal rescue break the whole tagger
             pass

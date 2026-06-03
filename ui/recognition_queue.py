@@ -5,7 +5,7 @@ import logging
 from PyQt6 import QtCore
 
 from core.models import Track
-from data.repository import update_track
+from services.metadata_writeback import PendingTrackWrite, apply_track_writes
 from services.metadata_enricher import MetadataEnricher
 
 log = logging.getLogger(__name__)
@@ -44,6 +44,29 @@ class RecognitionBatchWorker(QtCore.QRunnable):
             cache_ttl_days=self.cache_ttl_days,
             acoustid_api_key=self.acoustid_api_key,
         )
+        track_fields = (
+            "title",
+            "artist",
+            "album",
+            "albumartist",
+            "year",
+            "genre",
+            "tracknumber",
+            "discnumber",
+            "composer",
+            "bpm",
+            "key",
+            "rating",
+            "mood",
+            "energy",
+            "comment",
+            "lyrics",
+            "isrc",
+            "publisher",
+            "grouping",
+            "copyright",
+            "remixer",
+        )
         processed = 0
         errors = 0
         total = len(self.tracks)
@@ -57,7 +80,37 @@ class RecognitionBatchWorker(QtCore.QRunnable):
                 log.warning("Recognition failed for %s: %s", track.path, exc)
                 updated = None
             if updated:
-                update_track(updated)
+                changed_fields = {
+                    field: "" if getattr(updated, field, None) is None else str(getattr(updated, field, None))
+                    for field in track_fields
+                    if getattr(track, field, None) != getattr(updated, field, None)
+                }
+                if changed_fields:
+                    old_values = {
+                        field: None if getattr(track, field, None) is None else str(getattr(track, field, None))
+                        for field in changed_fields
+                    }
+                    try:
+                        apply_track_writes(
+                            [
+                                PendingTrackWrite(
+                                    track=updated,
+                                    fields=changed_fields,
+                                    source="recognition_batch",
+                                    confidence=None,
+                                    change_log_source="recognition_batch",
+                                    old_values=old_values,
+                                )
+                            ],
+                            max_workers=1,
+                            update_mode="single",
+                        )
+                    except Exception as exc:
+                        log.warning("Recognition writeback failed for %s: %s", track.path, exc)
+                        errors += 1
+                        processed += 1
+                        self.signals.progress.emit(processed, total)
+                        continue
             else:
                 errors += 1
                 log.debug("No match found for %s", track.path)

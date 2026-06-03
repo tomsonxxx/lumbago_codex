@@ -5,7 +5,7 @@ from datetime import datetime
 
 from core.models import AnalysisJob
 from data import repository
-from services.background_autotag_worker import BackgroundAutotagWorker
+from services.metadata_writeback import PendingTrackWrite, apply_track_writes
 from PyQt6 import QtCore
 
 
@@ -98,18 +98,39 @@ class BackgroundEnrichmentService:
             )
 
             if result.best_match:
-                # Zastosuj zmiany (prosta wersja – pełna wersja powinna iść przez writeback)
-                from services.ai_tagger_merge import _merge_analysis_into_track
-                # Na razie ręcznie aplikujemy tylko pola tła
-                changed = False
-                for field in ["originalartist", "rating", "comment", "lyrics", "remixer"]:
+                # Jedna ścieżka writebacku dla background enrichment:
+                # DB + changelog + plik tagów przechodzą przez wspólny helper.
+                background_fields = ["originalartist", "rating", "comment", "lyrics", "remixer"]
+                fields_to_write: dict[str, str] = {}
+                old_values: dict[str, str | None] = {}
+                for field in background_fields:
                     value = getattr(result.best_match, field, None)
-                    if value and not getattr(track, field):
+                    current = getattr(track, field, None)
+                    if value and not current:
                         setattr(track, field, value)
-                        changed = True
+                        fields_to_write[field] = str(value)
+                        old_values[field] = None if current is None else str(current)
 
-                if changed:
-                    repository.update_track(track)
+                if fields_to_write:
+                    writeback = apply_track_writes(
+                        [
+                            PendingTrackWrite(
+                                track=track,
+                                fields=fields_to_write,
+                                source="background_enrichment",
+                                confidence=None,
+                                change_log_source="background_enrichment",
+                                old_values=old_values,
+                            )
+                        ],
+                        max_workers=1,
+                        update_mode="single",
+                    )
+                    if writeback.file_write_errors:
+                        self._log(
+                            f"[bg-service] writeback errors for track_id={job.track_id}: "
+                            f"{len(writeback.file_write_errors)}"
+                        )
 
             repository.update_analysis_job_status(job.job_id, "completed")
             self._log(f"[bg-service] Zakończono zadanie #{job.job_id} dla track_id={job.track_id}")

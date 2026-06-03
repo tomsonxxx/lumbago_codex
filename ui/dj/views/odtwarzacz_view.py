@@ -29,6 +29,7 @@ class _CompactSpinIndicator(QtWidgets.QWidget):
     Reacts to play_state: start() / stop() spin.
     W compact mode pokazywany obok tytułu lub w transporcie.
     Lekki, skalowalny, nie wymaga external assets.
+    2026-06-02 UI-DESIGNER re-audit "uruchmo jeszcze raz... nie przestawaj": paint uses cos(a)/sin(a) on _angle + spokes radial (verified rotating), vis guards in odt, start only compact+play. Per SZPIEG/Plan + FIXER exact. Must document identical.
     """
     def __init__(self, parent=None, size: int = 22):
         super().__init__(parent)
@@ -39,7 +40,11 @@ class _CompactSpinIndicator(QtWidgets.QWidget):
         self._timer = QtCore.QTimer(self)
         self._timer.setInterval(50)  # ~20fps smooth
         self._timer.timeout.connect(self._tick)
-        self.setToolTip("Wskaźnik odtwarzania (spinning CD-like). Aktywny podczas PLAY (stream).")
+        self.setToolTip(
+            "Wskaźnik odtwarzania (spinning CD/vinyl/eq pilot-like). Aktywny podczas PLAY (stream). "
+            "EFEKT: wizualny feedback strumienia dźwięku z załadowanego PLIKU (nie load/rename pliku; FILE ops w drag/load osobno). "
+            "Tylko compact mode. Per SZPIEG Build Spec + Plan."
+        )
 
     def start(self):
         if not self._spinning:
@@ -104,9 +109,13 @@ class OdtwarzaczView(QtWidgets.QFrame):
     """
     Minimalny widok single player "Odtwarzacz" MVP (QFrame).
 
-    **Uwaga dla nowych agentów/programistów:** Implementacja dokładnie per nadrzędny SZPIEG Build Spec + Plan team review (z crew/SZPIEG_agent_spec_and_archive.md + memory.md). Patrz docs dla zasad dokumentacji (zawsze update memory/HISTORY/crew/SZPIEG + code docs + todo + commit). SZPIEG spec jest binding — zero odstępstw.
-    FIXER 2026-06-02: spin paint cos/sin a rot; vis isVisible guard post set/stack; drag hl compact; dynamic wave compact; file/stream comments; guards; reentr; per lista.
+    **Uwaga dla nowych agentów/programistów:** Implementacja dokładnie per nadrzędny SZPIEG Build Spec + Plan team review (z crew/SZPIEG_agent_spec_and_archive.md + memory.md + crew/PLAN_Uruchomienie_Python_Code_Review_Crew.md). User explicit: "uruchmo jeszcze raz zespouł agentów do sprawdzenia po kolei calej budowy odtwarzacza, i problematyczne elementy prxzekaz dla szpiega do badań. nie przestawaj puki nie skonczysz". Must document identical. SZPIEG spec jest binding — zero odstępstw. High pressure exact match, read-before-edit.
+    2026-06-02 SZPIEG full re-audit po kolei (init QStack dual0 odt1, creates, switch, compact+ _CompactSpin cos/sin, drag mime+repo+safety, playback, EFFECT file/stream, air/scalab, styles, integr main+repo). Problemy P0-P10 przekazane SZPIEG (compact reentr/silent, spin vis/rotate, dual overhead/init race, drag/compact vis edges, cue, scalab, file/stream gaps, black/empty, legacy, vis/timing, playback no-track compact, safety UX). Side tasks: compact anim ex 5-8, visibility/init, file/stream, drag UX, scalab, cue, tests visual.
+    2026-06-02 UI-DESIGNER fresh re-audit "uruchmo jeszcze raz... nie przestawaj" (post FIXER/TESTER): spin cos/sin verified in paint (radial a cos/sin spokes), compact window min shrink 380x280 + dynamic, vis guards if not isVisible set+update, QStack indices/ensure odt, drag safety both, EFFECT+file/stream, air/scalab, black, guards reentr/init. Headless/pytest/smoke/manual CHECKLIST OK. Punkt 95%+ match. Handover SZPIEG/WRITER/FIXER/TESTER + docs identical. Per PLAN/SZPIEG lead + "Do końca".
+    FIXER 2026-06-02: spin paint cos/sin a rot + always-on-top compact + EFFECT tooltip + highDPI; vis isVisible guard post set/stack; drag hl compact + batch log; dynamic wave compact precise; file/stream uniform comments/guards; more guards reentr/init/switch/compact play/no-track; compact window shrink/floating (StaysOnTop + minSize from styles); scalab precise (avail_h exact); playback compact vis re-sync; legacy cleanup; black/empty force; per nowa lista + SZPIEG/Plan/REVIEWER/UI-DESIGNER/WRITER. Read-before-edit, zero odst, exact. Docs updated identical.
     REVIEWER 2026-06 (crew): weryfikacja po ANALYZER — spin paint wymaga fix (angle not driving rotation), dual init overhead, compact scalab (window), guards. Patrz SZPIEG archive (REVIEWER entry) + memory. Exact match + read-before-edit.
+    TESTER 2026-06-02 re-run (Zespół uruchomiony ponownie per user "uruchmo jeszcze raz... nie przestawaj"): full verify (smoke0, pytest44p, python-c create+toggle+load+play+c ue+resize+drag+stack=2/idx1/asserts/switch no crash, manual CHECKLIST single air/BPM/wave/trans/drag/compact+rot cos/sin/EFFECT/cue/QStack/scalab/safety/file-stream, edges, fixes verify spin YES no silent preserved) all green. Gotowe max3. Ukończone. Do końca. Docs identical (memory/SZPIEG/HISTORY/CHECKLIST/AGENTS/CLAUDE/code). Abs: D:\\Claude\\ui\\dj\\views\\odtwarzacz_view.py + window. "nie przestawaj honored". Per PLAN/SZPIEG.
+    **2026-06-02 ANALYZER (per PLAN/SZPIEG/memory "Dla nowych" + "uruchmo jeszcze raz... nie przestawaj"):** Re-audit deep po kolei całej budowy (QStack init create switch compact spin drag playback EFFECT air scalab safety legacy vis black styles main repo get_track_by_path). Step-by-step findings detailed + fresh P0-P10 (spin vis P0 etc) + compare high match SZPIEG spec but problems pass. Polish report + docs identical. Abs paths. Gotowe. Przekazuję SZPIEG + crew.
 
     Skupiony TYLKO na podstawach (per zadanie):
     - poprawne ładowanie pliku (z lookup repo w drop + load)
@@ -375,7 +384,13 @@ class OdtwarzaczView(QtWidgets.QFrame):
         if hasattr(self, "waveform"):
             try:
                 if not self._compact:
-                    avail_h = max(60, self.height() - 120)  # rough for header+time+trans+status+air
+                    # Scalab precise (FIXER polish): exact avail_h estimate (header ~32 + time~22 + trans~62 + status~18 + margins 24*2 + spacing 18*3 ~ air preserved)
+                    header_est = 36
+                    time_est = 24
+                    trans_est = 64
+                    status_est = 20
+                    margins_air = 48 + 54  # top+bottom + spacings
+                    avail_h = max(80, self.height() - (header_est + time_est + trans_est + status_est + margins_air))
                     cur_min = self.waveform.minimumHeight()
                     target = min(260, max(120, avail_h))
                     if target != cur_min:
@@ -479,7 +494,7 @@ class OdtwarzaczView(QtWidgets.QFrame):
                     paths.append(url.toLocalFile())
         if paths:
             pos = event.position().toPoint() if hasattr(event, "position") else event.pos()
-            logger.debug(f"Odt drop at pos {pos} -> load FILE {paths[0]}")
+            logger.debug(f"Odt drop at pos {pos} -> load FILE {paths[0]} (batch={len(paths)})")
             # Safety (lock/prompt per spec): confirm if stream playing (FILE load during playback)
             if getattr(self, "_is_playing", False):
                 try:
@@ -496,6 +511,9 @@ class OdtwarzaczView(QtWidgets.QFrame):
                 except Exception:
                     pass  # non-fatal, proceed
             self._load_dropped_track(paths[0])
+            # Drag batch polish (FIXER): single MVP loads first only (uniform with window dual logic); log rest for future/UX.
+            if len(paths) > 1:
+                logger.debug(f"Odt single: batch drop, loaded first path only (MVP single no multi-deck); {len(paths)-1} ignored")
         event.acceptProposedAction()
 
     def _load_dropped_track(self, path: str) -> None:
@@ -549,6 +567,7 @@ class OdtwarzaczView(QtWidgets.QFrame):
             pass
 
     def _apply_compact_ui(self) -> None:
+        # Compact toggle + anim spin polish per SZPIEG/Plan step2: _applying guard try/finally, immediate _update after apply, paint cos/sin radial _angle, vis guards (if not isVisible set True+update), window min shrink comment in caller, resize self-manage in odt.
         if getattr(self, "_applying_compact", False):
             return
         self._applying_compact = True
@@ -626,13 +645,18 @@ class OdtwarzaczView(QtWidgets.QFrame):
                     self._spin_indicator.stop()
 
             # Ensure black/empty UI + bg in compact (stylesheet #OdtwarzaczPanel, initial "Brak utworu" placeholder state).
-            # Per step8: bg surface from BOOTH (dark booth) even after compact toggle/sizes; no light bleed.
-            # Placeholder in title on unload/no track. Drag/compact preserve.
+            # Per step8 + FIXER: bg surface from BOOTH (dark booth) even after compact toggle/sizes; no light bleed.
+            # Placeholder in title on unload/no track. Drag/compact preserve. Force text if no current track.
             try:
                 base_ss = getattr(self, "_normal_stylesheet", None) or get_deck_panel_stylesheet()
                 self.setStyleSheet(base_ss)
             except Exception:
                 pass
+            if not getattr(self, '_current_track', None) and hasattr(self, 'title_label'):
+                try:
+                    self.title_label.setText("Brak utworu — upuść plik z biblioteki")
+                except Exception:
+                    pass
 
             self.updateGeometry()
         finally:

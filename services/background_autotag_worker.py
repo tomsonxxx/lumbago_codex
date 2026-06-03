@@ -10,11 +10,13 @@ a reszta metadanych jest uzupełniana asynchronicznie.
 
 from __future__ import annotations
 
+from pathlib import Path
 from PyQt6 import QtCore
 from copy import deepcopy
 
 from core.models import BACKGROUND_AUTOTAG_FIELDS, Track
 from services.autotag_rewrite import UnifiedAutoTagger
+from services.metadata_writeback import PendingTrackWrite, apply_track_writes
 
 
 class BackgroundAutotagWorker(QtCore.QObject):
@@ -85,16 +87,43 @@ class BackgroundAutotagWorker(QtCore.QObject):
                     continue
 
                 changes: dict[str, str | int | float] = {}
+                old_values: dict[str, str | None] = {}
                 for field in BACKGROUND_AUTOTAG_FIELDS:
                     if field in already_filled:
                         continue
                     new_value = getattr(result.best_match, field, None)
                     current_value = getattr(track, field, None)
                     if new_value and not current_value:
+                        old_values[field] = None if current_value is None else str(current_value)
                         setattr(track, field, new_value)
                         changes[field] = new_value
 
                 if changes:
+                    try:
+                        writeback = apply_track_writes(
+                            [
+                                PendingTrackWrite(
+                                    track=track,
+                                    fields={
+                                        field: "" if value is None else str(value)
+                                        for field, value in changes.items()
+                                    },
+                                    source="autotag:background",
+                                    confidence=None,
+                                    change_log_source="autotag:background",
+                                    old_values=old_values,
+                                )
+                            ],
+                            max_workers=1,
+                            update_mode="single",
+                        )
+                        if writeback.file_write_errors:
+                            _process_log(
+                                f"[autotag-bg] writeback errors file={Path(track.path).name} "
+                                f"errors={len(writeback.file_write_errors)}"
+                            )
+                    except Exception as exc:
+                        _process_log(f"[autotag-bg] writeback failed file={Path(track.path).name} err={exc}")
                     updated_count += 1
                     self.track_updated.emit(track.path, changes)
 

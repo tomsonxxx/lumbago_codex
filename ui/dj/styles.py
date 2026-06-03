@@ -283,6 +283,9 @@ BOOTH_SIZES = {
     "compact_title_font": 11,
     "compact_time_font": 10,
     "compact_status_font": 9,
+    # Compact pilot window shrink/floating per SZPIEG/Plan/FIXER polish (pilot-like always-on-top option, min for multi-mon booth)
+    "compact_window_min": (420, 300),
+    "compact_window_floating_hint": True,  # used for setWindowFlags StaysOnTop in toggle
 }
 
 def get_button_stylesheet(variant: str = "default") -> str:

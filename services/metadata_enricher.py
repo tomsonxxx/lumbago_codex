@@ -1159,11 +1159,11 @@ class PortalSource:
 
 
 _PORTAL_SOURCES: list[PortalSource] = [
-    PortalSource("portal_search_spotify", LOCAL_SOURCE_LABELS["portal_search_spotify"], "site:open.spotify.com/track", "open.spotify.com/track/", 1),
-    PortalSource("portal_search_apple_music", LOCAL_SOURCE_LABELS["portal_search_apple_music"], "site:music.apple.com song", "music.apple.com/", 2),
-    PortalSource("portal_search_deezer", LOCAL_SOURCE_LABELS["portal_search_deezer"], "site:deezer.com/track", "deezer.com/track/", 3),
-    PortalSource("portal_search_soundcloud", LOCAL_SOURCE_LABELS["portal_search_soundcloud"], "site:soundcloud.com", "soundcloud.com/", 4),
-    PortalSource("portal_search_youtube", LOCAL_SOURCE_LABELS["portal_search_youtube"], "site:youtube.com/watch", "youtube.com/watch", 5),
+    PortalSource("portal_search_youtube", LOCAL_SOURCE_LABELS["portal_search_youtube"], "site:youtube.com/watch", "youtube.com/watch", 1),
+    PortalSource("portal_search_soundcloud", LOCAL_SOURCE_LABELS["portal_search_soundcloud"], "site:soundcloud.com", "soundcloud.com/", 2),
+    PortalSource("portal_search_spotify", LOCAL_SOURCE_LABELS["portal_search_spotify"], "site:open.spotify.com/track", "open.spotify.com/track/", 3),
+    PortalSource("portal_search_apple_music", LOCAL_SOURCE_LABELS["portal_search_apple_music"], "site:music.apple.com song", "music.apple.com/", 4),
+    PortalSource("portal_search_deezer", LOCAL_SOURCE_LABELS["portal_search_deezer"], "site:deezer.com/track", "deezer.com/track/", 5),
     PortalSource("portal_search_bandcamp", LOCAL_SOURCE_LABELS["portal_search_bandcamp"], "site:bandcamp.com/track", "bandcamp.com/track/", 6),
     PortalSource("portal_search_beatport", LOCAL_SOURCE_LABELS["portal_search_beatport"], "site:beatport.com/track", "beatport.com/track/", 7),
     PortalSource("portal_search_tidal", LOCAL_SOURCE_LABELS["portal_search_tidal"], "site:tidal.com/browse/track", "tidal.com/browse/track/", 8),
@@ -1835,4 +1835,3 @@ def _extract_remixer_name(title: str | None) -> str | None:
         return None
     raw = match.group("name").strip(" -_/")
     return raw or None
-

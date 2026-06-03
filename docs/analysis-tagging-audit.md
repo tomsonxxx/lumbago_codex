@@ -100,6 +100,9 @@
 - Dodana zostala wspolna usluga zapisu metadanych: `services/metadata_writeback.py`.
   - Obsluguje jeden zapis do DB, pliku audio, tabeli tagow i changelogu.
   - Korzystaja z niej teraz oba flow: dialog review i szybki `AutoTagWorker`.
+- Background enrichment zostal dopiety do tej samej sciezki writebacku.
+  - `BackgroundAutotagWorker` i `BackgroundEnrichmentService` nie pisza juz lokalnie w roznych stylach.
+  - Wspolny helper dostaje `PendingTrackWrite`, wiec DB, changelog i plik tagow ida jednym kontraktem.
 - Usuniety zostal martwy kod z `AiTaggerDialog`:
   - nieuzywane panele audio i zrodel metadanych,
   - zduplikowane metody cache AI,
@@ -126,4 +129,70 @@ Najbardziej oplacalna zmiana architektoniczna to stworzenie jednej uslugi:
   - change log,
   - opcjonalny raport bledow.
 
+W praktyce nastepny etap to doprowadzenie do tego samego wzorca rowniez dla wszystkich pozostalych background flow rozpoznania i zapisow, z jednym jawnie nazwanym miejscem odpowiedzialnosci.
+
 To od razu upraszcza UI, testy i przyszle przejscie na jeden wspolny pipeline AI.
+
+## 6. Macierz zrodel: tolerowane zapytania i pewnosc wyniku
+
+To jest roboczy, trwały kontrakt dla pipeline rozpoznawania. W praktyce:
+- im bardziej strukturalne zapytanie, tym mniej szumu,
+- im bardziej wynik jest listą kandydatów, tym bardziej trzeba go walidowac drugim zrodlem,
+- fingerprint nie jest jedynym punktem prawdy, tylko mocnym sygnalem pomocniczym.
+
+| Zrodlo | Tolerowana forma zapytania | Typ wyniku | Ocena pewnosci |
+|---|---|---|---|
+| AcoustID | fingerprint audio / track id | lista trafien z score | bardzo mocny sygnal, ale nadal probabilistyczny |
+| MusicBrainz | tekst z polami `recording`, `artist`, `title`, quotes, AND/field query | lista kandydatow rankingowanych | srednia do wysokiej, zalezy od precyzji query |
+| ListenBrainz | strukturalne `artist_name` + `recording_name` (+ opcjonalnie `release_name`) | zwykle pojedynczy mapping / obiekt | wysoka, ale do potwierdzenia z drugim zrodlem |
+| TheAudioDB | `s=artist&t=track` albo samo `t` / `s` | lista trackow, code bierze pierwszy hit | srednia |
+| Discogs | `q` release-oriented, najlepiej `artist title` | lista rezultatow | srednia, lepsze dla label/year/style niz samej tozsamosci |
+| iTunes | `term`, `entity=song`, limit 1 | pojedynczy hit z rankingu | srednia |
+| Deezer | `artist:"X" track:"Y"` albo prosty `q` | lista wynikow | srednia do niskiej |
+| Musixmatch | `q_track` + opcjonalnie `q_artist` | lista trackow | srednia do niskiej |
+| Genius | `q` | lista hitow | srednia do niskiej |
+| LRCLIB | `track_name` + `artist_name` (+ opcjonalnie `album_name`), lub `q` | lista rekordow z lyrics | srednia dla lyrics, niska dla tozsamosci utworu |
+| Lyrics.ovh | dokładne `artist/title` w URL | pojedynczy tekst lyrics albo brak | niska dla identyfikacji, wysoka tylko dla lyrics |
+| YouTube / SoundCloud / Bandcamp / Audius / Archive / JioSaavn | swobodny query tekstowy | zwykle 1 wynik lub wynik wytypowany przez scoring | niska do sredniej, rescue only |
+| AI | cala paczka evidence, nie jedno pole | wynik scalony z confidence | zalezy od jakosci wejsciowych danych, nie traktowac jako absolut |
+
+## 7. Zasada kolejności
+
+Po tej analizie najlepiej utrzymac nastepujaca kolejnosc logiczna:
+1. nazwa pliku po oczyszczeniu i prostym tasowaniu slownym,
+2. w tym samym pierwszym przebiegu szybki test YouTube + SoundCloud na samej oczyszczonej nazwie pliku, bez wymagania tasowania,
+3. lokalne metadane tylko jako sygnaly o wadze, nie jako "twarda prawda",
+4. zewnetrzne tekstowe/metadata lookupi,
+5. fingerprint jako mocne potwierdzenie albo korekta,
+6. AI jako scalacz i fallback, gdy kilka zrodel nie daje zgodnego wyniku.
+
+## 8. Uwaga o YouTube i SoundCloud
+
+W pierwszym, najprostszym kroku rozpoznawania warto zawsze odpytac przynajmniej:
+- YouTube,
+- SoundCloud.
+
+Powod:
+- bardzo czesto znajduja wynik nawet po samym oczyszczeniu nazwy pliku,
+- dobrze toleruja prosty query typu `title-artist`,
+- ich odpowiedz bywa wystarczajaco bliska temu, co jest na pliku, zeby wczesnie zbudowac sensowna hipoteze,
+- nadaja sie do szybkiego odfiltrowania plikow, ktore juz na starcie da sie sensownie przypisac.
+
+To nie znaczy, ze ich wynik jest automatycznie pewny. To znaczy, ze:
+- powinny byc czescia pierwszego passu,
+- powinny dostac niski koszt wejscia,
+- i moga podniesc pewnosc gdy zgadzaja sie z innym zrodlem lub z lokalnym sygnalem pliku.
+
+## 9. Tryb awaryjny dla starszych zrodel
+
+Stare lub mniej trafne ścieżki nie są usuwane, tylko przeniesione na koniec kolejki:
+- AcoustID,
+- MusicBrainz fallbacki,
+- portal rescue z `Bandcamp` / `Audius` / `Archive` / `JioSaavn`,
+- `LRCLIB`,
+- `Lyrics.ovh`.
+
+Ich rola:
+- uruchamiają się dopiero wtedy, gdy nowy first-pass nie dał sensownej odpowiedzi,
+- mogą ratować trudne pliki,
+- ale nie blokują ani nie dominują pierwszej decyzji.
