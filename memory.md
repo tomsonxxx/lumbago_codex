@@ -1,6 +1,6 @@
 # Memory — Lumbago Music AI (DJ Player Project)
 
-**Data ostatniej aktualizacji:** Czerwiec 2026 (po pełnej organizacji dokumentacji, impl single Odtwarzacz MVP per SZPIEG spec, team review, push)
+**Data ostatniej aktualizacji:** Czerwiec 2026 (po pełnej organizacji dokumentacji, impl single Odtwarzacz MVP per SZPIEG spec, team review, push; crew PLAN_Uruchomienie_... aktywowany z SZPIEG jako PRIORYTET #1 + user 'ok')
 
 **Cel pliku (dla nowych programistów/agentów):** 
 Ten plik jest **centralną, żywą "encyklopedią" projektu**. Po przeczytaniu go (zawsze na początku nowej sesji) każdy nowy programista lub agent AI musi mieć **kompletny, aktualny pogląd** na:
