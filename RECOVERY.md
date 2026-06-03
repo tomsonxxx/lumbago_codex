@@ -1,6 +1,7 @@
 # RECOVERY — Konsolidacja repozytorium 2026-05-16
 
 > **Uwaga (czerwiec 2026):** Później dodano z powrotem minimalną warstwę Next.js (`app/`, `vercel.json`) wyłącznie dla kompatybilności deployu na Vercel oraz vercel-plugin dla agentów. Nie przywrócono pełnej aplikacji web.
+> **Crew/Plan:** Uruchomienie Code Review Crew podlega `crew/PLAN_Uruchomienie_Python_Code_Review_Crew.md` (SZPIEG + Plan review listy przeróbek dla usera w pierwszej kolejności; 6-agent pipeline + dokumentacja multi-team). Patrz memory + SZPIEG archive + PLAN.
 
 ## Commit przed konsolidacją
 ```

@@ -93,16 +93,26 @@ Vercel plugin (https://github.com/vercel/vercel-plugin) is registered for this p
 
 To re-run / update: `npx plugins add vercel/vercel-plugin --target <claude-code|codex|cursor> --scope project --yes`
 
-## Crew Hierarchy Update (2026 — SZPIEG Agent)
-- **SZPIEG (SPY):** Kluczowy, nadrzędny research/spy agent. Dla konkretnych wąskich fragmentów (np. single player transport, compact modes, tooltip effects, drag UX, file vs audio ops) tworzy listy 10-15+ przykładów z real software (Rekordbox, Serato, Traktor, Mixxx, niche tools, compact players etc.), analizuje implementacje, opinie pro DJ + users z forów/screenshotów/docs, rozróżnienia (plik vs strumień, compact/simple/pro, EFFECT tooltips).
-- **Instrukcje nadrzędne:** Szuka "jak ZOSTAŁO ZROBIONE" (techniki, kolejność, metody dokładnie), encyklopedia w crew/SZPIEG_agent_spec_and_archive.md. Gdy brak ścisłego "copy X" — SZPIEG decyduje o metodzie (konsultuje z resztą, punktuje przydatność dla TEGO projektu). Jego Build Spec jest binding dla designer/writer/fixer/tester.
-- **Side tasks:** Inni agenci mogą zlecać SZPIEG-owi research side tasks (wyjątkowe, za zgodą usera) gdy prace stoją.
-- **Hierarchia rethink:** SZPIEG jako research lead pcha projekt do przodu. Zespół (Designer, Writer, Fixer, Tester, Plan, General) dostaje spec jako primary, dostarcza wnioski/rewerk plans. Pełny opis wniosków z teamu wymagany przed impl. Update AGENTS/CLAUDE/memory/HISTORY/Checklist/RECOVERY/crew przy każdym research.
-- **Archiva:** Dedykowany plik crew/SZPIEG_... dla findings + encyklopedia (odnosić się do poprzednich dla pokrewnych tematów). Tworzy "sposoby na wszystko".
-- **Pierwszy research:** Single "Odtwarzacz" MVP (load file, play/pause/stop basics, clean air layout no overlap, drag from table, tooltips with EFFECT, compact pilot-like with animation, scalability). Pełny raport + Build Spec w crew/SZPIEG_agent_spec_and_archive.md — stosować dokładnie przy impl.
-- **Dla tego projektu:** Wybierać rozwiązania najlepsze dla single player basics (clean, readable, functional, scalable) — nie fan wszystkich programów na liście, ale niektóre wzory do naśladowania/kopiowania części (np. large centered transport + separate CUE z Rekordbox/Serato, modular compact z Mixxx/Traktor, EFFECT tooltips, air + dominant waveform, drag with lookup + safety, animated play indicator z Winamp-like).
-- **2026-06-02 Writer impl:** Pełne reworks wg spec (QStacked, EFFECT wszędzie, compact+spinning CD anim via timer/paint, resizeEvent, safety prompt, drag highlight, docs file/stream). Testy OK. Zaktualizowano archiwa. Patrz crew/SZPIEG... + HISTORY.
+## Crew Launch Plan + Hierarchy (2026 — SZPIEG jako research lead, Plan review listy jako pierwszy krok użytkownika)
 
-**Dla nowych agentów/programistów:** Zawsze najpierw przeczytaj memory.md (centralna encyklopedia z zasadami, stanem, SZPIEG, jak dokumentować ruchy w identyczny sposób aby multi-team nie traciło wątku). Potem crew/SZPIEG_agent_spec_and_archive.md (encyklopedia research + nadrzędny Build Spec), AGENTS.md/CLAUDE.md (crew/hierarchy).
+**PRIORYTET #1 (z feedbacku użytkownika na plan):** Aktualizacja zmiany pracy zespołu i funkcje SZPIEGA muszą być wzięte pod uwagę **w pierwszej kolejności**.
 
-See crew/SZPIEG_agent_spec_and_archive.md for full spec, instructions, archive of findings, Build Spec. memory.md jest primary living doc.
+**Obowiązkowa lektura przed jakimkolwiek uruchomieniem crew lub pracą na fragmentach:**
+- `crew/PLAN_Uruchomienie_Python_Code_Review_Crew.md` (ten plan uruchomienia 6-agent crew, z SZPIEG + Plan review "nowej listy przeróbek" jako sekcją 1 binding; user musi przeczytać listę przeróbek najpierw i zdecydować; pipeline ANALYZER→... podlega nowemu procesowi; God Object note dla Writer — "ok" potwierdzone).
+- `memory.md` (centralna encyklopedia: zasady, aktualny stan, hierarchy, jak dokumentować identycznie dla multi-team continuity).
+- `crew/SZPIEG_agent_spec_and_archive.md` (nadrzędny research + Build Spec + encyklopedia findings + Plan wnioski/punktowanie).
+
+**Podsumowanie hierarchii (szczegóły w PLANie powyżej):**
+- **SZPIEG (SPY):** Nadrzędny research lead dla wąskich fragmentów. Listy 10-15+ narzędzi, punktowanie przydatności dla TEGO projektu, Build Spec binding, encyklopedia, compact pilot/EFFECT/file-vs-stream/air/scalability etc. Decyduje przy braku ścisłego "copy X". Side tasks tylko wyjątkowe + consent.
+- **Plan agent:** Zawsze przed impl — produkuje pełne wnioski + punktowanie + "nową listę przeróbek" (zachować X / przerobić Y + krok-po-kroku). Prezentacja użytkownikowi **w pierwszej kolejności** do przeczytania i decyzji ("dajcie mi w pierwszej kolejnosci przeczytać..."). Dopiero po "dalej" — crew przechodzi do działania.
+- **6-agent Code Review Crew (ANALYZER → REVIEWER → UI-DESIGNER → WRITER → FIXER → TESTER, max 3 iteracje, polski):** Dostaje combined SZPIEG spec + zatwierdzoną listę z Planu jako primary. High pressure "exact match", read-before-edit, zero odstępstw. Writer: nie zmienia radykalnie logiki biznesowej w UI (tylko styl i strukturę) — **OK** (per user feedback). Po Opcja A architektura jest separated (controllers + dumb views), więc bezpieczniej.
+- **Zasady dokumentacji (dla odrębnych zespołów/multi-team):** Zawsze update memory + HISTORY + SZPIEG archive + AGENTS/CLAUDE + crew/CHECKLIST/LISTA + code docstrings ("per nadrzędny SZPIEG Build Spec + Plan team review... must document identical") + todo_write + clear commits. Bez tego nie ma continuity.
+
+**Dla nowych agentów/programistów (OBOWIĄZKOWE na starcie sesji):** 
+1. Przeczytaj `memory.md` (pełny pogląd na zasady + stan + SZPIEG + jak dokumentować).
+2. Przeczytaj `crew/SZPIEG_agent_spec_and_archive.md` (research + binding spec + encyklopedia).
+3. Przeczytaj `crew/PLAN_Uruchomienie_Python_Code_Review_Crew.md` (jak uruchamiać crew z SZPIEG/Plan first + 6-agent pipeline + God Object acceptance).
+4. Potem AGENTS.md/CLAUDE.md + aktualny kod + git status.
+5. Dokumentuj **wszystkie ruchy identycznie** (patrz PLAN + memory). Używaj todo_write dla complex.
+
+See `crew/PLAN_Uruchomienie_Python_Code_Review_Crew.md` + `crew/SZPIEG_agent_spec_and_archive.md` + `memory.md` jako primary living docs. Stary crew output (np. AGENT3) jest historycznym przykładem — nowe uruchomienia muszą iść wg zaktualizowanego PLANU.

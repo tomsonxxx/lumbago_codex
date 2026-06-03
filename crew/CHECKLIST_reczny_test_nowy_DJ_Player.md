@@ -3,6 +3,7 @@
 **Status na teraz (po równoległej integracji + SZPIEG research + Writer reworks per spec):**
 - Nowa architektura aktywna jako primary (Odtwarzacz MVP single via OdtwarzaczView + SimpleDeckController dla basics; dual/console nietknięte)
 - SZPIEG agent (crew/SZPIEG_agent_spec_and_archive.md) — nadrzędne badania dla fragmentów (single Odtwarzacz transport/layout/drag/compact/tooltips/EFFECT + file vs stream). Build Spec nadrzędny. Encyklopedia findings.
+- **Crew launch Plan (crew/PLAN_Uruchomienie_Python_Code_Review_Crew.md — PRIORYTET #1):** SZPIEG + Plan review "nowej listy przeróbek" dla użytkownika w pierwszej kolejności (z punktowaniem, rekomendacjami, krokami 1-7, side tasks). User decyduje przed impl. Potem 6-agent crew (ANALYZER→...→TESTER) z exact match. God Object note dla Writer — "ok". Pipeline i dokumentacja podlegają PLANowi. Zespół dostarcza wnioski/rewerk plans + user review listy przed impl.
 - Crew hierarchy rethink: SZPIEG jako research lead (decyduje wybory metod, konsultuje, punktuje; side tasks możliwe). Zespół dostarcza wnioski/rewerk plans przed impl.
 - Podstawy single: load file (drag+repo lookup), play/pause/stop (z cue logic), clean air layout, drag from table, tooltips z EFEKTEM, compact support + anim spin CD, QStacked cleanup, resize dynamic, safety prompt, file/stream clarity.
 - Smoke + podstawowe testy DJ przechodzą (Writer: smoke exit0, pytest 44 pass, python -c odt smoke OK; manual CHECKLIST covered: resize/drag/no-overlap/single/cue-play/compact).
