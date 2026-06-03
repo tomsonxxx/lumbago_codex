@@ -212,6 +212,19 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
                 # === NOWA ARCHITEKTURA AKTYWNA (primary path) ===
                 logger.info("NEW ARCHITECTURE ACTIVE: DeckController + FocusedDeckView/ConsoleDeckView/DualConsoleWidget (pełny wiring drag&drop, skróty, mikser)")
                 logger.info("Nowa architektura sole (redesign complete)")
+
+                # Utwórz Odtwarzacz MVP (single) i dodaj do stack jako index 1 (po dual jako 0).
+                # Zapewnia poprawne indeksy dla switch: single -> 1 (odt), console -> 0 (dual)
+                # Zgodne z komentarzami i logiką _switch_player_mode.
+                if getattr(self, "odtwarzacz_view", None) is None:
+                    try:
+                        odt = self._create_odtwarzacz_ui()
+                        self.odtwarzacz_view = odt
+                        if odt:
+                            self.content_stack.addWidget(odt)
+                    except Exception as e:
+                        logger.warning(f"odtwarzacz create after dual failed (non-fatal): {e}")
+                        self.odtwarzacz_view = None
             except Exception as e:
                 logger.exception("Nowa architektura zawiodła przy tworzeniu UI - nie ma fallbacku")
                 raise  # re-raise to be caught by outer except and show error dialog
@@ -491,28 +504,15 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
             if FocusedDeckView is not None:
                 self.single_container = FocusedDeckView(ctrl_a, self)
                 self.single_container.setVisible(False)
-                # Zachowujemy add do main_layout (hidden legacy single; nie dotykamy dual paths per spec)
-                # QStack zarządza TYLKO odt vs dual_console (eliminuje hacks dla tych dwóch).
-                main_layout.addWidget(self.single_container)
+                # Nie dodajemy do main_layout (refaktoryzacja na content_stack + OdtwarzaczView dla single MVP).
+                # Legacy single_container jako hidden ref dla kompat (jeśli kod gdzie indziej z niego korzysta).
+                # QStack zarządza odt (single) vs dual_console.
             else:
                 self.single_container = None
 
             logger.info("NEW ARCHITECTURE ACTIVE: DualConsoleWidget + 2x ConsoleDeckView + DeckController A/B + FocusedDeckView")
             # Upewnij się że initial mixing jest zaaplikowane (master/cross/trim) nawet bez global_mixer
             QtCore.QTimer.singleShot(50, self._apply_initial_mixer_values)
-
-            # Odtwarzacz MVP (minimal single) – tworzony ZAWSZE, ale dodany do content_stack (nie main_layout).
-            # Dual / Focused pozostają nietknięte (używane tylko w console).
-            # Usunięto add z main_layout + setVisible hack — teraz stack.setCurrentIndex.
-            self.odtwarzacz_view = None
-            try:
-                odt = self._create_odtwarzacz_ui()  # Zmienione: bez main_layout, wkłada do stack
-                self.odtwarzacz_view = odt
-                if odt:
-                    self.content_stack.addWidget(odt)
-            except Exception as e:
-                logger.warning(f"odtwarzacz create inside dual failed (non-fatal): {e}")
-                self.odtwarzacz_view = None
 
             return dual
         except Exception as exc:
@@ -1223,11 +1223,9 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
         QStack + stretch + Expanding w odt/dual zapewniają core; tu dodatkowe guard.
         """
         super().resizeEvent(event)
-        # Defensywne: jeśli compact w single, re-apply na resize (dynamic sizes)
-        try:
-            if getattr(self, '_current_mode', None) == 'single' and hasattr(self, "compact_btn") and self.compact_btn.isChecked():
-                odt = getattr(self, "odtwarzacz_view", None)
-                if odt and hasattr(odt, "_apply_compact_ui"):
-                    odt._apply_compact_ui()
-        except Exception:
-            pass
+        # Defensywne: dynamic spin size in compact is handled in odt.resizeEvent itself.
+        # Removed full _apply call here to avoid re-entrancy / layout feedback during compact toggle
+        # (which changed child sizeHints and could trigger nested resizeEvents + crash or silent exit).
+        # odt.resizeEvent already does:
+        #   if self._compact and spin: compute s from self.width(), setFixedSize(s,s)
+        pass  # (was re-apply; now safe)

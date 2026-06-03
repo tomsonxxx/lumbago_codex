@@ -132,6 +132,7 @@ class OdtwarzaczView(QtWidgets.QFrame):
         self._current_track: Track | None = None
         self._is_playing: bool = False
         self._compact: bool = False
+        self._applying_compact: bool = False
 
         self.setObjectName("OdtwarzaczPanel")
         self._normal_stylesheet = get_deck_panel_stylesheet()
@@ -505,74 +506,86 @@ class OdtwarzaczView(QtWidgets.QFrame):
         except Exception:
             pass
         self._apply_compact_ui()
+        # Ensure spin anim state is in sync immediately after toggle (e.g. if already playing)
+        # _update checks _compact internally.
+        try:
+            self._update_compact_play_state(getattr(self, "_is_playing", False))
+        except Exception:
+            pass
 
     def _apply_compact_ui(self) -> None:
-        compact = self._compact
-        sizes = BOOTH_SIZES
-        if compact:
-            # Collapse sizes (pilot-like mini)
-            play_s = sizes.get("compact_transport_play", (52, 32))
-            cue_s = sizes.get("compact_transport_cue", (42, 28))
-            stop_s = sizes.get("compact_transport_stop", (36, 28))
-            wave_min = sizes.get("compact_waveform_min_height", 80)
-            bpm_f = sizes.get("compact_bpm_font", 14)
-            title_f = sizes.get("compact_title_font", 11)
-            time_f = sizes.get("compact_time_font", 10)
-            stat_f = sizes.get("compact_status_font", 9)
-            # smaller margins for pilot
-            self.layout().setContentsMargins(8, 6, 8, 6)
-            self.layout().setSpacing(6)
-        else:
-            play_s = sizes.get("transport_play", (96, 58))
-            cue_s = sizes.get("transport_cue", (78, 52))
-            stop_s = sizes.get("transport_stop", (68, 52))
-            wave_min = sizes.get("waveform_min_height_single", 260)
-            bpm_f = 32
-            title_f = 18
-            time_f = 16
-            stat_f = 11
-            self.layout().setContentsMargins(32, 24, 32, 24)
-            self.layout().setSpacing(18)
+        if getattr(self, "_applying_compact", False):
+            return
+        self._applying_compact = True
+        try:
+            compact = self._compact
+            sizes = BOOTH_SIZES
+            if compact:
+                # Collapse sizes (pilot-like mini)
+                play_s = sizes.get("compact_transport_play", (52, 32))
+                cue_s = sizes.get("compact_transport_cue", (42, 28))
+                stop_s = sizes.get("compact_transport_stop", (36, 28))
+                wave_min = sizes.get("compact_waveform_min_height", 80)
+                bpm_f = sizes.get("compact_bpm_font", 14)
+                title_f = sizes.get("compact_title_font", 11)
+                time_f = sizes.get("compact_time_font", 10)
+                stat_f = sizes.get("compact_status_font", 9)
+                # smaller margins for pilot
+                self.layout().setContentsMargins(8, 6, 8, 6)
+                self.layout().setSpacing(6)
+            else:
+                play_s = sizes.get("transport_play", (96, 58))
+                cue_s = sizes.get("transport_cue", (78, 52))
+                stop_s = sizes.get("transport_stop", (68, 52))
+                wave_min = sizes.get("waveform_min_height_single", 260)
+                bpm_f = 32
+                title_f = 18
+                time_f = 16
+                stat_f = 11
+                self.layout().setContentsMargins(32, 24, 32, 24)
+                self.layout().setSpacing(18)
 
-        # Apply transport sizes
-        if hasattr(self, "play_btn"):
-            self.play_btn.setFixedSize(*play_s)
-        if hasattr(self, "cue_btn"):
-            self.cue_btn.setFixedSize(*cue_s)
-        if hasattr(self, "stop_btn"):
-            self.stop_btn.setFixedSize(*stop_s)
+            # Apply transport sizes
+            if hasattr(self, "play_btn"):
+                self.play_btn.setFixedSize(*play_s)
+            if hasattr(self, "cue_btn"):
+                self.cue_btn.setFixedSize(*cue_s)
+            if hasattr(self, "stop_btn"):
+                self.stop_btn.setFixedSize(*stop_s)
 
-        # Wave min (dominant but smaller in compact)
-        if hasattr(self, "waveform"):
-            self.waveform.setMinimumHeight(wave_min)
+            # Wave min (dominant but smaller in compact)
+            if hasattr(self, "waveform"):
+                self.waveform.setMinimumHeight(wave_min)
 
-        # Fonts
-        if hasattr(self, "title_label"):
-            self.title_label.setStyleSheet(
-                f"font-size: {title_f}px; font-weight: 700; "
-                f"color: {BOOTH_COLORS['text_primary']};")
-        if hasattr(self, "bpm_label"):
-            self.bpm_label.setStyleSheet(
-                f"color: {BOOTH_COLORS['accent']}; font-size: {bpm_f}px; font-weight: 900; "
-                "font-family: \"Consolas\", \"JetBrains Mono\", monospace;"
-            )
-        if hasattr(self, "time_label"):
-            self.time_label.setStyleSheet(
-                f"color: {BOOTH_COLORS['text_secondary']}; font-size: {time_f}px; font-weight: 700; "
-                "font-family: \"Consolas\", \"JetBrains Mono\", monospace;"
-            )
-        if hasattr(self, "status_label"):
-            self.status_label.setStyleSheet(
-                f"color: {BOOTH_COLORS.get('text_muted', '#6b7688')}; font-size: {stat_f}px;"
-            )
+            # Fonts
+            if hasattr(self, "title_label"):
+                self.title_label.setStyleSheet(
+                    f"font-size: {title_f}px; font-weight: 700; "
+                    f"color: {BOOTH_COLORS['text_primary']};")
+            if hasattr(self, "bpm_label"):
+                self.bpm_label.setStyleSheet(
+                    f"color: {BOOTH_COLORS['accent']}; font-size: {bpm_f}px; font-weight: 900; "
+                    "font-family: \"Consolas\", \"JetBrains Mono\", monospace;"
+                )
+            if hasattr(self, "time_label"):
+                self.time_label.setStyleSheet(
+                    f"color: {BOOTH_COLORS['text_secondary']}; font-size: {time_f}px; font-weight: 700; "
+                    "font-family: \"Consolas\", \"JetBrains Mono\", monospace;"
+                )
+            if hasattr(self, "status_label"):
+                self.status_label.setStyleSheet(
+                    f"color: {BOOTH_COLORS.get('text_muted', '#6b7688')}; font-size: {stat_f}px;"
+                )
 
-        # Spin indicator visible only in compact (pilot)
-        if hasattr(self, "_spin_indicator"):
-            self._spin_indicator.setVisible(compact)
-            if not compact:
-                self._spin_indicator.stop()
+            # Spin indicator visible only in compact (pilot)
+            if hasattr(self, "_spin_indicator"):
+                self._spin_indicator.setVisible(compact)
+                if not compact:
+                    self._spin_indicator.stop()
 
-        self.updateGeometry()
+            self.updateGeometry()
+        finally:
+            self._applying_compact = False
 
     def _update_compact_play_state(self, playing: bool) -> None:
         """React to play_state for anim (spin when playing in compact)."""
