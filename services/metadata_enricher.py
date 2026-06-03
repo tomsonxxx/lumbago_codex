@@ -366,15 +366,6 @@ def _apply_musicbrainz_metadata(
                 source_confidence=0.93,
                 policy=policy,
             )
-        remixer = _extract_remixer_name(payload.get("title")) or _extract_remixer_name(release.get("title"))
-        if remixer:
-            _apply_preferred_remote_value(
-                track,
-                "remixer",
-                remixer,
-                source_confidence=0.93,
-                policy=policy,
-            )
     tags = payload.get("tags", [])
     if tags:
         top = max(tags, key=lambda item: item.get("count", 0))
@@ -1555,9 +1546,8 @@ def _apply_portal_candidate(
             track, "isrc", candidate["isrc"], source_confidence=0.82, policy=policy
         )
 
-    remixer = _extract_remixer_name(candidate_title) or _extract_remixer_name(track.title)
-    if remixer and not _has_value(track.remixer):
-        track.remixer = remixer
+    # remixer is intentionally reserved for the final style slot in the
+    # autotag pipeline, so we do not derive it here from title noise.
 
 
 def _search_youtube_direct_candidate(track: Track, query: str) -> dict[str, str] | None:

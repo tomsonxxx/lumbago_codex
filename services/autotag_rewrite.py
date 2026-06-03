@@ -270,6 +270,10 @@ class UnifiedAutoTagger:
                     if specific:
                         incoming = specific
                 # else: no candidates -> keep incoming from best_match fallback (or None)
+            elif field_name == "remixer":
+                style_value = _best_style_for_remixer(candidates, current)
+                if style_value:
+                    incoming = style_value
 
             if current != incoming:
                 setattr(track, field_name, incoming)
@@ -411,8 +415,6 @@ class UnifiedAutoTagger:
             comment_parts.append(disambiguation)
         if release_disambiguation and release_disambiguation not in comment_parts:
             comment_parts.append(release_disambiguation)
-        remixer = _extract_remixer_name(rec_title) or _extract_remixer_name(track.title)
-
         sim = _similarity_bonus(track, rec_title, rec_artist)
         final_score = max(0, min(100, score + sim))
         if not artist:
@@ -430,7 +432,7 @@ class UnifiedAutoTagger:
             genre=genre,
             comment=" / ".join(comment_parts) or None,
             publisher=publisher,
-            remixer=remixer,
+            remixer=None,
             tags=tags,
             artwork_url=mb_artwork_url,
         )
@@ -1047,6 +1049,20 @@ _BROAD_GENRES = {
 }
 
 
+def _is_specific_style(value: str | None) -> bool:
+    if not value:
+        return False
+    text = str(value).strip()
+    if not text:
+        return False
+    lowered = text.lower()
+    if lowered in _BROAD_GENRES:
+        return False
+    if len(lowered) < 4:
+        return False
+    return True
+
+
 def _best_specific_genre(candidates: list[Candidate], current: str | None) -> str | None:
     """Wybiera najbardziej precyzyjny gatunek spośród dobrych kandydatów.
     Preferuje dłuższe i mniej ogólne wartości (np. 'Deep House' > 'Electronic').
@@ -1079,6 +1095,45 @@ def _best_specific_genre(candidates: list[Candidate], current: str | None) -> st
             return best
         return current
 
+    return best
+
+
+def _best_style_for_remixer(candidates: list[Candidate], current: str | None) -> str | None:
+    """Return a concrete style/subgenre for the remixer slot.
+
+    The remixer field is repurposed as a durable style slot, so only strong,
+    specific values are accepted. Broad genres are ignored.
+    """
+    if not candidates:
+        return current if _is_specific_style(current) else None
+
+    scored: list[tuple[int, int, str]] = []
+    for c in candidates:
+        if c.score < 50:
+            continue
+        values: list[str] = []
+        if c.genre and _is_specific_style(c.genre):
+            values.append(c.genre.strip())
+        for tag in getattr(c, "tags", []) or []:
+            tag_text = str(tag).strip()
+            if _is_specific_style(tag_text):
+                values.append(tag_text)
+        for value in values:
+            specificity = len(value)
+            if any(sep in value.lower() for sep in (" - ", "/", "&")):
+                specificity += 6
+            scored.append((specificity, c.score, value))
+
+    if not scored:
+        return current if _is_specific_style(current) else None
+
+    scored.sort(key=lambda x: (x[0], x[1]), reverse=True)
+    best = scored[0][2]
+    if _is_specific_style(current):
+        current_text = str(current).strip()
+        if len(best) > len(current_text) * 1.1:
+            return best
+        return current_text
     return best
 
 

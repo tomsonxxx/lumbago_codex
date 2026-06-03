@@ -892,9 +892,11 @@ def _build_prompt(
         "9) COMPOSER: For hip-hop/electronic, extract producer name (prod. X) as composer.\n"
         "10) ORIGINAL ARTIST: For covers, put original performer in originalArtist.\n"
         "11) FILENAME ONLY rescue: When almost no tags are present, the 'Kandydaci z nazwy pliku' (or raw filename) will be provided. You MUST use them as primary hint for artist/title. Combine with your knowledge and common web/DB matches for the genre/subgenre/year. If multiple candidates, pick the most plausible for electronic/DJ music.\n"
-        "12) COMMENT: One short factual sentence about the track.\n"
-        "12) COPYRIGHT: Label and year, e.g. '2007 Universal Records'.\n"
-        "13) Latin alphabet only.\n"
+        "12) STYLE SEARCH: Use online evidence (music portals, public DBs, release pages, channel titles, remix credits, scene labels) to infer a concrete style/subgenre only when supported by multiple signals. Avoid broad labels unless nothing more specific is defensible.\n"
+        "13) REMIXER SLOT: Treat 'remixer' as the final style/subgenre slot for this project. Write a concrete style only when reliable; otherwise return null. Do not copy random title noise into remixer.\n"
+        "14) COMMENT: One short factual sentence about the track.\n"
+        "15) COPYRIGHT: Label and year, e.g. '2007 Universal Records'.\n"
+        "16) Latin alphabet only.\n"
         + clean_note
         + "\nFill or correct only these fields: "
         + fields_list

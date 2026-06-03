@@ -196,3 +196,33 @@ Ich rola:
 - uruchamiają się dopiero wtedy, gdy nowy first-pass nie dał sensownej odpowiedzi,
 - mogą ratować trudne pliki,
 - ale nie blokują ani nie dominują pierwszej decyzji.
+
+## 10. Zasada `remixer` jako slotu stylu
+
+Pole `remixer` zostało celowo zredukowane do końcowego slotu na konkretny styl/subgatunek.
+
+Zasady:
+- nie wyciągamy `remixer` z tytułu pliku,
+- nie traktujemy go jako źródła analizy,
+- uzupełniamy je dopiero na końcu, jeśli pipeline znalazł konkretny, nienieogólny styl,
+- jeśli styl nie jest wystarczająco pewny, pole zostaje puste.
+
+To ma chronić jakość, żeby `remixer` nie zamienił się w przypadkowy śmietnik z tytułu lub zbyt szerokich gatunków.
+
+### Jak wyznaczamy styl
+
+Styl nie jest traktowany jako wiedza wprost dostępna jak tytuł czy artysta. To wynik złożenia kilku sygnałów:
+- konkretne tagi i style zwracane przez źródła typu MusicBrainz, Discogs, TheAudioDB, portal rescue i AI,
+- spójność między kilkoma źródłami,
+- zgodność z treścią nazwy pliku po oczyszczeniu,
+- zgodność z wcześniejszą hipotezą gatunkową,
+- brak sygnałów, że źródło podało ogólnik albo halucynację.
+
+Reguła robocza:
+1. zbierz wszystkie stylopodobne odpowiedzi z wielu źródeł,
+2. odrzuć ogólniki typu `EDM`, `Dance`, `Electronic`, jeśli są jedynym sygnałem,
+3. preferuj odpowiedzi bardziej szczegółowe i zgodne między sobą,
+4. jeśli kilka źródeł podaje podobny konkretny nurt, przyjmij go jako styl,
+5. jeśli wynik jest zbyt szeroki, zostaw pole puste zamiast zgadywać.
+
+To oznacza, że styl ma być uzupełniany uczciwie: lepiej pusto niż błędnie.
