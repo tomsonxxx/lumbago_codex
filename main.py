@@ -45,6 +45,9 @@ def main() -> int:
         return result
     except Exception:
         _log_crash()
+        # Also print full traceback to console so launchers / full-traceback wrappers always see it
+        print("=== FULL TRACEBACK FROM main.py ===", file=sys.stderr)
+        traceback.print_exc()
         QtWidgets.QMessageBox.critical(
             None,
             "Błąd uruchomienia",
@@ -71,6 +74,9 @@ def _install_exception_hooks() -> None:
         try:
             text = "".join(traceback.format_exception(exc_type, exc_value, exc_traceback))
             _write_log("crash.log", text)
+            # Print to stderr so console/launcher wrappers capture runtime slot errors etc.
+            print("=== UNCAUGHT EXCEPTION (hook) ===", file=sys.stderr)
+            print(text, file=sys.stderr)
         finally:
             sys.__excepthook__(exc_type, exc_value, exc_traceback)
 

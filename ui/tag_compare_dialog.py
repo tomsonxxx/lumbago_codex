@@ -145,7 +145,7 @@ class TagCompareDialog(QtWidgets.QDialog):
         actions = []
         for col in range(self.table.columnCount()):
             name = self.table.horizontalHeaderItem(col).text()
-            action = QtWidgets.QAction(name, menu)
+            action = QtGui.QAction(name, menu)
             action.setCheckable(True)
             action.setChecked(not self.table.isColumnHidden(col))
             actions.append((action, col))

@@ -540,10 +540,10 @@ class DuplicatesDialog(QtWidgets.QDialog):
             menu.addAction("Sortuj rosnąco", lambda: self._set_sorting(column, QtCore.Qt.SortOrder.AscendingOrder))
             menu.addAction("Sortuj malejąco", lambda: self._set_sorting(column, QtCore.Qt.SortOrder.DescendingOrder))
             menu.addSeparator()
-        actions: list[tuple[QtWidgets.QAction, int]] = []
+        actions: list[tuple[QtGui.QAction, int]] = []
         for col in range(self.tree.columnCount()):
             name = self.tree.headerItem().text(col)
-            action = QtWidgets.QAction(name, menu)
+            action = QtGui.QAction(name, menu)
             action.setCheckable(True)
             action.setChecked(not self.tree.isColumnHidden(col))
             actions.append((action, col))
