@@ -1,6 +1,12 @@
 # CHECKLIST – Ręczny test nowego DJ Playera (po redesignie AGENT 3)
 
-**Status na teraz (po równoległej integracji + SZPIEG research + Writer reworks per spec):**
+**Status na teraz (FINAL CLOSE per user 'zastosuj zmiany... dokończ wszystkie punkty... zkompaktuj... zamknij ten wątek'):** 
+- Wszystkie punkty "nowa lista przeróbek" 1-15 z Planu (po SZPIEG/Plan re-audit + user "ok" + "kontynuuj") zaadresowane / ukończone (QStack/lazy, compact pilot always-on-top + reduce empty bottom + spin, EFFECT/file-stream uniform w tools/recent/load, drag/safety, guards, tests/CHECKLIST expand z nowymi compact advanced tests, legacy harden, scalab, docs).
+- memory + HISTORY + crew docs zkompaktowane.
+- Verifs green.
+- **Wątek zamknięty. Gotowe do końca.** (Patrz final commit + memory "Status Odtwarzacz MVP" + "Pełna lista 1-15 status".)
+
+**Status na teraz (poprzedni):**
 - Nowa architektura aktywna jako primary (Odtwarzacz MVP single via OdtwarzaczView + SimpleDeckController dla basics; dual/console nietknięte)
 - SZPIEG agent (crew/SZPIEG_agent_spec_and_archive.md) — nadrzędne badania dla fragmentów (single Odtwarzacz transport/layout/drag/compact/tooltips/EFFECT + file vs stream). Build Spec nadrzędny. Encyklopedia findings.
 - **Crew launch Plan (crew/PLAN_Uruchomienie_Python_Code_Review_Crew.md — PRIORYTET #1):** SZPIEG + Plan review "nowej listy przeróbek" dla użytkownika w pierwszej kolejności (z punktowaniem, rekomendacjami, krokami 1-7, side tasks). User decyduje przed impl. Potem 6-agent crew (ANALYZER→...→TESTER) z exact match. God Object note dla Writer — "ok". Pipeline i dokumentacja podlegają PLANowi. Zespół dostarcza wnioski/rewerk plans + user review listy przed impl.
@@ -39,6 +45,7 @@ $env:LUMBAGO_SAFE_MODE=1; $env:LUMBAGO_SMOKE_SECONDS=3; python main.py
 - [ ] Duży, wyraźny playhead + BPM-aware beatgrid
 - [ ] Duże przyciski transport (PLAY/CUE/STOP booth sizes/colors, toggle play/pause)
 - [ ] Compact pilot: toggle, collapse sizes/fonts/margins (8/6), wave min80, spin visible+rotuje (cos/sin angle CD/vinyl/eq) tylko gdy playing+compact, react play_state
+- [ ] Compact pilot advanced (po lista 2+12 + SZPIEG pilot): always-on-top (StaysOnTopHint gdy compact, przydatne booth/multi-monitor), minSize shrink (~420x300), reduce empty bottom (tight margins bottom ~2px, mniej stretch push), floating/pilot feel, restore full air/minSize/normal na off. Test z innymi oknami + rapid toggle+play.
 - [ ] Drag z biblioteki: mime paths/urls, highlight border, repo lookup full Track, load, safety prompt jeśli playing (FILE during stream)
 - [ ] EFFECT tooltips wszędzie (1-2 zdania "EFEKT: ..." file=PLIK load vs stream=transport play/cue/seek)
 - [ ] Black/empty: #OdtwarzaczPanel surface + "Brak utworu — upuść plik z biblioteki"

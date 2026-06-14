@@ -380,6 +380,8 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
             load_b.setFixedWidth(58)
             load_a.setStyleSheet("font-size: 8px;")
             load_b.setStyleSheet("font-size: 8px;")
+            load_a.setToolTip("Wczytaj plik do decku A (single Odtwarzacz lub dual). EFEKT: load PLIKU (ścieżka + DB lookup + waveform + cue=0). Transport (play) = strumień z załadowanego pliku.")
+            load_b.setToolTip("Wczytaj plik do decku B. EFEKT: load PLIKU (ścieżka + DB lookup + waveform + cue=0). Transport (play) = strumień z załadowanego pliku.")
             load_a.clicked.connect(lambda: self._load_file_dialog("A"))
             load_b.clicked.connect(lambda: self._load_file_dialog("B"))
             tools.addWidget(load_a)
@@ -390,12 +392,14 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
             stop_all_btn = QtWidgets.QPushButton("■ STOP ALL")
             stop_all_btn.setFixedWidth(66)
             stop_all_btn.setStyleSheet("font-size: 8px; font-weight: 700; color: #ff6b6b;")
+            stop_all_btn.setToolTip("Zatrzymaj wszystkie decki i wróć do CUE. EFEKT: stop silników (strumień) + reset playhead do cue w załadowanych plikach (nie usuwa plików z decków).")
             stop_all_btn.clicked.connect(self.stop_all_decks)
             tools.addWidget(stop_all_btn)
 
             unload_all_btn = QtWidgets.QPushButton("Unload All")
             unload_all_btn.setFixedWidth(60)
             unload_all_btn.setStyleSheet("font-size: 8px;")
+            unload_all_btn.setToolTip("Usuń utwory z wszystkich decków. EFEKT: unload (zwolnienie zasobów + clear UI + stop jeśli grał). Pliki na dysku nie są zmieniane.")
             unload_all_btn.clicked.connect(self.unload_all)
             tools.addWidget(unload_all_btn)
 

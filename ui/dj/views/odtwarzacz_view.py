@@ -73,7 +73,7 @@ class _CompactSpinIndicator(QtWidgets.QWidget):
         # Vinyl/CD like: dark circle + grooves + highlight
         p.setPen(QtGui.QPen(QtGui.QColor(c.get("border_strong", "#3a4556")), 2))
         p.setBrush(QtGui.QBrush(QtGui.QColor(c.get("surface_elev", "#1a212c"))))
-        p.drawEllipse(cx - r, cy - r, 2*r, 2*r)
+        p.drawEllipse(QtCore.QPointF(cx, cy), r, r)  # use center+radius (float ok in PyQt6)
         # Spinning spokes (eq/vinyl lines) using angle a + cos/sin per SZPIEG/Plan step2/9
         # Rotate around center: use radians(a), inner/outer radius for spokes.
         p.setPen(QtGui.QPen(QtGui.QColor(c.get("accent", "#00e0ff")), 1.5))
@@ -91,7 +91,7 @@ class _CompactSpinIndicator(QtWidgets.QWidget):
             p.drawLine(int(x1), int(y1), int(x2), int(y2))
         # Center dot (spindle)
         p.setBrush(QtGui.QBrush(QtGui.QColor(c.get("play", "#22c55e"))))
-        p.drawEllipse(cx-2, cy-2, 4, 4)
+        p.drawEllipse(QtCore.QPointF(cx, cy), 2.0, 2.0)  # float center+radius version
         p.end()
 
 
