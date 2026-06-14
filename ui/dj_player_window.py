@@ -460,11 +460,11 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
             # Also set stack current early (defensive against races in creation order)
             # Lazy dual support: if single default + !dual_created, odt is at idx 0 (will shift on first console switch)
             if hasattr(self, "content_stack") and self.content_stack:
-                if default_single and not getattr(self, '_dual_created', False):
-                    init_idx = 0  # temp odt at 0 until dual lazy insert
+                if default_single:
+                    init_idx = self._odt_stack_index()
                 else:
-                    init_idx = self._ODT_IDX if default_single else self._DUAL_CONSOLE_IDX
-                if self.content_stack.count() > init_idx:
+                    init_idx = self._DUAL_CONSOLE_IDX
+                if 0 <= init_idx < self.content_stack.count():
                     self.content_stack.setCurrentIndex(init_idx)
             self._switch_player_mode(init_mode_id)
         except Exception:
@@ -631,6 +631,16 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
             self._simple_deck_ctrl = None
             return None
 
+    def _odt_stack_index(self) -> int:
+        """Return the actual QStack index for OdtwarzaczView (0 before lazy dual, 1 after)."""
+        odt = getattr(self, "odtwarzacz_view", None)
+        stack = getattr(self, "content_stack", None)
+        if odt is not None and stack is not None:
+            idx = stack.indexOf(odt)
+            if idx >= 0:
+                return idx
+        return self._ODT_IDX if getattr(self, "_dual_created", False) else 0
+
     # ------------------------------------------------------------------
     # Player mode switching (Odtwarzacz vs Konsola DJ)
     # ------------------------------------------------------------------
@@ -708,14 +718,17 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
         # Visibility no-overlap: QStack setCurrent primary, hide console ONLY for non-stack widgets (tools/recent etc).
         # single default, no legacy focused visible.
         if hasattr(self, "content_stack") and self.content_stack:
-            target_idx = self._ODT_IDX if use_single_mode else self._DUAL_CONSOLE_IDX
-            # aggressive count > check + log (per lista 1+8 solidify)
-            if self.content_stack.count() > target_idx:
+            target_idx = self._odt_stack_index() if use_single_mode else self._DUAL_CONSOLE_IDX
+            if 0 <= target_idx < self.content_stack.count():
                 self.content_stack.setCurrentIndex(target_idx)
-                logger.debug(f"_switch QStack setCurrent target={target_idx} (count={self.content_stack.count()}) per SZPIEG/Plan lista 1+8")
+                logger.debug(
+                    f"_switch QStack setCurrent target={target_idx} "
+                    f"(count={self.content_stack.count()})"
+                )
             else:
-                # Fallback jeśli stack niepełny (np. error path) — nie crash
-                logger.debug(f"QStack switch: count={self.content_stack.count()} < target {target_idx}")
+                logger.debug(
+                    f"QStack switch: count={self.content_stack.count()} invalid target {target_idx}"
+                )
             # Ensure odt ready before any re-sync compact/play in switch path (per 1+8)
             if use_single_mode and not getattr(self, "odtwarzacz_view", None):
                 try:

@@ -390,6 +390,36 @@ def _normalize_text(value: str | None) -> str:
     return "".join(ch.lower() for ch in str(value) if ch.isalnum() or ch.isspace()).strip()
 
 
+class _LibraryDragTableView(QtWidgets.QTableView):
+    """Opens DJ Player before external drag so drops land on a visible target."""
+
+    def __init__(self, main_window: "MainWindow", parent=None):
+        super().__init__(parent)
+        self._main_window = main_window
+
+    def startDrag(self, supportedActions):
+        try:
+            if self._main_window is not None:
+                self._main_window._open_dj_player_window()
+        except Exception:
+            pass
+        super().startDrag(supportedActions)
+
+
+class _LibraryDragListView(QtWidgets.QListView):
+    def __init__(self, main_window: "MainWindow", parent=None):
+        super().__init__(parent)
+        self._main_window = main_window
+
+    def startDrag(self, supportedActions):
+        try:
+            if self._main_window is not None:
+                self._main_window._open_dj_player_window()
+        except Exception:
+            pass
+        super().startDrag(supportedActions)
+
+
 class TrackFilterProxy(QtCore.QSortFilterProxyModel):
     def __init__(self):
         super().__init__()
@@ -1055,7 +1085,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.filter_proxy = TrackFilterProxy()
         self.filter_proxy.setSourceModel(self.table_model)
 
-        self.table_view = QtWidgets.QTableView()
+        self.table_view = _LibraryDragTableView(self)
         self.table_view.setModel(self.filter_proxy)
         self.table_view.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
         self.table_view.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.ExtendedSelection)
@@ -1077,7 +1107,7 @@ class MainWindow(QtWidgets.QMainWindow):
         header.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
         header.customContextMenuRequested.connect(self._show_table_column_menu)
 
-        self.grid_view = QtWidgets.QListView()
+        self.grid_view = _LibraryDragListView(self)
         self.grid_view.setViewMode(QtWidgets.QListView.ViewMode.IconMode)
         self.grid_view.setIconSize(QtCore.QSize(96, 96))
         self.grid_view.setSpacing(8)

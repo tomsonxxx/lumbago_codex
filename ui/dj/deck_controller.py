@@ -606,9 +606,9 @@ class DeckController(QtCore.QObject):
         token = str(audio_path)
         self._current_waveform_token = token
 
-        # Zawsze używamy lokalnego runnable (czysty, bez zależności od starego pliku)
-        runnable = WaveformRunnable(audio_path, duration_ms, waveform_widget, token)
-        QtCore.QThreadPool.globalInstance().start(runnable)
+        from ui.dj.waveform_async import request_waveform_load as _request_waveform_load_async
+
+        _request_waveform_load_async(waveform_widget, audio_path, duration_ms, token)
 
     def _on_playhead_tick(self) -> None:
         """Tick timera – pyta engine i emituje sygnał."""
@@ -670,36 +670,4 @@ class DeckController(QtCore.QObject):
         return self._is_synced
 
 
-# ------------------------------------------------------------------
-# Lokalny WaveformRunnable – zawsze dostępny, oparty wyłącznie na core
-# Usunięto kruchą zależność od ui.dj_player_window (faza 1 → integracja)
-# ------------------------------------------------------------------
-class WaveformRunnable(QtCore.QRunnable):
-    """QRunnable do ekstrakcji peaków waveform w tle.
 
-    Używa _safe_extract_peaks (core.waveform + fallback).
-    Chroni przed stale results poprzez token.
-    Wywołuje load_waveform na widżecie przez queued invoke (thread-safe).
-    """
-
-    def __init__(self, audio_path: str, duration_ms: int, waveform_widget: Any, token: str):
-        super().__init__()
-        self.setAutoDelete(True)
-        self._path = str(audio_path)
-        self._duration = int(duration_ms)
-        self._wave = waveform_widget
-        self._token = token
-
-    def run(self) -> None:
-        try:
-            peaks = _safe_extract_peaks(self._path, 900)
-            QtCore.QMetaObject.invokeMethod(
-                self._wave,
-                "load_waveform",
-                QtCore.Qt.ConnectionType.QueuedConnection,
-                QtCore.Q_ARG(list, peaks),
-                QtCore.Q_ARG(int, self._duration),
-                QtCore.Q_ARG(str, self._token or ""),
-            )
-        except Exception as e:
-            logger.warning(f"WaveformRunnable błąd dla {self._path}: {e}")

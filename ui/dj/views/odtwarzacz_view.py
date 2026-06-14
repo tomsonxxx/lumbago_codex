@@ -333,15 +333,7 @@ TESTER 2026-06-14 final (po "dalej"+lista 1-15): smoke0/pytest44p/python-c (comp
         if pth and hasattr(self.waveform, "set_expected_waveform_token"):
             self.waveform.set_expected_waveform_token(str(pth))
 
-        # Duration z engine state (lepsze niż z modelu)
-        duration = getattr(track, "duration_ms", 0) or 0
-        try:
-            if self.controller.playback_engine:
-                state = self.controller.playback_engine.get_deck_state(self.controller.deck_id)
-                if state and getattr(state, "duration_ms", 0):
-                    duration = state.duration_ms
-        except Exception:
-            pass
+        duration = self._resolve_duration_ms(track)
         self._current_duration_ms = duration
 
         self.time_label.setText(f"0:00 / {_format_ms(duration)}")
@@ -415,7 +407,27 @@ TESTER 2026-06-14 final (po "dalej"+lista 1-15): smoke0/pytest44p/python-c (comp
             except Exception:
                 pass
 
+    def _resolve_duration_ms(self, track: Track | None = None) -> int:
+        duration = 0
+        try:
+            if self.controller.playback_engine:
+                state = self.controller.playback_engine.get_deck_state(self.controller.deck_id)
+                if state and getattr(state, "duration_ms", 0):
+                    duration = int(state.duration_ms)
+        except Exception:
+            pass
+        if duration <= 0 and track is not None:
+            duration = SimpleDeckController._duration_ms_from_track(track)
+        if duration <= 0 and getattr(self.controller, "_known_duration_ms", 0) > 0:
+            duration = int(self.controller._known_duration_ms)
+        return max(0, duration)
+
     def _on_playhead_changed(self, ms: int) -> None:
+        refreshed = self._resolve_duration_ms(self._current_track)
+        if refreshed > self._current_duration_ms:
+            self._current_duration_ms = refreshed
+            if hasattr(self.waveform, "set_duration"):
+                self.waveform.set_duration(refreshed)
         if hasattr(self.waveform, "set_playhead"):
             self.waveform.set_playhead(ms)
         self.time_label.setText(f"{_format_ms(ms)} / {_format_ms(self._current_duration_ms)}")

@@ -9,32 +9,9 @@ from PyQt6 import QtCore, QtWidgets
 from core.models import Track
 from services.playback import PlaybackEngine
 
-# ------------------------------------------------------------------
-# Waveform support for simple controller – self-contained copy of pattern
-# (from deck_controller, but kept minimal and independent; no hotcue etc.)
-# Uses core.waveform exclusively.
-# ------------------------------------------------------------------
-from core.waveform import extract_peaks as _core_extract_peaks
+from ui.dj.waveform_async import request_waveform_load as _request_waveform_load_async
 
 logger = logging.getLogger(__name__)
-
-
-def _safe_extract_peaks(audio_path: str | Path, num_points: int = 900) -> list[float]:
-    """Bezpieczny wrapper wokół core.waveform.extract_peaks (fallback zawsze działa)."""
-    try:
-        return _core_extract_peaks(audio_path, num_points=num_points)
-    except Exception as exc:
-        logger.warning(f"extract_peaks nieudane dla {audio_path}: {exc}")
-        # Ostatni fallback identyczny z core + deck_controller
-        import math
-        import random
-        peaks: list[float] = []
-        for i in range(num_points):
-            t = (i / num_points) * 180
-            base = 0.3 + 0.5 * abs(math.sin(t * 1.7)) + 0.2 * abs(math.sin(t * 0.35))
-            noise = random.uniform(-0.06, 0.06)
-            peaks.append(max(0.08, min(0.97, base + noise)))
-        return peaks
 
 
 class SimpleDeckController(QtCore.QObject):
@@ -86,6 +63,7 @@ class SimpleDeckController(QtCore.QObject):
         self._main_cue_ms: int = 0
         self._original_bpm: float | None = None
         self._current_waveform_token: str | None = None
+        self._known_duration_ms: int = 0
 
         # Timer playhead (basic)
         self._playhead_timer = QtCore.QTimer(self)
@@ -133,7 +111,8 @@ class SimpleDeckController(QtCore.QObject):
         self._original_bpm = bpm if bpm and bpm > 10 else None
 
         success = False
-        duration = 0
+        duration = self._duration_ms_from_track(track)
+        self._known_duration_ms = duration
         if self.playback_engine:
             try:
                 success = self.playback_engine.load_deck(self.deck_id, track.path)  # FILE prep
@@ -144,7 +123,10 @@ class SimpleDeckController(QtCore.QObject):
             if success:
                 try:
                     state = self.playback_engine.get_deck_state(self.deck_id)
-                    duration = state.duration_ms if state else 0
+                    engine_duration = state.duration_ms if state else 0
+                    if engine_duration > 0:
+                        duration = engine_duration
+                    self._known_duration_ms = duration
                     self._current_waveform_token = str(track.path) if track.path else None
                     self.status_changed.emit("✓ Utwór załadowany")
                     if self._original_bpm:
@@ -297,12 +279,21 @@ class SimpleDeckController(QtCore.QObject):
             return
         token = str(audio_path)
         self._current_waveform_token = token
-        runnable = _SimpleWaveformRunnable(audio_path, duration_ms, waveform_widget, token)
-        QtCore.QThreadPool.globalInstance().start(runnable)
+        _request_waveform_load_async(waveform_widget, audio_path, duration_ms, token)
 
     # ------------------------------------------------------------------
     # Timer + state
     # ------------------------------------------------------------------
+    @staticmethod
+    def _duration_ms_from_track(track: Track) -> int:
+        duration_sec = getattr(track, "duration", None)
+        if duration_sec and int(duration_sec) > 0:
+            return int(duration_sec) * 1000
+        duration_ms = getattr(track, "duration_ms", None)
+        if duration_ms and int(duration_ms) > 0:
+            return int(duration_ms)
+        return 0
+
     def _on_playhead_tick(self) -> None:
         """Tick – lepszy use of backend state (position + is_playing z DeckState)."""
         if not self.playback_engine:
@@ -310,6 +301,8 @@ class SimpleDeckController(QtCore.QObject):
         try:
             state = self.playback_engine.get_deck_state(self.deck_id)
             if state:
+                if state.duration_ms and state.duration_ms > self._known_duration_ms:
+                    self._known_duration_ms = state.duration_ms
                 self.playhead_changed.emit(state.position_ms)
                 try:
                     is_play = bool(getattr(state, "is_playing", False))
@@ -330,33 +323,4 @@ class SimpleDeckController(QtCore.QObject):
         self.status_changed.emit("compact on" if compact else "compact off")
 
 
-# ------------------------------------------------------------------
-# Prosty wewnętrzny runnable (skopiowany wzorzec, uproszczony)
-# ------------------------------------------------------------------
-class _SimpleWaveformRunnable(QtCore.QRunnable):
-    """QRunnable do ekstrakcji peaków w tle dla Odtwarzacz MVP.
-    Używa _safe_extract_peaks (core.waveform + fallback).
-    Chroni tokenem, wywołuje load_waveform queued.
-    """
 
-    def __init__(self, audio_path: str, duration_ms: int, waveform_widget: Any, token: str):
-        super().__init__()
-        self.setAutoDelete(True)
-        self._path = str(audio_path)
-        self._duration = int(duration_ms)
-        self._wave = waveform_widget
-        self._token = token
-
-    def run(self) -> None:
-        try:
-            peaks = _safe_extract_peaks(self._path, 900)
-            QtCore.QMetaObject.invokeMethod(
-                self._wave,
-                "load_waveform",
-                QtCore.Qt.ConnectionType.QueuedConnection,
-                QtCore.Q_ARG(list, peaks),
-                QtCore.Q_ARG(int, self._duration),
-                QtCore.Q_ARG(str, self._token or ""),
-            )
-        except Exception as e:
-            logger.warning(f"_SimpleWaveformRunnable błąd dla {self._path}: {e}")
