@@ -575,7 +575,8 @@ TESTER 2026-06-14 final (po "dalej"+lista 1-15): smoke0/pytest44p/python-c (comp
             pass
 
     def _apply_compact_ui(self) -> None:
-        # Compact toggle + anim spin polish per SZPIEG/Plan step2: _applying guard try/finally, immediate _update after apply, paint cos/sin radial _angle, vis guards (if not isVisible set True+update), window min shrink comment in caller, resize self-manage in odt.
+        # Compact toggle + anim spin polish per SZPIEG/Plan step2 + lista 2+12 after user 'ok'+'kontynuuj': _applying guard try/finally, immediate _update after apply, paint cos/sin radial _angle, vis guards (if not isVisible set True+update), window min shrink + always-on-top in caller, resize self-manage in odt.
+        # 2026-06 continue: tighter bottom margin 2px in compact (reduce empty space / pack pilot per Plan 5/12 + SZPIEG pilot spec "minimal air zachowany, nie zero").
         if getattr(self, "_applying_compact", False):
             return
         self._applying_compact = True
@@ -592,8 +593,9 @@ TESTER 2026-06-14 final (po "dalej"+lista 1-15): smoke0/pytest44p/python-c (comp
                 title_f = sizes.get("compact_title_font", 11)
                 time_f = sizes.get("compact_time_font", 10)
                 stat_f = sizes.get("compact_status_font", 9)
-                # smaller margins for pilot
-                self.layout().setContentsMargins(8, 6, 8, 6)
+                # smaller margins for pilot + reduce empty bottom per Plan "nowa lista przeróbek" 2+5+12 + SZPIEG compact pilot spec (after user 'ok' + 'kontynuuj')
+                # tighter bottom (2px) to pack pilot notification-like, less "oddychanie" stretch push at end while keeping minimal air.
+                self.layout().setContentsMargins(8, 6, 8, 2)
                 self.layout().setSpacing(6)
             else:
                 play_s = sizes.get("transport_play", (96, 58))
