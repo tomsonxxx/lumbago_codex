@@ -18,9 +18,9 @@ class SimpleDeckController(QtCore.QObject):
     """
     Lekki kontroler tylko dla minimalnego single playera "Odtwarzacz" MVP.
 
-    **Uwaga dla nowych agentów/programistów:** Implementacja dokładnie per nadrzędny SZPIEG Build Spec + Plan team review (z crew/SZPIEG_agent_spec_and_archive.md + memory.md + crew/PLAN_Uruchomienie_Python_Code_Review_Crew.md). User explicit: "uruchmo jeszcze raz zespouł agentów do sprawdzenia po kolei calej budowy odtwarzacza, i problematyczne elementy prxzekaz dla szpiega do badań. nie przestawaj puki nie skonczysz". Must document identical. SZPIEG spec jest binding — zero odstępstw. High pressure exact match, read-before-edit.
-    2026-06-02 SZPIEG full re-audit: load=FILE (path+repo+wave token), transport=STREAM (play near0 cue, stop->cue, timer), cue logic, compact flag, guards no-track, file/stream comments/guards. Problemy P0-P10 (playback compact no-track/cue, file/stream gaps) przekazane SZPIEG + side tasks (cue, file/stream, tests). Per "po kolei całej budowy" + "przekaz dla szpiega".
-    2026-06-02 UI-DESIGNER fresh re-audit "uruchmo jeszcze raz... nie przestawaj": compact flag + emit, FILE vs STREAM docs/guards in load/play, cue near0<150, no-track status, safety delegated. Verified in re-audit (headless play compact OK, pytest). Punkt 8.5/10 cue, 8/10 file/stream. Handover + docs identical. Per PLAN/SZPIEG. 'gotowe' 'Do końca'.
+    **Uwaga dla nowych agentów/programistów:** Implementacja dokładnie per nadrzędny SZPIEG Build Spec + Plan team review (z crew/SZPIEG_agent_spec_and_archive.md + memory.md + crew/PLAN_Uruch[...]
+    2026-06-02 SZPIEG full re-audit: load=FILE (path+repo+wave token), transport=STREAM (play near0 cue, stop->cue, timer), cue logic, compact flag, guards no-track, file/stream comments/guards. P[...]
+    2026-06-02 UI-DESIGNER fresh re-audit "uruchmo jeszcze raz... nie przestawaj": compact flag + emit, FILE vs STREAM docs/guards in load/play, cue near0<150, no-track status, safety delegated. V[...]
 
     Zadania (exactly per spec):
     - load_track: DB lookup jeśli brak id, playback_engine.load_deck, get state, waveform token,
@@ -90,7 +90,7 @@ class SimpleDeckController(QtCore.QObject):
         Nie uruchamia playback/stream (to jest transport w play/pause/stop/seek).
         Guard: load nie zmienia stanu playing (nie overwrite stream).
         Komentarze/guards w load vs transport paths (odt/controller/window).
-        **2026-06-02 ANALYZER re-audit (per PLAN/SZPIEG/memory + "uruchmo jeszcze raz... nie przestawaj"):** load=FILE cue near0<150 prefer in play + stop seek cue + guards no-track preserved exact in full build audit. Docs updated identical (SZPIEG append full ANALYZER report etc). Gotowe. Przekaz problemy SZPIEG + crew.
+        **2026-06-02 ANALYZER re-audit (per PLAN/SZPIEG/memory + "uruchmo jeszcze raz... nie przestawaj"):** load=FILE cue near0<150 prefer in play + stop seek cue + guards no-track preserved exac[...]
         """
         if not track:
             return
@@ -270,14 +270,18 @@ class SimpleDeckController(QtCore.QObject):
             logger.warning(f"SimpleDeck {self.deck_id} set_cue błąd: {e}")
 
     def request_waveform_load(self, waveform_widget: Any, audio_path: str,
-                              duration_ms: int) -> None:
+                              duration_ms: int, token: str = "") -> None:
         """
         Dla widoku: async peak extract (prosty runnable).
         Chroni tokenem. View woła po track_loaded.
+        
+        :param waveform_widget: widget do załadowania waveformu
+        :param audio_path: ścieżka do pliku audio
+        :param duration_ms: czas trwania w ms
+        :param token: unikalny token do identyfikacji (stale guard)
         """
         if not audio_path or waveform_widget is None:
             return
-        token = str(audio_path)
         self._current_waveform_token = token
         _request_waveform_load_async(waveform_widget, audio_path, duration_ms, token)
 
@@ -321,6 +325,3 @@ class SimpleDeckController(QtCore.QObject):
         self._compact = bool(compact)
         # No direct UI here; view listens/reacts. Status for debug.
         self.status_changed.emit("compact on" if compact else "compact off")
-
-
-
