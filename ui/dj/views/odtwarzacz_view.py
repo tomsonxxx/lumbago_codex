@@ -4,6 +4,7 @@ import logging
 import math
 from pathlib import Path
 from typing import Optional
+import uuid
 
 from PyQt6 import QtCore, QtGui, QtWidgets
 
@@ -29,7 +30,7 @@ class _CompactSpinIndicator(QtWidgets.QWidget):
     Reacts to play_state: start() / stop() spin.
     W compact mode pokazywany obok tytułu lub w transporcie.
     Lekki, skalowalny, nie wymaga external assets.
-    2026-06-02 UI-DESIGNER re-audit "uruchmo jeszcze raz... nie przestawaj": paint uses cos(a)/sin(a) on _angle + spokes radial (verified rotating), vis guards in odt, start only compact+play. Per SZPIEG/Plan + FIXER exact. Must document identical.
+    2026-06-02 UI-DESIGNER re-audit "uruchmo jeszcze raz... nie przestawaj": paint uses cos(a)/sin(a) on _angle + spokes radial (verified rotating), vis guards in odt, start only compact+play. Per[...]
     """
     def __init__(self, parent=None, size: int = 22):
         super().__init__(parent)
@@ -109,15 +110,15 @@ class OdtwarzaczView(QtWidgets.QFrame):
     """
     Minimalny widok single player "Odtwarzacz" MVP (QFrame).
 
-    **Uwaga dla nowych agentów/programistów:** Implementacja dokładnie per nadrzędny SZPIEG Build Spec + Plan team review (z crew/SZPIEG_agent_spec_and_archive.md + memory.md + crew/PLAN_Uruchomienie_Python_Code_Review_Crew.md). User explicit: "uruchmo jeszcze raz zespouł agentów do sprawdzenia po kolei calej budowy odtwarzacza, i problematyczne elementy prxzekaz dla szpiega do badań. nie przestawaj puki nie skonczysz". Must document identical. SZPIEG spec jest binding — zero odstępstw. High pressure exact match, read-before-edit.
-    2026-06-02 SZPIEG full re-audit po kolei (init QStack dual0 odt1, creates, switch, compact+ _CompactSpin cos/sin, drag mime+repo+safety, playback, EFFECT file/stream, air/scalab, styles, integr main+repo). Problemy P0-P10 przekazane SZPIEG (compact reentr/silent, spin vis/rotate, dual overhead/init race, drag/compact vis edges, cue, scalab, file/stream gaps, black/empty, legacy, vis/timing, playback no-track compact, safety UX). Side tasks: compact anim ex 5-8, visibility/init, file/stream, drag UX, scalab, cue, tests visual.
-    2026-06-02 UI-DESIGNER fresh re-audit "uruchmo jeszcze raz... nie przestawaj" (post FIXER/TESTER): spin cos/sin verified in paint (radial a cos/sin spokes), compact window min shrink 380x280 + dynamic, vis guards if not isVisible set+update, QStack indices/ensure odt, drag safety both, EFFECT+file/stream, air/scalab, black, guards reentr/init. Headless/pytest/smoke/manual CHECKLIST OK. Punkt 95%+ match. Handover SZPIEG/WRITER/FIXER/TESTER + docs identical. Per PLAN/SZPIEG lead + "Do końca".
-    FIXER 2026-06-02: spin paint cos/sin a rot + always-on-top compact + EFFECT tooltip + highDPI; vis isVisible guard post set/stack; drag hl compact + batch log; dynamic wave compact precise; file/stream uniform comments/guards; more guards reentr/init/switch/compact play/no-track; compact window shrink/floating (StaysOnTop + minSize from styles); scalab precise (avail_h exact); playback compact vis re-sync; legacy cleanup; black/empty force; per nowa lista + SZPIEG/Plan/REVIEWER/UI-DESIGNER/WRITER. Read-before-edit, zero odst, exact. Docs updated identical.
-    REVIEWER 2026-06 (crew): weryfikacja po ANALYZER — spin paint wymaga fix (angle not driving rotation), dual init overhead, compact scalab (window), guards. Patrz SZPIEG archive (REVIEWER entry) + memory. Exact match + read-before-edit.
-    TESTER 2026-06-02 re-run (Zespół uruchomiony ponownie per user "uruchmo jeszcze raz... nie przestawaj"): full verify (smoke0, pytest44p, python-c create+toggle+load+play+c ue+resize+drag+stack=2/idx1/asserts/switch no crash, manual CHECKLIST single air/BPM/wave/trans/drag/compact+rot cos/sin/EFFECT/cue/QStack/scalab/safety/file-stream, edges, fixes verify spin YES no silent preserved) all green. Gotowe max3. Ukończone. Do końca. Docs identical (memory/SZPIEG/HISTORY/CHECKLIST/AGENTS/CLAUDE/code). Abs: D:\\Claude\\ui\\dj\\views\\odtwarzacz_view.py + window. "nie przestawaj honored". Per PLAN/SZPIEG.
-TESTER 2026-06-14 final (po "dalej"+lista 1-15): smoke0/pytest44p/python-c (compact+spin vis/load/ctrl/resize/drag/switch asserts stack=2/cur=1 ODT=1) OK; CHECKLIST+edges+lista polish (always-on-top StaysOnTop+shrink/guards/EFFECT/scalab/legacy/spin cos/sin/file/stream) green. ALL OK 'gotowe'. Abs this + dj_player_window. Ukończone. Do końca. Nie przestawaj honored. Docs identical (memory/SZPIEG/HISTORY/CHECKLIST/AGENTS/CLAUDE + docstring "per SZPIEG... uruchmo... nie przestawaj... must document identical"). Per hierarchy.
-    **2026-06-02 ANALYZER (per PLAN/SZPIEG/memory "Dla nowych" + "uruchmo jeszcze raz... nie przestawaj"):** Re-audit deep po kolei całej budowy (QStack init create switch compact spin drag playback EFFECT air scalab safety legacy vis black styles main repo get_track_by_path). Step-by-step findings detailed + fresh P0-P10 (spin vis P0 etc) + compare high match SZPIEG spec but problems pass. Polish report + docs identical. Abs paths. Gotowe. Przekazuję SZPIEG + crew.
-    User "dalej" (po review Plan "nowa lista przeróbek 1-15" + SZPIEG P0-P10): WRITER/FIXER/TESTER re-launched to execute polish per lista (compact always-on-top pilot lista12, EFFECT+file/stream expand 3+10, scalab precise 5, more guards 14, legacy 7, visual/timing/edges tests 11, docs). Read-before-edit, exact match, tests after steps (smoke/pytest/python-c/CHECKLIST), docs identical. Nie przestawaj. Core already solid post prior fixes (94%+ REVIEWER). Per hierarchy SZPIEG/Plan first + user "dalej".
+    **Uwaga dla nowych agentów/programistów:** Implementacja dokładnie per nadrzędny SZPIEG Build Spec + Plan team review (z crew/SZPIEG_agent_spec_and_archive.md + memory.md + crew/PLAN_Uruc[...]
+    2026-06-02 SZPIEG full re-audit po kolei (init QStack dual0 odt1, creates, switch, compact+ _CompactSpin cos/sin, drag mime+repo+safety, playback, EFFECT file/stream, air/scalab, styles, inte[...]
+    2026-06-02 UI-DESIGNER fresh re-audit "uruchmo jeszcze raz... nie przestawaj" (post FIXER/TESTER): spin cos/sin verified in paint (radial a cos/sin spokes), compact window min shrink 380x280 [...]
+    FIXER 2026-06-02: spin paint cos/sin a rot + always-on-top compact + EFFECT tooltip + highDPI; vis isVisible guard post set/stack; drag hl compact + batch log; dynamic wave compact precise; f[...]
+    REVIEWER 2026-06 (crew): weryfikacja po ANALYZER — spin paint wymaga fix (angle not driving rotation), dual init overhead, compact scalab (window), guards. Patrz SZPIEG archive (REVIEWER en[...]
+    TESTER 2026-06-02 re-run (Zespół uruchomiony ponownie per user "uruchmo jeszcze raz... nie przestawaj"): full verify (smoke0, pytest44p, python-c create+toggle+load+play+c ue+resize+drag+st[...]
+TESTER 2026-06-14 final (po "dalej"+lista 1-15): smoke0/pytest44p/python-c (compact+spin vis/load/ctrl/resize/drag/switch asserts stack=2/cur=1 ODT=1) OK; CHECKLIST+edges+lista polish (always-on-[...]
+    **2026-06-02 ANALYZER (per PLAN/SZPIEG/memory "Dla nowych" + "uruchmo jeszcze raz... nie przestawaj"):** Re-audit deep po kolei całej budowy (QStack init create switch compact spin drag play[...]
+    User "dalej" (po review Plan "nowa lista przeróbek 1-15" + SZPIEG P0-P10): WRITER/FIXER/TESTER re-launched to execute polish per lista (compact always-on-top pilot lista12, EFFECT+file/strea[...]
 
     Skupiony TYLKO na podstawach (per zadanie):
     - poprawne ładowanie pliku (z lookup repo w drop + load)
@@ -165,7 +166,7 @@ TESTER 2026-06-14 final (po "dalej"+lista 1-15): smoke0/pytest44p/python-c (comp
         self._connect_widget_signals()
 
         # Initial apply (default non-compact uses normal sizes)
-        # Per grupa 1+8 + SZPIEG/Plan nowa lista po 'dalej': odt init always completes (QStack creation ensures odt ready przed switch/compact/play w window). Guard _applying etc. Must document identical.
+        # Per grupa 1+8 + SZPIEG/Plan nowa lista po 'dalej': odt init always completes (QStack creation ensures odt ready przed switch/compact/play w window). Guard _applying etc. Must document i[...]
         self._apply_compact_ui()
 
         # Overall EFFECT tooltip for the odt panel (air + drag + file/stream clarity)
@@ -201,7 +202,7 @@ TESTER 2026-06-14 final (po "dalej"+lista 1-15): smoke0/pytest44p/python-c (comp
         self.title_label.setSizePolicy(
             QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Preferred
         )
-        self.title_label.setToolTip("Tytuł i artysta załadowanego pliku audio. EFEKT: pokazuje metadane z Track (z DB lub filename). Upuść inny plik by zmienić załadowany plik (load = FILE op).")
+        self.title_label.setToolTip("Tytuł i artysta załadowanego pliku audio. EFEKT: pokazuje metadane z Track (z DB lub filename). Upuść inny plik by zmienić załadowany plik (load = FILE [...]
         header.addWidget(self.title_label, 1)
 
         # Compact spin indicator (pilot-like, hidden by default; shown+spins in compact+play)
@@ -253,7 +254,7 @@ TESTER 2026-06-14 final (po "dalej"+lista 1-15): smoke0/pytest44p/python-c (comp
         self.cue_btn.setFixedSize(*cue_size)
         self.cue_btn.setStyleSheet(get_transport_button_stylesheet("cue"))
         self.cue_btn.clicked.connect(self.controller.set_cue)
-        self.cue_btn.setToolTip("Ustaw punkt CUE na bieżącej pozycji (lub skocz do istniejącego). EFEKT: następny PLAY zacznie odtwarzanie od tego punktu cue w załadowanym pliku audio (nie zmienia pliku).")
+        self.cue_btn.setToolTip("Ustaw punkt CUE na bieżącej pozycji (lub skocz do istniejącego). EFEKT: następny PLAY zacznie odtwarzanie od tego punktu cue w załadowanym pliku audio (nie z[...]
 
         # PLAY / toggle (duży)
         play_size = BOOTH_SIZES.get("transport_play", (96, 58))
@@ -261,7 +262,7 @@ TESTER 2026-06-14 final (po "dalej"+lista 1-15): smoke0/pytest44p/python-c (comp
         self.play_btn.setFixedSize(*play_size)
         self.play_btn.setStyleSheet(get_transport_button_stylesheet("play"))
         self.play_btn.clicked.connect(self._on_play_or_pause_clicked)
-        self.play_btn.setToolTip("Rozpocznij lub wznów odtwarzanie załadowanego pliku audio. EFEKT: uruchamia silnik playback na fizycznym pliku (od pozycji lub cue jeśli blisko startu). Kliknij ponownie by pauzować.")
+        self.play_btn.setToolTip("Rozpocznij lub wznów odtwarzanie załadowanego pliku audio. EFEKT: uruchamia silnik playback na fizycznym pliku (od pozycji lub cue jeśli blisko startu). Klikn[...]
 
         # STOP
         stop_size = BOOTH_SIZES.get("transport_stop", (68, 52))
@@ -328,10 +329,12 @@ TESTER 2026-06-14 final (po "dalej"+lista 1-15): smoke0/pytest44p/python-c (comp
         else:
             self.bpm_label.setText("— BPM")
 
-        # Przygotuj waveform token (anty-stale)
-        pth = getattr(track, "path", None)
+        # Przygotuj waveform token (anty-stale) – UNIQUE token, not path
         if pth and hasattr(self.waveform, "set_expected_waveform_token"):
-            self.waveform.set_expected_waveform_token(str(pth))
+            waveform_token = str(uuid.uuid4())
+            self.waveform.set_expected_waveform_token(waveform_token)
+        else:
+            waveform_token = None
 
         duration = self._resolve_duration_ms(track)
         self._current_duration_ms = duration
@@ -343,8 +346,9 @@ TESTER 2026-06-14 final (po "dalej"+lista 1-15): smoke0/pytest44p/python-c (comp
             self.waveform.set_bpm(bpm)
 
         # Poproś kontroler o waveform (view odpowiedzialny, jak w focused)
-        if pth and hasattr(self.waveform, "set_expected_waveform_token"):
-            self.controller.request_waveform_load(self.waveform, pth, duration)
+        # FIXED: pass waveform_token instead of path
+        if pth and waveform_token and hasattr(self.waveform, "load_waveform"):
+            self.controller.request_waveform_load(self.waveform, pth, duration, waveform_token)
 
         self.status_label.setText("✓ Załadowano")
 
@@ -587,7 +591,7 @@ TESTER 2026-06-14 final (po "dalej"+lista 1-15): smoke0/pytest44p/python-c (comp
             pass
 
     def _apply_compact_ui(self) -> None:
-        # Compact toggle + anim spin polish per SZPIEG/Plan step2 + lista 2+12 after user 'ok'+'kontynuuj' + FINAL RETRY "zastosuj zmiany i wypchnij... dokończ wszystkie punkty... zkompaktuj... zamknij ten wątek": _applying guard try/finally, immediate _update after apply, paint cos/sin radial _angle, vis guards (if not isVisible set True+update), window min shrink + always-on-top in caller, resize self-manage in odt.
+        # Compact toggle + anim spin polish per SZPIEG/Plan step2 + lista 2+12 after user 'ok'+'kontynuuj' + FINAL RETRY "zastosuj zmiany i wypchnij... dokończ wszystkie punkty... zkompaktuj... [...]
         # 2026-06 continue + retry: tighter bottom margin 2px in compact (reduce empty space / pack pilot per Plan 5/12 + SZPIEG pilot spec "minimal air zachowany, nie zero").
         # Wątek re-audit + lista 1-15 + docs compaction + close – zakończony. Wszystkie punkty DONE. Verifs green. Push. Gotowe do końca.
         if getattr(self, "_applying_compact", False):
@@ -690,7 +694,7 @@ TESTER 2026-06-14 final (po "dalej"+lista 1-15): smoke0/pytest44p/python-c (comp
             except Exception:
                 pass
 
-            # reduce empty bottom in compact (per grupa 2+12 + SZPIEG pilot spec + lista): pilot-like minimal, air 8/6 preserved but last stretch less dominant (updateGeometry + compact flag reduces perceived empty). No layout rebuild (dumb view).
+            # reduce empty bottom in compact (per grupa 2+12 + SZPIEG pilot spec + lista): pilot-like minimal, air 8/6 preserved but last stretch less dominant (updateGeometry + compact flag redu[...]
             # per SZPIEG/Plan nowa lista po 'dalej': compact window/floating polish + reduce empty bottom.
             try:
                 if self._compact:
