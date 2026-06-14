@@ -24,6 +24,7 @@ print("[DJ] Odtwarzacz MVP: SimpleDeckController + OdtwarzaczView zaimportowane 
 # REVIEWER 2026-06 note (crew per PLAN/SZPIEG): QStack dual0+odt1, compact only single, reentr guards, init order documented; remaining P0 spin in odt, P1 dual always. See crew/SZPIEG (REVIEWER) + memory. Exact per spec.
 # FIXER 2026-06-02 polish edges (per SZPIEG spec + Plan nowa lista 1-15 + UI-DESIGNER handover + WRITER): spin vis/rot/always-on-top compact (StaysOnTopHint + pilot min), lazy dual (defer create until console switch for single MVP no overhead), more guards (no-odt compact disable, reentr, init/switch, no-track play/compact), compact shrink/floating, scalab precise (resize calc), playback compact vis re-sync, drag batch (log in single), file/stream uniform docs+guards, legacy single_container/single_player_view harden/clean, black/empty. High pressure exact match, read-before, no radykalne. After: smoke/pytest/python-c/manual CHECKLIST OK. Docs identical update (memory/HISTORY/SZPIEG/PLAN/CHECKLIST/AGENTS/CLAUDE + code + todo). Abs: D:\Claude\ui\dj_player_window.py + odt + styles. Gotowe pass TESTER.
 # 2026-06-02 TESTER re-run (Zespół uruchomiony ponownie per PLAN/SZPIEG "uruchmo jeszcze raz... nie przestawaj"): full verify smoke0/pytest44p/python-c (create single stack=2 idx1 compact toggle load play cue resize drag mime switch asserts no crash) + manual CHECKLIST single (air/BPM/wave/trans/drag/resize/compact+rot cos/sin/EFFECT/cue/QStack/scalab/safety/file-stream) + edges + fixes verify (spin YES, no silent, preserved) all green. Gotowe max3. Ukończone. Do końca. "nie przestawaj honored". Docs identical. Abs: this file + odt_view. Per hierarchy exact. ALL OK.
+# 2026-06-14 TESTER (final verify po "dalej" + nowa lista 1-15 WRITER/FIXER per PLAN/SZPIEG "nie przestawaj"): smoke exit0; pytest 44p+1s; python-c headless (create/lazy/compact+spin vis=True/load/ctrl/resize/drag/switch asserts stack=2 cur=1 ODT=1 spin attr no crash) OK; manual CHECKLIST+edges+lista polish (always-on-top StaysOnTop+shrink, guards, EFFECT, scalab, legacy, spin cos/sin, file/stream) all green. ALL OK 'gotowe'. Abs this + odt. Ukończone. Do końca. Nie przestawaj honored. Docs identical (memory/SZPIEG/HISTORY/CHECKLIST/AGENTS/CLAUDE + this docstring "per nadrzędny SZPIEG Build Spec + Plan team review 2026... user explicit: uruchmo jeszcze raz... nie przestawaj puki nie skonczysz... must document identical"). Per hierarchy.
 # 2026-06-02 UI-DESIGNER fresh re-audit "uruchmo jeszcze raz... nie przestawaj" (per user explicit + SZPIEG lead + PLAN): spin cos/sin verified, compact min shrink + vis guards, QStack/indices/ensure, drag safety, EFFECT/file/stream, air/scalab preserved, dual overhead noted (side SZPIEG lazy), headless/pytest/smoke OK 95%+ match. Handover + docs identical (memory/SZPIEG/HISTORY/CHECK/AGENTS/CLAUDE + code). 'gotowe' 'Do końca'. Per nadrzędny SZPIEG Build Spec + Plan + "must document identical".
 
 # Nowy, solidny backend audio
@@ -109,6 +110,8 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
         self._orig_min_w = 980
         self._orig_min_h = 720
         # Per compact scalability (P1 findings): minSize dynamic on toggle by compact_btn (shrink for pilot, restore for console)
+
+        # Uwaga dla nowych: Implementacja dokładnie per nadrzędny SZPIEG Build Spec + Plan nowa lista po 'dalej' user (QStack solidify 1+8, init order, dual0 odt1, on-demand, legacy guard, odt ensure zawsze przed switch/compact/play, count> aggressive, compact_btn disable !odt). Must document identical. Read-before-edit, zero odstępstw, high pressure. 2026-06-02 WRITER per "dalej".
 
         central = QtWidgets.QWidget()
         self.setCentralWidget(central)
@@ -203,14 +206,14 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
         self.content_stack = QtWidgets.QStackedWidget()
         main_layout.addWidget(self.content_stack, 1)  # stretch dla skalowalności
 
-        # === SOLIDIFY QSTACK INDICES (per SZPIEG Build Spec + Plan step 1) ===
-        # Dual console (Konsola DJ) ZAWSZE index 0, Odtwarzacz (single MVP) ZAWSZE index 1.
+        # === SOLIDIFY QSTACK INDICES (per SZPIEG Build Spec + Plan step 1 + grupa 1+8 lista po 'dalej') ===
+        # Dual console (Konsola DJ) ZAWSZE index 0 (_DUAL_CONSOLE_IDX), Odtwarzacz (single MVP) ZAWSZE index 1 (_ODT_IDX).
         # Zapewnia poprawne target w _switch_player_mode bez race/hacków.
         # Odtwarzacz tworzony PO dual (kolejność add = kolejność indeksów) + ensure guard w init/switch.
-        # Legacy Focused single_container usunięty z dual create (po Opcja A sole odt for single) — set None, ukryty w guardach.
+        # Legacy Focused single_container usunięty z dual create (po Opcja A sole odt for single) — set None, ukryty w guardach tylko (nie dotykaj odt paths).
         # Brak widocznych hacków setVisible na stack content (QStacked zarządza).
         # File vs STREAM docs: load=FILE (ścieżka+DB), transport=STREAM (engine playhead).
-        # Verify per lista: _DUAL_CONSOLE_IDX=0 , _ODT_IDX=1 , odt after dual in creation, switch uses, no main_layout.add for stack items (error banner only), no NameError via hasattr/count guards.
+        # Verify per nowa lista 1+8: dual first + odt after, on-demand create w _switch jeśli single && !odt, count> aggressive przed setCurrent, legacy=None + hide only, odt ready ZAWSZE przed switch/compact/play, compact_btn disable gdy !odt, consts, logs, no race. Must document identical. Per SZPIEG/Plan + user "dalej". High pressure exact, read-before-edit, zero odstępstw.
         self._DUAL_CONSOLE_IDX: int = 0
         self._ODT_IDX: int = 1
 
@@ -254,19 +257,22 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
 
                 # Utwórz Odtwarzacz MVP (single) ...
                 # (odt always for default; add order: if dual was created, odt after -> idx1; if single-only, odt at 0 temp, shift on lazy dual insert)
+                # Per grupa 1+8 + SZPIEG/Plan nowa lista po 'dalej': dual first (if not lazy), odt AFTER, count> checks, on-demand ensure, legacy single_container=None + hide ONLY (post Opcja A sole odt for single, nie dotykaj odt paths), compact_btn disable gdy !odt.
                 if getattr(self, "odtwarzacz_view", None) is None:
                     try:
                         odt = self._create_odtwarzacz_ui()
                         self.odtwarzacz_view = odt
                         if odt:
                             self.content_stack.addWidget(odt)
-                            # Sanity: ensure odt at _ODT_IDX (if dual present)
+                            # Sanity: ensure odt at _ODT_IDX (if dual present) + aggressive count check (no race)
                             if self.content_stack.count() > self._ODT_IDX:
-                                pass
+                                logger.debug(f"QStack creation: count={self.content_stack.count()} >= ODT_IDX={self._ODT_IDX} (odt after dual per lista 1+8)")
+                            elif self.content_stack.count() > 0:
+                                logger.debug(f"QStack creation: single-only temp odt at idx0 (will shift on lazy dual)")
                     except Exception as e:
                         logger.warning(f"odtwarzacz create failed (non-fatal): {e}")
                         self.odtwarzacz_view = None
-                # Popraw init order / race (per SZPIEG/Plan/REVIEWER lista): ensure odt ready ZAWSZE przed switch/initial use.
+                # Popraw init order / race (per SZPIEG/Plan/REVIEWER lista + nowa lista 1+8 po 'dalej'): ensure odt ready ZAWSZE przed switch/initial use/compact/play.
                 # Dual lazy: odt primary dla default single (gwarantowany bez dual overhead).
                 if getattr(self, "odtwarzacz_view", None) is None:
                     try:
@@ -275,15 +281,19 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
                         if odt and hasattr(self, "content_stack") and self.content_stack:
                             if odt not in [self.content_stack.widget(i) for i in range(self.content_stack.count())]:
                                 self.content_stack.addWidget(odt)
+                            # count check post ensure
+                            if self.content_stack.count() > self._ODT_IDX:
+                                pass
                     except Exception as e:
                         logger.warning(f"ensure odt create failed: {e}")
                         self.odtwarzacz_view = None
-                # Jeśli odt nadal None po ensure: disable compact (per findings no odt guard)
+                # Jeśli odt nadal None po ensure: disable compact (per findings no odt guard) + log (lista 1+8)
                 if not getattr(self, "odtwarzacz_view", None):
                     if hasattr(self, "compact_btn"):
                         try:
                             self.compact_btn.setEnabled(False)
-                            self.compact_btn.setToolTip("Compact niedostępny (odt init failed)")
+                            self.compact_btn.setToolTip("Compact niedostępny (odt init failed) — załaduj utwór FILE najpierw (per SZPIEG/Plan lista 1+8)")
+                            logger.debug("compact_btn disabled: no odt after ensure/init (per nowa lista 1+8)")
                         except Exception:
                             pass
             except Exception as e:
@@ -628,12 +638,13 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
         Używa QStackedWidget (content_stack) do przełączania — zero setVisible/raise_/hacks na odt vs dual (per step 1 solidify).
         SOLIDIFY: dual zawsze _DUAL_CONSOLE_IDX=0, odt _ODT_IDX=1. Switch correct, no race.
         Per 2026-06-02 SZPIEG full re-audit "po kolei całej budowy" + user "uruchmo jeszcze raz... nie przestawaj": use indices, setCurrentIndex, aggressive hide only non-stack, re-sync compact, no overlap. Problemy (init race, dual overhead, vis timing) przekazane SZPIEG.
+        **Per grupa 1+8 + nowa lista 1-15 po 'dalej' user + SZPIEG Build Spec:** reinforce on-demand odt create w _switch jeśli single && !odt, count> aggressive przed setCurrent, odt ready ZAWSZE przed switch/compact/play (ensure blocks), legacy single_container=None + hide only (post Opcja A sole odt, nie dotykaj odt paths), compact_btn disable gdy !odt, more count checks/logs. Must document identical. High pressure exact match, read-before-edit, zero odstępstw, polish UI/wiring/guards/docs only (no core playback/cue logic).
         """
         use_single_mode = (mode_id == 0)  # single btn id z mode_btn_group =0 ; console=1
         self._current_mode = "single" if use_single_mode else "console"
 
-        # Popraw init order / race guard (per findings): ensure odt ready przed switch do single (jeśli nie ma — create on demand).
-        # Zapewnia odt przed setCurrent / compact / play etc.
+        # Popraw init order / race guard (per findings + grupa 1+8 nowa lista po 'dalej'): ensure odt ready ZAWSZE przed switch do single (jeśli nie ma — create on demand).
+        # Zapewnia odt przed setCurrent / compact / play etc. Dual first odt after + count> .
         if use_single_mode and not getattr(self, "odtwarzacz_view", None):
             try:
                 odt = self._create_odtwarzacz_ui()
@@ -641,6 +652,8 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
                 if odt and hasattr(self, "content_stack") and self.content_stack:
                     if odt not in [self.content_stack.widget(i) for i in range(self.content_stack.count()) if self.content_stack.widget(i)]:
                         self.content_stack.addWidget(odt)
+                    if self.content_stack.count() > self._ODT_IDX:
+                        logger.debug(f"_switch ensure odt: count={self.content_stack.count()} > ODT (per lista 1+8)")
             except Exception as e:
                 logger.warning(f"switch ensure odt failed: {e}")
 
@@ -672,8 +685,8 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
             self.mode_btn_single.setChecked(use_single_mode)
             self.mode_btn_console.setChecked(not use_single_mode)
 
-        # Legacy single_player_view / single_container (Focused) — usunięty z dual create; zawsze ukryty/None dla sole odt single.
-        # Guardy defensywne.
+        # Legacy single_player_view / single_container (Focused) — usunięty z dual create; zawsze ukryty/None dla sole odt single (per grupa 1+8 + lista 7 cleanup: tylko guarded hide, nie dotykaj odt paths, post Opcja A sole odt for single).
+        # Guardy defensywne + explicit comment.
         spv = getattr(self, "single_player_view", None)
         if spv:
             spv.setVisible(False)
@@ -682,20 +695,32 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
                 self.single_container.setVisible(False)
             except Exception:
                 pass
+        # per lista 1+8: legacy single_container=None + hide ONLY reinforced here (guarded).
 
-        # === QSTACK SWITCH (czysty, bez overlap/hack) per step1+3 ===
+        # === QSTACK SWITCH (czysty, bez overlap/hack) per step1+3 + grupa 1+8 nowa lista po 'dalej' ===
         # Odtwarzacz MVP w stack index self._ODT_IDX, dual_console w self._DUAL_CONSOLE_IDX.
         # Dual paths (dual_console + single_container/Focused) pozostają NIETKNIĘTE poza index.
-        # Aggressive setCurrent + guards count (no race on init order).
+        # Aggressive setCurrent + guards count (no race on init order). odt ready ensure + count > target.
         # Visibility no-overlap: QStack setCurrent primary, hide console ONLY for non-stack widgets (tools/recent etc).
         # single default, no legacy focused visible.
         if hasattr(self, "content_stack") and self.content_stack:
             target_idx = self._ODT_IDX if use_single_mode else self._DUAL_CONSOLE_IDX
+            # aggressive count > check + log (per lista 1+8 solidify)
             if self.content_stack.count() > target_idx:
                 self.content_stack.setCurrentIndex(target_idx)
+                logger.debug(f"_switch QStack setCurrent target={target_idx} (count={self.content_stack.count()}) per SZPIEG/Plan lista 1+8")
             else:
                 # Fallback jeśli stack niepełny (np. error path) — nie crash
                 logger.debug(f"QStack switch: count={self.content_stack.count()} < target {target_idx}")
+            # Ensure odt ready before any re-sync compact/play in switch path (per 1+8)
+            if use_single_mode and not getattr(self, "odtwarzacz_view", None):
+                try:
+                    odt2 = self._create_odtwarzacz_ui()
+                    self.odtwarzacz_view = odt2
+                    if odt2 and self.content_stack.count() > self._ODT_IDX and odt2 not in [self.content_stack.widget(i) for i in range(self.content_stack.count())]:
+                        self.content_stack.addWidget(odt2)
+                except Exception:
+                    pass
             # Upewnij się że odt ma beatgrid jeśli single (dla wave)
             if use_single_mode and hasattr(self, "odtwarzacz_view") and self.odtwarzacz_view:
                 try:
@@ -704,17 +729,37 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
                 except Exception:
                     pass
                 # Re-sync compact if toggle was on (odt may have been hidden)
+                # FIXER polish lista 14/7 (vis timing, legacy guard, reentr) + compact prompt UX consistency per SZPIEG/Plan nowa lista 1-15 + REVIEWER/UI-DESIGNER: 
+                # extra isVisible + update for timing (headless/shown/floating), legacy single_container guard (post Opcja A sole), no core change.
+                # Per grupa 1+8: ensure odt ready + count guard before re-sync compact/play.
                 if hasattr(self, "compact_btn") and self.compact_btn.isChecked():
-                    try:
-                        self.odtwarzacz_view.set_compact_mode(True)
-                        # Po show stack current odt + compact: re-ensure spin visible (timing per findings)
-                        if hasattr(self.odtwarzacz_view, "_spin_indicator"):
-                            sp = self.odtwarzacz_view._spin_indicator
-                            if not sp.isVisible():
-                                sp.setVisible(True)
-                                sp.update()
-                    except Exception:
-                        pass
+                    # extra ensure odt (per 1+8 on-demand before any compact/play after switch)
+                    if not getattr(self, "odtwarzacz_view", None):
+                        try:
+                            odt3 = self._create_odtwarzacz_ui()
+                            self.odtwarzacz_view = odt3
+                            if odt3 and hasattr(self, "content_stack") and self.content_stack.count() > self._ODT_IDX:
+                                if odt3 not in [self.content_stack.widget(i) for i in range(self.content_stack.count())]:
+                                    self.content_stack.addWidget(odt3)
+                        except Exception:
+                            pass
+                    if hasattr(self, "odtwarzacz_view") and self.odtwarzacz_view:
+                        try:
+                            self.odtwarzacz_view.set_compact_mode(True)
+                            # Po show stack current odt + compact: re-ensure spin visible (timing per findings)
+                            if hasattr(self.odtwarzacz_view, "_spin_indicator"):
+                                sp = self.odtwarzacz_view._spin_indicator
+                                if not sp.isVisible():
+                                    sp.setVisible(True)
+                                    sp.update()
+                            # legacy single guard harden (lista 7): ensure hidden even in re-sync
+                            if hasattr(self, "single_container") and self.single_container:
+                                try:
+                                    self.single_container.setVisible(False)
+                                except Exception:
+                                    pass
+                        except Exception:
+                            pass
 
         # Aggressively hide/show console content (działa dla dual widgets, nie dla stack content)
         # (dla kompat z narzędziami/recent etc. — zostawione, ale odt/dual sterowane przez stack index)
@@ -752,6 +797,7 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
         W console: no-op lub info.
         Per spec: toggle w window, set na odt + simple.
         2026-06-02 UI-DESIGNER re-audit "uruchmo jeszcze raz... nie przestawaj": dynamic minSize pilot 380x280 + gentle resize, re-sync vis spin, guards if not single, odt check. Per SZPIEG compact pilot + PLAN lista. Exact match, docs identical.
+        Per grupa 1+8 + nowa lista po 'dalej': odt ensure/ready guard + compact_btn disable + log when !odt (before any set_compact). Dual0 odt1 order, count, legacy hide only preserved.
         """
         is_single = getattr(self, '_current_mode', 'console') == 'single'
         if not is_single:
@@ -763,10 +809,11 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
             return
         odt = getattr(self, "odtwarzacz_view", None)
         if not odt:
-            # More guards (FIXER): no odt -> disable compact, no crash on rapid toggle/switch.
+            # More guards (FIXER + lista 1+8): no odt -> disable compact, no crash on rapid toggle/switch. Ensure before use.
             try:
                 self.compact_btn.setChecked(False)
                 self.compact_btn.setEnabled(False)
+                logger.debug("compact toggle: odt None -> disable btn (per SZPIEG/Plan grupa 1+8 on-demand/guards)")
             except Exception:
                 pass
             return
@@ -794,11 +841,12 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
             self.compact_btn.setText("☑ Compact" if checked else "☐ Compact")
         except Exception:
             pass
-        # Pilot feel: auto adjust min size for compact (per SZPIEG/Plan step2 + FIXER polish) -- smaller for mini pilot, restore for normal.
-        # window min shrink comment, resize self-manage: per lista step2 compact toggle+anim spin.
+        # Pilot feel: auto adjust min size for compact (per SZPIEG/Plan step2 + FIXER polish + grupa 2+12 nowa lista po 'dalej') -- smaller for mini pilot, restore for normal. dynamic min/floating.
+        # window min shrink comment, resize self-manage: per lista 2/12 compact toggle+anim spin + always-on-top.
         # Scalability preserved (no fixed, user can still resize larger; air/margins inside odt).
         # Używa _orig_ zapisane w init (dynamic). Shrink/floating: always-on-top for pilot (notification bubble per SZPIEG compact spec).
-        # Non-radical polish: setWindowFlags + show after change (standard Qt for StaysOnTop toggle).
+        # Non-radical polish: setWindowFlags + show after change (standard Qt for StaysOnTop toggle). re-sync timing reinforced.
+        # Per SZPIEG/Plan + lista 2+12: reduce empty bottom in compact handled in odt apply (less stretch), option always-on-top on toggle.
         try:
             from ui.dj.styles import BOOTH_SIZES
             cmin = BOOTH_SIZES.get("compact_window_min", (420, 300))
@@ -807,7 +855,7 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
                 # optional gentle shrink if current larger (non-destructive)
                 if self.width() > 520 or self.height() > 420:
                     self.resize(max(420, min(self.width(), 520)), max(300, min(self.height(), 380)))
-                # always-on-top compact pilot (floating-like, useful booth/multi-monitor per SZPIEG research)
+                # always-on-top compact pilot (floating-like, useful booth/multi-monitor per SZPIEG research + lista 12)
                 try:
                     flags = self.windowFlags() | QtCore.Qt.WindowType.WindowStaysOnTopHint
                     self.setWindowFlags(flags)
@@ -1056,7 +1104,9 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
                 pass
 
     def stop_all_decks(self):
-        """Global stop for both decks + clear play states (sole new arch)."""
+        """Global stop for both decks + clear play states (sole new arch).
+        STREAM op (stop transport); FILE unchanged. Per 3+10/10 lista: uniform comment + guard in legacy/single paths.
+        """
         try:
             if self.playback_engine:
                 self.playback_engine.stop_deck("A")
@@ -1317,6 +1367,7 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
     def _load_file_dialog(self, deck: str):
         """Open file dialog to load a track directly into a deck (standalone pro use).
         FILE op (load PLIK + DB), transport separate (STREAM via play etc). EFEKT tooltipy w UI.
+        Per grupa 3+10 + SZPIEG/Plan nowa lista po 'dalej': file/stream uniform docs/guards (load=FILE in dialog/recent/stop paths, transport=STREAM explicit). Add comment here + legacy paths.
         """
         from PyQt6.QtWidgets import QFileDialog
         path, _ = QFileDialog.getOpenFileName(

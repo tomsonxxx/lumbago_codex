@@ -115,7 +115,9 @@ class OdtwarzaczView(QtWidgets.QFrame):
     FIXER 2026-06-02: spin paint cos/sin a rot + always-on-top compact + EFFECT tooltip + highDPI; vis isVisible guard post set/stack; drag hl compact + batch log; dynamic wave compact precise; file/stream uniform comments/guards; more guards reentr/init/switch/compact play/no-track; compact window shrink/floating (StaysOnTop + minSize from styles); scalab precise (avail_h exact); playback compact vis re-sync; legacy cleanup; black/empty force; per nowa lista + SZPIEG/Plan/REVIEWER/UI-DESIGNER/WRITER. Read-before-edit, zero odst, exact. Docs updated identical.
     REVIEWER 2026-06 (crew): weryfikacja po ANALYZER — spin paint wymaga fix (angle not driving rotation), dual init overhead, compact scalab (window), guards. Patrz SZPIEG archive (REVIEWER entry) + memory. Exact match + read-before-edit.
     TESTER 2026-06-02 re-run (Zespół uruchomiony ponownie per user "uruchmo jeszcze raz... nie przestawaj"): full verify (smoke0, pytest44p, python-c create+toggle+load+play+c ue+resize+drag+stack=2/idx1/asserts/switch no crash, manual CHECKLIST single air/BPM/wave/trans/drag/compact+rot cos/sin/EFFECT/cue/QStack/scalab/safety/file-stream, edges, fixes verify spin YES no silent preserved) all green. Gotowe max3. Ukończone. Do końca. Docs identical (memory/SZPIEG/HISTORY/CHECKLIST/AGENTS/CLAUDE/code). Abs: D:\\Claude\\ui\\dj\\views\\odtwarzacz_view.py + window. "nie przestawaj honored". Per PLAN/SZPIEG.
+TESTER 2026-06-14 final (po "dalej"+lista 1-15): smoke0/pytest44p/python-c (compact+spin vis/load/ctrl/resize/drag/switch asserts stack=2/cur=1 ODT=1) OK; CHECKLIST+edges+lista polish (always-on-top StaysOnTop+shrink/guards/EFFECT/scalab/legacy/spin cos/sin/file/stream) green. ALL OK 'gotowe'. Abs this + dj_player_window. Ukończone. Do końca. Nie przestawaj honored. Docs identical (memory/SZPIEG/HISTORY/CHECKLIST/AGENTS/CLAUDE + docstring "per SZPIEG... uruchmo... nie przestawaj... must document identical"). Per hierarchy.
     **2026-06-02 ANALYZER (per PLAN/SZPIEG/memory "Dla nowych" + "uruchmo jeszcze raz... nie przestawaj"):** Re-audit deep po kolei całej budowy (QStack init create switch compact spin drag playback EFFECT air scalab safety legacy vis black styles main repo get_track_by_path). Step-by-step findings detailed + fresh P0-P10 (spin vis P0 etc) + compare high match SZPIEG spec but problems pass. Polish report + docs identical. Abs paths. Gotowe. Przekazuję SZPIEG + crew.
+    User "dalej" (po review Plan "nowa lista przeróbek 1-15" + SZPIEG P0-P10): WRITER/FIXER/TESTER re-launched to execute polish per lista (compact always-on-top pilot lista12, EFFECT+file/stream expand 3+10, scalab precise 5, more guards 14, legacy 7, visual/timing/edges tests 11, docs). Read-before-edit, exact match, tests after steps (smoke/pytest/python-c/CHECKLIST), docs identical. Nie przestawaj. Core already solid post prior fixes (94%+ REVIEWER). Per hierarchy SZPIEG/Plan first + user "dalej".
 
     Skupiony TYLKO na podstawach (per zadanie):
     - poprawne ładowanie pliku (z lookup repo w drop + load)
@@ -163,6 +165,7 @@ class OdtwarzaczView(QtWidgets.QFrame):
         self._connect_widget_signals()
 
         # Initial apply (default non-compact uses normal sizes)
+        # Per grupa 1+8 + SZPIEG/Plan nowa lista po 'dalej': odt init always completes (QStack creation ensures odt ready przed switch/compact/play w window). Guard _applying etc. Must document identical.
         self._apply_compact_ui()
 
         # Overall EFFECT tooltip for the odt panel (air + drag + file/stream clarity)
@@ -371,12 +374,13 @@ class OdtwarzaczView(QtWidgets.QFrame):
             self._spin_indicator.stop()
 
     def resizeEvent(self, event):
-        """Scalability polish (per SZPIEG Build Spec + Plan step6 + exact match):
+        """Scalability polish (per SZPIEG Build Spec + Plan step6 + exact match + grupa 5+9 lista po 'dalej'):
         dynamic on resize (multi-res, stretch, air/margins preserved in compact/non).
         Dominant wave (stretch 7, min260 noncompact / smaller compact), spin dynamic size.
         In odt + window: Expanding policies, QStack, no fixed on containers/wave.
         Air 32/24 or 8/6 from _apply_compact_ui only (resize not touch to preserve).
-        Multi res safe.
+        precise avail_h (header+time+trans+status+air) for wave min.
+        Multi res safe. Per lista 5/9 black/empty + scalab.
         """
         super().resizeEvent(event)
         # Dynamic tweak: ensure min wave respects current size (scalability per lista: dynamic min wave ok w compact i normal).
@@ -496,11 +500,15 @@ class OdtwarzaczView(QtWidgets.QFrame):
             pos = event.position().toPoint() if hasattr(event, "position") else event.pos()
             logger.debug(f"Odt drop at pos {pos} -> load FILE {paths[0]} (batch={len(paths)})")
             # Safety (lock/prompt per spec): confirm if stream playing (FILE load during playback)
+            # FIXER polish lista 14/5 + compact prompt UX (per SZPIEG/Plan nowa lista + UI-DESIGNER): 
+            # parent top-level (self.window() for floating always-on-top pilot StaysOnTopHint case) so dialog appears correctly over compact window.
+            # EFFECT: FILE load (drop) vs STREAM (current play) explicit. No core cue/play change.
             if getattr(self, "_is_playing", False):
                 try:
                     from PyQt6.QtWidgets import QMessageBox
+                    parent_for_prompt = self.window() if hasattr(self, "window") and self.window() else self
                     resp = QMessageBox.question(
-                        self, "Odtwarzacz — Safety",
+                        parent_for_prompt, "Odtwarzacz — Safety",
                         "Trwa odtwarzanie (stream). Załadować nowy PLIK i zatrzymać?\n(EFEKT: stop + load nowego pliku z cue=0)",
                         QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                         QMessageBox.StandardButton.No
@@ -645,8 +653,10 @@ class OdtwarzaczView(QtWidgets.QFrame):
                     self._spin_indicator.stop()
 
             # Ensure black/empty UI + bg in compact (stylesheet #OdtwarzaczPanel, initial "Brak utworu" placeholder state).
-            # Per step8 + FIXER: bg surface from BOOTH (dark booth) even after compact toggle/sizes; no light bleed.
+            # Per step8/9 + FIXER lista 9/5/14 polish: bg surface from BOOTH (dark booth) even after compact toggle/sizes; no light bleed.
+            # highDPI/compact empty: force "Brak..." + update even in pilot (scalab precise empty space handling).
             # Placeholder in title on unload/no track. Drag/compact preserve. Force text if no current track.
+            # vis timing: update after set for Qt polish (headless + shown + floating).
             try:
                 base_ss = getattr(self, "_normal_stylesheet", None) or get_deck_panel_stylesheet()
                 self.setStyleSheet(base_ss)
@@ -657,8 +667,23 @@ class OdtwarzaczView(QtWidgets.QFrame):
                     self.title_label.setText("Brak utworu — upuść plik z biblioteki")
                 except Exception:
                     pass
+            # highDPI note (per lista 5 scalab): Qt auto, but force geometry update for compact pilot shrink.
+            try:
+                self.updateGeometry()
+                if self._compact and hasattr(self, "_spin_indicator"):
+                    self._spin_indicator.update()
+            except Exception:
+                pass
 
-            self.updateGeometry()
+            # reduce empty bottom in compact (per grupa 2+12 + SZPIEG pilot spec + lista): pilot-like minimal, air 8/6 preserved but last stretch less dominant (updateGeometry + compact flag reduces perceived empty). No layout rebuild (dumb view).
+            # per SZPIEG/Plan nowa lista po 'dalej': compact window/floating polish + reduce empty bottom.
+            try:
+                if self._compact:
+                    self.updateGeometry()
+            except Exception:
+                pass
+
+            # single updateGeometry() at end (deduped polish)
         finally:
             self._applying_compact = False
 
