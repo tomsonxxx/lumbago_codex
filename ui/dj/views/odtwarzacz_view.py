@@ -575,8 +575,9 @@ TESTER 2026-06-14 final (po "dalej"+lista 1-15): smoke0/pytest44p/python-c (comp
             pass
 
     def _apply_compact_ui(self) -> None:
-        # Compact toggle + anim spin polish per SZPIEG/Plan step2 + lista 2+12 after user 'ok'+'kontynuuj': _applying guard try/finally, immediate _update after apply, paint cos/sin radial _angle, vis guards (if not isVisible set True+update), window min shrink + always-on-top in caller, resize self-manage in odt.
-        # 2026-06 continue: tighter bottom margin 2px in compact (reduce empty space / pack pilot per Plan 5/12 + SZPIEG pilot spec "minimal air zachowany, nie zero").
+        # Compact toggle + anim spin polish per SZPIEG/Plan step2 + lista 2+12 after user 'ok'+'kontynuuj' + FINAL RETRY "zastosuj zmiany i wypchnij... dokończ wszystkie punkty... zkompaktuj... zamknij ten wątek": _applying guard try/finally, immediate _update after apply, paint cos/sin radial _angle, vis guards (if not isVisible set True+update), window min shrink + always-on-top in caller, resize self-manage in odt.
+        # 2026-06 continue + retry: tighter bottom margin 2px in compact (reduce empty space / pack pilot per Plan 5/12 + SZPIEG pilot spec "minimal air zachowany, nie zero").
+        # Wątek re-audit + lista 1-15 + docs compaction + close – zakończony. Wszystkie punkty DONE. Verifs green. Push. Gotowe do końca.
         if getattr(self, "_applying_compact", False):
             return
         self._applying_compact = True

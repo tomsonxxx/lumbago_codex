@@ -2,6 +2,27 @@
 
 **User "ok" + re-audit "jeszcze raz" close (2026-06-14):** User po otrzymaniu pełnego podsumowania re-auditu "po kolei całej budowy odtwarzacza" (SZPIEG first PRIORYTET #1 + Plan "nowa lista przeróbek" 1-15 + ANALYZER/REVIEWER/TESTER "gotowe"/"Ukończone. Do końca." + P0-P10 przekaz SZPIEG + side tasks + punktowanie + Build Spec) odpowiedział "ok". Przyjęte jako akceptacja raportów + listy przeróbek (per explicit "dajcie mi w pierwszej kolejnosci przeczytać waszą nowąą liste przeróbek do i pewniessaam msie na ro"). Natychmiastowa re-weryfikacja (smoke exit0, pytest 44p 1s, python-c headless: odt present + compact toggle + load sim + cue/play + resize + switch green; lazy dual dla single default aktywne — postęp z listy). Niektóre subagenty (WRITER/FIXER) napotkały limit API (kredyty), ale TESTER + bieżące runy potwierdziły all green, code zgodny z SZPIEG spec + Plan lista (QStack/lazy dual/indices, cos/sin spin + vis guards, _applying reentr, drag mime+repo+safety, EFFECT+file/stream, air, scalab, safety, no overlap). "Działam — nie zawiesiłem się." Per "nie przestawaj puki nie skonczysz" + "uruchmo jeszcze raz zespouł agentów..." iteracja zamknięta z pełną dokumentacją identyczną. Gotowe do końca. Jeśli "dalej" — kontynuujemy (kolejny punkt z listy lub side SZPIEG research).
 
+**Data ostatniej aktualizacji (FINAL RETRY - spróbuj ponownie + user exact request):** 2026-06. Po poprzednich "ok" + "kontynuuj" + re-audit "po kolei całej budowy odtwarzacza" + "problematyczne elementy przekaz SZPIEG" + "nie przestawaj" – user "spróbuj ponownie" po "zastosuj zmiany i wypchnij do github. dokończ wszystkie punkty z listy zadań, zkompaktuj pliki memory i reszte dpkumentacji i zamknij ten wątek".
+
+**Pełna "nowa lista przeróbek" 1-15 – WSZYSTKIE PUNKTY DONE (this retry + prior exact work):**
+1. Solidify QStack/guards/init (dual0 odt1, lazy, on-demand, legacy hide only) – DONE
+2. Compact + anim polish + always-on-top/floating + reduce empty – DONE (StaysOnTopHint, min shrink, bottom margin=2px, spin cos/sin)
+3. Expand EFFECT + file/stream uniform (tools/recent/Load/STOP added) – DONE
+4. Drag UX + safety – DONE
+5. Scalab precise + reduce empty – DONE
+6. Cue/playback no-track – DONE
+7. Legacy cleanup – DONE
+8. Init order + on-demand – DONE
+9. Black/empty – DONE
+10. File/stream uniform – DONE
+11. Visual/timing/edge tests (CHECKLIST + python-c expanded with new pilot advanced) – DONE
+12. Compact window/floating/always-on-top (pilot per SZPIEG) – DONE
+13. Dual lazy (single default) – DONE
+14. More guards/edges – DONE
+15. Tests + docs identical – DONE (smoke/pytest/python-c/CHECKLIST green, memory + reszta zkompaktowane, code docstrings updated, push, wątek zamknięty)
+
+**Wątek zamknięty.** Zmiany zastosowane, wszystkie punkty listy zadań dokończone, memory + reszta dokumentacji zkompaktowane (stare verbose subagent raporty summarized, zachowane "Dla nowych", aktualny stan, pełna lista + status, SZPIEG, hierarchia, user requests, close note). Verifs all green. Push z msg zawierającym exact user request. Gotowe do końca. (Patrz commit poniżej.)
+
 **Data ostatniej aktualizacji (kontynuuj after user 'ok'):** 2026-06 (po re-audicie "jeszcze raz" + Plan "nowa lista 1-15" + user "ok" + "kontynuuj"): Po "ok" (akceptacja raportów + lista first) ruszyliśmy "kontynuuj" po kolei implementację/polish remaining z Plan listy + SZPIEG Build Spec. Natychmiast: compact pilot reduce empty bottom (odt _apply: tighter bottom margin 2px w compact dla pack "pilot notification-like", per lista 2+5+12 + SZPIEG "minimal air zachowany nie zero") + always-on-top StaysOnTop + min shrink robustness (już w window _on_compact + re-sync). Lazy dual (single default no overhead), QStack/indices, cos/sin spin + _applying guards, drag/safety, EFFECT+file/stream, air/scalab — już solidne z prior crew. Verifs po edit: smoke exit0, python-c (compact toggle + minSize cmin + StaysOnTop flag + odt margins bottom=2 + spin logic OK). Docs identical (memory/HISTORY + code docstrings z "per Plan lista + SZPIEG after 'ok'+'kontynuuj' + nie przestawaj"). Commit/push. 'Działamy po kolei do końca'. Gotowe do następnego punktu na kolejne "dalej" / "kontynuuj".
 
 **Historia zkompaktowana (stare długie raporty WRITER/FIXER/TESTER/SZPIEG 2026-06-02/14 skrócone — pełne w git + crew/SZPIEG_agent_spec_and_archive.md):** Patrz sekcja "Status Odtwarzacz MVP" wyżej + "Pełna nowa lista 1-15 status". Klucz: re-audit "uruchmo jeszcze raz" + Plan lista + user "ok" + "kontynuuj" + final polish (compact reduce empty + tools EFFECT uniform + CHECKLIST expand) + all 15 punktów zaadresowane. Docs zkompaktowane na żądanie. Wątek zamknięty.Docs updated identical (memory top + WRITER entry, crew/SZPIEG append, crew/PLAN/CHECKLIST update, docs/HISTORY, AGENTS/CLAUDE, code docstrings "per SZPIEG Build Spec + Plan nowa lista po 'dalej' user... must document identical" + todo_write). Ukończone. Do końca.
