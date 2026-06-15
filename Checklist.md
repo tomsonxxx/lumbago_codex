@@ -10,7 +10,7 @@
 > 2026-06-02 fresh REVIEWER re-audit "jeszcze raz" (per PLAN/SZPIEG/task): cross-check ANALYZER+code vs spec/Plan/CHECKLIST; baselines smoke0/pytest44p/python-c (stack2/idx1 odt/compact/spin cos/sin/drag OK); fixes hold; 94% compliance; remaining P1 dual/compact scalab, P2 tooltip etc; raport po polsku; docs identical (SZPIEG/memory/HISTORY/CHECKLIST/AGENTS/CLAUDE); 'gotowe'. Przekaz SZPIEG/crew. Per "nie przestawaj". Abs ui/dj_player_window.py + odtwarzacz_view.py + crew/*.
 > **Crew:** Uruchomienie Code Review Crew (6-agentów) podlega `crew/PLAN_Uruchomienie_Python_Code_Review_Crew.md` (PRIORYTET #1: SZPIEG + Plan "nowa lista przeróbek" dla użytkownika w pierwszej kolejności przed impl; God Object note dla Writer — "ok"). Smoke/pytest OK.
 > Poniższa checklist dotyczy tylko aktualnej wersji Desktop.  
-> Ostatnia aktualizacja: 2026-06-15 (compact per user request + push; organizer complete; clean Windows P1 prep: steps 2-3 done per Plan lista — path helper + spec; resuming ZIP/build per plan). [Stare verbose crew historie Odtwarzacz MVP 2026-06-02 skrócone; pełne w git/memory/crew/SZPIEG/HISTORY].
+> Ostatnia aktualizacja: 2026-06-15 (compact + push per plan; organizer complete; clean Windows P1: path+spec+portable scripts/CI/release + Etap4 playback/waveform; sesja analysis docs + repo sync do f22e64cc). Nowa dj_player_guide.md (pełna DJ Player doc P1#3). SZPIEG 2026-06-15 booth layout/PFL/SVG research + binding. Per hierarchy (SZPIEG/Plan first, identical docs). [Stare verbose... skrócone; pełne w git/memory/crew/SZPIEG/HISTORY].
 
 ## Legenda
 - [x] zrobione
