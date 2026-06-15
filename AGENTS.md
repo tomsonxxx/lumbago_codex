@@ -38,7 +38,10 @@ pytest -k test_name           # single test by name
 
 ```bash
 pyinstaller pyinstaller.spec --noconfirm  # output: dist/LumbagoMusicAI/
+# Then portable ZIP (per clean Windows P1 Plan lista step 4 + 2026-06-15 push):
+# Compress-Archive -Path dist/LumbagoMusicAI/* -DestinationPath dist/LumbagoMusicAI-portable.zip -Force
 ```
+Updated spec (2026-06-15) includes ui/assets, tools/fpcalc, hiddenimports for clean EXE (frozen path helper in core/config.py). See Checklist P1#1 + Plan lista + docs/clean_windows_test.md. Push + compact per user request.
 
 ---
 

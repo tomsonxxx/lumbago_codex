@@ -101,6 +101,36 @@ def default_musicbrainz_user_agent() -> str:
     )
 
 
+def get_resource_path(relative: str | Path) -> Path:
+    """Return absolute path to a bundled or dev resource (assets, tools, docs, ui/assets etc).
+
+    Handles:
+    - PyInstaller onedir (our COLLECT build): base = exe.parent , datas live next to exe.
+    - PyInstaller onefile: base = sys._MEIPASS
+    - Normal dev run: base = repo root (parents[2] from core/config.py)
+
+    Per "Test na czystym Windows" P1 (Checklist) + Plan lista step 2 (frozen path fix for reliable EXE on fresh Windows without Python).
+    Prevents parents[2] breakage in dist/LumbagoMusicAI/ layout (fpcalc, icons, user_guide, dialog icons).
+
+    Usage:
+        icon = get_resource_path("assets/icon.svg")
+        fpcalc = get_resource_path("tools/fpcalc.exe")
+        guide = get_resource_path("docs/user_guide.md")
+        ui_icon = get_resource_path(Path("ui") / "assets" / "icons" / "dialog.svg")
+    """
+    rel = Path(relative)
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        # onefile bundle
+        base = Path(sys._MEIPASS)
+    elif getattr(sys, "frozen", False):
+        # onedir (COLLECT) - exe and datas siblings
+        base = Path(sys.executable).parent
+    else:
+        # dev layout (core/config.py -> parents[2] = repo root)
+        base = Path(__file__).resolve().parents[2]
+    return (base / rel).resolve()
+
+
 def normalize_musicbrainz_user_agent(value: str | None) -> str:
     text = (value or "").strip()
     if not text:

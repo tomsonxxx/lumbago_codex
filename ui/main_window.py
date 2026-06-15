@@ -22,7 +22,7 @@ from core.audio import (
 import shutil
 from core.analysis_cache import save_analysis_cache
 from core.backup import perform_backup
-from core.config import cache_dir, load_settings, save_settings
+from core.config import cache_dir, load_settings, save_settings, get_resource_path
 from core.models import BACKGROUND_AUTOTAG_FIELDS, PRIORITY_AUTOTAG_FIELDS, Track
 from core.renamer import parse_filename_tags
 from core.services import enrich_track_with_analysis, heuristic_analysis
@@ -1374,7 +1374,7 @@ class MainWindow(QtWidgets.QMainWindow):
         return max(1, round(px * self._scale))
 
     def _apply_app_icon(self):
-        icon_path = Path(__file__).resolve().parents[2] / "assets" / "icon.svg"
+        icon_path = get_resource_path("assets/icon.svg")
         if icon_path.exists():
             self.setWindowIcon(QtGui.QIcon(str(icon_path)))
 
@@ -3357,7 +3357,7 @@ class MainWindow(QtWidgets.QMainWindow):
         QtGui.QShortcut(QtGui.QKeySequence("Ctrl+Shift+Esc"), self, activated=self._stop_all_decks_from_main)
 
     def _apply_icons(self):
-        icons_dir = Path(__file__).resolve().parent / "assets" / "icons"
+        icons_dir = get_resource_path(Path("ui") / "assets" / "icons")
         def icon(name: str) -> QtGui.QIcon:
             return QtGui.QIcon(str(icons_dir / name))
 
@@ -3411,7 +3411,7 @@ class MainWindow(QtWidgets.QMainWindow):
         help_menu.addAction("Instrukcja użytkownika", self._open_user_guide)
 
     def _open_user_guide(self):
-        guide_path = Path(__file__).resolve().parents[2] / "docs" / "user_guide.md"
+        guide_path = get_resource_path("docs/user_guide.md")
         if guide_path.exists():
             QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(str(guide_path)))
         else:

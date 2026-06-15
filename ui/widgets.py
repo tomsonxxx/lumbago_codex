@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from PyQt6 import QtCore, QtGui, QtWidgets
+from core.config import get_resource_path
 
 
 class _DialogFadeFilter(QtCore.QObject):
@@ -106,7 +107,8 @@ class AnimatedButton(QtWidgets.QPushButton):
 
 
 def dialog_icon_pixmap(size: int = 18) -> QtGui.QPixmap:
-    icon_path = Path(__file__).resolve().parent / "assets" / "icons" / "dialog.svg"
+    # Use frozen-safe helper (critical for clean Windows EXE test)
+    icon_path = get_resource_path(Path("ui") / "assets" / "icons" / "dialog.svg")
     pix = QtGui.QPixmap(str(icon_path))
     if pix.isNull():
         return QtGui.QPixmap()

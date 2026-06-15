@@ -301,8 +301,11 @@ def undo_last_rename() -> list[dict[str, str]]:
 
 
 def _render_pattern(track: Track, pattern: str, index: int) -> str:
+    # Per SZPIEG Build Spec + Plan review 2026-06-15 (organizer improvements) + "must document identical".
     # Dynamically support more Track fields for patterns (fixes limited mapping)
     # e.g. now supports {year}, {tracknumber}, {albumartist}, {composer} etc.
+    # Enhanced for organizer: supports {field|default}, {field:02d} padding, basic conditional {field?val:}.
+    # Creative robust parser added while keeping 100% backward compat for old simple {field} patterns.
     dynamic_fields = [
         "artist", "title", "album", "albumartist", "genre", "bpm", "key",
         "year", "tracknumber", "discnumber", "composer", "remixer",
@@ -324,6 +327,25 @@ def _render_pattern(track: Track, pattern: str, index: int) -> str:
         mapping[field] = _cleanup_metadata_fragment(str(raw or ""))
 
     result = pattern
+
+    # Support advanced syntax for organizer (creative enhancement, backward safe):
+    # 1. {field|default} fallback
+    for key, value in list(mapping.items()):
+        result = re.sub(rf"\{{{key}\|([^}}]+)\}}", value or r"\1", result)
+    # 2. {field:02d} style padding (for numeric like tracknumber:02)
+    for key, value in list(mapping.items()):
+        m = re.search(rf"\{{{key}:(\d+)d\}}", result)
+        if m and value and value.isdigit():
+            width = int(m.group(1))
+            result = result.replace(m.group(0), f"{int(value):0{width}d}")
+    # 3. Simple conditional {field?value:}  (if field truthy use value else empty)
+    for key, value in list(mapping.items()):
+        if value:
+            result = re.sub(rf"\{{{key}\?([^:}}]+):?\}}", r"\1", result)
+        else:
+            result = re.sub(rf"\{{{key}\?[^}}]*\}}", "", result)
+
+    # Original simple replace for bare {field}
     for key, value in mapping.items():
         result = result.replace(f"{{{key}}}", value)
 
@@ -342,6 +364,35 @@ def _render_pattern(track: Track, pattern: str, index: int) -> str:
     result = re.sub(r"^\s*[-–—|]+\s*", "", result)
     result = re.sub(r"\s+", " ", result)
     return result.strip(" .-_") or f"track_{index}"
+
+# Presets for organizer (inspired by SZPIEG research: beets, Picard, MediaMonkey, Rekordbox, etc.)
+# Exposed for UI presets combo and reuse. Creative addition for better UX.
+ORGANIZE_PRESETS: dict[str, dict[str, str]] = {
+    "Rekordbox-like": {
+        "folder": "{genre}/{artist}/{album} ({year})",
+        "filename": "{tracknumber:02} - {title}",
+    },
+    "Genre / Artist / Album": {
+        "folder": "{genre}/{artist}/{album}",
+        "filename": "{artist} - {title}",
+    },
+    "Year - Artist - Album": {
+        "folder": "{year}/{artist}/{album}",
+        "filename": "{tracknumber:02} - {title}",
+    },
+    "Simple Artist/Album": {
+        "folder": "{artist}/{album}",
+        "filename": "{title}",
+    },
+    "Electronic / BPM - Title": {
+        "folder": "{genre}/{bpm} BPM",
+        "filename": "{artist} - {title}",
+    },
+}
+
+def get_organize_presets() -> dict[str, dict[str, str]]:
+    """Return copy of organizer folder/filename presets for UI (per SZPIEG 2026-06-15 Build Spec)."""
+    return {k: v.copy() for k, v in ORGANIZE_PRESETS.items()}
 
 
 def _sanitize_filename(name: str) -> str:

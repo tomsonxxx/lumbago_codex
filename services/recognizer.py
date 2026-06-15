@@ -8,6 +8,8 @@ import json
 
 import requests
 
+from core.config import get_resource_path
+
 log = logging.getLogger(__name__)
 
 # Semafory ograniczające równoległe zapytania do zewnętrznych źródeł.
@@ -32,7 +34,7 @@ class AcoustIdRecognizer:
 
         commands = [
             ["fpcalc", "-json", "-length", "120", str(audio_path)],
-            [str(Path(__file__).resolve().parents[2] / "tools" / "fpcalc.exe"), "-json", "-length", "120", str(audio_path)],
+            [str(get_resource_path("tools/fpcalc.exe")), "-json", "-length", "120", str(audio_path)],
         ]
         for command in commands:
             try:

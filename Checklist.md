@@ -8,7 +8,7 @@
 > 2026-06-02 fresh REVIEWER re-audit "jeszcze raz" (per PLAN/SZPIEG/task): cross-check ANALYZER+code vs spec/Plan/CHECKLIST; baselines smoke0/pytest44p/python-c (stack2/idx1 odt/compact/spin cos/sin/drag OK); fixes hold; 94% compliance; remaining P1 dual/compact scalab, P2 tooltip etc; raport po polsku; docs identical (SZPIEG/memory/HISTORY/CHECKLIST/AGENTS/CLAUDE); 'gotowe'. Przekaz SZPIEG/crew. Per "nie przestawaj". Abs ui/dj_player_window.py + odtwarzacz_view.py + crew/*.
 > **Crew:** Uruchomienie Code Review Crew (6-agentów) podlega `crew/PLAN_Uruchomienie_Python_Code_Review_Crew.md` (PRIORYTET #1: SZPIEG + Plan "nowa lista przeróbek" dla użytkownika w pierwszej kolejności przed impl; God Object note dla Writer — "ok"). Smoke/pytest OK.
 > Poniższa checklist dotyczy tylko aktualnej wersji Desktop.  
-> Wygenerowano: 2026-04-28. Ostatnia aktualizacja po sprzątaniu: 2026-05.
+> Ostatnia aktualizacja: 2026-06-15 (compact per user request + push; organizer complete; clean Windows P1 prep: steps 2-3 done per Plan lista — path helper + spec; resuming ZIP/build per plan). [Stare verbose crew historie Odtwarzacz MVP 2026-06-02 skrócone; pełne w git/memory/crew/SZPIEG/HISTORY].
 
 ## Legenda
 - [x] zrobione
@@ -193,7 +193,7 @@ Szczegóły historyczne znajdują się w `docs/HISTORY.md` i `RECOVERY.md`.
 
 | # | Zadanie | Komponent | Priorytet | Stan |
 |---|---------|-----------|-----------|------|
-| 1 | Test na czystym Windows (PyInstaller build) | Desktop | P1 | ⏳ |
+| 1 | Test na czystym Windows (PyInstaller build) | Desktop | P1 | ⏳ (in progress; baseline smoke exit0; step2 frozen path helper get_resource_path in core/config.py + callers; step3 pyinstaller.spec enhanced (datas ui/assets/tools, hiddenimports, fpcalc); per Plan lista 1-9 + SZPIEG. Next: portable ZIP + build verif) |
 | 2 | Naprawić failing test: `test_unified_autotagger_picks_best_candidate` | Desktop | P1 | ⏳ |
 | 3 | Pełna dokumentacja DJ Playera (hotcue, memory, sync) | Desktop | P1 | ⏳ |
 
@@ -204,8 +204,15 @@ Szczegóły historyczne znajdują się w `docs/HISTORY.md` i `RECOVERY.md`.
 > Zapisane na prośbę użytkownika 2026-05. Skupiamy się wyłącznie na wersji desktopowej (PyQt6).
 > Te funkcjonalności są uznane za wartościowe, ale odłożone na później.
 
-- [ ] **Library Builder** — kreator struktury folderów według szablonu (`{genre}/{year}/{artist}/{album}`).  
-  Już istnieje `core/renamer.py` + import wizard — zrobić jako osobny "Library Organizer".
+- [x] **Library Builder / File Organizer (File Manager)** — (2026-06-15 PRIORYTET #1 complete) SZPIEG research (15+ tools: beets/Picard etc) + Plan 1-9 zatwierdzona + execution.
+  Krok 2: templates z conditionals/fallback/padding/presets (creative robust).
+  Krok 3: visual tree preview (QTree + splitter + icons + EFFECT + preset combo + sync) — dopięty.
+  Krok 4-5: progress/cancel + selective undo dialog (full list checkable).
+  Wszystkie elementy: func + impl + UI + sterowanie + ikony + tooltips + tests + polish. Verifs (pytest 13p, python-c dialog/tree/progress/undo) green. Per "zatwierdzam listę + pracuj krok po kroku + creative + dopięte na ostatni guzik". Gotowe. Abs: D:\Claude\core\renamer.py + D:\Claude\ui\renamer_dialog.py.  
+  Już istnieje `core/renamer.py` (OrganizePlanItem + build_organize_plan/apply/undo) + `ui/renamer_dialog.py` (FileOrganizerDialog z target, szablonami, move/copy/delete, preview table, conflicts, undo, writeback) + integracja w main_window/file_track_ops (btn, Ctrl+Shift+O, context, offer po autotag/rename).  
+  **2026-06-15 update (user PRIORYTET #1 "w pierwszej kolejnosci"):** SZPIEG research ukończony (15+ narzędzi: beets/Picard/MusicBee/MediaMonkey/FileBot/DropIt/foobar facets + DJ crates Rekordbox/Serato/Traktor/Mixxx/Lexicon; punktowanie + Build Spec). Rekomendacje: zachować core (no-new-files, safe FS cross-vol, DB contract via caller, preview+resolve+fileops+PPM shared, JSON hist, offer flow); usprawnić (visual tree preview, conditional templates+presets, progress/cancel batch, selective undo dialog, empty/presets UX, writeback safety + organize-on-import, highDPI, edge tests). Plan agent w toku dla "nowej listy przeróbek" (lista first dla użytkownika). SZPIEG wpis appended do crew/SZPIEG... . Docs identical (memory/HISTORY/this/AGENTS/CLAUDE/SZPIEG + code). Abs: D:\Claude\ui\renamer_dialog.py + core/renamer.py + crew/*. "Nie przestawaj". Per hierarchy.
+
+- [ ] (paused per above) Inne z backlogu (Library Builder details moved to active research above).
 
 - [ ] **Ulepszony Duplicate Finder z pełnym audio fingerprint**  
   Obecny: `fuzzy_dedup.py` + AcoustID. Blueprint zakłada 3 metody (hash + tags + fingerprint) + automatyczne merge. Warto dopracować UI i logikę łączenia.

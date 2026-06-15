@@ -576,6 +576,102 @@ Przekazano do TESTER z raportem + poleceniami (smoke; pytest; python -c ...; man
 Critical files: D:\Claude\ui\dj_player_window.py , D:\Claude\ui\dj\views\odtwarzacz_view.py , D:\Claude\ui\dj\simple_deck_controller.py .
 Status: lista kompletna, tests green, continuity docs, gotowe TESTER. Per PLAN hierarchy (SZPIEG lead, Plan lista first).
 
+**2026-06-15 — SZPIEG research + Build Spec: "organizera plików" (File Manager / Library Organizer / Library Builder — FileOrganizerDialog + sekcja w core/renamer.py) per user PRIORYTET #1 + hierarchy (SZPIEG first, Plan produkuje "nową listę przeróbek" + wnioski dla użytkownika w pierwszej kolejności przed impl, "nie przestawaj").**
+
+**PRIORYTET #1 honored (z feedbacku użytkownika + crew/PLAN_Uruchomienie_Python_Code_Review_Crew.md + memory.md + crew/SZPIEG_agent_spec_and_archive.md + AGENTS.md/CLAUDE.md + Checklist.md + crew/LISTA_POPRAWEK_MENU_KONTEKSTOWYCH.md).** 
+
+Obowiązkowa lektura na starcie wykonana via `read_file` + `grep` (pełne lub targeted z offset/limit dla dużych plików):
+
+- `memory.md` (aktualny stan Odtwarzacz MVP + lista 1-15 + hierarchia SZPIEG/Plan first + "nie przestawaj" + docs identical + user "ok"/"dalej"/"kontynuuj").
+- `crew/PLAN_Uruchomienie_Python_Code_Review_Crew.md` (SZPIEG jako research lead dla wąskich fragmentów, lista ≥10-15 narzędzi, punktowanie przydatności dla *tego* projektu, Build Spec binding, Plan produkuje "nową listę przeróbek" + wnioski dla użytkownika **w pierwszej kolejności** przed jakąkolwiek impl; docs identical dla multi-team continuity; "God Object note dla Writer — OK" potwierdzone).
+- `crew/SZPIEG_agent_spec_and_archive.md` (brak wcześniejszych wpisów o Organizerze/Library Builder — grep "Organizer|FileOrganizerDialog|Library Builder|organize_plan|organize_tracks" zwrócił zero trafień; ostatnie wpisy 2026-06-14/02 dotyczą Odtwarzacz MVP re-audit + impl per lista + "Status encyklopedii" + placeholder "Encyklopedia (dodaj kolejne findings tu lub w podplikach)").
+- `Checklist.md` (sekcja 7 Future/Backlog: "Library Builder — kreator struktury folderów według szablonu `{genre}/{year}/{artist}/{album}`. Już istnieje `core/renamer.py` + import wizard — zrobić jako osobny 'Library Organizer'").
+- `crew/LISTA_POPRAWEK_MENU_KONTEKSTOWYCH.md` (wpis: "Organizer / Kreator porządkowania plików: istnieje (FileOrganizerDialog), z szablonami folderów (unika iTunes chaos), move/copy, teraz + delete (po otagowaniu), podpięty po autotag/rename, preview, undo dla move, writeback. Testy w test_renamer.py. **Podpięte + rozszerzone o delete.**").
+- AGENTS.md / CLAUDE.md (pełna hierarchia + "Dla nowych agentów/programistów (OBOWIĄZKOWE...)" + "must document identical").
+- Kod organizera (exact read-before): `ui/renamer_dialog.py` (FileOrganizerDialog od ~269: pełny UI z target_dir, folder_struct "{genre}/{artist}/{album} ({year})", file_pattern, action combo move/copy/delete, write_cb, preview table stara→nowa/akcja/status, auto-resolve + filter tylko konflikty, PPM context via plan_conflict_ui + file_track_ops, undo, integracja _refresh_after_fs + open_organizer subset, info text o unikaniu płaskiej struktury iTunes); `core/renamer.py` (sekcja FILE MANAGER / LIBRARY ORGANIZER od ~484: OrganizePlanItem, build_organize_plan, apply_organize_plan, _safe_move/_safe_copy, undo_last_organize, organize_tracks, historia w cache/organize_history.json, wsparcie template + konflikty + DB update via caller); `ui/main_window.py` (import FileOrganizerDialog, btn_organizer, _open_organizer, integracja z selection i context); `ui/file_track_ops.py` (akcje w menu kontekstowym); `tests/test_renamer.py` (testy organize); `ui/plan_conflict_ui.py` (attach_plan_table_context_menu + auto-resolve shared).
+
+**Aktualny stan (potwierdzony read/grep):** Istnieje jako osobny dialog FileOrganizerDialog (zasada "no new files" — dodany do renamer_dialog.py). Pełna integracja (toolbar btn, Ctrl+Shift+O, context menu w bibliotece po selekcji lub po autotag/rename, offer dialog). Wspiera target base, szablon folderów + file pattern z { } (re-use renamer render: artist/title/album/genre/bpm/key/year/tracknumber/... + index + cleanup noise + Unknown dla pustych segmentów), akcje move (update paths w DB via update_track_paths_bulk), copy (upsert duplikat z nową ścieżką), delete (unlink + direct ORM delete z bazy — ostrożnie po tagowaniu). Preview w tabeli (stara → nowa, akcja, status/konflikt), auto-resolve konfliktów, filter "tylko konflikty", PPM context menu z operacjami plikowymi. Undo (cofnij ruchy — tylko move, copy zostawiane dla bezpieczeństwa). Writeback metadanych do tagów w nowych plikach (opcjonalny). Core: build_organize_plan renderuje ścieżki wg tagów z Track, konflikty intra-plan + FS exists, safe FS ops (rename z fallback copy+unlink dla cross-volume Windows), historia JSON. DB update wyłącznie przez caller (dialog po verif + apply result). Cel: unikać "płaskiej struktury iTunes", organizacja po autotagu/rename/import. Testy w test_renamer.py pokrywają główne ścieżki (struktury, konflikty, move/copy/delete, empty/sanitize, undo). Bezpieczeństwo: pre-check sources, post-verif files, rollback w apply na error, guardy w main dla dużych lib.
+
+**Research zewnętrzny (high pressure, ≥10-15 narzędzi/aplikacji tego typu — music library / file organizer / library builder dla audio/DJ; via web_search + open_page + site:reddit.com + targeted browse; nie zgadywanie):**
+
+1. **beets** (potężny CLI music geek's media organizer) — import + `beet move` (lub `-d DIR`), paths templates w config.yaml z `$albumartist/$album/$track $title` + funkcje (`%if{$multidisc,$disc-}`, `%aunique{}`, `%left`, `%upper`, `%title` itp.), per-type (default/comp/albumtype:soundtrack), copy/move/export, `-p` / `--pretend` dry-run/preview list, duplicate_action (skip/keep/merge/ask). DB (library.db) update implicit. Plugins (fetchart, lyrics, discogs). Fallbacki via templates. Batch excellent. Preview: lista output (nie bogaty GUI tree). Undo: manual re-move lub external. Tags z MusicBrainz + własne. Sanitization/path handling robust (cross-platform).
+
+2. **Picard (MusicBrainz)** — "Move files when saving" + "Rename files when saving" (niezależne), Destination directory, File Naming script (skryptowanie z `$if`, `$num`, `$left` itp.; multiple scripts/presets), "Before/After" examples + reload z selection w options + cluster view preview. Move additional files (art `*.jpg`, `*.cue` itp., subdirs). Overwrite existing (opt), Delete empty directories. Conflicts: skip lub overwrite. DB: własna. Integracja lookup → organize. Batch z progress. Preview mocny (examples + visual clusters). No native undo (re-tag). Booth-friendly? GUI do batch tag+organize.
+
+3. **MusicBee** — Auto-Organize (na add/edit lub manual Tools > Organize Files / "send to > Organized Folder"), templates/masks dla folder/file (podobne do <Artist> etc., z funkcjami typu $Left), preview w dialogu (New Path column, edit per-file), rules wg criteria (collections/genres/playlists). Background. Move/copy. Preview table-like. Undo: brak (ostrzeżenia "no undo"). Duże biblioteki. Library-focused.
+
+4. **foobar2000** (z File Operations + Facets / masstagger) — File Operations (move to / copy / rename z patternami %artist% lub title formatting), preview dialog, facets (hierarchical tree view library — visual inspo). Masstagger batch. Preview w ops. DB update w library. Manual/flexible. Drzewiasty widok library (nie zawsze pre-apply FS sim).
+
+5. **Rekordbox (Sony)** — Library / collection management, crates/playlists (virtual "foldery"), export XML, relocate/analysis. Focus na performance crates nad głębokim FS organize (wiele DJ-ów trzyma proste struktury lub polega na software crates). Booth-friendly duże preview, szybkie akcje. Transfer via XML/MIXO/Rekord Buddy.
+
+6. **Serato** — Crates + library management, prepare crates/folders, smart crates, file relocate. Podobnie crates > głęboki FS. Integracja z hardware.
+
+7. **Traktor (Native Instruments)** — Collection + playlists/crates, import/transfer, file handling. Crates jako organizacja. Narzędzia transfer między appkami.
+
+8. **Mixxx** (open-source) — Crates, smart playlists, collection folders, external library views (Rekordbox/Serato/Traktor/iTunes). Mniej auto FS organize — bardziej in-app + import.
+
+9. **MediaMonkey** — Auto-Organize rules (criteria: collections/genres/playlists), Destination Mask z `<Album Artist>\<Album>\<Track#> - <Artist> - <Title>` + funkcje (`$Left`), preview w Tools > Auto-Organize Files (New Path column + per-file edit), background, manual. Multiple rules/presets. "No undo" caution. Duże preview tabeli. Library organizer silny.
+
+10. **Mp3tag** — Actions/scripts dla reorganize (custom move based on tags, np. Album Artist\[Year] Album), preview critical (zawsze sprawdzaj), batch. Potężne scripting/conditions. Manual confirmation na overwrite.
+
+11. **FileBot** — Rule-based (Groovy scripts, advanced {title} + logic), `--action move/copy/rename/test` (dry-run), media mode, preview, conflict handling (auto-rename?). CLI/GUI batch. Doskonałe dla złożonych reguł + safety.
+
+12. **JRiver Media Center** — Advanced library organizer/rules/views, templates (F6), rename/move on tags. Potężne ale złożone.
+
+13. **DropIt** — Rules engine (if conditions on tags/filenames → actions move/copy/rename/delete do structured z %SongArtist% etc templates), profiles, drag-drop lub monitored folders, preview/test runs w niektórych workflow. Automation batch. Proste + profiles.
+
+14. **Lexicon DJ** — Library management dla DJ-ów (Rekordbox/Serato/Engine/Traktor/VirtualDJ), custom tags, sync/convert/transfer (playlists, cues, beatgrids, metadata), smart playlists, duplicate removal (fingerprint), central management + push do app. Focus na multi-app sync i organization (clean up library), niekoniecznie głęboki FS (ale pomaga w zarządzaniu kolekcją). Booth/pro workflow.
+
+15+. **Inne / uzupełnienia:** iTunes/Music app (auto organize artist/album/year — proste, często "flat-ish"), Kid3 (tagger z rename/move patterns), The GodFather (zaawansowany batch tag+organize), custom Python scripts (podobne do naszego renamer), MIXO/Rekord Buddy (transfer + organize między DJ appkami).
+
+**Punktowanie przydatności dla Naszego projektu (Lumbago Music AI — DJ + collector, PyQt6 desktop, istniejący renamer + FileOrganizerDialog, sole new DJ Player, AI tagging, DB repo):**
+
+- beets 9/10 — potężne templates/conditionals/dry-run/preview + batch safety; łatwo adoptować do naszego _render (wysokie pokrycie braków w conditionalach/presets). Łatwość adaptacji wysoka (Python-friendly). Pokrywa preview list + safety. Słabsze: brak GUI tree, CLI-centric (ale wzorzec dla core).
+- Picard 8.5/10 — scripting + Before/After preview + move additional + multiple scripts; wysoka użyteczność dla template engine + safety (overwrite/delete empty). Adaptacja prosta dla preview/examples. Pokrywa lookup→organize flow.
+- MusicBee 8/10 — auto + manual organize + New Path preview table + masks; blisko naszego offer flow i tabeli. Dobre dla library managers.
+- MediaMonkey 8.5/10 — rules + preview table + per-file edit + $Left + background + multiple rules; bardzo podobny preview/organize dialog + caution. Wysokie pokrycie braków UX preview.
+- foobar2000 7.5/10 — File Ops preview + facets tree (inspo dla visual tree). Elastyczne.
+- Mp3tag/FileBot 9/10 — actions/scripts + dry-run/preview + batch/conditions; FileBot szczególnie mocny w safety + rules. Wysoka adaptacja dla conditional templates.
+- DJ pro (Rekordbox 6/10, Serato 5/10, Traktor 5/10, Mixxx 6/10, Lexicon 7.5/10) — mocne crates/playlists/transfer/sync/multi-app (Lexicon szczególnie dla centralnej library + custom tags + fingerprint dedup + push); słabe native głębokie tag-based FS organize (wiele DJ-ów używa crates jako alternatywę dla FS folderów, proste struktury lub software virtual). Wysoka wartość dla "booth friendly" (duże preview, szybkie akcje, pro workflow) + crates jako uzupełnienie naszego FS. Lexicon dla przyszłych side transferów.
+- Inne (JRiver 7/10, DropIt 7/10 rules if-then + profiles + % templates + preview/test, iTunes 4/10 proste) — DropIt dobry dla conditional rules engine.
+
+**Kluczowe rozróżnienia (per SZPIEG spec):** Praca na **plikach** (FS safety przy move na tym samym dysku vs cross-volume — nasze _safe_move z fallback jest mocne i warte zachowania; Windows primary) vs strumieniach (nie dotyczy tutaj; player to osobny fragment). Preview: tabela/lista dominuje (nasz + MediaMonkey/Picard), wizualny tree rzadszy pre-apply (facets inspo). Undo/historia: prawie nigdzie silny natywny (nasz last-move JSON + selective to zaleta bezpieczeństwa). Integracja z tagami: wszystkie na istniejących (nasz idealnie pasuje do post-AI autotag flow). Batch: GUI progress lub CLI; nasz sync OK dla post-selekcji, ale guard dla dużych.
+
+**Wybór i rekomendacje konkretnych rozwiązań/wzorców do wprowadzenia (co zachować / co usprawnić/dodać; high pressure exact match per hierarchia):**
+
+**Zachować z obecnego (core strengths dla Lumbago):** Integracja w renamer_dialog.py (no new files), akcje move/copy/delete + DB contract (caller robi update/upsert/delete po verif — zgodne z repo conventions), historia JSON (separate organize_history.json), safe FS ops (_safe_move/copy z verify + cross-vol fallback + rollback), preview table + conflict resolve (auto suffix/_Konflikty + filter + PPM file ops + open_organizer), writeback opcjonalny, offer flow po autotag/rename + selection/context/Ctrl+Shift+O/toolbar, Unknown + sanitize + cleanup noise, testy w test_renamer.py, file_track_ops + plan_conflict_ui shared, info text o iTunes.
+
+**Usprawnić/dodać (per research + braki + punktowanie + Build Spec; dla DJ + autotag flow + PyQt6):**
+- Wizualny drzewiasty podgląd struktury folderów przed apply (QTreeWidget/QStandardItemModel symulowany z plan items grouped by folder parts — obok/toggle z tabelą; inspo foobar facets + MediaMonkey New Path + Picard clusters/examples; nie tworzyć real FS).
+- Lepszy template engine z conditionals/presets (rozszerz _render_pattern/_render_structure_segment o proste if/fallback jak `%if{genre,genre,Unknown}` lub `{genre|Unknown}`, padding `{tracknumber:02}`, per-type lub user presets w combo/settings: Rekordbox-like, Serato-like, Genre/Year/Artist, custom; więcej pól + lepsze numeric).
+- Progress bar + cancel dla dużych batchy (QProgressDialog + worker lub in-loop check; guard >200 w main już dobry).
+- Ulepszony undo z pełną historią dialog (lista last N, selective revert tylko move, clear).
+- Więcej presetów szablonów + UX (combo w dialogu, load/save w settings, lepsze empty tag handling — configurable fallback lub skip segments).
+- Writeback safety + integracja z import wizard ("organize on import" opt).
+- HighDPI/compact/air polish jeśli pasuje do flow (spójne z playerem).
+- Więcej edge tests (unicode, głębokie drzewa, long names >260 chars Windows, cross-vol, empty, concurrent?).
+
+**Build Spec (nadrzędny/binding dla Plan/crew — konkretne bloki):**
+1. Template rendering (core/renamer.py _render_pattern + _render_structure_segment): extend o conditionals/fallbacks/presets (proste %if lub {field|fallback}, padding, więcej pól). Uniform sanitize. Docstrings z "per SZPIEG Build Spec + Plan review... must document identical".
+2. Preview UI (ui/renamer_dialog.py FileOrganizerDialog): zachowaj tabelę + auto-resolve + file_ops + PPM (via plan_conflict_ui). DODAJ simulated tree view (QTree... populated z plan grouped by folder parts; toggle "Pokaż drzewo folderów"). Preview before apply. Tooltips EFFECT.
+3. Safety/undo (core + dialog + main): zachowaj safe ops + verif + rollback + source checks + post-verif + DB tylko po sukcesie + separate JSON hist. Rozszerz undo do selective history dialog (lista last, tylko move). Delete zawsze cautious (no template, confirm).
+4. Batch execution: zachowaj sync dla small/post-selekcji. DODAJ progress + cancellable (QProgressDialog/worker). Guard large libs.
+5. Integration points: zachowaj w main_window (_open_organizer, _offer_after_change po renamer/autotag, context/toolbar/shortcut/tools, _load_tracks), file_track_ops shared, plan_conflict_ui shared, DB via repo (update_track_paths_bulk itp.; align caller). Opcjonalny hook "organize on import".
+6. Presets/UX + tests: combo presets (Rekordbox-like etc.), lepsze empty handling. Expand test_renamer (new templates, tree preview if UI, unicode/deep, cancel, undo dialog, delete DB, large batch). Smoke/pytest/python-c/manual CHECKLIST.
+7. Docs: update memory + HISTORY + this SZPIEG (append identical) + AGENTS/CLAUDE + Checklist.md (sec7) + crew/CHECKLIST/LISTA + code docstrings exact phrase + todo_write dla complex. Abs paths w raportach. Commit z odniesieniami.
+8. Inne: reuse "no new files". High pressure exact match + read-before-edit zero odstępstw. Dla DJ: proste/szybkie dla post-autotag + complement player (organized FS dobre dla load). Rozróżnienie pliki (zachowaj cross-vol safety) vs stream (nie tu).
+
+**Priorytetowana lista problemów/braków w obecnym + rekomendowane rozwiązania (P0/P1/P2):**
+- P0: Brak (core działa, testy green, safety solid, integracja pełna, DB contract OK).
+- P1: 1. Brak wizualnego drzewa folderów (tylko tabela) — dodać symulowany tree preview (inspo facets/MediaMonkey/Picard). 2. Szablony proste bez conditionals/presets — rozszerzyć render + dodać combo presets (beets/Picard/Mp3tag/FileBot/MediaMonkey). 3. Brak progress/cancel dla dużych — dodać QProgress + cancellable. 4. Undo tylko last/move bez UI — selective history dialog. 5. Ograniczona puste tagi + brak presetów — configurable + common presets.
+- P2: Brak async dla bardzo dużych; brak pełnych reguł warunkowych (if genre...); "organize on import" nie zintegrowane; highDPI/compact polish dialogu; więcej edge tests (unicode, deep trees, long names, cross-vol).
+
+**Side tasks (jeśli exceptional + consent):** Research Qt tree model dla plan preview (non-FS), propozycja prostej składni conditional templates (port subset beets/Picard funcs), Lexicon/MIXO patterns dla DJ transfer/sync (side jeśli user poprosi multi-app).
+
+**Przekazanie do Plan agenta:** Przekazuję SZPIEG findings + Build Spec + punktowanie (pełny 2026-06-15 wpis do encyklopedii). **Plan: przygotuj pełną "nową listę przeróbek" + wnioski dla użytkownika w pierwszej kolejności** (per explicit user "dajcie mi w pierwszej kolejnosci przeczytać waszą nową listę przeróbek do i pewniessaam msie na ro" + PLAN). Lista first: co zachować (integracja renamer_dialog bez nowego pliku, move/copy/delete, JSON hist, safe FS cross-vol, preview table+conflict resolve+fileops+DB contract, Unknown/sanitize, offer flow + context/shortcut) / przerobić (template conditional+presets, visual tree preview, progress/cancel batch, undo dialog, empty/presets UX, writeback safety, organize-on-import, highDPI, edge tests). Potem po "dalej" crew (ANALYZER→... max 3 iter, polski, exact match, read-before, zero odstępstw). "Nie przestawaj". Per hierarchy + SZPIEG binding.
+
+**Status:** Research ukończony do końca. Przekaz Planowi + crew. "Gotowe". Docs (ten wpis + memory/HISTORY/CHECKLIST/AGENTS/CLAUDE/crew files) będą updated identically po decyzji użytkownika. Abs paths: D:\Claude\ui\renamer_dialog.py, D:\Claude\core\renamer.py, D:\Claude\ui\main_window.py, D:\Claude\ui\file_track_ops.py, D:\Claude\tests\test_renamer.py, D:\Claude\ui\plan_conflict_ui.py + crew/*. "Nie przestawaj".
+
 **2026-06-02 SZPIEG full re-audit "po kolei całej budowy odtwarzacza" (single "Odtwarzacz" MVP jako primary per user "zacznij od pojedynczego" + explicit "uruchmo jeszcze raz zespouł agentów do sprawdzenia po kolei calej budowy odtwarzacza, i problematyczne elementy prxzekaz dla szpiega do badań. nie przestawaj puki nie skonczysz") + hierarchy PRIORYTET #1 (SZPIEG+Plan first, lista user review first "dajcie mi w pierwszej kolejnosci przeczytać", God Object "ok" per PLAN, "must document identical"):**
 
 **OBOWIĄZKOWA LEKTURA (dla continuity multi-team):** memory.md (całość + "Dla nowych" + current state post 2026-06-02 full re-audit + hierarchy), crew/SZPIEG_agent_spec_and_archive.md (verbatim permanent instructions, prior 12+ findings, Build Spec, punktowanie, "2026-06-02 Full crew re-audit" entry, side tasks, "pamiętaj na stałe"), crew/PLAN_Uruchomienie_Python_Code_Review_Crew.md (PRIORYTET#1 SZPIEG+Plan "w pierwszej kolejnosci", "plan jest ok tylko trzeba w nim wziąć pod uwagę aktualizację zmiany pracy zespołu i funkcje SZPIEGA", pipeline ANALYZER... podlega, God Object "ok", "Dla nowych").
