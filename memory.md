@@ -1,5 +1,10 @@
 # Memory — Lumbago Music AI (DJ Player Project)
 
+**2026-06-15 (sync per user "zsynchronizuj folder lokalny z github"):** git fetch + git pull origin main = fast-forward da4ede43..94bd7894 ("uporządkowanie: 2026-06-15 Uporządkowanie całej dokumentacji, pełnej historii i wykonanych checklist + konsolidacja do docs/archive/ + przepisanie do memory Archiwum" per prior user request "uporzadkuj cala dokumentacje..." + "dalej"). 
+Lokalny folder w pełni zsynchronizowany z GitHub (HEAD = origin/main, clean tree, no conflicts). 
+Pull przyniósł duże porządkowanie (przeniesienie starych crew/AGENT3_*, mockups, web-remnants, build-artifacts, old-docs do docs/archive/; aktualizacje AGENTS/CLAUDE/PLAN/SZPIEG/HISTORY/CHECKLIST/memory + manual tests close 466ebe85). 
+Per PLAN hierarchy (SZPIEG/Plan first, Build Spec, "must document identical"), todo_write, clear commit + push. "Nie przestawaj". Gotowe. 
+
 **2026-06-15 (sesja: analyze latest docs + sync repo z github per user query):** Zsynchronizowano lokalne repo z GitHub (git fetch + git pull origin main — fast-forward 92f92017..f22e64cc; teraz "up to date with origin/main", clean tree). 
 Przeanalizowano najnowszą dokumentację (obowiązkowa lektura memory + SZPIEG + PLAN + AGENTS/CLAUDE na starcie + post-pull re-check): 
 - SZPIEG_agent_spec_and_archive.md (2026-06-15 wpisy): PRIORYTET#1 organizer research (15+ tools, Build Spec dla renamer + tree/conditional templates/presets/undo/progress) + późniejsze research "layout + skalowanie + ikony" (12+ narzędzi booth: CDJ/Pioneer/Engine/Mixxx/foobar/Winamp etc.; punktowanie; katalog BOOTH_ICONS + SVG via booth_svg_icons.py; deck_layout.py dynamic wave + 4K/highDPI; unified transport + compact labels; BoothMetrics polish; PFL/cue HP w PlaybackEngine + DeckController/DualConsole; iteracje user "dalej"/"kontynuuj"/"dopracuj na wysoki połysk"; lista przeróbek 1-8 + tests; "Per SZPIEG Build Spec + Plan... must document identical"). 
