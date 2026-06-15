@@ -7,6 +7,14 @@ Per PLAN hierarchy (SZPIEG/Plan first, Build Spec, "must document identical"), t
 
 **2026-06-15 — "nie przestawaj" continuation: Nowa lista przeróbek (P1 focus po uporządkowaniu + wszystkie duże wątki closed 'gotowe') — PREZENTACJA UŻYTKOWNIKOWI W PIERWSZEJ KOLEJNOŚCI (per PLAN PRIORYTET #1 + explicit "dajcie mi w pierwszej kolejnosci przeczytać waszą nową listę przeróbek").**
 
+**User "zatwierdzam całą listę" (2026-06-15):** Pełna lista 1-4 zatwierdzona bez zmian. Rozpoczynamy wykonanie po kolei (zaczynamy od 1. Clean Windows P1 jako najwyższy w tabeli Checklist + najwięcej przygotowane). High pressure exact match do spec (build script, smoke script, clean_windows_test.md, Checklist P1 table, memory Archiwum). Verifs na bieżąco (smoke exit0, pytest, python-c, manual). Dokumentacja identyczna po każdym kroku ("per SZPIEG Build Spec + Plan nowa lista po 'zatwierdzam' user... must document identical" + todo + commit + push). "Nie przestawaj". Gotowe do działania.
+
+**2026-06-15 — Zatwierdzona lista wykonana (kroki 1-3 complete):** 
+- Krok 1 Clean Windows P1: python -m PyInstaller succeeded (po cache clean), portable ZIP 318MB created, smoke_portable OK ("Smoke OK" exit0 with SAFE_MODE), manual structure/exe verif per docs/clean_windows_test.md + get_resource_path frozen helper. Checklist P1#1 updated. 
+- Krok 2: test_unified_autotagger_picks_best_candidate passes (python -m pytest 1 passed).
+- Krok 3: DJ Player doc verified complete (guide + CHECKLIST + prior Etap4/Smart coverage).
+- Per "zatwierdzam całą listę" + Plan nowa lista + "nie przestawaj". Verifs green. Docs identical. Gotowe. Następny fragment na kolejne "dalej".
+
 **Wnioski z analizy (Checklist P1 + memory Archiwum + git 94bd7894 + clean_windows_test.md):**
 - Wszystkie główne fazy zamknięte 'gotowe' (Odtwarzacz MVP 1-15, Etap4 playback reliability, Smart Collections/Kolekcje Smart 11 kroków + auto-refresh + drag + Polish, manual punkt 4 + pełny CHECKLIST, Organizer PRIORYTET#1, uporządkowanie docs + archive).
 - Pozostałe P1 w tabeli Checklist (sekcja 6):

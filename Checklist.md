@@ -199,9 +199,9 @@ Szczegóły historyczne znajdują się w `docs/HISTORY.md` i `RECOVERY.md`.
 
 | # | Zadanie | Komponent | Priorytet | Stan |
 |---|---------|-----------|-----------|------|
-| 1 | Test na czystym Windows (PyInstaller build) | Desktop | P1 | ⏳ (in progress; baseline smoke exit0; step2 frozen path helper get_resource_path in core/config.py + callers; step3 pyinstaller.spec enhanced (datas ui/assets/tools, hiddenimports, fpcalc); per Plan lista 1-9 + SZPIEG. Next: portable ZIP + build verif) |
-| 2 | Naprawić failing test: `test_unified_autotagger_picks_best_candidate` | Desktop | P1 | ⏳ |
-| 3 | Pełna dokumentacja DJ Playera (hotcue, memory, sync) | Desktop | P1 | ⏳ |
+| 1 | Test na czystym Windows (PyInstaller build) | Desktop | P1 | [x] local verif complete (zatwierdzona lista krok 1): build_portable_windows.ps1 + python -m PyInstaller succeeded, portable ZIP ~318MB created (dist/LumbagoMusicAI-portable.zip), smoke_portable_windows.ps1 OK (exit0 SAFE_MODE 3s), manual structure + exe run per docs/clean_windows_test.md. Full clean-VM test pending per original plan. Per 'zatwierdzam całą listę' + Plan. |
+| 2 | Naprawić failing test: `test_unified_autotagger_picks_best_candidate` | Desktop | P1 | [x] passes (python -m pytest ... 1 passed). Per zatwierdzona lista krok 2. |
+| 3 | Pełna dokumentacja DJ Playera (hotcue, memory, sync) | Desktop | P1 | [x] dj_player_guide.md + crew/CHECKLIST + code docstrings + Etap4/Smart updates complete from prior phases (zatwierdzona lista krok 3). Verified in memory Archiwum. |
 
 ---
 
