@@ -5,6 +5,8 @@ This is intentionally a skeleton / compatibility shim.
 It allows the rest of the application (waveform viewers, basic transport)
 to function in a degraded "preview" mode.
 
+Per SZPIEG research 2026-06-15 playback reliability + finalny efekt końcowy (no silent close; visible '⚠ Audio niedostępne (VLC)' + 'Pobierz VLC (videolan.org)' + portable note; graceful: wave/playhead/cue (FILE ops) live even on ERROR; targeted status; guards; EFFECT tooltips; file=load vs stream=transport explicit; booth high-contrast readable errors; A/B distinction) — must document identical. Binding Build Spec steps 2-3.
+
 Limitations (documented for UI team):
 - No professional 3-band EQ (set_eq is a no-op or very crude)
 - Playback rate changes pitch (no keylock possible with stock QtMultimedia)
@@ -13,8 +15,8 @@ Limitations (documented for UI team):
 - Lower audio quality / higher latency than native VLC for DJ use
 - Some formats may not be supported depending on installed codecs
 
-If this backend is active, the UI should show prominent warnings that
-a proper DJ experience requires VLC (https://www.videolan.org/vlc/).
+If this backend is active, the UI should show prominent warnings + EFFECT that
+a proper DJ experience requires VLC (https://www.videolan.org/vlc/ or portable unpack next to exe). Install guidance + last_error surfaced in diagnostics + DeckState.error_code.
 """
 from __future__ import annotations
 

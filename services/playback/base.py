@@ -178,6 +178,9 @@ class AudioBackend(ABC):
             duration_ms=self.get_duration_ms(),
             volume=self.get_volume(),
             rate=self.get_rate(),
+            error_code=self.get_error_code(),
+            last_error=self.get_last_error(),
+            # error_code/last_error explicit per SZPIEG research 2026-06-15 playback reliability + finalny efekt (visible '⚠' + guidance no silent) + must document identical
         )
 
     # ------------------------------------------------------------------

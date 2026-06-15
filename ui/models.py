@@ -43,6 +43,7 @@ class TrackTableModel(QtCore.QAbstractTableModel):
         super().__init__()
         self._tracks = tracks or []
         self._now_playing: dict[str, str | None] = {"A": None, "B": None}  # deck -> path
+        # Smart Collections support (per SZPIEG research 2026-06-15 Smart Collections + finalny efekt końcowy... must document identical): now_playing prefix/badge works for smart-loaded tracks (via set_tracks); rules on meta only (not files); drag from smart = FILE load safety per prior. Targeted updates preserved.
 
     def rowCount(self, parent=QtCore.QModelIndex()) -> int:
         return len(self._tracks)
@@ -124,8 +125,20 @@ class TrackTableModel(QtCore.QAbstractTableModel):
         return str(section + 1)
 
     def update_tracks(self, tracks: list[Track]) -> None:
+        # Smart Collections perf/scalab (per SZPIEG research 2026-06-15 Smart Collections + finalny efekt końcowy... must document identical)
+        # Targeted no-flicker: same-state guard on path tuple (smart loads often re-query same collection after meta hook); always rebuild cache for now-playing targeted.
+        # Smart switch = full list replace (rules result), but avoid redundant beginReset if identical paths (no flicker, fast for frequent auto-refresh).
+        # File/stream: smart provides meta list; actual load to deck/player = FILE op (see main _apply and _load).
+        new_paths = tuple(getattr(t, 'path', None) for t in tracks)
+        if getattr(self, '_last_set_paths', None) == new_paths:
+            self._tracks = tracks  # refresh in case meta values updated by hook
+            self._path_to_row = {getattr(t, 'path', None): i for i, t in enumerate(tracks) if getattr(t, 'path', None)}
+            return
+        self._last_set_paths = new_paths
         self.beginResetModel()
         self._tracks = tracks
+        # Rebuild O(1) path->row cache for targeted now-playing updates (per SZPIEG 2026-06-15 perf + finalny efekt)
+        self._path_to_row = {getattr(t, 'path', None): i for i, t in enumerate(tracks) if getattr(t, 'path', None)}
         self.endResetModel()
 
     def track_at(self, row: int) -> Track | None:
@@ -134,12 +147,51 @@ class TrackTableModel(QtCore.QAbstractTableModel):
         return None
 
     def set_now_playing(self, deck_a_path: str | None, deck_b_path: str | None) -> None:
-        """Update which tracks are loaded in DJ Player decks for visual indicators."""
-        self._now_playing = {"A": deck_a_path, "B": deck_b_path}
-        if self._tracks:
-            top_left = self.index(0, 0)
-            bottom_right = self.index(len(self._tracks) - 1, len(self.headers) - 1)
-            self.dataChanged.emit(top_left, bottom_right, [QtCore.Qt.ItemDataRole.DisplayRole, QtCore.Qt.ItemDataRole.BackgroundRole])
+        """
+        Update which tracks are loaded in DJ Player decks for visual indicators.
+        Per SZPIEG research 2026-06-15 (Rekordbox/Mixxx/VDJ/Engine/foobar patterns + finalny efekt końcowy):
+        - Prefix "▶A "/"▶B "/"▶A+B " + BackgroundRole tint (A cool blue, B green, both subtle purple).
+        - Targeted dataChanged only (O(1) path cache) — no full range refresh (perf for 10k+ tracks, no flicker).
+        - Batch A+B in one call. File=load (indicator on load) vs stream=transport (stays).
+        - Single default ("A") + dual A/B. Compact pilot safe (does not touch library indicators).
+        - EFFECT: see finalny efekt description in SZPIEG archive (booth readable, air preserved, load safety).
+        """
+        old_a = self._now_playing.get("A")
+        old_b = self._now_playing.get("B")
+        new_a = deck_a_path
+        new_b = deck_b_path
+
+        if old_a == new_a and old_b == new_b:
+            return  # same-state guard (per SZPIEG perf spec)
+
+        self._now_playing = {"A": new_a, "B": new_b}
+
+        # Build affected rows (use cache if available; fallback to linear for small libs)
+        affected_rows = set()
+        if hasattr(self, '_path_to_row') and self._path_to_row:
+            for p in (old_a, old_b, new_a, new_b):
+                if p and p in self._path_to_row:
+                    affected_rows.add(self._path_to_row[p])
+        else:
+            for i, t in enumerate(self._tracks):
+                p = getattr(t, 'path', None)
+                if p and p in (old_a, old_b, new_a, new_b):
+                    affected_rows.add(i)
+
+        if not affected_rows or not self._tracks:
+            # fallback to previous full (rare)
+            if self._tracks:
+                top_left = self.index(0, 0)
+                bottom_right = self.index(len(self._tracks) - 1, len(self.headers) - 1)
+                self.dataChanged.emit(top_left, bottom_right, [QtCore.Qt.ItemDataRole.DisplayRole, QtCore.Qt.ItemDataRole.BackgroundRole])
+            return
+
+        # Targeted emit only affected rows (Display + Background for prefix/tint)
+        for row in sorted(affected_rows):
+            if 0 <= row < len(self._tracks):
+                top_left = self.index(row, 0)
+                bottom_right = self.index(row, len(self.headers) - 1)
+                self.dataChanged.emit(top_left, bottom_right, [QtCore.Qt.ItemDataRole.DisplayRole, QtCore.Qt.ItemDataRole.BackgroundRole])
 
     def mimeData(self, indexes):
         """Obsługa drag & drop - przekazujemy ścieżki plików."""

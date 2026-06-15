@@ -4,6 +4,8 @@ Hardened VLC Audio Backend for Lumbago Music AI dual-deck DJ player.
 This replaces / supersedes the fragile VlcDeckPlayer from services/vlc_audio_backend.py
 for all new code.
 
+Per SZPIEG research 2026-06-15 playback reliability + finalny efekt końcowy (priority VLC; explicit is_available + discovery; on fail set ERROR + _last_error + guidance "Pobierz VLC videolan.org"; no silent; graceful Qt/ noop fallback with live wave/cue (FILE) ; targeted; file=load vs stream; guards; EFFECT; booth-visible status; A/B; portable note in diags/scripts) — must document identical. Part of Etap4 Build Spec (steps 2-3 backends).
+
 Key hardening measures:
 - Robust VLC discovery (env, filesystem, Windows registry)
 - Safe PATH / VLC_PLUGIN_PATH manipulation BEFORE importing vlc

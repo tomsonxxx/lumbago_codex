@@ -42,12 +42,16 @@ class DeckState:
     """
     Immutable snapshot of a deck's state.
     Safe to read from any thread.
+    Per SZPIEG research 2026-06-15 playback reliability + finalny efekt końcowy (no silent, visible error_code + last_error + install guidance "Pobierz VLC", graceful + targeted + file/stream guards, EFFECT, booth) + must document identical.
     """
     state: PlaybackState
     is_playing: bool = False
     position_ms: int = 0
     duration_ms: int = 0
     volume: float = 1.0           # 0.0 .. 1.0
+    error_code: BackendErrorCode = BackendErrorCode.NONE
+    last_error: Optional[str] = None
+    # active_backend surfaced for UI status/diagnostics (VLC / qtmultimedia / noop)
     balance: float = 0.0          # -1.0 (full left) .. +1.0 (full right)
     rate: float = 1.0             # Playback rate multiplier
     keylock_enabled: bool = False

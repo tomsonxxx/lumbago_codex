@@ -1,5 +1,8 @@
 # Smoke test for portable Windows build.
 # Usage: .\scripts\smoke_portable_windows.ps1 [-ExtractDir C:\LumbagoTest]
+#
+# Per SZPIEG research 2026-06-15 playback reliability + finalny efekt końcowy (VLC prio, visible '⚠ Audio niedostępne' + 'Pobierz VLC videolan.org' + portable note, no silent, graceful FILE vs STREAM, diagnostics, EFFECT, booth) — must document identical.
+# Etap4: smoke is audio-agnostic (SAFE_MODE); real reliability tested in Odtwarzacz (engine.get_backend_info shows fallback, status '⚠' + guidance if no VLC). User note: for full audio after portable extract, install VLC or place portable next to exe + restart.
 
 param(
     [string]$ExtractDir = (Join-Path $env:TEMP "LumbagoSmokeTest")

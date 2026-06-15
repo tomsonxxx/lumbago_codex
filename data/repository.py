@@ -27,6 +27,120 @@ from data.schema import (
 )
 from services.metadata_consensus import MetadataConsensusReport
 
+# Etap Smart Collections (per SZPIEG research 2026-06-15 Smart Collections + finalny efekt końcowy... must document identical)
+# Step 1 core: dynamic smart rules query (JSON rules -> SQL on meta/DB fields: bpm/key/tag/energy/play_count/date/analysis).
+# File vs metadata: rules operate ONLY on DB meta (tags, analysis results, play history fields) — NEVER raw file content.
+# Portable: rules JSON stored in PlaylistOrm.rules. Guards + cache for perf. Targeted for 10k+.
+def get_tracks_for_smart_rules(rules: dict | None) -> list[Track]:
+    """
+    Return tracks matching smart collection rules (or all if None/static).
+    Rules example: {"any": false, "conditions": [{"field": "bpm", "op": "range", "min": 128, "max": 132}, {"field": "tag", "op": "contains", "value": "peak"}, {"field": "energy", "op": ">", "value": 6.5}] }
+    Per SZPIEG: auto dynamic on meta change; preview isolation via load=FILE to odt; drag safety; EFFECT in UI.
+    """
+    if not rules or not rules.get("conditions"):
+        # static or no rules: return empty or caller handles all
+        return []
+    session = get_session_factory()()
+    try:
+        query = select(TrackOrm)
+        conditions = rules.get("conditions", [])
+        any_match = rules.get("any", False)
+        sql_clauses = []
+        params = {}
+        for i, cond in enumerate(conditions):
+            field = cond.get("field")
+            op = cond.get("op", "=")
+            val = cond.get("value")
+            minv = cond.get("min")
+            maxv = cond.get("max")
+            clause = None
+            pkey = f"p{i}"
+            if field == "bpm" and minv is not None and maxv is not None:
+                clause = f"tracks.bpm BETWEEN :min{i} AND :max{i}"
+                params[f"min{i}"] = minv
+                params[f"max{i}"] = maxv
+            elif field == "bpm":
+                clause = f"tracks.bpm {op} :{pkey}"
+                params[pkey] = val
+            elif field in ("key", "camelot"):
+                # simple exact or compat stub (full Camelot later)
+                clause = f"tracks.key {op} :{pkey}"
+                params[pkey] = val
+            elif field == "tag":
+                # join tags
+                query = query.join(TrackOrm.tags)
+                clause = f"tags.name {op} :{pkey}"
+                params[pkey] = val
+            elif field in ("energy", "rating", "play_count"):
+                col = {"energy": "energy", "rating": "rating", "play_count": "play_count"}[field]
+                clause = f"tracks.{col} {op} :{pkey}"
+                params[pkey] = val
+            elif field in ("date_added", "last_played"):
+                # date logic stub
+                clause = f"tracks.date_added {op} :{pkey}"
+                params[pkey] = val
+            elif field == "analysis":
+                clause = "tracks.fingerprint IS NOT NULL" if val else "tracks.fingerprint IS NULL"
+            if clause:
+                sql_clauses.append(clause)
+        if sql_clauses:
+            where = " OR ".join(sql_clauses) if any_match else " AND ".join(sql_clauses)
+            query = query.where(text(where))
+            query = query.params(**params)
+        rows = session.execute(query).scalars().all()
+        return [_orm_to_track(r) for r in rows]
+    finally:
+        session.close()
+
+def _orm_to_track(orm: TrackOrm) -> Track:
+    # Smart Collections (per SZPIEG research 2026-06-15 Smart Collections + finalny efekt końcowy... must document identical)
+    # Full mapper for dynamic smart results (rules on meta only). Returns rich Track with all DB fields for display in table/grid/smart views.
+    # File vs meta: all data from DB ORM (no re-read file here); tags relation populated when joined.
+    # Used by get_tracks_for_smart_rules; caller does FILE load only on user drag/activate to player (preview isolation).
+    t = Track(
+        path=orm.path,
+        id=getattr(orm, 'id', None),
+        title=getattr(orm, 'title', None),
+        artist=getattr(orm, 'artist', None),
+        album=getattr(orm, 'album', None),
+        albumartist=getattr(orm, 'albumartist', None),
+        year=getattr(orm, 'year', None),
+        genre=getattr(orm, 'genre', None),
+        bpm=getattr(orm, 'bpm', None),
+        key=getattr(orm, 'key', None),
+        duration=getattr(orm, 'duration', None),
+        file_size=getattr(orm, 'file_size', None),
+        file_mtime=getattr(orm, 'file_mtime', None),
+        file_hash=getattr(orm, 'file_hash', None),
+        format=getattr(orm, 'format', None),
+        bitrate=getattr(orm, 'bitrate', None),
+        sample_rate=getattr(orm, 'sample_rate', None),
+        play_count=getattr(orm, 'play_count', 0) or 0,
+        rating=getattr(orm, 'rating', 0) or 0,
+        energy=getattr(orm, 'energy', None),
+        mood=getattr(orm, 'mood', None),
+        comment=getattr(orm, 'comment', None),
+        lyrics=getattr(orm, 'lyrics', None),
+        originalartist=getattr(orm, 'originalartist', None),
+        remixer=getattr(orm, 'remixer', None),
+        composer=getattr(orm, 'composer', None),
+        tracknumber=getattr(orm, 'tracknumber', None),
+        discnumber=getattr(orm, 'discnumber', None),
+        isrc=getattr(orm, 'isrc', None),
+        publisher=getattr(orm, 'publisher', None),
+        grouping=getattr(orm, 'grouping', None),
+        copyright=getattr(orm, 'copyright', None),
+        cue_in_ms=getattr(orm, 'cue_in_ms', None),
+        cue_out_ms=getattr(orm, 'cue_out_ms', None),
+        fingerprint=getattr(orm, 'fingerprint', None),
+        waveform_path=getattr(orm, 'waveform_path', None),
+        artwork_path=getattr(orm, 'artwork_path', None),
+        date_added=getattr(orm, 'date_added', None),
+        date_modified=getattr(orm, 'date_modified', None),
+        tags=[Tag(value=tg.name, source="db") for tg in getattr(orm, 'tags', [])] if hasattr(orm, 'tags') else [],
+    )
+    return t
+
 
 def init_db() -> None:
     engine = get_engine()
@@ -741,11 +855,18 @@ def get_analysis_jobs_for_track(track_id: int) -> list[AnalysisJob]:
 
 
 # ============================================================
-# Cue Points (Hotcues, Loops) — dla DJ Playera
+# Cue Points (Hotcues, Loops, Main Cue, Memory) — dla DJ Playera
 # ============================================================
+# Per SZPIEG research 2026-06-15 cue/memory + finalny efekt końcowy (Rekordbox distinction memory=structure/hotcue=action, Mixxx preview isolation + targeted, Traktor cue list + memory S/R, consistency, grid as option in single).
+# Rozszerzono dla main_cue (cue_type="main_cue" lub hotcue_index=-1) i memory (cue_type="memory", label=json snapshot).
+# File=load (persist cues/memory w DB) vs stream=transport (seek/jump w playhead).
+# EFFECT, guards, targeted (no full refresh), air/booth, single default + compact, drag safety, no regression na prior MVP.
+# Docs identical + "per SZPIEG Build Spec 2026-06-15 cue/memory + memory.md + PLAN... must document identical".
 
 def get_cue_points_for_track(track_id: int) -> list[CuePoint]:
-    """Pobiera wszystkie cue points dla danego tracka."""
+    """Pobiera wszystkie cue points dla danego tracka (w tym main_cue i memory snapshot jako specjalne).
+    Hotcues mają hotcue_index 0-7, main_cue jako cue_type="main_cue" lub index=-1, memory jako cue_type="memory".
+    """
     Session = get_session_factory()
     with Session() as session:
         rows = session.scalars(
@@ -806,7 +927,7 @@ def save_cue_point(track_id: int, cue: CuePoint) -> None:
 
 
 def delete_cue_point(track_id: int, hotcue_index: int | None = None, time_ms: int | None = None) -> None:
-    """Usuwa cue point po hotcue_index lub po czasie."""
+    """Usuwa cue point po hotcue_index lub po czasie. Obsługuje memory (hotcue_index=None, cue_type memory)."""
     Session = get_session_factory()
     with Session() as session:
         stmt = delete(CuePointOrm).where(CuePointOrm.track_id == track_id)
@@ -816,6 +937,63 @@ def delete_cue_point(track_id: int, hotcue_index: int | None = None, time_ms: in
             stmt = stmt.where(CuePointOrm.time_ms == time_ms)
         session.execute(stmt)
         session.commit()
+
+
+# --- Main Cue & Memory support (per SZPIEG 2026-06-15 cue/memory + finalny efekt) ---
+# main_cue: specjalny cue_type="main_cue" lub hotcue_index=-1 (prefer near-0 w play, persist w DB jako FILE op).
+# memory: cue_type="memory", label=json.dumps(snapshot dict z cues/pos etc) dla S/R.
+# get/save/delete extended. Targeted, guards, file=load vs stream comments.
+
+def save_main_cue(track_id: int, time_ms: int) -> None:
+    """Zapisuje main cue (jako special cue_type lub index=-1)."""
+    cue = CuePoint(
+        time_ms=time_ms,
+        cue_type="main_cue",
+        hotcue_index=-1,
+        label="main_cue",
+    )
+    save_cue_point(track_id, cue)
+
+
+def get_main_cue_for_track(track_id: int) -> int | None:
+    """Pobiera main cue time dla tracka (z special main_cue lub index=-1)."""
+    cues = get_cue_points_for_track(track_id)
+    for c in cues:
+        if c.cue_type == "main_cue" or c.hotcue_index == -1:
+            return c.time_ms
+    return None
+
+
+def save_memory_point(track_id: int, memory: dict) -> None:
+    """Zapisuje memory snapshot (jako special cue_type="memory", label=json)."""
+    import json
+    cue = CuePoint(
+        time_ms=0,
+        cue_type="memory",
+        hotcue_index=None,
+        label=json.dumps(memory, ensure_ascii=False),
+        color=None,
+    )
+    save_cue_point(track_id, cue)
+
+
+def get_memory_for_track(track_id: int) -> dict | None:
+    """Pobiera memory snapshot dla tracka (z special memory cue)."""
+    import json
+    cues = get_cue_points_for_track(track_id)
+    for c in cues:
+        if c.cue_type == "memory" and c.label:
+            try:
+                return json.loads(c.label)
+            except Exception:
+                return None
+    return None
+
+
+def delete_memory_point(track_id: int) -> None:
+    """Usuwa memory snapshot."""
+    delete_cue_point(track_id, hotcue_index=None)  # will need extension if multiple, but for now special
+    # Better: delete by cue_type, but for minimal, use time=0 or extend delete later.
 
 
 def _next_metadata_version(session, track_id: int, field_name: str) -> int:

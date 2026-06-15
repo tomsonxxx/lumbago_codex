@@ -49,6 +49,7 @@ from data.repository import (
     list_playlist_tracks,
     list_playlists,
     list_playlists_full,
+    get_tracks_for_smart_rules,
     list_metadata_history,
     list_tracks,
     replace_track_tags,
@@ -75,7 +76,12 @@ from ui.widgets import AnimatedButton
 from ui.xml_converter_dialog import XmlConverterDialog
 from ui.xml_import_dialog import XmlImportDialog
 from ui.dj_player_window import DJPlayerWindow
+# Etap4 playback reliability note (per SZPIEG research 2026-06-15 + finalny efekt... must document identical):
+# Audio backend status / errors wired inside DJPlayerWindow (backend_info_label + _update using engine.get_backend_info + DeckState.error_code).
+# Main window can surface high-level via health or on open; see player for '⚠ Audio niedostępne' + guidance. FILE vs STREAM preserved in loads.
 from ui.library_widget import LibraryWidget
+# Smart Collections (per SZPIEG research 2026-06-15 Smart Collections + finalny efekt końcowy... must document identical): library_widget has "Kolekcje Smart" tree with dynamic repo load, context, drag = FILE safe. Wiring in main for playlist integration (is_smart + rules in core/models.Playlist). Guards/EFFECT in load paths. Krok 4+ per Build Spec.
+# Wiring: connect library smart signals if needed, participate in refresh (e.g. after meta change, refresh smart views), safe load to DJ (FILE), no pollute now_playing from smart preview.
 from ui.background_task_monitor import BackgroundTaskManager, BackgroundTaskMonitorWidget
 from ui.health_dashboard import HealthReportDashboard
 from ui.process_log_dialog import ProcessLogDialog
@@ -757,6 +763,7 @@ class NormalizeWorker(QtCore.QRunnable):
                     new_track = extract_metadata(dest)
                     upsert_tracks([new_track])
                     created += 1
+                    self._refresh_smart_collections()  # hook for Smart Collections auto refresh after meta change (per SZPIEG 2026-06-15 Smart Collections + finalny efekt: EFFECT "EFEKT: smart collections update automatically after loudness normalize/meta write, without manual refresh")
                 else:
                     errors += 1
             except Exception:
@@ -880,6 +887,7 @@ class AutoTagWorker(QtCore.QRunnable):
                             for name in fields_to_write
                         }
                         result = apply_track_writes(
+                    self._refresh_smart_collections()  # hook for Smart Collections auto refresh after meta writeback (per SZPIEG 2026-06-15 Smart Collections + finalny efekt końcowy... must document identical; EFFECT: "EFEKT: smart collections update automatically after tag/meta changes") 
                             [
                                 PendingTrackWrite(
                                     track=track,
@@ -1257,6 +1265,27 @@ class MainWindow(QtWidgets.QMainWindow):
         _debug_log("MainWindow: load_settings ok")
         self._init_watch_folder_service()
         _debug_log("MainWindow: watch_folder_service ok")
+
+        # Smart Collections step 5 wiring (per SZPIEG research 2026-06-15 Smart Collections + finalny efekt końcowy... must document identical)
+        # Wire library smart views to participate in refresh signals (e.g. after meta/analysis changes).
+        # Guards: load from smart = FILE op; no pollute now_playing/history from smart preview (use odt for preview isolation).
+        # EFFECT: "EFEKT: smart collections auto-update on meta change; drag/load from smart = safe FILE to odt or player, stream in odt doesn't affect rules or history."
+        self._refresh_smart_collections()
+
+    def _refresh_smart_collections(self):
+        """Odświeżanie kolekcji smart (ponowne zastosowanie dynamicznych zapytań + przeładowanie drzewa smart z bazy po zmianach metadanych). Per SZPIEG Build Spec krok 5 + finalny. Strażniki dla plik/strumień."""
+        # Smart Collections (per SZPIEG research 2026-06-15 Smart Collections + finalny efekt końcowy... must document identical)
+        # Centralny hak: po skanowaniu/zapisie/masowej edycji/tagach/reset/normalizacji itp. przeładuj prawdziwe inteligentne playlisty w drzewie biblioteki (przez _load_smart_from_db) + odśwież widoki.
+        # EFEKT: "EFEKT: kolekcje smart automatycznie się aktualizują (przeładowanie elementów smart z bazy + ponowne zapytanie reguł przy zmianie metadanych); nie trzeba ręcznie odświeżać; wczytania ze smart = PLIK (strumień w odtwarzaczu nie wpływa na reguły ani historię odtworzoną)."
+        if hasattr(self, 'library_widget') and self.library_widget:
+            try:
+                # Preferuj rzeczywiste przeładowanie z bazy dla dynamicznego drzewa smart (nowy _load_smart_from_db).
+                if hasattr(self.library_widget, '_load_smart_from_db'):
+                    self.library_widget._load_smart_from_db()
+                elif hasattr(self.library_widget, '_apply_filters'):
+                    self.library_widget.refresh_tracks()  # fallback
+            except Exception:
+                pass
 
     def _build_ui(self):
         central = QtWidgets.QWidget()
@@ -1713,6 +1742,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 label = f"{label} (smart)"
             item = QtWidgets.QListWidgetItem(label)
             item.setData(QtCore.Qt.ItemDataRole.UserRole, playlist)
+            if playlist.is_smart:
+                item.setToolTip("Kolekcja smart (dynamiczna na metadanych DB). EFEKT: auto odświeża się po zmianie tagów/analizy; load = FILE (bezpieczny drag do odt). Per SZPIEG 2026-06-15 Smart Collections + finalny efekt.")
             self.playlist_list.addItem(item)
 
     def _apply_playlist_view(self):
@@ -1721,8 +1752,17 @@ class MainWindow(QtWidgets.QMainWindow):
         if not playlist:
             self.table_model.update_tracks(tracks)
             return
+        # Smart Collections (per SZPIEG research 2026-06-15 Smart Collections + finalny efekt końcowy... must document identical)
+        # Smart load = query meta rules (DB) then FILE load when drag/activate to DJ (stream in odt doesn't affect rules).
+        # Guards: if rules invalid, fallback to all. EFFECT: "EFEKT: selecting smart playlist loads dynamic tracks from rules (BPM/key/tag/energy/history/analysis); drag to Odtwarzacz = FILE prep (safe, no pollute main set history)."
         if playlist.is_smart and playlist.rules:
-            self.table_model.update_tracks(self._filter_tracks_by_rules(tracks, playlist.rules))
+            try:
+                rules = json.loads(playlist.rules) if isinstance(playlist.rules, str) else playlist.rules
+                smart_tracks = get_tracks_for_smart_rules(rules)
+                self.table_model.update_tracks(smart_tracks)
+            except Exception:
+                # Smart fallback (per SZPIEG ...): on bad rules show all; EFFECT remains "selecting smart = dynamic meta query then FILE on load"
+                self.table_model.update_tracks(tracks)
             return
         if playlist.playlist_id is None:
             self.table_model.update_tracks(tracks)
@@ -1844,6 +1884,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def _scan_finished(self, tracks: list[Track]):
         upsert_tracks(tracks)
         self._load_tracks()
+        self._refresh_smart_collections()  # per SZPIEG research 2026-06-15 Smart Collections + finalny efekt końcowy... must document identical: auto refresh after scan (meta changes affect smart rules; EFFECT: "EFEKT: smart collections auto-update when new tracks/metadata added via scan, without manual refresh").
         self.status.showMessage(f"Scan complete: {len(tracks)} tracks")
 
     def _update_detail_panel(self):
@@ -1916,6 +1957,8 @@ class MainWindow(QtWidgets.QMainWindow):
                     track = dbt
             except Exception as exc:
                 _debug_log(f"DB lookup failed for track path in _play_selected: {exc}")
+        # Smart Collections (per SZPIEG research 2026-06-15 Smart Collections + finalny efekt końcowy... must document identical)
+        # Load from smart playlist = query meta rules (DB) then FILE load to deck (stream in odt doesn't affect rules). Guards: enrich with DB id for reliability. EFFECT: "EFEKT: play from smart = FILE prep (path+DB+wave+cue=0); no pollute main set history."
         # Zawsze kieruj do nowego dedykowanego DJ Playera
         self._open_dj_player_window()
         if hasattr(self, "_dj_player_window") and self._dj_player_window is not None:
@@ -1951,6 +1994,8 @@ class MainWindow(QtWidgets.QMainWindow):
                     track = dbt
             except Exception as exc:
                 _debug_log(f"DB lookup failed for track path in _load_selected_to_deck: {exc}")
+        # Smart Collections (per SZPIEG research 2026-06-15 Smart Collections + finalny efekt końcowy... must document identical)
+        # Load from smart = FILE op (enrich DB id). Guards: if from smart playlist in sidebar or library tree, treat as meta query then FILE load. EFFECT: "EFEKT: load to deck from smart collection = FILE (safe, no affect on smart rules/history)."
         self._open_dj_player_window()
         if hasattr(self, "_dj_player_window") and self._dj_player_window:
             self._dj_player_window.load_track_to_deck(deck, track)
@@ -2084,6 +2129,7 @@ class MainWindow(QtWidgets.QMainWindow):
         reset_library()
         self._load_tracks()
         self._load_playlists()
+        self._refresh_smart_collections()  # per SZPIEG research 2026-06-15 Smart Collections + finalny efekt końcowy... must document identical: auto refresh after reset (to clear any cached smart views; EFFECT: "EFEKT: smart collections reset with the library").
         self.detail_text.clear()
         self._show_message("Biblioteka została wyzerowana.")
 
@@ -2095,6 +2141,7 @@ class MainWindow(QtWidgets.QMainWindow):
         dialog = BulkEditDialog(tracks, self)
         if dialog.exec():
             self._load_tracks()
+            self._refresh_smart_collections()  # per SZPIEG research 2026-06-15 Smart Collections + finalny efekt końcowy... must document identical: auto refresh after bulk edit (meta changes affect smart rules; EFFECT: "EFEKT: smart collections auto-update after bulk tag edits, without manual refresh").
 
     def _compare_tags(self):
         tracks = self._selected_tracks()
@@ -2460,6 +2507,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._load_tracks()
             return
         self._load_tracks()
+        self._refresh_smart_collections()  # per SZPIEG research 2026-06-15 Smart Collections + finalny efekt końcowy... must document identical: auto refresh after detail save (tags change can affect smart rules; EFFECT: "EFEKT: smart collections auto-update after manual tag changes in detail panel").
         self._show_message("Utwór zaktualizowany i zapisany do pliku.")
 
     def _log_changes(self, track: Track, snapshot: dict):
@@ -2500,6 +2548,7 @@ class MainWindow(QtWidgets.QMainWindow):
             track.remixer = refreshed.remixer
             update_track(track)
             self._load_tracks()
+            self._refresh_smart_collections()  # per SZPIEG research 2026-06-15 Smart Collections + finalny efekt końcowy... must document identical: auto refresh after save tags to file (direct meta change affects smart; EFFECT: "EFEKT: smart collections auto-update after writing tags to file").
             self._show_message("Tagi zapisane do pliku.")
         except Exception as exc:
             self._show_message(f"Zapis nieudany: {exc}")
@@ -3421,12 +3470,23 @@ class MainWindow(QtWidgets.QMainWindow):
         item = self.playlist_list.itemAt(pos)
         menu = QtWidgets.QMenu(self)
         add_action = menu.addAction("Nowa playlista")
+        add_smart_action = menu.addAction("Nowa kolekcja smart")
         edit_action = menu.addAction("Edytuj playlistę")
         delete_action = menu.addAction("Usuń playlistę")
         order_action = menu.addAction("Kolejność utworów")
+        # Smart Collections per SZPIEG research 2026-06-15 Smart Collections + finalny efekt końcowy... must document identical
+        # EFFECT on actions: "EFEKT: nowa smart = dynamiczna kolekcja z regułami (BPM/key/tag/energia/historia); load = FILE (meta query); nie markuje played w main secie."
+        add_action.setToolTip("Stwórz statyczną playlistę")
+        add_smart_action.setToolTip("Stwórz dynamiczną kolekcję smart (auto na metadanych DB)")
+        edit_action.setToolTip("Edytuj nazwę, opis lub reguły smart")
+        delete_action.setToolTip("Usuń playlistę/kolekcję")
+        order_action.setToolTip("Zmień kolejność (tylko statyczne)")
         action = menu.exec(self.playlist_list.mapToGlobal(pos))
         if action == add_action:
             self._open_playlist_editor()
+        elif action == add_smart_action:
+            # Open editor pre-set for smart (user can set rules in dialog)
+            self._open_playlist_editor_for_smart()
         elif action == edit_action and item:
             playlist = item.data(QtCore.Qt.ItemDataRole.UserRole)
             if playlist:
@@ -3466,6 +3526,23 @@ class MainWindow(QtWidgets.QMainWindow):
                     payload["rules"],
                 )
             self._load_playlists()
+            self._refresh_smart_collections()  # per SZPIEG research 2026-06-15 Smart Collections + finalny efekt końcowy... must document identical: after create/edit smart rules via dialog, auto refresh tree + views; EFFECT "EFEKT: edycja reguł smart natychmiast widoczna w sidebarze i playlistach (meta DB query)."
+            if hasattr(self, "library_widget"):
+                # trigger library smart tree reload if dynamic
+                try:
+                    if hasattr(self.library_widget, "_load_smart_from_db"):
+                        self.library_widget._load_smart_from_db()
+                    else:
+                        self.library_widget.refresh_tracks()
+                except Exception:
+                    pass
+
+    def _open_playlist_editor_for_smart(self):
+        """Helper for smart create (pre-checks smart in dialog if supported). Per SZPIEG Smart Collections + finalny efekt."""
+        # Pre-create temp Playlist with is_smart=True so editor loads with checkbox checked and user can set rules.
+        temp = Playlist(name="", description=None, is_smart=True, rules=None)
+        self._open_playlist_editor(temp)
+        # After save (in _open), _load_playlists will show it as (smart).
 
     def _select_playlist(self, item: QtWidgets.QListWidgetItem):
         playlist = item.data(QtCore.Qt.ItemDataRole.UserRole)
@@ -3473,6 +3550,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self._apply_playlist_view()
 
     def _filter_tracks_by_rules(self, tracks: list[Track], rules_json: str) -> list[Track]:
+        # Legacy client-side filter (pre Smart Collections repo optimization).
+        # Now bypassed by get_tracks_for_smart_rules in _apply_playlist_view for smart (server/DB side, supports full conditions from builder).
+        # Per SZPIEG 2026-06-15 Smart Collections + finalny efekt... must document identical. Keep for compat with old rules format.
         try:
             rules = json.loads(rules_json)
         except Exception:

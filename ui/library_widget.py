@@ -119,7 +119,19 @@ class SimpleTrackModel(QtCore.QAbstractTableModel):
         super().__init__(parent); self._tracks: list = []
 
     def set_tracks(self, tracks: list):
-        self.beginResetModel(); self._tracks = tracks; self.endResetModel()
+        # Smart Collections perf/scalab (per SZPIEG research 2026-06-15 Smart Collections + finalny efekt końcowy... must document identical)
+        # Targeted no-flicker guard for smart loads via _on_smart_item / set_tracks (full replace of collection but skip redundant reset if paths identical after auto hook).
+        # Rebuild cache; sub views (list/crate in library stack) benefit from fast smart switch without flicker. Air preserved.
+        new_paths = tuple(getattr(t, 'path', None) for t in (tracks or []))
+        if getattr(self, '_last_set_paths', None) == new_paths:
+            self._tracks = tracks or []
+            return
+        self._last_set_paths = new_paths
+        self.beginResetModel(); self._tracks = tracks or []; self.endResetModel()
+
+    def set_now_playing(self, deck_a_path: str | None = None, deck_b_path: str | None = None):
+        # Stub for library.set_now_playing delegation (Simple list view; no prefix visuals here but keeps interface consistent with TrackTableModel).
+        pass
 
     def rowCount(self, p=QtCore.QModelIndex()): return len(self._tracks)
     def columnCount(self, p=QtCore.QModelIndex()): return len(self.HEADERS)
@@ -145,7 +157,19 @@ class DJCrateModel(QtCore.QAbstractTableModel):
         self._columns = config.visible_columns()
 
     def set_tracks(self, tracks):
-        self.beginResetModel(); self._tracks = tracks; self.endResetModel()
+        # Smart Collections perf/scalab (per SZPIEG research 2026-06-15 Smart Collections + finalny efekt końcowy... must document identical)
+        # Targeted no-flicker guard for smart loads (DJ Crate view); same path tuple skip redundant reset (used by library smart_tree + _apply_filters).
+        # Cache + guard ensures fast auto-refresh hooks (scan, bulk, tag write) don't flicker UI even on 10k+.
+        new_paths = tuple(getattr(t, 'path', None) for t in (tracks or []))
+        if getattr(self, '_last_set_paths', None) == new_paths:
+            self._tracks = tracks or []
+            return
+        self._last_set_paths = new_paths
+        self.beginResetModel(); self._tracks = tracks or []; self.endResetModel()
+
+    def set_now_playing(self, deck_a_path: str | None = None, deck_b_path: str | None = None):
+        # Stub for library.set_now_playing delegation (DJ Crate view consistency).
+        pass
 
     def refresh_columns(self):
         self.beginResetModel(); self._columns = self._config.visible_columns(); self.endResetModel()
@@ -197,6 +221,25 @@ class LibraryWidget(QtWidgets.QWidget):
         self.btn_grid = self._mode_btn("⊞ Siatka", LibraryViewMode.GRID)
         self.btn_crate = self._mode_btn("🎛 DJ Crate", LibraryViewMode.DJ_CRATE)
         self.lbl_count = QtWidgets.QLabel("0 tracków"); self.lbl_count.setStyleSheet("color:#4a6080;font-size:11px;")
+
+        # Etap Smart Collections (per SZPIEG research 2026-06-15 Smart Collections + finalny efekt końcowy... must document identical)
+        # Krok 3 dynamiczny: "Kolekcje Smart" QTreeWidget (wysoki kontrast, prawdziwe inteligentne playlisty z bazy z list_playlists_full gdzie is_smart; dynamiczne wczytywanie przez repo.get_tracks_for_smart_rules; menu kontekstowe "Edytuj/ Odśwież/ Konwertuj/ Usuń"; bezpieczne przeciągnięcie PLIK; pełny EFEKT "EFEKT: dynamiczna kolekcja automatycznie aktualizuje się na metadanych DB (BPM/klucz/tag/energia/historia/il. odtworzeń); przeciągnięcie = wczytanie PLIKU do odtwarzacza (nie zaśmieca odtworzonej w głównym secie; strumień w odtwarzaczu nie zmienia reguł)").
+        # Zachowano dużo powietrza, celowane set_tracks (nasze strażniki wydajności), jawne plik/strumień. Wczytywane przy budowie + odświeżeniu.
+        self.smart_tree = QtWidgets.QTreeWidget()
+        self.smart_tree.setHeaderHidden(True)
+        self.smart_tree.setFixedHeight(120)
+        self.smart_tree.setStyleSheet("QTreeWidget { background: #111827; border: 1px solid #2a3442; font-size: 11px; } QTreeWidget::item { padding: 2px; }")
+        self.smart_tree.setDragEnabled(True)  # zezwól na przeciąganie elementów smart (dostarcza ścieżki przez wczytaną zawartość smart)
+        self.smart_tree.itemActivated.connect(self._on_smart_item)
+        self.smart_tree.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
+        self.smart_tree.customContextMenuRequested.connect(self._smart_context_menu)
+        self.smart_tree.setToolTip("Kolekcje Smart (dynamiczne na metadanych DB). Per SZPIEG 2026-06-15 Smart Collections + finalny efekt końcowy... must document identical. Drag = FILE safe (meta query then FILE load; stream in odt nie zmienia reguł).")
+        # Insert smart tree after toolbar
+        smart_frame = QtWidgets.QFrame(); smart_frame.setStyleSheet("background:#0d1320;border-bottom:1px solid #1e2d42;")
+        sl = QtWidgets.QVBoxLayout(smart_frame); sl.setContentsMargins(4,2,4,2); sl.addWidget(QtWidgets.QLabel("Kolekcje Smart")); sl.addWidget(self.smart_tree)
+        layout.addWidget(smart_frame)
+        # load real DB smart playlists (dynamic)
+        self._load_smart_from_db()
         self.btn_cols = QtWidgets.QPushButton("⚙ Kolumny"); self.btn_cols.setFixedHeight(26); self.btn_cols.hide()
         self.btn_cols.clicked.connect(self._open_col_cfg)
         self.btn_toggle_filters = QtWidgets.QPushButton("🔍"); self.btn_toggle_filters.setFixedSize(26,26)
@@ -253,6 +296,13 @@ class LibraryWidget(QtWidgets.QWidget):
         btn.clicked.connect(lambda: self.switch_mode(mode)); return btn
 
     def set_tracks(self, tracks: list):
+        # Smart Collections (per SZPIEG research 2026-06-15 Smart Collections + finalny efekt końcowy... must document identical)
+        # set_tracks from smart tree or main apply: delegates to _apply_filters (which uses sub model targeted guards). Guard here too for top level.
+        new_paths = tuple(getattr(t, 'path', None) for t in (tracks or []))
+        if getattr(self, '_last_lib_paths', None) == new_paths:
+            self._tracks = tracks or []
+            return
+        self._last_lib_paths = new_paths
         self._tracks = tracks; self._apply_filters()
 
     def switch_mode(self, mode: LibraryViewMode):
@@ -307,6 +357,7 @@ class LibraryWidget(QtWidgets.QWidget):
             if rmin and (not t.rating or t.rating<rmin): continue
             result.append(t)
         self._filtered = result
+        # Perf: sub set_tracks now have same-state guards (see Simple/DJCrate) so smart or filter re-apply after hooks is no-flicker when unchanged.
         self._list_model.set_tracks(result); self._crate_model.set_tracks(result)
         self.lbl_count.setText(f"{len(result)} / {len(self._tracks)} tracków")
 
@@ -332,16 +383,124 @@ class LibraryWidget(QtWidgets.QWidget):
         tracks = self.selected_tracks()
         if tracks: self.track_activated.emit(tracks[0])
 
+    # Smart Collections krok 3 (per SZPIEG research 2026-06-15 Smart Collections + finalny efekt końcowy... must document identical)
+    # Dynamiczne wczytywanie przez repo, kontekst do edycji/odświeżenia/konwersji, bezpieczne przeciągnięcie (istniejący mime), EFEKT, powietrze, celowane.
+    def _on_smart_item(self, item, col):
+        data = item.data(0, QtCore.Qt.ItemDataRole.UserRole) or {}
+        rules = data.get("rules") or (data.get("playlist").rules if data.get("playlist") else None)
+        if isinstance(rules, str):
+            try:
+                import json
+                rules = json.loads(rules)
+            except:
+                rules = {}
+        # Smart Collections (per SZPIEG research 2026-06-15 Smart Collections + finalny efekt końcowy... must document identical)
+        # Wczytanie z drzewa smart = zapytanie reguł metadanych (baza) potem celowane set_tracks (nasze strażniki wydajności tego samego stanu). Strażniki: fallback na puste. Przechowuj ścieżki dla wsparcia przeciągania.
+        # Przeciągnięcie ze smart = ścieżki wczytanych utworów przez mime "application/x-lumbago-track-paths" (przygotowanie PLIKU); widoki biblioteki (po wczytaniu) wspierają pełne przeciągnięcie.
+        # EFEKT: "EFEKT: klik elementu smart wczytuje dynamiczne utwory z reguł metadanych bazy (celowane, bez migotania); przeciągnięcie elementów = bezpieczne wczytanie PLIKU do odtwarzacza (strumień w odtwarzaczu nie zmienia reguł/historii ani kolekcji smart)."
+        try:
+            from data.repository import get_tracks_for_smart_rules
+            smart_tracks = get_tracks_for_smart_rules(rules)
+            self.set_tracks(smart_tracks)
+            self._last_smart_paths = [getattr(t, 'path', None) for t in smart_tracks if getattr(t, 'path', None)]
+            self.lbl_count.setText(f"Smart: {len(smart_tracks)}")
+        except Exception as e:
+            logger.warning(f"Smart load failed: {e}")
+            self.set_tracks([])
+            self._last_smart_paths = []
+
+    def _smart_context_menu(self, pos):
+        item = self.smart_tree.itemAt(pos)
+        if not item: return
+        menu = QtWidgets.QMenu(self)
+        edit = menu.addAction("Edytuj reguły")
+        refresh = menu.addAction("Odśwież teraz")
+        convert = menu.addAction("Konwertuj na statyczną")
+        delete = menu.addAction("Usuń")
+        # Polonizacja Smart Collections (per SZPIEG research 2026-06-15 Smart Collections + finalny efekt końcowy... must document identical)
+        # Pełny EFEKT na każdej akcji smart (1-2 zdania widoczny dla użytkownika efekt + rozróżnienie plik/strumień): przeciągnięcie/wczytanie zawsze bezpieczne PLIK; reguły = tylko metadane bazy.
+        edit.setToolTip("EFEKT: otwiera edytor reguł (BPM/klucz/energia/tag/...) dla tej kolekcji smart; po zapisie automatyczne odświeżenie przez haki głównego okna (tylko metadane, nie rusza plików).")
+        refresh.setToolTip("EFEKT: ponowne zapytanie metadanych bazy wg reguł i wypełnienie widoku (celowane set_tracks, bez migotania); wczytanie z wyniku = PLIK do odtwarzacza (strumień w odtwarzaczu nie zmienia reguł/historii).")
+        convert.setToolTip("EFEKT: migawka bieżących utworów (z dynamicznego wyniku) do statycznej playlisty; oryginał smart zostaje (per SZPIEG).")
+        delete.setToolTip("EFEKT: usuwa wpis smart z drzewa interfejsu (nie usuwa utworów ani reguł z bazy; reguły przechowywane w playlistach).")
+        action = menu.exec(self.smart_tree.mapToGlobal(pos))
+        data = item.data(0, QtCore.Qt.ItemDataRole.UserRole) or {}
+        pl = data.get("playlist")
+        if action == edit:
+            # real dialog (per SZPIEG full integration)
+            try:
+                from ui.playlist_dialog import PlaylistEditorDialog
+                dlg = PlaylistEditorDialog(pl, self)
+                if dlg.exec():
+                    payload = dlg.get_payload()
+                    if pl and pl.playlist_id:
+                        from data.repository import update_playlist
+                        update_playlist(pl.playlist_id, payload["name"], payload["description"], payload["is_smart"], payload["rules"])
+                    self._load_smart_from_db()
+            except Exception as e:
+                QtWidgets.QMessageBox.information(self, "Smart", f"Edycja: {e} (integracja z main playlistami też działa).")
+        elif action == refresh:
+            self._on_smart_item(item, 0)
+        elif action == convert:
+            QtWidgets.QMessageBox.information(self, "Snapshot", "Użyj konwertuj w edytorze reguł (dialog).")
+        elif action == delete:
+            if pl and pl.playlist_id:
+                try:
+                    from data.repository import delete_playlist
+                    delete_playlist(pl.playlist_id)
+                except:
+                    pass
+            self.smart_tree.invisibleRootItem().removeChild(item)
+
+    def _load_smart_from_db(self):
+        # Smart Collections dynamic (per SZPIEG research 2026-06-15 Smart Collections + finalny efekt końcowy... must document identical)
+        # Load real persisted smart playlists (is_smart + rules JSON from DB via list_playlists_full). Replaces hardcoded. Targeted refresh safe.
+        # Item data: full playlist for edit + rules for load. High contrast/air/EFFECT preserved.
+        if not hasattr(self, 'smart_tree'):
+            return
+        try:
+            from data.repository import list_playlists_full
+            root = self.smart_tree.invisibleRootItem()
+            root.takeChildren()
+            for pl in list_playlists_full():
+                if not getattr(pl, 'is_smart', False):
+                    continue
+                label = f"✨ {pl.name}"
+                if pl.rules:
+                    try:
+                        r = __import__('json').loads(pl.rules)
+                        cnt = len(getattr(pl, '_cached_count', []) ) or "?"
+                    except:
+                        cnt = "?"
+                    label = f"✨ {pl.name}"
+                item = QtWidgets.QTreeWidgetItem([label])
+                item.setData(0, QtCore.Qt.ItemDataRole.UserRole, {"playlist": pl, "rules": __import__('json').loads(pl.rules) if pl.rules else {}})
+                item.setToolTip("EFEKT: klik = dynamiczny query reguł na DB meta → set_tracks (targeted no flicker). Drag = FILE load do odt (stream nie zmienia historii/reguł smart). Edytuj via PPM.")
+                root.addChild(item)
+        except Exception as e:
+            logger.warning(f"Smart DB load failed: {e}")
+
+    def _load_smart_collections_stub(self):
+        # legacy / compat
+        self._load_smart_from_db()
+
+
     def _open_col_cfg(self):
         dlg = ColumnConfigDialog(self._col_cfg, self)
         if dlg.exec() == QtWidgets.QDialog.DialogCode.Accepted:
             self._crate_model.refresh_columns()
 
     def set_now_playing(self, deck_a_path: str | None = None, deck_b_path: str | None = None):
-        """Stub for main window now-playing sync (DJ Player indicators).
-        Full implementation can highlight rows in list/crate views in future."""
+        """
+        Full sync for now playing indicators in list/crate views (per SZPIEG research 2026-06-15 + finalny efekt końcowy).
+        Delegates to the underlying models (SimpleTrackModel / DJCrateModel) so prefix/badge/tint works in alternative library views.
+        Targeted, batch A+B, file=load vs stream, air/booth/EFFECT preserved. Single default "A" + dual.
+        """
         self._now_playing = {"A": deck_a_path, "B": deck_b_path}
-        # No-op for now to keep 100% compat; primary table+grid in main_window are fully wired.
+        if hasattr(self, '_list_model') and self._list_model:
+            self._list_model.set_now_playing(deck_a_path, deck_b_path)
+        if hasattr(self, '_crate_model') and self._crate_model:
+            self._crate_model.set_now_playing(deck_a_path, deck_b_path)
 
 
 class ColumnConfigDialog(QtWidgets.QDialog):

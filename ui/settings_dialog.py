@@ -128,6 +128,7 @@ class SettingsDialog(QtWidgets.QDialog):
         self._tabs.addTab(self._build_tab_ai(), "Cloud AI")
         self._tabs.addTab(self._build_tab_tagging(), "Tagowanie")
         self._tabs.addTab(self._build_tab_performance(), "Wydajność")
+        self._tabs.addTab(self._build_tab_audio(), "Audio / Odtwarzanie")  # Etap4 playback reliability (per SZPIEG 2026-06-15 + finalny efekt... must document identical)
 
         # Bottom buttons
         btn_row = QtWidgets.QHBoxLayout()
@@ -396,6 +397,63 @@ class SettingsDialog(QtWidgets.QDialog):
         )
         cache_form.addRow("Czas życia cache (TTL)", self.metadata_cache_ttl)
         layout.addWidget(cache_box)
+
+        layout.addStretch(1)
+        return scroll
+
+    # ---- Tab: Audio / Odtwarzanie (Etap 4 playback reliability) ----------------------------------------------
+    # Per SZPIEG research 2026-06-15 playback reliability + finalny efekt końcowy (visible '⚠ Audio niedostępne', 'Pobierz VLC videolan.org' + portable note, graceful no-silent, diagnostics, file/stream, EFFECT, booth readable) — must document identical.
+    # Added as dedicated section for user guidance. Actual live status (backend, error_code from DeckState) shown in Odtwarzacz (single/compact) via controller/engine.get_backend_info + get_diagnostics.
+    # EFFECT on every control: "EFEKT: ..."
+    def _build_tab_audio(self) -> QtWidgets.QWidget:
+        scroll, layout = _make_scroll_widget()
+
+        audio_box, audio_form = _group("Backend audio (PlaybackEngine)")
+        info_lbl = QtWidgets.QLabel(
+            "Priorytet: VLC (pełne: keylock, 3-pasmowe EQ, niska latencja, native pętle).\n"
+            "Fallback: QtMultimedia (ograniczony — brak pełnego keylock/EQ, wyższa latencja; wave/cue/FILE nadal działa).\n"
+            "Last resort: noop (cisza; UI/preview działa)."
+        )
+        info_lbl.setWordWrap(True)
+        audio_form.addRow("", info_lbl)
+
+        # Guidance buttons (exact per finalny efekt + SZPIEG)
+        vlc_btn = _link_button("Pobierz VLC (zalecane) → videolan.org", "https://www.videolan.org/vlc/")
+        vlc_btn.setToolTip(
+            "EFEKT: otwiera stronę pobierania VLC (pełna wersja 64-bit dla Windows). "
+            "Po instalacji/zrestartowaniu Lumbago single Odtwarzacz użyje VLC automatycznie (najlepsza jakość DJ). "
+            "Portable: rozpakuj obok .exe i zrestartuj. Per SZPIEG playback reliability + finalny efekt."
+        )
+        audio_form.addRow("Zainstaluj VLC", vlc_btn)
+
+        note_lbl = QtWidgets.QLabel(
+            "Status audio (bieżący backend, błędy ⚠, rekomendacja) jest wyświetlany bezpośrednio w oknie Odtwarzacza "
+            "(single domyślny + compact pilot) i aktualizowany na load/play/error. "
+            "Użyj get_diagnostics() / get_backend_info() z engine dla szczegółów w kodzie/UI."
+        )
+        note_lbl.setWordWrap(True)
+        audio_form.addRow("", note_lbl)
+
+        refresh_btn = QtWidgets.QPushButton("Odśwież info backendu (test)")
+        refresh_btn.setToolTip(
+            "EFEKT: tworzy tymczasowy PlaybackEngine, wywołuje get_backend_info + diagnostics i pokazuje wynik. "
+            "Pomaga sprawdzić czy VLC jest wykryty (FILE load + STREAM). Nie wpływa na działający odtwarzacz. "
+            "Pełny status zawsze w Odtwarzaczu (per finalny efekt: widoczny, nie cichy)."
+        )
+        def _do_refresh():
+            try:
+                from services.playback.engine import PlaybackEngine
+                eng = PlaybackEngine()
+                info = eng.get_backend_info()
+                diag = eng.get_diagnostics()
+                txt = f"Backend info: {info}\n\nDiagnostics (skrót): { {k: diag.get(k) for k in ['active_backend_a','active_backend_b','recommendation']} }"
+                QtWidgets.QMessageBox.information(self, "Audio backend", txt)
+            except Exception as ex:
+                QtWidgets.QMessageBox.warning(self, "Audio backend", f"Błąd: {ex}\n\nSprawdź instalację VLC.")
+        refresh_btn.clicked.connect(_do_refresh)
+        audio_form.addRow("", refresh_btn)
+
+        layout.addWidget(audio_box)
 
         layout.addStretch(1)
         return scroll

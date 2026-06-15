@@ -197,6 +197,38 @@ def test_vlc_backend_full_lifecycle_with_fake(monkeypatch):
     vlc_mod._VLC_AVAILABLE = False
     vlc_mod._VLC_IMPORT_ERROR = ""
 
+# ----------------------------------------------------------------------
+# Etap4 playback reliability tests (per SZPIEG 2026-06-15 + finalny: error_code, no-silent, diagnostics, graceful fallback)
+# ----------------------------------------------------------------------
+
+def test_deck_state_error_code_support():
+    from services.playback.types import DeckState, PlaybackState, BackendErrorCode
+    # Explicit error support added in Etap4
+    st = DeckState(state=PlaybackState.ERROR, error_code=BackendErrorCode.VLC_MISSING_DLL, last_error="libvlc not found")
+    assert st.error_code == BackendErrorCode.VLC_MISSING_DLL
+    assert "libvlc" in (st.last_error or "")
+
+def test_engine_get_backend_info_and_diagnostics():
+    from services.playback.engine import PlaybackEngine
+    eng = PlaybackEngine()
+    info = eng.get_backend_info()
+    assert isinstance(info, dict)
+    di = eng.get_diagnostics()
+    assert "engine" in di
+    assert "recommendation" in di or "active_backend_a" in di  # Etap4 fields
+
+def test_error_graceful_in_fallback(monkeypatch):
+    # Even on full failure, no crash, error surfaced
+    from services.playback import create_backend
+    # Mock both unavailable
+    with patch("services.playback.vlc_backend.VlcAudioBackend.is_available", return_value=False), \
+         patch("services.playback.qt_backend.QtAudioBackend.is_available", return_value=False):
+        b = create_backend()
+        assert b is not None
+        st = b.get_state()
+        # noop or error path should not hard fail
+        assert hasattr(st, "error_code")
+
     from services.playback.vlc_backend import VlcAudioBackend
 
     assert VlcAudioBackend.is_available() is True
