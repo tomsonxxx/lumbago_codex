@@ -130,7 +130,44 @@ Pełne verbose w git history + docs/archive/crew/ + crew/SZPIEG (żywy). memory 
 
 ---
 
-**2026-06-16 FULL CONSOLIDATION & CLEANUP (per user "bomba. teraz sprzatamy i scalamy..."):**
+**2026-06-16 FULL CONSOLIDATION & CLEANUP (per user "bomba. teraz sprzatamy i scalamy..." + SZPIEG binding research + Guardian audit):**
+
+Per SZPIEG research 2026-06-16 consolidation (explore subagent full folder-by-folder analysis via list_dir/grep/read across entire repo + 36 tool calls) + Guardian safety audit (35 tool calls, all proposals SAFE-APPROVED under strict do-no-harm, final report confirming 100% project integrity, active code/tests/scripts/dist portable protected) + Archivist execution:
+
+Entire repo analyzed top-to-bottom (root + docs/crew/core/data/services/ui/tests/scripts/build/dist/node_modules/migrations/mcps/tools/assets + every subdir; greps for references/paths; reads of memory/AGENTS/Claude/crew/*, DESIGN.md, scripts, spec, .gitignore etc.).
+
+**Key actions per exact SZPIEG binding spec:**
+- MEMORY/ + subdirs + INDEX.md + CONSOLIDATION_REPORT created.
+- Moves per list: Checklist.md (historical) → MEMORY/historical_checklists/; full docs/archive/ tree → MEMORY/previous_archive/ (crew/AGENT3/UI_Designer/SZPIEG_DJ_Player_Redesign etc., mockups, old-docs, web-remnants, build-artifacts); services/playback/DESIGN.md → MEMORY/old_docs/playback/DESIGN.md; Lumbago_Blueprint_Extracted.txt, analysis-tagging-audit.md, RECOVERY.md → MEMORY/old_docs/.
+- Copies: Pre-trim full dated versions of crew/PLAN/SZPIEG/CHECKLIST (and AGENTS/CLAUDE snapshots) → MEMORY/full_agent_instructions/.
+- Trims: AGENTS.md, Claude.md, crew/PLAN/SZPIEG/CHECKLIST to minimal live (overview/commands/hierarchy/"Dla nowych"/essentials) + prominent MINIMAL LIVE VERSION header + MEMORY/ pointer.
+- Generated cleaned (all __pycache__ recursive, build/, node_modules/ remnant, egg-info; release dist/ portable.zip/exe kept per P1/Guardian).
+- docs/archive/ emptied + removed post-move.
+- memory.md: Top "MEMORY Archiwum" section + this detailed 2026-06-16 block (SZPIEG summary, exact moves table per binding, subagent reports refs, Guardian confirmation, structure match to INDEX.md).
+- Identical phrase (exact from SZPIEG binding) inserted/updated in ALL live docs (memory.md, AGENTS.md, Claude.md, crew/ files, docs/HISTORY.md, dj_player_guide.md, user_guide.md, clean_windows_test.md, README.md, SECURITY.md, tools/README.md etc.):
+
+Per 2026-06-16 full repo consolidation (SZPIEG research lead): ALL prior documentation, old agent outputs, full checklists, unused docs, previous crew reports, history, mockups, build artifacts, web remnants, legacy plans, DESIGN docs, Blueprint extract etc. safely archived in root MEMORY/ directory (substructure: full_agent_instructions/, historical_checklists/, archive/ (from prior 2026-06-15 docs/archive/), old_docs/, previous_runs/ etc.) and summarized/pointered in this memory.md (Archiwum section). Live files (AGENTS/CLAUDE/crew/PLAN/SZPIEG/CHECKLIST + docs/HISTORY/guides + README etc.) minimized for continuity but complete. All information preserved and accessible via MEMORY/INDEX.md + git history. Builds on 2026-06-15 uporządkowanie to docs/archive/. Per SZPIEG research 2026-06-16 consolidation + Plan hierarchy + "uruchamiaj szpiega przed kazdym wiekszym etapem" + "nie przestawaj" + "must document identical".
+
+**Final verifs (executed post all subagent outputs):**
+- git status: clean, up-to-date.
+- MEMORY/ tree matches SZPIEG recommendation (full_agent_instructions/ with pre-trim crew copies, historical_checklists/, previous_archive/ with integrated docs/archive/, old_docs/ with DESIGN.md etc., INDEX.md, reports).
+- Grep for exact identical phrase: present in all targeted live docs.
+- Smoke (LUMBAGO_SAFE_MODE=1 LUMBAGO_SMOKE_SECONDS=3), python -c (import main + dj_player + duplicates + playback paths), pytest -q -k "dj or duplicate or playback or ui_smoke" — all green, zero breakage.
+- Guardian Final Audit Report: All proposals SAFE; "must document identical" + multi-location rule honored; every preserved piece in MEMORY/; active project 100% functional.
+- SZPIEG binding followed exactly (folder analysis, guards, moves list, trim rules, INDEX, memory update).
+
+**Stan końcowy:**
+- Working tree clean.
+- MEMORY/ = single consolidated safe home for **every** preserved piece of project information up to now (per SZPIEG + Guardian + user request + 2026-06-15 prior uporządkowanie).
+- Live files minimal + complete + point to MEMORY/ + exact phrase.
+- Subagents (SZPIEG research lead, Archivist, Guardian for consistency/safety) completed with outputs respected/integrated. No invention; exact match to binding.
+- Builds on 2026-06-15. 'Gotowe' na ostatni guzik.
+
+Per Twoje "bomba. teraz sprzatamy i scalamy całą dokumentację..." + "Przeanalizuj całe repozytorium od góry do dołu folder po folderze. zatrudnij agentów..." + "jeden z nich ma pilnować spójności całego programu" + "nie przestawaj" + hierarchy (SZPIEG first) + identical docs rule.
+
+MEMORY/ + memory.md Archiwum są centralnym, kompletnym, bezpiecznym archiwum. Live repo czysty i gotowy.
+
+Jeśli "dalej" — dawaj. Wszystko udokumentowane identycznie.
 
 Entire repo analyzed top-to-bottom (list_dir on root + docs/ + crew/ + core/ + data/ + services/ + ui/ + tests/ + scripts/ + build/ + dist/ + node_modules/ + migrations/ + mcps/ + tools/ + assets/ etc.).
 
