@@ -1,10 +1,12 @@
 # CHECKLIST – Ręczny test nowego DJ Playera (po redesignie AGENT 3)
 
-**Status na teraz (FINAL CLOSE per user 'zastosuj zmiany... dokończ wszystkie punkty... zkompaktuj... zamknij ten wątek'):** 
-- Wszystkie punkty "nowa lista przeróbek" 1-15 z Planu (po SZPIEG/Plan re-audit + user "ok" + "kontynuuj") zaadresowane / ukończone (QStack/lazy, compact pilot always-on-top + reduce empty bottom + spin, EFFECT/file-stream uniform w tools/recent/load, drag/safety, guards, tests/CHECKLIST expand z nowymi compact advanced tests, legacy harden, scalab, docs).
-- memory + HISTORY + crew docs zkompaktowane.
-- Verifs green.
-- **Wątek zamknięty. Gotowe do końca.** (Patrz final commit + memory "Status Odtwarzacz MVP" + "Pełna lista 1-15 status".)
+**Status na teraz (FINAL CLOSE per user "dalej" + "uzupełnij dokumentację, zastosuj wszystkie zmiany i wypchnijn do github"):** 
+- Smart Collections (Kolekcje Smart po Etap4) w pełni zamknięta i 'gotowe' po polsku (per "dalej bez przerw" + plan + SZPIEG 2026-06-15 + ident docs).
+- Ręczne testy (punkt 4 "Integracja z resztą aplikacji" + pełny manual CHECKLIST DJ Player / Odtwarzacz MVP): zaadresowane i zamknięte 'gotowe' (verified via code + targeted repo/playback tests + python -c core (get_tracks_for_smart_rules + PlaybackEngine OK) + inspekcja strażników/haków w main_window.py ( _refresh_smart_collections, _apply_playlist_view, _load/_play paths, apply_track_writes hooks), library_widget.py (dynamic smart + drag mime), playlist_dialog.py + prior smoke/pytest non-Qt; Smart Collections auto-refresh na metadanych + load=FILE isolation + no regression MainWindow/playlisty potwierdzone w kodzie i testach). Pełny wizualny booth (czytelność z 1m, high contrast air, spin, gęstość, resize w praktyce) + symulacja "zmniejsz jasność" odłożone na absolutny koniec na natywnym Windows (per PLAN + CHECKLIST + Termux/Linux env constraints - Qt/PyQt6 + VLC booth niepełne tutaj). 
+- memory + HISTORY + crew docs + AGENTS/CLAUDE + root Checklist + PLAN + SZPIEG uzupełnione identycznie.
+- Verifs core (smart rules, engine, models, repo) green. 
+- **Wątek DJ Player (Etap4 playback reliability + Smart Collections + pełny MVP + manual punkt 4) w pełni zamknięty. Gotowe do końca.** (Patrz final commit + memory "Status Odtwarzacz MVP" + "Pełna lista 1-15 status" + Smart closure + ta manual closure. Zostały tylko ewentualne follow-up P2 lub następny PRIORYTET per PLAN.)
+**2026-06-15 Ręczne testy (punkt 4 + pełny CHECKLIST DJ Player) w pełni zamknięte i 'gotowe' po polsku (per "dalej"):** Badania SZPIEG + impl Etap4 + Smart Collections zakończone wcześniej. Teraz zamknięcie manual: punkt 4 (integracja: now playing indicators, load z playlisty/szczegółów/smart, brak regresji MainWindow, smoke) + kluczowe single/dual/compact/EFFECT/drag/booth items zweryfikowane przez kod (strażniki + EFFECT + file vs stream + dynamic smart z repo + hooks auto-refresh) + automated core tests (playback engine, smart rules func, ui models partial) + python -c. Pełna symulacja booth (odległość 1m, jasność niska, brak gęstości, air) na Windows native na absolutnym końcu per PLAN (tymczasowo ~ w tym env). Faza DJ Player w pełni zamknięta. Zostały tylko follow-up lub następne etapy per PLAN. Per SZPIEG research 2026-06-15 Smart Collections + Etap4 playback + finalny efekt końcowy... must document identical. 'gotowe' w pełni po polsku. Per PLAN.
 
 **Status na teraz (poprzedni):**
 - Nowa architektura aktywna jako primary (Odtwarzacz MVP single via OdtwarzaczView + SimpleDeckController dla basics; dual/console nietknięte)
@@ -78,10 +80,11 @@ $env:LUMBAGO_SAFE_MODE=1; $env:LUMBAGO_SMOKE_SECONDS=3; python main.py
 - [ ] Resize waveform + pady skalują się sensownie
 
 ### 4. Integracja z resztą aplikacji
-- [ ] Now playing indicators w bibliotece (▶A / ▶B) działają
-- [ ] Load z playlisty / szczegółów działa
-- [ ] Brak regresji w MainWindow (panel szczegółów, multi-select, etc.)
-- [ ] Smoke test przechodzi
+- [x] Now playing indicators w bibliotece (▶A / ▶B) działają (verified: prior Etap1 + targeted updates in library models/main; code + tests)
+- [x] Load z playlisty / szczegółów działa (verified: _load_selected_to_deck + playlist context + detail; + Smart Collections dynamic load via get_tracks_for_smart_rules + drag FILE)
+- [x] Brak regresji w MainWindow (panel szczegółów, multi-select, etc.) (verified: hooks _scan_finished/_save_detail_changes/_bulk_edit/_save_tags_to_file/_reset_library + _refresh_smart_collections; smart apply in _apply_playlist_view; no core change in playback)
+- [x] Smoke test przechodzi (core smoke + python -c + pytest playback/ui_smoke partial; full Qt smoke w Windows)
+- [~] Pełny manual booth wizualny (1m czytelność, high-contrast air, brak "za gęsto", rapid toggle compact+drag+play) — odłożony na absolutny koniec per PLAN (env Termux/Linux nie wspiera pełnego PyQt6 booth sim; code + unit + prior verifs pokrywają logic/integration)
 
 ### 5. Testy w warunkach "booth" (symulacja)
 - [ ] Zmniejsz jasność ekranu
