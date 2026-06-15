@@ -2,7 +2,7 @@ import tempfile
 
 from core.models import Track
 from data.db import reset_engine
-from data.repository import init_db, upsert_tracks, list_tracks, update_track
+from data.repository import get_track_by_id, init_db, list_tracks, update_track, upsert_tracks
 
 
 def test_integration_db_roundtrip(monkeypatch):
@@ -20,4 +20,9 @@ def test_integration_db_roundtrip(monkeypatch):
         update_track(rows[0])
         rows2 = list_tracks()
         assert rows2[0].title == "Test2"
+        by_id = get_track_by_id(rows2[0].id)
+        assert by_id is not None
+        assert by_id.title == "Test2"
+        assert get_track_by_id(0) is None
+        assert get_track_by_id(999999) is None
         reset_engine()

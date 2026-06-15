@@ -833,6 +833,22 @@ def get_track_by_path(path: str) -> Track | None:
         return None
 
 
+def get_track_by_id(track_id: int) -> Track | None:
+    """Zwraca Track z bazy po ID lub None."""
+    if not track_id:
+        return None
+    Session = get_session_factory()
+    with Session() as session:
+        row = session.scalar(
+            select(TrackOrm)
+            .where(TrackOrm.id == int(track_id))
+            .options(selectinload(TrackOrm.tags))
+        )
+        if row:
+            return _orm_to_track(row)
+        return None
+
+
 def get_or_create_track_by_path(path: str) -> Track:
     """Zwraca istniejący track lub tworzy nowy minimalny wpis w bazie."""
     existing = get_track_by_path(path)
