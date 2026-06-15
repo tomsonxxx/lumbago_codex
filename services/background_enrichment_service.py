@@ -142,12 +142,12 @@ class BackgroundEnrichmentService(QtCore.QObject):
     Przetwarzanie odbywa się poza wątkiem GUI (QThreadPool).
     """
 
-    def __init__(self, settings, main_window_ref=None):
-        super().__init__()
+    def __init__(self, settings, main_window_ref=None, parent=None):
+        super().__init__(parent)
         self.settings = settings
         self.main_window_ref = main_window_ref
         self._processor_timer: Optional[QtCore.QTimer] = None
-        self._signals = _BackgroundEnrichmentSignals()
+        self._signals = _BackgroundEnrichmentSignals(self)
         self._signals.job_finished.connect(self._on_job_finished)
         self._thread_pool = QtCore.QThreadPool.globalInstance()
         self._jobs_in_flight = 0
