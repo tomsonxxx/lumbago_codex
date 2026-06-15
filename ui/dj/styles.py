@@ -422,9 +422,10 @@ BOOTH_TOKENS: dict[str, dict[str, int | float | tuple[int, int]]] = {
         "spin_size": 16,
         "bpm_min_w": 0,
         "transport_gap": 8,
-        "crossfader_h": 34,
-        "mixer_slider_w": 160,
-        "mixer_slider_w_cue": 140,
+        "crossfader_h": 22,
+        "crossfader_max_w": 240,
+        "mixer_slider_w": 100,
+        "mixer_slider_w_cue": 88,
         "pro_btn": (54, 30),
         "deck_badge_font": 16,
     },
@@ -674,7 +675,11 @@ class BoothMetrics:
         return max(self.px(44), self.size("transport_stop")[1])
 
     def crossfader_height(self) -> int:
-        raw = self._tokens.get("crossfader_h", 34)
+        raw = self._tokens.get("crossfader_h", 22)
+        return self.px(int(raw))  # type: ignore[arg-type]
+
+    def crossfader_max_width(self) -> int:
+        raw = self._tokens.get("crossfader_max_w", 240)
         return self.px(int(raw))  # type: ignore[arg-type]
 
     def mixer_slider_width(self, *, cue: bool = False) -> int:

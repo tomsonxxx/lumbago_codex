@@ -100,11 +100,14 @@ class ConsoleDeckView(QtWidgets.QFrame):
         self,
         controller: DeckController,
         deck_label: str = "A",
+        *,
+        embed_transport: bool = True,
         parent: QtWidgets.QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self.controller = controller
         self.deck_label = deck_label
+        self._embed_transport = embed_transport
         self._current_duration_ms: int = 0
         self._last_playhead_ms: int = 0
         self._partner: DeckController | None = None
@@ -162,14 +165,18 @@ class ConsoleDeckView(QtWidgets.QFrame):
         self.time_label = build_time_label(m)
         main.addWidget(self.time_label, 0)
 
-        # === TRANSPORT + TRIM + PITCH (jeden wiersz pro) ===
-        mix_row = QtWidgets.QHBoxLayout()
-        mix_row.setSpacing(12)
+        self.transport: TransportBar | None = None
+        if self._embed_transport:
+            trans_row = QtWidgets.QHBoxLayout()
+            trans_row.addStretch(1)
+            self.transport = TransportBar()
+            trans_row.addWidget(self.transport, 0)
+            trans_row.addStretch(1)
+            main.addLayout(trans_row, 0)
 
-        self.transport = TransportBar()
-        mix_row.addWidget(self.transport, 0)
+        controls_row = QtWidgets.QHBoxLayout()
+        controls_row.setSpacing(m.px(10))
 
-        # TRIM
         trim_col = QtWidgets.QVBoxLayout()
         trim_col.setSpacing(2)
         t_lbl = QtWidgets.QLabel("TRIM")
@@ -179,16 +186,14 @@ class ConsoleDeckView(QtWidgets.QFrame):
         self.trim_slider.setRange(0, 100)
         self.trim_slider.setValue(85)
         self.trim_slider.setStyleSheet(get_slider_stylesheet("horizontal"))
-        self.trim_slider.setFixedWidth(m.px(150))
+        self.trim_slider.setFixedWidth(m.px(120))
         self.trim_slider.valueChanged.connect(self._on_trim_changed)
         trim_col.addWidget(self.trim_slider)
-        mix_row.addLayout(trim_col, 1)
+        controls_row.addLayout(trim_col, 1)
 
-        # PITCH + KEYLOCK (gotowy widget)
         self.pitch_control = PitchControl()
-        mix_row.addWidget(self.pitch_control, 2)
-
-        main.addLayout(mix_row, 0)
+        controls_row.addWidget(self.pitch_control, 2)
+        main.addLayout(controls_row, 0)
 
         # === PRO KONTROLKI: KEY/SYNC/PFL/Q (KEY jest w PitchControl) ===
         pro_row = QtWidgets.QHBoxLayout()
@@ -305,10 +310,10 @@ class ConsoleDeckView(QtWidgets.QFrame):
     # Sygnały widgetów → kontroler
     # ------------------------------------------------------------------
     def _connect_widget_signals(self) -> None:
-        # Transport
-        self.transport.play_clicked.connect(self.controller.toggle_play)
-        wire_cue_transport(self.transport, self.controller, self)
-        self.transport.stop_clicked.connect(self.controller.stop)
+        if self.transport is not None:
+            self.transport.play_clicked.connect(self.controller.toggle_play)
+            wire_cue_transport(self.transport, self.controller, self)
+            self.transport.stop_clicked.connect(self.controller.stop)
 
         # Pitch / Keylock
         self.pitch_control.bind_controller(self.controller)
@@ -346,7 +351,7 @@ class ConsoleDeckView(QtWidgets.QFrame):
         old = self._last_metrics_scale
         self._metrics = new_m
         self._last_metrics_scale = new_m.scale_factor
-        if (force_apply or abs(new_m.scale_factor - old) > 0.04) and hasattr(self, "transport"):
+        if force_apply or abs(new_m.scale_factor - old) > 0.04:
             self._apply_metrics()
 
     def _apply_metrics(self) -> None:
@@ -362,7 +367,7 @@ class ConsoleDeckView(QtWidgets.QFrame):
             self.time_label.setStyleSheet(m.time_stylesheet())
         if hasattr(self, "waveform"):
             self.waveform.setMinimumHeight(m.wave_min_height())
-        if hasattr(self, "transport"):
+        if self.transport is not None:
             self.transport.apply_metrics(m)
         if hasattr(self, "hotcue_grid"):
             self.hotcue_grid.apply_metrics(m)
@@ -653,7 +658,8 @@ class ConsoleDeckView(QtWidgets.QFrame):
         if hasattr(self.waveform, "clear"):
             self.waveform.clear()
         self.hotcue_grid.clear_all()
-        self.transport.set_playing(False)
+        if self.transport is not None:
+            self.transport.set_playing(False)
 
     def _on_cue_changed(self, cue_ms: int) -> None:
         if hasattr(self.waveform, "set_main_cue_ms"):
@@ -682,7 +688,8 @@ class ConsoleDeckView(QtWidgets.QFrame):
                 pad.clear_cue()
 
     def _on_play_state_changed(self, playing: bool) -> None:
-        self.transport.set_playing(playing)
+        if self.transport is not None:
+            self.transport.set_playing(playing)
 
     def _on_status_changed(self, text: str) -> None:
         if hasattr(self, "status_label"):

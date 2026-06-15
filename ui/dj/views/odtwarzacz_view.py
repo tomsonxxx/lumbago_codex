@@ -12,13 +12,13 @@ from core.models import Track
 from ui.dj.deck_layout import (
     apply_header_metrics,
     apply_transport_button_metrics,
-    build_centered_transport,
     build_deck_header,
     build_time_label,
     configure_waveform_widget,
 )
 from ui.dj.deck_view_helpers import metrics_for_odt, refresh_waveform_on_resize
 from ui.dj.simple_deck_controller import SimpleDeckController
+from ui.dj.views.player_controls_bar import PlayerControlsBar
 from ui.dj.views.waveform_widget import WaveformWidget
 from ui.dj.styles import (
     BOOTH_COLORS,
@@ -235,10 +235,16 @@ TESTER 2026-06-14 final (po "dalej"+lista 1-15): smoke0/pytest44p/python-c (comp
         self.time_label.setToolTip("Pozycja / czas trwania. EFEKT: aktualizowane z playhead streamu (timer 40ms z engine state). Nie wpływa na plik.")
         layout.addWidget(self.time_label, 0)
 
-        transport = build_centered_transport(self._metrics)
-        self.cue_btn = transport.cue_btn
-        self.play_btn = transport.play_btn
-        self.stop_btn = transport.stop_btn
+        self.player_controls = PlayerControlsBar()
+        self.player_controls.volume_changed.connect(self._on_volume_changed)
+        layout.addWidget(self.player_controls, 0)
+
+        self.cue_btn = QtWidgets.QPushButton()
+        self.play_btn = QtWidgets.QPushButton()
+        self.stop_btn = QtWidgets.QPushButton()
+        apply_transport_button_metrics(
+            self._metrics, self.cue_btn, self.play_btn, self.stop_btn, playing=False
+        )
         self.cue_btn.pressed.connect(self._on_cue_pressed)
         self.cue_btn.released.connect(self._on_cue_released)
         self.cue_btn.setToolTip(
@@ -255,7 +261,21 @@ TESTER 2026-06-14 final (po "dalej"+lista 1-15): smoke0/pytest44p/python-c (comp
             "Zatrzymaj odtwarzanie i wróć do punktu CUE (lub 0). "
             "EFEKT: stop silnika + reset playhead do cue (nie usuwa pliku z decku)."
         )
-        layout.addLayout(transport.layout)
+
+        self._transport_widget = QtWidgets.QWidget()
+        trans_row = QtWidgets.QHBoxLayout(self._transport_widget)
+        trans_row.setContentsMargins(0, 0, 0, 0)
+        trans_row.setSpacing(self._metrics.transport_gap())
+        trans_row.addStretch(1)
+        trans_row.addWidget(self.cue_btn)
+        trans_row.addWidget(self.play_btn)
+        trans_row.addWidget(self.stop_btn)
+        trans_row.addStretch(1)
+        layout.addWidget(self._transport_widget, 0)
+
+        self.player_controls.register_transport_buttons(
+            self.cue_btn, self.play_btn, self.stop_btn
+        )
 
         # === MINIMAL STATUS ===
         self.status_label = QtWidgets.QLabel("— Gotowy (tryb Odtwarzacz MVP)")
@@ -264,8 +284,11 @@ TESTER 2026-06-14 final (po "dalej"+lista 1-15): smoke0/pytest44p/python-c (comp
         self.status_label.setToolTip("Status decku (load/play/cue/set). EFEKT: informacyjny; nie wykonuje akcji. File ops w load, stream ops w transport.")
         layout.addWidget(self.status_label, 0)
 
-        # Oddychanie na dole
-        layout.addStretch(1)
+        self._flex_spacer = QtWidgets.QWidget()
+        self._flex_spacer.setSizePolicy(
+            QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Expanding
+        )
+        layout.addWidget(self._flex_spacer, 1)
 
     def _connect_widget_signals(self) -> None:
         """Waveform seek (bez cue/double w minimal – double działa jako seek + set_cue)."""
@@ -470,6 +493,11 @@ TESTER 2026-06-14 final (po "dalej"+lista 1-15): smoke0/pytest44p/python-c (comp
             logger.warning(f"Odtwarzacz transport error: {exc}")
             self.status_label.setText(f"✗ Błąd odtwarzania: {exc}")
 
+    def _on_volume_changed(self, percent: int) -> None:
+        """WMP-style volume — deck gain 0–100%."""
+        if hasattr(self.controller, "set_volume"):
+            self.controller.set_volume(percent)
+
     # ------------------------------------------------------------------
     # Drag & drop z pełnym repo lookup (identycznie jak w main window / _load_dropped_track)
     # ------------------------------------------------------------------
@@ -631,6 +659,26 @@ TESTER 2026-06-14 final (po "dalej"+lista 1-15): smoke0/pytest44p/python-c (comp
                 self.time_label.setStyleSheet(m.time_stylesheet())
             if hasattr(self, "status_label"):
                 self.status_label.setStyleSheet(m.status_stylesheet())
+                self.status_label.setVisible(not compact)
+
+            if hasattr(self, "player_controls"):
+                self.player_controls.apply_metrics(m)
+                self._sync_transport_layout(compact)
+
+            if hasattr(self, "_flex_spacer"):
+                self._flex_spacer.setVisible(not compact)
+
+            if hasattr(self, "layout") and self.layout() is not None:
+                lay = self.layout()
+                for i in range(lay.count()):
+                    item = lay.itemAt(i)
+                    if item is None:
+                        continue
+                    w = item.widget()
+                    if w is self.waveform:
+                        lay.setStretch(i, m.wave_stretch())
+                    elif w is getattr(self, "_flex_spacer", None):
+                        lay.setStretch(i, 0 if compact else 1)
 
             if hasattr(self, "_spin_indicator"):
                 self._spin_indicator.setFixedSize(m.spin_size(), m.spin_size())
@@ -668,17 +716,38 @@ TESTER 2026-06-14 final (po "dalej"+lista 1-15): smoke0/pytest44p/python-c (comp
             except Exception:
                 pass
 
-            # reduce empty bottom in compact (per grupa 2+12 + SZPIEG pilot spec + lista): pilot-like minimal, air 8/6 preserved but last stretch less dominant (updateGeometry + compact flag redu[...]
-            # per SZPIEG/Plan nowa lista po 'dalej': compact window/floating polish + reduce empty bottom.
             try:
-                if self._compact:
-                    self.updateGeometry()
+                self.updateGeometry()
             except Exception:
                 pass
-
-            # single updateGeometry() at end (deduped polish)
         finally:
             self._applying_compact = False
+
+    def _sync_transport_layout(self, compact: bool) -> None:
+        """Normal: wycentrowany transport; compact: VOL + CUE ▶ ■ w jednym rzędzie."""
+        if not hasattr(self, "player_controls") or not hasattr(self, "_transport_widget"):
+            return
+        buttons = (self.cue_btn, self.play_btn, self.stop_btn)
+        if compact:
+            trans_row = self._transport_widget.layout()
+            if trans_row is not None:
+                for btn in buttons:
+                    trans_row.removeWidget(btn)
+            self._transport_widget.hide()
+            self.player_controls.set_compact_strip(True)
+            return
+        self.player_controls.set_compact_strip(False)
+        trans_row = self._transport_widget.layout()
+        if trans_row is not None:
+            for btn in buttons:
+                trans_row.removeWidget(btn)
+            while trans_row.count():
+                trans_row.takeAt(0)
+            trans_row.addStretch(1)
+            for btn in buttons:
+                trans_row.addWidget(btn)
+            trans_row.addStretch(1)
+        self._transport_widget.show()
 
     def _update_compact_play_state(self, playing: bool) -> None:
         """React to play_state for anim (spin when playing in compact).

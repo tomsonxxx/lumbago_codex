@@ -79,8 +79,12 @@ def test_focused_and_console_views_headless(qapp):
     assert console.controller is ctrl_b
     assert dual.deck_a_view is not None
     assert dual.deck_b_view is not None
+    assert dual.mixer_bar is not None
+    assert dual.deck_a_view.transport is None
+    assert dual.deck_b_view.transport is None
     assert hasattr(focused.transport, "_controller")
     assert focused.transport._controller is ctrl_a
+    assert console.transport is not None
     assert console.transport._controller is ctrl_b
 
     focused.show()
@@ -100,8 +104,49 @@ def test_deck_metrics_modes_differ(qapp):
     mixer = BoothMetrics(mode="dual_mixer")
     assert focused.wave_min_height() > console.wave_min_height()
     assert focused.font_px("bpm") > console.font_px("bpm")
-    assert mixer.crossfader_height() >= 30
-    assert mixer.mixer_slider_width() > 100
+    assert 18 <= mixer.crossfader_height() <= 32
+    assert mixer.crossfader_max_width() <= 280
+    assert mixer.mixer_slider_width() > 80
+
+
+def test_mixer_compact_bar_crossfader_capped(qapp):
+    engine = PlaybackEngine()
+    ctrl_a = DeckController("A", engine)
+    ctrl_b = DeckController("B", engine)
+    dual = DualConsoleWidget(ctrl_a, ctrl_b, engine)
+    dual.show()
+    qapp.processEvents()
+
+    bar = dual.mixer_bar
+    assert bar.crossfader.maximumWidth() <= 280
+    assert bar.transport_a is not None
+    assert bar.transport_b is not None
+
+
+def test_odtwarzacz_volume_and_compact_strip(qapp):
+    from ui.dj.simple_deck_controller import SimpleDeckController
+    from ui.dj.views.odtwarzacz_view import OdtwarzaczView
+
+    engine = PlaybackEngine()
+    ctrl = SimpleDeckController("A", engine)
+    view = OdtwarzaczView(ctrl)
+    view.show()
+    qapp.processEvents()
+
+    volumes: list[int] = []
+    ctrl.set_volume = lambda p: volumes.append(p)  # type: ignore[method-assign]
+    view.player_controls.volume_changed.emit(42)
+    assert volumes == [42]
+
+    view.set_compact_mode(True)
+    qapp.processEvents()
+    assert view._compact
+    assert not view._transport_widget.isVisible()
+    assert view.cue_btn.parent() is view.player_controls
+
+    view.set_compact_mode(False)
+    qapp.processEvents()
+    assert view._transport_widget.isVisible()
 
 
 def test_booth_icons_transport(qapp):

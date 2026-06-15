@@ -335,6 +335,17 @@ class SimpleDeckController(QtCore.QObject):
         except Exception as e:
             logger.warning(f"SimpleDeck {self.deck_id} cue_released błąd: {e}")
 
+    def set_volume(self, percent: int) -> None:
+        """Głośność decku 0–100 (WMP-style volume)."""
+        if not self.playback_engine:
+            return
+        vol = max(0.0, min(1.0, float(percent) / 100.0))
+        try:
+            self.playback_engine.set_deck_volume(self.deck_id, vol)
+            self.playback_engine.set_master_volume(1.0)
+        except Exception as e:
+            logger.warning(f"SimpleDeck {self.deck_id} set_volume: {e}")
+
     def set_cue_at_ms(self, time_ms: int) -> None:
         """Ustaw CUE na konkretnym czasie (np. double-klik waveform)."""
         if not getattr(self, "current_track", None):
