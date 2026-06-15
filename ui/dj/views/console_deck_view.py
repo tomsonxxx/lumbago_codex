@@ -40,14 +40,31 @@ from ui.dj.views.hotcue_grid import HotcuePadGrid
 from ui.dj.views.transport_bar import TransportBar
 from ui.dj.views.pitch_control import PitchControl
 from ui.dj.views.eq_strip import EQStrip
+from ui.dj.deck_layout import (
+    apply_action_buttons,
+    apply_pro_buttons,
+    apply_section_label,
+    apply_status_label,
+    build_deck_badge,
+    build_deck_header,
+    build_time_label,
+    configure_waveform_widget,
+    deck_badge_stylesheet,
+)
+from ui.dj.deck_view_helpers import (
+    apply_main_layout_margins,
+    metrics_for_deck,
+    refresh_waveform_on_resize,
+    wire_cue_transport,
+    waveform_set_hotcue_free,
+    waveform_set_main_cue,
+)
 from ui.dj.styles import (
-    BOOTH_SIZES,
+    BoothMetrics,
+    booth_toggle_text,
     get_deck_panel_stylesheet,
-    get_bpm_label_stylesheet,
-    get_section_label_stylesheet,
-    get_time_label_stylesheet,
-    get_value_label_stylesheet,
     get_slider_stylesheet,
+    pro_button_stylesheet,
 )
 
 # WaveformWidget extracted (ui/dj/views/waveform_widget.py)
@@ -91,6 +108,8 @@ class ConsoleDeckView(QtWidgets.QFrame):
         self._current_duration_ms: int = 0
         self._last_playhead_ms: int = 0
         self._partner: DeckController | None = None
+        self._metrics = BoothMetrics(mode="deck_console")
+        self._last_metrics_scale: float = 1.0
 
         self.setObjectName("DeckPanel")
         self.setStyleSheet(get_deck_panel_stylesheet())
@@ -98,6 +117,7 @@ class ConsoleDeckView(QtWidgets.QFrame):
         self.setAcceptDrops(True)  # drag&drop z biblioteki bezpośrednio na deck (Rekordbox-like)
 
         self._setup_ui()
+        self._refresh_metrics(force_apply=True)
         self._connect_controller_signals()
         self._connect_widget_signals()
 
@@ -109,64 +129,37 @@ class ConsoleDeckView(QtWidgets.QFrame):
     # ------------------------------------------------------------------
     def _setup_ui(self) -> None:
         main = QtWidgets.QVBoxLayout(self)
-        main.setContentsMargins(16, 14, 16, 14)
-        main.setSpacing(14)
+        self._main_layout = main
+        m = self._metrics
+        main.setContentsMargins(*m.layout_margins())
+        main.setSpacing(m.layout_spacing())
 
         # === HEADER: DECK LABEL + Tytuł + BPM ===
         header = QtWidgets.QHBoxLayout()
         header.setSpacing(8)
 
-        self.deck_badge = QtWidgets.QLabel(self.deck_label)
-        self.deck_badge.setStyleSheet(
-            f"""
-            color: #00e0ff;
-            font-size: 20px;
-            font-weight: 900;
-            letter-spacing: 2px;
-            min-width: 32px;
-            background-color: #0f141c;
-            border: 1px solid #3a4556;
-            border-radius: 4px;
-            padding: 2px 8px;
-            """
-        )
-        self.deck_badge.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        self.deck_badge = build_deck_badge(self.deck_label, m)
 
-        self.title_label = QtWidgets.QLabel("Brak utworu")
-        self.title_label.setStyleSheet("font-size: 15px; font-weight: 700; color: #f0f4f8;")
-        self.title_label.setSizePolicy(
-            QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Preferred
-        )
-
-        self.bpm_label = QtWidgets.QLabel("— BPM")
-        self.bpm_label.setStyleSheet(get_bpm_label_stylesheet())
-        self.bpm_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
-        self.bpm_label.setMinimumWidth(96)
-
+        header_parts = build_deck_header(m, empty_title="Brak utworu")
+        self.title_label = header_parts.title_label
+        self.bpm_label = header_parts.bpm_label
         header.addWidget(self.deck_badge, 0)
         header.addWidget(self.title_label, 1)
         header.addWidget(self.bpm_label, 0)
         main.addLayout(header)
 
-        # === WAVEFORM (min 200px) ===
         if WaveformWidget is not None:
             self.waveform = WaveformWidget()
         else:
             self.waveform = QtWidgets.QLabel("[Waveform]")
-        self.waveform.setMinimumHeight(BOOTH_SIZES["waveform_min_height_console"])
-        self.waveform.setSizePolicy(
-            QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Expanding
-        )
-        main.addWidget(self.waveform, 5)
+        configure_waveform_widget(self.waveform, m)
+        main.addWidget(self.waveform, m.wave_stretch())
 
         # PPM menu kontekstowe (spójne z Focused)
         self.waveform.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
         self.waveform.customContextMenuRequested.connect(self._show_waveform_context_menu)
 
-        # === CZAS ===
-        self.time_label = QtWidgets.QLabel("0:00 / 0:00")
-        self.time_label.setStyleSheet(get_time_label_stylesheet())
-        self.time_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        self.time_label = build_time_label(m)
         main.addWidget(self.time_label, 0)
 
         # === TRANSPORT + TRIM + PITCH (jeden wiersz pro) ===
@@ -180,13 +173,13 @@ class ConsoleDeckView(QtWidgets.QFrame):
         trim_col = QtWidgets.QVBoxLayout()
         trim_col.setSpacing(2)
         t_lbl = QtWidgets.QLabel("TRIM")
-        t_lbl.setStyleSheet(get_section_label_stylesheet())
+        self._trim_lbl = t_lbl
         trim_col.addWidget(t_lbl)
         self.trim_slider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
         self.trim_slider.setRange(0, 100)
         self.trim_slider.setValue(85)
         self.trim_slider.setStyleSheet(get_slider_stylesheet("horizontal"))
-        self.trim_slider.setFixedWidth(BOOTH_SIZES.get("pitch_slider_width", 160))
+        self.trim_slider.setFixedWidth(m.px(150))
         self.trim_slider.valueChanged.connect(self._on_trim_changed)
         trim_col.addWidget(self.trim_slider)
         mix_row.addLayout(trim_col, 1)
@@ -201,15 +194,16 @@ class ConsoleDeckView(QtWidgets.QFrame):
         pro_row = QtWidgets.QHBoxLayout()
         pro_row.setSpacing(8)
 
-        self.sync_btn = QtWidgets.QPushButton("SYNC")
-        self.sync_btn.setFixedSize(54, 30)
+        pw, ph = m.pro_button_size()
+        self.sync_btn = QtWidgets.QPushButton(booth_toggle_text("sync"))
         self.sync_btn.setCheckable(True)
-        self.sync_btn.setStyleSheet(get_section_label_stylesheet().replace("10px", "11px"))
+        self.sync_btn.setFixedSize(pw, ph)
+        self.sync_btn.setStyleSheet(pro_button_stylesheet(m))
 
-        self.pfl_btn = QtWidgets.QPushButton("PFL")
-        self.pfl_btn.setFixedSize(46, 30)
+        self.pfl_btn = QtWidgets.QPushButton(booth_toggle_text("pfl"))
         self.pfl_btn.setCheckable(True)
-        self.pfl_btn.setStyleSheet(get_section_label_stylesheet().replace("10px", "11px"))
+        self.pfl_btn.setFixedSize(pw, ph)
+        self.pfl_btn.setStyleSheet(pro_button_stylesheet(m))
         self.pfl_btn.clicked.connect(self._on_pfl_toggled)
 
         # Krok 6: menu PPM dla SYNC i PFL
@@ -218,11 +212,11 @@ class ConsoleDeckView(QtWidgets.QFrame):
         self.sync_btn.customContextMenuRequested.connect(self._show_sync_menu)
         self.pfl_btn.customContextMenuRequested.connect(self._show_pfl_btn_menu)
 
-        self.quantize_btn = QtWidgets.QPushButton("Q")
+        self.quantize_btn = QtWidgets.QPushButton(booth_toggle_text("quantize"))
         self.quantize_btn.setCheckable(True)
         self.quantize_btn.setChecked(True)
-        self.quantize_btn.setFixedSize(42, 30)
-        self.quantize_btn.setStyleSheet(get_section_label_stylesheet().replace("10px", "11px"))
+        self.quantize_btn.setFixedSize(pw, ph)
+        self.quantize_btn.setStyleSheet(pro_button_stylesheet(m))
         self.quantize_btn.clicked.connect(self._on_quantize_toggled)
 
         pro_row.addStretch(1)
@@ -238,7 +232,7 @@ class ConsoleDeckView(QtWidgets.QFrame):
         # EQ
         eq_col = QtWidgets.QVBoxLayout()
         eq_lbl = QtWidgets.QLabel("EQ")
-        eq_lbl.setStyleSheet(get_section_label_stylesheet())
+        self._eq_lbl = eq_lbl
         eq_col.addWidget(eq_lbl)
         self.eq_strip = EQStrip()
         eq_col.addWidget(self.eq_strip)
@@ -247,11 +241,9 @@ class ConsoleDeckView(QtWidgets.QFrame):
         # Hotcues
         hc_col = QtWidgets.QVBoxLayout()
         hc_lbl = QtWidgets.QLabel("HOT CUES")
-        hc_lbl.setStyleSheet(get_section_label_stylesheet())
+        self._hc_lbl = hc_lbl
         hc_col.addWidget(hc_lbl)
-        self.hotcue_grid = HotcuePadGrid(
-            pad_size=BOOTH_SIZES.get("hotcue_pad", (82, 62))  # full booth size (Rekordbox polish; splitter handles)
-        )
+        self.hotcue_grid = HotcuePadGrid(pad_size=m.hotcue_pad_size())
         hc_col.addWidget(self.hotcue_grid)
         eq_hc.addLayout(hc_col, 1)
 
@@ -283,11 +275,13 @@ class ConsoleDeckView(QtWidgets.QFrame):
         self.loop_toggle_btn.setFixedSize(52, 26)
         self.loop_toggle_btn.setCheckable(True)
 
-        mem_loop.addWidget(QtWidgets.QLabel("MEM"), 0)
+        self._mem_lbl = QtWidgets.QLabel("MEM")
+        mem_loop.addWidget(self._mem_lbl, 0)
         mem_loop.addWidget(self.mem_s_btn, 0)
         mem_loop.addWidget(self.mem_r_btn, 0)
         mem_loop.addSpacing(16)
-        mem_loop.addWidget(QtWidgets.QLabel("LOOP"), 0)
+        self._loop_lbl = QtWidgets.QLabel("LOOP")
+        mem_loop.addWidget(self._loop_lbl, 0)
         mem_loop.addWidget(self.loop_in_btn, 0)
         mem_loop.addWidget(self.loop_out_btn, 0)
         mem_loop.addWidget(self.loop_toggle_btn, 0)
@@ -304,7 +298,6 @@ class ConsoleDeckView(QtWidgets.QFrame):
 
         # Status
         self.status_label = QtWidgets.QLabel("")
-        self.status_label.setStyleSheet("color:#6b7688; font-size:9px; font-weight:600;")
         self.status_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
         main.addWidget(self.status_label, 0)
 
@@ -314,14 +307,16 @@ class ConsoleDeckView(QtWidgets.QFrame):
     def _connect_widget_signals(self) -> None:
         # Transport
         self.transport.play_clicked.connect(self.controller.toggle_play)
-        self.transport.cue_clicked.connect(self._on_cue_clicked)
-        self.transport.stop_clicked.connect(self._on_stop_clicked)
+        wire_cue_transport(self.transport, self.controller, self)
+        self.transport.stop_clicked.connect(self.controller.stop)
 
         # Pitch / Keylock
+        self.pitch_control.bind_controller(self.controller)
         self.pitch_control.pitch_changed.connect(self.controller.set_pitch)
         self.pitch_control.keylock_toggled.connect(self.controller.set_keylock)
 
         # EQ
+        self.eq_strip.bind_controller(self.controller)
         self.eq_strip.eq_changed.connect(self.controller.set_eq)
 
         # Hotcues
@@ -346,18 +341,68 @@ class ConsoleDeckView(QtWidgets.QFrame):
             self.waveform.cue_set_requested.connect(self._handle_waveform_shift_click)
             self.waveform.double_clicked.connect(self._handle_waveform_double_click)
 
-    def _on_cue_clicked(self) -> None:
-        self.controller.seek(0)
-        self.controller.status_changed.emit("CUE")
+    def _refresh_metrics(self, force_apply: bool = False) -> None:
+        new_m = metrics_for_deck(self, console=True)
+        old = self._last_metrics_scale
+        self._metrics = new_m
+        self._last_metrics_scale = new_m.scale_factor
+        if (force_apply or abs(new_m.scale_factor - old) > 0.04) and hasattr(self, "transport"):
+            self._apply_metrics()
 
-    def _on_stop_clicked(self) -> None:
-        if self.controller.playback_engine:
-            try:
-                self.controller.playback_engine.stop_deck(self.controller.deck_id)
-            except Exception:
-                pass
-        self.controller.play_state_changed.emit(False)
-        self.controller.playhead_changed.emit(0)
+    def _apply_metrics(self) -> None:
+        m = self._metrics
+        if hasattr(self, "_main_layout"):
+            apply_main_layout_margins(self._main_layout, m)
+        if hasattr(self, "title_label"):
+            self.title_label.setStyleSheet(m.title_stylesheet())
+        if hasattr(self, "bpm_label"):
+            self.bpm_label.setStyleSheet(m.bpm_stylesheet())
+            self.bpm_label.setMinimumWidth(m.bpm_min_width())
+        if hasattr(self, "time_label"):
+            self.time_label.setStyleSheet(m.time_stylesheet())
+        if hasattr(self, "waveform"):
+            self.waveform.setMinimumHeight(m.wave_min_height())
+        if hasattr(self, "transport"):
+            self.transport.apply_metrics(m)
+        if hasattr(self, "hotcue_grid"):
+            self.hotcue_grid.apply_metrics(m)
+        if hasattr(self, "trim_slider"):
+            self.trim_slider.setFixedWidth(m.px(150))
+        if hasattr(self, "pitch_control"):
+            self.pitch_control.apply_metrics(m)
+        if hasattr(self, "eq_strip"):
+            self.eq_strip.apply_metrics(m)
+        apply_pro_buttons(
+            m,
+            [
+                (self.sync_btn, self.sync_btn.isChecked()),
+                (self.pfl_btn, self.pfl_btn.isChecked()),
+                (self.quantize_btn, self.quantize_btn.isChecked()),
+            ],
+        )
+        if hasattr(self, "deck_badge"):
+            self.deck_badge.setStyleSheet(deck_badge_stylesheet(m))
+        for lbl in ("_trim_lbl", "_eq_lbl", "_hc_lbl", "_mem_lbl", "_loop_lbl"):
+            if hasattr(self, lbl):
+                apply_section_label(getattr(self, lbl), m)
+        if hasattr(self, "status_label"):
+            apply_status_label(self.status_label, m)
+        apply_action_buttons(
+            m,
+            [
+                (self.mem_s_btn, "mem", False),
+                (self.mem_r_btn, "mem", False),
+                (self.loop_in_btn, "loop_in", False),
+                (self.loop_out_btn, "loop_out", False),
+                (self.loop_toggle_btn, "loop", self.loop_toggle_btn.isChecked()),
+            ],
+        )
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._refresh_metrics(force_apply=False)
+        if hasattr(self, "waveform"):
+            refresh_waveform_on_resize(self, self.waveform, self._metrics)
 
     def _on_trim_changed(self, value: int) -> None:
         self.controller.set_trim(value / 100.0)
@@ -366,8 +411,8 @@ class ConsoleDeckView(QtWidgets.QFrame):
         self.controller.toggle_quantize()
 
     def _on_pfl_toggled(self, checked: bool) -> None:
-        # PFL to głównie wizualny status w tej fazie (pełne audio PFL w silniku później)
-        self.controller.status_changed.emit("PFL ON" if checked else "PFL OFF")
+        self.pfl_btn.setStyleSheet(pro_button_stylesheet(self._metrics, active=checked))
+        self.controller.set_pfl(checked)
 
     def _set_loop_in(self) -> None:
         self._loop_in_candidate = self._last_playhead_ms
@@ -394,18 +439,10 @@ class ConsoleDeckView(QtWidgets.QFrame):
             self.controller.set_loop_points(None, None)
 
     def _handle_waveform_shift_click(self, time_ms: int) -> None:
-        if not self.controller.current_track:
-            return
-        for idx in range(8):
-            if self.controller.get_hotcue(idx) is None:
-                self.controller.set_hotcue(idx)
-                return
-        self.controller.set_hotcue(0)
+        waveform_set_hotcue_free(self.controller, time_ms)
 
     def _handle_waveform_double_click(self, time_ms: int) -> None:
-        snapped = self.controller.snap_to_beat(time_ms)
-        self.controller.seek(snapped)
-        self.controller.status_changed.emit("CUE SET (wave)")
+        waveform_set_main_cue(self.controller, time_ms)
 
     def _request_hotcue_rename(self, index: int) -> None:
         """Proste okno do zmiany nazwy hotcue."""
@@ -423,39 +460,93 @@ class ConsoleDeckView(QtWidgets.QFrame):
     def _show_loop_menu(self, pos: QtCore.QPoint, which: str) -> None:
         """Indywidualne menu dla przycisków loop."""
         menu = QtWidgets.QMenu(self)
+        anchor = self.loop_toggle_btn
         if which == "IN":
-            menu.addAction("Ustaw Loop In w aktualnej pozycji")
-            menu.addAction("Wyczyść Loop In")
+            act_set = menu.addAction("Ustaw Loop In w aktualnej pozycji")
+            act_clear = menu.addAction("Wyczyść Loop In")
+            anchor = self.loop_in_btn
         elif which == "OUT":
-            menu.addAction("Ustaw Loop Out w aktualnej pozycji")
-            menu.addAction("Wyczyść Loop Out")
+            act_set = menu.addAction("Ustaw Loop Out w aktualnej pozycji")
+            act_clear = menu.addAction("Wyczyść Loop Out")
+            anchor = self.loop_out_btn
         else:
-            menu.addAction("Włącz/Wyłącz LOOP")
-            menu.addAction("Wyczyść loop")
-            menu.addAction("Podwój długość loopa")
-            menu.addAction("Pół długości loopa")
-        menu.exec(self.loop_in_btn.mapToGlobal(pos) if which == "IN" else self.loop_out_btn.mapToGlobal(pos) if which == "OUT" else self.loop_toggle_btn.mapToGlobal(pos))
+            act_toggle = menu.addAction("Włącz/Wyłącz LOOP")
+            act_clear = menu.addAction("Wyczyść loop")
+            act_double = menu.addAction("Podwój długość loopa")
+            act_half = menu.addAction("Pół długości loopa")
+            anchor = self.loop_toggle_btn
+        chosen = menu.exec(anchor.mapToGlobal(pos))
+        if not chosen:
+            return
+        c = self.controller
+        if which == "IN":
+            if chosen == act_set:
+                self._set_loop_in()
+            elif chosen == act_clear:
+                c.set_loop_points(None, c._loop_out_ms)
+        elif which == "OUT":
+            if chosen == act_set:
+                self._set_loop_out()
+            elif chosen == act_clear:
+                c.set_loop_points(c._loop_in_ms, None)
+        else:
+            if chosen == act_toggle:
+                self.loop_toggle_btn.setChecked(not self.loop_toggle_btn.isChecked())
+                self._toggle_loop(self.loop_toggle_btn.isChecked())
+            elif chosen == act_clear:
+                c.set_loop_points(None, None)
+            elif chosen == act_double and c._loop_in_ms is not None and c._loop_out_ms is not None:
+                start, end = c._loop_in_ms, c._loop_out_ms
+                length = end - start
+                c.set_loop_points(start, end + length)
+            elif chosen == act_half and c._loop_in_ms is not None and c._loop_out_ms is not None:
+                start, end = c._loop_in_ms, c._loop_out_ms
+                c.set_loop_points(start, start + (end - start) // 2)
 
     def _show_memory_menu(self, pos: QtCore.QPoint) -> None:
-        """Menu dla S/R memory."""
         menu = QtWidgets.QMenu(self)
-        menu.addAction("Zapisz aktualny stan (Memory Save)")
-        menu.addAction("Przywołaj ostatni zapis (Memory Recall)")
+        act_save = menu.addAction("Zapisz aktualny stan (Memory Save)")
+        act_recall = menu.addAction("Przywołaj ostatni zapis (Memory Recall)")
         menu.addSeparator()
-        menu.addAction("Wyczyść pamięć")
-        menu.exec(self.mem_s_btn.mapToGlobal(pos))
+        act_clear = menu.addAction("Wyczyść pamięć")
+        chosen = menu.exec(self.mem_s_btn.mapToGlobal(pos))
+        if not chosen:
+            return
+        if chosen == act_save:
+            self.controller.save_memory()
+        elif chosen == act_recall:
+            self.controller.recall_memory()
+        elif chosen == act_clear:
+            self.controller.clear_memory()
 
     def _show_sync_menu(self, pos: QtCore.QPoint) -> None:
         menu = QtWidgets.QMenu(self)
-        menu.addAction("Wymuś resync")
-        menu.addAction("Włącz/Wyłącz Auto-Sync")
-        menu.exec(self.sync_btn.mapToGlobal(pos))
+        act_resync = menu.addAction("Wymuś resync")
+        act_toggle = menu.addAction("Włącz/Wyłącz Auto-Sync")
+        chosen = menu.exec(self.sync_btn.mapToGlobal(pos))
+        if not chosen:
+            return
+        if chosen == act_resync and self._partner is not None:
+            self.controller.do_sync(self._partner)
+        elif chosen == act_toggle:
+            self.sync_btn.click()
 
     def _show_pfl_btn_menu(self, pos: QtCore.QPoint) -> None:
         menu = QtWidgets.QMenu(self)
-        menu.addAction("Toggle PFL")
-        menu.addAction("Ustaw głośność cue")
-        menu.exec(self.pfl_btn.mapToGlobal(pos))
+        act_toggle = menu.addAction("Toggle PFL")
+        act_on = menu.addAction("Włącz PFL")
+        act_off = menu.addAction("Wyłącz PFL")
+        chosen = menu.exec(self.pfl_btn.mapToGlobal(pos))
+        if not chosen:
+            return
+        if chosen == act_toggle:
+            self.pfl_btn.click()
+        elif chosen == act_on:
+            self.pfl_btn.setChecked(True)
+            self._on_pfl_toggled(True)
+        elif chosen == act_off:
+            self.pfl_btn.setChecked(False)
+            self._on_pfl_toggled(False)
 
     def _show_waveform_context_menu(self, pos: QtCore.QPoint) -> None:
         """Menu kontekstowe PPM na waveformie – z precyzyjną pozycją kliknięcia."""
@@ -475,7 +566,9 @@ class ConsoleDeckView(QtWidgets.QFrame):
 
         hotcue_menu = menu.addMenu("Ustaw konkretny Hotcue")
         for i in range(8):
-            hotcue_menu.addAction(f"Hotcue {i+1}", lambda idx=i: self.controller.set_hotcue(idx))
+            hotcue_menu.addAction(
+                f"Hotcue {i+1}", lambda checked=False, idx=i: self.controller.set_hotcue(idx, click_ms)
+            )
 
         menu.addSeparator()
         act_loop_in = menu.addAction("Ustaw Loop In tutaj")
@@ -487,14 +580,9 @@ class ConsoleDeckView(QtWidgets.QFrame):
             return
 
         if chosen == act_cue:
-            self.controller.seek(click_ms)
-            self.controller.status_changed.emit("CUE SET (waveform menu)")
+            self.controller.set_cue_at_ms(click_ms)
         elif chosen == act_hotcue_free:
-            for idx in range(8):
-                if self.controller.get_hotcue(idx) is None:
-                    self.controller.set_hotcue(idx, click_ms)
-                    return
-            self.controller.set_hotcue(0, click_ms)
+            waveform_set_hotcue_free(self.controller, click_ms)
         elif chosen == act_loop_in:
             self.controller.set_loop_points(click_ms, None)
         elif chosen == act_loop_out:
@@ -517,6 +605,7 @@ class ConsoleDeckView(QtWidgets.QFrame):
         c.playhead_changed.connect(self._on_playhead_changed)
         c.bpm_changed.connect(self._on_bpm_changed)
         c.hotcue_changed.connect(self._on_hotcue_changed)
+        c.cue_changed.connect(self._on_cue_changed)
         c.play_state_changed.connect(self._on_play_state_changed)
         c.status_changed.connect(self._on_status_changed)
         c.keylock_changed.connect(self.pitch_control.set_keylock)
@@ -564,6 +653,11 @@ class ConsoleDeckView(QtWidgets.QFrame):
         if hasattr(self.waveform, "clear"):
             self.waveform.clear()
         self.hotcue_grid.clear_all()
+        self.transport.set_playing(False)
+
+    def _on_cue_changed(self, cue_ms: int) -> None:
+        if hasattr(self.waveform, "set_main_cue_ms"):
+            self.waveform.set_main_cue_ms(cue_ms)
 
     def _on_playhead_changed(self, ms: int) -> None:
         self._last_playhead_ms = ms
@@ -605,15 +699,15 @@ class ConsoleDeckView(QtWidgets.QFrame):
                 if hasattr(self.waveform, "clear_loop"):
                     self.waveform.clear_loop()
                 self.loop_toggle_btn.setChecked(False)
+        apply_action_buttons(
+            self._metrics,
+            [(self.loop_toggle_btn, "loop", self.loop_toggle_btn.isChecked())],
+        )
 
     def _on_sync_changed(self, active: bool) -> None:
         self.sync_btn.setChecked(active)
-        self.sync_btn.setText("SYNC✓" if active else "SYNC")
-        # booth polish: highlight when synced (uses accent from palette via stylesheet if extended)
-        if active:
-            self.sync_btn.setStyleSheet("background-color: #166534; color: #e0f2e0; font-weight:900;")
-        else:
-            self.sync_btn.setStyleSheet("")  # revert to default from pro_row
+        self.sync_btn.setText(booth_toggle_text("sync", active=active))
+        apply_pro_buttons(self._metrics, [(self.sync_btn, active)])
 
     # ------------------------------------------------------------------
     # Pomocnicze dla DualConsoleWidget

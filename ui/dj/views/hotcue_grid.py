@@ -17,7 +17,7 @@ from __future__ import annotations
 from PyQt6 import QtCore, QtWidgets
 
 from ui.dj.views.hotcue_pad import HotcuePad
-from ui.dj.styles import BOOTH_SIZES
+from ui.dj.styles import BOOTH_SIZES, BoothMetrics
 
 
 class HotcuePadGrid(QtWidgets.QWidget):
@@ -82,6 +82,12 @@ class HotcuePadGrid(QtWidgets.QWidget):
         """Czyści wizualnie wszystkie pady (używane przy unload)."""
         for pad in self.pads:
             pad.clear_cue()
+
+    def apply_metrics(self, metrics: BoothMetrics) -> None:
+        w, h = metrics.hotcue_pad_size()
+        for pad in self.pads:
+            pad.setFixedSize(w, h)
+            pad._apply_style()
 
     def _on_pad_delete_requested(self, index: int) -> None:
         self.pad_delete_requested.emit(index)

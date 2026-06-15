@@ -34,6 +34,10 @@ from .types import BackendErrorCode, DeckState, PlaybackState
 
 logger = logging.getLogger(__name__)
 
+# libVLC is not safe when multiple threads touch MediaPlayer APIs concurrently.
+# All native player/instance calls must go through this process-wide lock.
+_LIBVLC_LOCK = threading.RLock()
+
 # ----------------------------------------------------------------------
 # Module-level VLC discovery & lazy loading (the heart of hardening)
 # ----------------------------------------------------------------------
@@ -273,19 +277,9 @@ class VlcAudioBackend(AudioBackend):
                     logger.warning(f"Equalizer creation failed (non-fatal): {eq_err}")
                     self._equalizer = None
 
-                # Attach end-reached + time changed events for tighter position + loop response (hybrid event+poller approach for rock-solid behavior)
-                try:
-                    em = self._player.event_manager()
-                    em.event_attach(
-                        self._vlc.EventType.MediaPlayerEndReached,
-                        self._on_vlc_end_reached,
-                    )
-                    em.event_attach(
-                        self._vlc.EventType.MediaPlayerTimeChanged,
-                        self._on_vlc_time_changed,
-                    )
-                except Exception as ev_err:
-                    logger.debug(f"Could not attach some VLC events (poller provides fallback): {ev_err}")
+                # Do NOT attach VLC event callbacks: they run on libVLC threads and
+                # concurrent player access from Qt timers caused native crashes on Windows.
+                # Position/state updates are driven by poll() on the UI thread only.
 
                 self._enabled = True
                 self._state = PlaybackState.IDLE
@@ -295,8 +289,8 @@ class VlcAudioBackend(AudioBackend):
                     "libvlc_version": self._get_libvlc_version(),
                     "shared_instance": True,
                     "scaletempo": True,
+                    "polling_mode": "ui_thread",
                 })
-                self._start_poller_thread()
 
             except Exception as e:
                 self._set_error(
@@ -311,122 +305,65 @@ class VlcAudioBackend(AudioBackend):
         except Exception:
             return None
 
-    def _start_poller_thread(self) -> None:
-        if self._poller_thread and self._poller_thread.is_alive():
-            return
-        self._poller_stop.clear()
-        self._poller_thread = threading.Thread(
-            target=self._poller_loop,
-            name=f"VlcPoller-{id(self)}",
-            daemon=True,
-        )
-        self._poller_thread.start()
-
-    def _poller_loop(self) -> None:
-        """Background thread: polls position (fallback), state sync, enforces loops, fires callbacks at ~40-50Hz."""
-        interval = 0.022  # ~45 Hz target for smooth 30-60Hz callback range
-        while not self._poller_stop.is_set():
-            try:
-                self._poll_once()
-            except Exception:
-                logger.exception("Error inside VLC poller (non-fatal)")
-            time.sleep(interval)
+    def poll(self) -> None:
+        """Advance position/state snapshot. Must be called from the UI owner thread (~25-50 Hz)."""
+        self._poll_once()
 
     def _poll_once(self) -> None:
         if not self._enabled or self._player is None:
             return
 
-        with self._lock:
-            if not self._enabled:
-                return
+        pos_copy: int | None = None
+        with _LIBVLC_LOCK:
+            with self._lock:
+                if not self._enabled:
+                    return
 
-            try:
-                pos = self._player.get_time()
-                if pos is not None and pos >= 0:
-                    self._position_ms = int(pos)
-
-                # Duration may still be unknown immediately after load
-                if self._duration_ms <= 0:
-                    length = self._player.get_length()
-                    if length is not None and length > 0:
-                        self._duration_ms = int(length)
-
-                # Reconcile state from actual player (prevents desync if VLC stops internally)
                 try:
-                    actually_playing = bool(self._player.is_playing())
-                    if actually_playing and self._state not in (PlaybackState.PLAYING, PlaybackState.LOADING):
-                        self._state = PlaybackState.PLAYING
-                    elif not actually_playing and self._state == PlaybackState.PLAYING:
-                        self._state = PlaybackState.PAUSED
-                except Exception:
-                    pass
+                    pos = self._player.get_time()
+                    if pos is not None and pos >= 0:
+                        self._position_ms = int(pos)
 
-                # Loop enforcement (only while playing) — event handler provides fast path; poller is reliable fallback
-                if (
-                    self._loop_enabled
-                    and self._loop_start_ms is not None
-                    and self._loop_end_ms is not None
-                    and self._player.is_playing()
-                    and self._position_ms >= self._loop_end_ms
-                ):
-                    target = max(0, self._loop_start_ms)
-                    self._player.set_time(target)
-                    self._position_ms = target
-                    logger.debug(f"Loop triggered (poller): seeking to {target}ms")
+                    if self._duration_ms <= 0:
+                        length = self._player.get_length()
+                        if length is not None and length > 0:
+                            self._duration_ms = int(length)
 
-            except Exception as poll_err:
-                # VLC can throw during shutdown — swallow
-                logger.debug(f"Poll error (ignored): {poll_err}")
-                return
+                    try:
+                        actually_playing = bool(self._player.is_playing())
+                        if actually_playing and self._state not in (
+                            PlaybackState.PLAYING,
+                            PlaybackState.LOADING,
+                        ):
+                            self._state = PlaybackState.PLAYING
+                        elif not actually_playing and self._state == PlaybackState.PLAYING:
+                            self._state = PlaybackState.PAUSED
+                    except Exception:
+                        pass
 
-            # Fire position callback (debounced)
-            current = self._position_ms
-            if abs(current - self._last_reported_pos) >= 8:  # ~8ms granularity
-                self._last_reported_pos = current
-                # Release lock before invoking user code
-                pos_copy = current
-            else:
-                pos_copy = None
-
-        if pos_copy is not None:
-            self._invoke_position_callback(pos_copy)
-
-    def _on_vlc_end_reached(self, event) -> None:
-        """VLC native callback — do minimal work, let poller handle logic."""
-        with self._lock:
-            if self._loop_enabled and self._loop_start_ms is not None:
-                # Poller / time handler will pick it up
-                return
-            # Natural end
-            self._state = PlaybackState.STOPPED
-
-        # Schedule callback outside lock
-        self._invoke_end_reached_callback()
-
-    def _on_vlc_time_changed(self, event) -> None:
-        """Lightweight VLC time-changed event for responsive position updates and fast loop nudge (events + poller hybrid)."""
-        # Do as little as possible; avoid heavy locks or complex logic in hot VLC callback path
-        try:
-            # Query fresh time without full lock (VLC player calls are generally thread-safe for this)
-            pos = self._player.get_time() if self._player else None
-            if pos is not None and pos >= 0:
-                with self._lock:
-                    self._position_ms = int(pos)
-                    # Fast loop enforcement on event (for short loops / high rates — reduces reliance on pure 25ms poll)
                     if (
                         self._loop_enabled
                         and self._loop_start_ms is not None
                         and self._loop_end_ms is not None
+                        and self._player.is_playing()
                         and self._position_ms >= self._loop_end_ms
                     ):
                         target = max(0, self._loop_start_ms)
-                        try:
-                            self._player.set_time(target)
-                            self._position_ms = target
-                        except Exception:
-                            pass
-        except Exception:
-            pass  # never let event handler crash the player thread
+                        self._player.set_time(target)
+                        self._position_ms = target
+                        logger.debug(f"Loop triggered (poll): seeking to {target}ms")
+
+                except Exception as poll_err:
+                    logger.debug(f"Poll error (ignored): {poll_err}")
+                    return
+
+                current = self._position_ms
+                if abs(current - self._last_reported_pos) >= 8:
+                    self._last_reported_pos = current
+                    pos_copy = current
+
+        if pos_copy is not None:
+            self._invoke_position_callback(pos_copy)
 
     def _set_error(self, code: BackendErrorCode, message: str) -> None:
         """Record ERROR state + diagnostics. Does NOT disable the backend for
@@ -454,26 +391,24 @@ class VlcAudioBackend(AudioBackend):
         if self._poller_thread and self._poller_thread.is_alive():
             self._poller_thread.join(timeout=0.5)
 
-        with self._lock:
-            try:
-                if self._player:
-                    try:
-                        self._player.stop()
-                        self._player.release()
-                    except Exception:
-                        pass
-                    self._player = None
-
-                # We do NOT release the shared instance here — other decks may use it.
-                # Process exit will clean it up.
-
-                self._media = None
-                self._equalizer = None
-                self._enabled = False
-                self._state = PlaybackState.IDLE
-                self._current_path = None
-            except Exception:
-                pass
+        with _LIBVLC_LOCK:
+            with self._lock:
+                try:
+                    if self._player:
+                        try:
+                            self._player.stop()
+                            self._player.release()
+                        except Exception:
+                            pass
+                        self._player = None
+                    # Shared VLC Instance is kept for other decks until process exit.
+                    self._media = None
+                    self._equalizer = None
+                    self._enabled = False
+                    self._state = PlaybackState.IDLE
+                    self._current_path = None
+                except Exception:
+                    pass
 
     def get_diagnostics(self) -> dict:
         with self._lock:
@@ -504,51 +439,41 @@ class VlcAudioBackend(AudioBackend):
             return False
 
         try:
-            with self._lock:
-                self._state = PlaybackState.LOADING
-                self._last_error = None
-                self._error_code = BackendErrorCode.NONE
-                self._duration_ms = 0
-                self._position_ms = 0
-                self._last_reported_pos = 0
-                self._is_loaded = False
+            with _LIBVLC_LOCK:
+                with self._lock:
+                    self._state = PlaybackState.LOADING
+                    self._last_error = None
+                    self._error_code = BackendErrorCode.NONE
+                    self._duration_ms = 0
+                    self._position_ms = 0
+                    self._last_reported_pos = 0
+                    self._is_loaded = False
 
-                media = self._instance.media_new(path)
-                # Attach parsed event for duration (best effort)
-                try:
-                    media.event_manager().event_attach(
-                        self._vlc.EventType.MediaParsedChanged,
-                        self._on_media_parsed,
-                    )
-                except Exception:
-                    pass
+                    media = self._instance.media_new(path)
+                    self._player.set_media(media)
+                    self._media = media
+                    self._current_path = path
 
-                self._player.set_media(media)
-                self._media = media
-                self._current_path = path
+                    try:
+                        media.parse_with_options(self._vlc.MediaParseFlag.local, 0)
+                    except Exception:
+                        pass
 
-                # Force parse (async best-effort)
-                try:
-                    media.parse_with_options(self._vlc.MediaParseFlag.local, 0)
-                except Exception:
-                    pass
+                deadline = time.time() + 0.8
+                while time.time() < deadline and self._duration_ms <= 0:
+                    try:
+                        length = self._player.get_length()
+                        if length and length > 0:
+                            with self._lock:
+                                self._duration_ms = int(length)
+                            break
+                    except Exception:
+                        pass
+                    time.sleep(0.01)
 
-            # CRITICAL: duration wait OUTSIDE the lock to avoid blocking poller / other threads (pro-grade fix)
-            deadline = time.time() + 0.8
-            while time.time() < deadline and self._duration_ms <= 0:
-                try:
-                    length = self._player.get_length()
-                    if length and length > 0:
-                        with self._lock:
-                            self._duration_ms = int(length)
-                        break
-                except Exception:
-                    pass
-                time.sleep(0.01)
-
-            with self._lock:
-                self._state = PlaybackState.READY
-                self._is_loaded = True  # legacy compatibility flag
+                with self._lock:
+                    self._state = PlaybackState.READY
+                    self._is_loaded = True
             logger.debug(f"VLC loaded: {path} (duration={self._duration_ms}ms)")
             return True
 
@@ -556,25 +481,15 @@ class VlcAudioBackend(AudioBackend):
             self._set_error(BackendErrorCode.PARSE_FAILED, f"Load failed: {e}")
             return False
 
-    def _on_media_parsed(self, event) -> None:
-        # Best-effort update duration when VLC fires the event
-        try:
-            with self._lock:
-                if self._player:
-                    length = self._player.get_length()
-                    if length and length > 0:
-                        self._duration_ms = int(length)
-        except Exception:
-            pass
-
     def unload(self) -> None:
         """Stop playback and release current media (keeps backend ready for next load)."""
         if not self._enabled or self._player is None:
             return
-        try:
-            self._player.stop()
-        except Exception:
-            pass
+        with _LIBVLC_LOCK:
+            try:
+                self._player.stop()
+            except Exception:
+                pass
         with self._lock:
             try:
                 self._media = None
@@ -593,62 +508,71 @@ class VlcAudioBackend(AudioBackend):
     def play(self) -> None:
         if not self._enabled or self._player is None:
             return
-        with self._lock:
-            try:
-                self._player.play()
-                self._state = PlaybackState.PLAYING
-            except Exception as e:
-                self._set_error(BackendErrorCode.PLAYBACK_FAILED, str(e))
+        with _LIBVLC_LOCK:
+            with self._lock:
+                try:
+                    self._player.play()
+                    self._state = PlaybackState.PLAYING
+                except Exception as e:
+                    self._set_error(BackendErrorCode.PLAYBACK_FAILED, str(e))
+        self.poll()
 
     def pause(self) -> None:
         if not self._enabled or self._player is None:
             return
-        with self._lock:
-            try:
-                self._player.pause()
-                self._state = PlaybackState.PAUSED
-            except Exception as e:
-                logger.debug(f"Pause error: {e}")
+        with _LIBVLC_LOCK:
+            with self._lock:
+                try:
+                    self._player.pause()
+                    self._state = PlaybackState.PAUSED
+                except Exception as e:
+                    logger.debug(f"Pause error: {e}")
+        self.poll()
 
     def stop(self) -> None:
         if not self._enabled or self._player is None:
             return
-        with self._lock:
-            try:
-                self._player.stop()
-                self._position_ms = 0
-                self._state = PlaybackState.STOPPED
-            except Exception as e:
-                logger.debug(f"Stop error: {e}")
+        with _LIBVLC_LOCK:
+            with self._lock:
+                try:
+                    self._player.stop()
+                    self._position_ms = 0
+                    self._state = PlaybackState.STOPPED
+                except Exception as e:
+                    logger.debug(f"Stop error: {e}")
 
     def seek(self, position_ms: int) -> None:
         if not self._enabled or self._player is None:
             return
-        with self._lock:
-            try:
-                pos = max(0, int(position_ms))
-                if self._duration_ms > 0:
-                    pos = min(pos, self._duration_ms)
-                self._player.set_time(pos)
-                self._position_ms = pos
-            except Exception as e:
-                logger.debug(f"Seek error: {e}")
+        with _LIBVLC_LOCK:
+            with self._lock:
+                try:
+                    pos = max(0, int(position_ms))
+                    if self._duration_ms > 0:
+                        pos = min(pos, self._duration_ms)
+                    self._player.set_time(pos)
+                    self._position_ms = pos
+                except Exception as e:
+                    logger.debug(f"Seek error: {e}")
 
     def get_position_ms(self) -> int:
         with self._lock:
             return self._position_ms
 
     def get_duration_ms(self) -> int:
+        if self._enabled and self._player is not None and self._duration_ms <= 0:
+            self.poll()
         with self._lock:
             return self._duration_ms
 
     def is_playing(self) -> bool:
         if not self._enabled or self._player is None:
             return False
-        try:
-            return bool(self._player.is_playing())
-        except Exception:
-            return False
+        with _LIBVLC_LOCK:
+            try:
+                return bool(self._player.is_playing())
+            except Exception:
+                return False
 
     # --------------------------- DJ Controls ---------------------------
 
@@ -660,7 +584,8 @@ class VlcAudioBackend(AudioBackend):
             self._volume = vol
             # VLC uses 0-100
             try:
-                self._player.audio_set_volume(int(vol * 100))
+                with _LIBVLC_LOCK:
+                    self._player.audio_set_volume(int(vol * 100))
             except Exception:
                 pass
 
@@ -675,8 +600,8 @@ class VlcAudioBackend(AudioBackend):
             bal = max(-1.0, min(1.0, float(balance)))
             self._balance = bal
             try:
-                # VLC balance is -1.0 to 1.0
-                self._player.audio_set_balance(bal)
+                with _LIBVLC_LOCK:
+                    self._player.audio_set_balance(bal)
             except Exception:
                 pass
 
@@ -691,7 +616,8 @@ class VlcAudioBackend(AudioBackend):
             r = max(0.1, min(8.0, float(rate)))  # generous bounds
             self._rate = r
             try:
-                self._player.set_rate(r)
+                with _LIBVLC_LOCK:
+                    self._player.set_rate(r)
             except Exception:
                 pass
 
@@ -777,7 +703,13 @@ class VlcAudioBackend(AudioBackend):
 
     def get_state(self) -> DeckState:
         with self._lock:
-            playing = bool(self._player.is_playing()) if self._player and self._enabled else False
+            playing = False
+            if self._player and self._enabled:
+                with _LIBVLC_LOCK:
+                    try:
+                        playing = bool(self._player.is_playing())
+                    except Exception:
+                        playing = False
             return DeckState(
                 state=self._state,
                 is_playing=playing,

@@ -6,32 +6,36 @@ from typing import Any
 from PyQt6 import QtCore
 
 from core.waveform import extract_peaks as _core_extract_peaks
+from core.waveform import extract_rgb_peaks as _core_extract_rgb_peaks
 
 logger = logging.getLogger(__name__)
 
 
-def _safe_extract_peaks(audio_path: str, num_points: int = 900) -> list[float]:
+def _safe_extract_rgb(audio_path: str, num_points: int = 900) -> dict[str, list[float]]:
     try:
-        return _core_extract_peaks(audio_path, num_points=num_points)
+        bands = _core_extract_rgb_peaks(audio_path, num_points=num_points)
+        return bands.as_dict()
     except Exception as exc:
-        logger.warning(f"extract_peaks nieudane dla {audio_path}: {exc}")
+        logger.warning(f"extract_rgb_peaks nieudane dla {audio_path}: {exc}")
+    try:
+        peak = _core_extract_peaks(audio_path, num_points=num_points)
+        return {"low": peak, "mid": peak, "high": peak, "peak": peak}
+    except Exception:
         import math
-        import random
 
         peaks: list[float] = []
         for i in range(num_points):
             t = (i / num_points) * 180
             base = 0.3 + 0.5 * abs(math.sin(t * 1.7)) + 0.2 * abs(math.sin(t * 0.35))
-            noise = random.uniform(-0.06, 0.06)
-            peaks.append(max(0.08, min(0.97, base + noise)))
-        return peaks
+            peaks.append(max(0.08, min(0.97, base)))
+        return {"low": peaks, "mid": peaks, "high": peaks, "peak": peaks}
 
 
 class _WaveformDelivery(QtCore.QObject):
     """Process-wide dispatcher: worker thread -> GUI thread -> WaveformWidget.load_waveform."""
 
     _instance: _WaveformDelivery | None = None
-    deliver = QtCore.pyqtSignal(object, list, int, str)
+    deliver = QtCore.pyqtSignal(object, object, int, str)
 
     def __init__(self, parent: QtCore.QObject | None = None) -> None:
         super().__init__(parent)
@@ -45,17 +49,21 @@ class _WaveformDelivery(QtCore.QObject):
         return cls._instance
 
     @staticmethod
-    def _on_deliver(waveform_widget: Any, peaks: list[float], duration_ms: int, token: str) -> None:
+    def _on_deliver(waveform_widget: Any, payload: object, duration_ms: int, token: str) -> None:
         if waveform_widget is None:
             return
         try:
-            waveform_widget.load_waveform(peaks, duration_ms, token)
+            if isinstance(payload, dict):
+                peaks = payload.get("peak") or payload.get("mid") or []
+                waveform_widget.load_waveform(peaks, duration_ms, token, rgb_bands=payload)
+            else:
+                waveform_widget.load_waveform(payload, duration_ms, token)
         except RuntimeError:
             logger.debug("Waveform widget no longer available — drop stale peaks")
 
 
 class WaveformExtractRunnable(QtCore.QRunnable):
-    """Extract peaks in a worker thread and deliver on the GUI thread."""
+    """Extract RGB peaks in a worker thread and deliver on the GUI thread."""
 
     def __init__(self, audio_path: str, duration_ms: int, token: str, waveform_widget: Any):
         super().__init__()
@@ -67,8 +75,8 @@ class WaveformExtractRunnable(QtCore.QRunnable):
 
     def run(self) -> None:
         try:
-            peaks = _safe_extract_peaks(self._path, 900)
-            _WaveformDelivery.instance().deliver.emit(self._wave, peaks, self._duration, self._token or "")
+            bands = _safe_extract_rgb(self._path, 900)
+            _WaveformDelivery.instance().deliver.emit(self._wave, bands, self._duration, self._token or "")
         except Exception as exc:
             logger.warning(f"WaveformExtractRunnable błąd dla {self._path}: {exc}")
 

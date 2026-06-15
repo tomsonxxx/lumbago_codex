@@ -50,8 +50,11 @@ class PlaybackEngine:
 
         self._crossfader: float = 0.0          # -1.0 (A) ... 0.0 (center) ... +1.0 (B)
         self._master_volume: float = 1.0
+        self._cue_volume: float = 0.7          # headphone / cue monitor gain
         self._deck_trim_a: float = 1.0
         self._deck_trim_b: float = 1.0
+        self._pfl_a: bool = False
+        self._pfl_b: bool = False
 
         self._curve: str = "constant_power"    # or "linear"
 
@@ -131,6 +134,35 @@ class PlaybackEngine:
     def get_master_volume(self) -> float:
         return self._master_volume
 
+    def set_cue_volume(self, volume: float) -> None:
+        """Headphone / cue monitor gain (0.0–1.0). Used when PFL is active."""
+        self._cue_volume = max(0.0, min(1.0, float(volume)))
+        self._apply_mixing()
+
+    def get_cue_volume(self) -> float:
+        return self._cue_volume
+
+    def set_deck_pfl(self, deck: DeckName, enabled: bool) -> None:
+        """PFL (pre-fader listen): route deck to cue monitor path."""
+        flag = bool(enabled)
+        if deck == "A":
+            self._pfl_a = flag
+        elif deck == "B":
+            self._pfl_b = flag
+        else:
+            raise ValueError(f"Invalid deck name: {deck}")
+        self._apply_mixing()
+
+    def get_deck_pfl(self, deck: DeckName) -> bool:
+        if deck == "A":
+            return self._pfl_a
+        if deck == "B":
+            return self._pfl_b
+        raise ValueError(f"Invalid deck name: {deck}")
+
+    def is_any_pfl_active(self) -> bool:
+        return self._pfl_a or self._pfl_b
+
     def set_deck_trim(self, deck: DeckName, trim: float) -> None:
         """Per-deck volume trim (multiplicative, independent of crossfader)."""
         t = max(0.0, min(2.0, float(trim)))  # allow +6 dB headroom
@@ -202,6 +234,16 @@ class PlaybackEngine:
     # ------------------------------------------------------------------
     # State & diagnostics (delegation)
     # ------------------------------------------------------------------
+    def poll_decks(self) -> None:
+        """Refresh VLC position/state snapshots on the UI thread (safe libVLC access)."""
+        for backend in (self.deck_a, self.deck_b):
+            poll = getattr(backend, "poll", None)
+            if callable(poll):
+                try:
+                    poll()
+                except Exception:
+                    logger.debug("poll_decks: backend poll failed", exc_info=True)
+
     def get_deck_state(self, deck: DeckName) -> DeckState:
         return self.deck(deck).get_state()
 
@@ -212,6 +254,9 @@ class PlaybackEngine:
             "deck_b": self.deck_b.get_diagnostics(),
             "crossfader": self._crossfader,
             "master_volume": self._master_volume,
+            "cue_volume": self._cue_volume,
+            "pfl_a": self._pfl_a,
+            "pfl_b": self._pfl_b,
         }
 
     def release_all(self) -> None:
@@ -229,24 +274,36 @@ class PlaybackEngine:
     # ------------------------------------------------------------------
     # Internal mixing engine
     # ------------------------------------------------------------------
-    def _apply_mixing(self) -> None:
-        """Compute final volumes for both decks from crossfader + trims + master."""
+    def _crossfader_gains(self) -> tuple[float, float]:
         pos = self._crossfader
-
-        # Crossfader contribution (equal-power approximation)
         if self._curve == "constant_power":
-            # Smooth constant-power curve
             a_cross = (1.0 - pos) ** 0.5 if pos > 0 else 1.0
             b_cross = (1.0 + pos) ** 0.5 if pos < 0 else 1.0
         else:
-            # Linear (simpler, more abrupt in center)
             a_cross = max(0.0, 1.0 - max(0.0, pos))
             b_cross = max(0.0, 1.0 + min(0.0, pos))
+        return a_cross, b_cross
 
-        vol_a = self._master_volume * self._deck_trim_a * a_cross
-        vol_b = self._master_volume * self._deck_trim_b * b_cross
+    def _apply_mixing(self) -> None:
+        """Compute final volumes: master + crossfader + trim; PFL uses cue path."""
+        a_cross, b_cross = self._crossfader_gains()
+        vol_a_main = self._master_volume * self._deck_trim_a * a_cross
+        vol_b_main = self._master_volume * self._deck_trim_b * b_cross
 
-        # Clamp and apply
+        cue = self._cue_volume
+        pfl_a = self._pfl_a
+        pfl_b = self._pfl_b
+
+        if pfl_a or pfl_b:
+            vol_a = cue * self._deck_trim_a if pfl_a else vol_a_main
+            vol_b = cue * self._deck_trim_b if pfl_b else vol_b_main
+            if pfl_a and not pfl_b:
+                vol_b = min(vol_b, vol_b_main * 0.35)
+            elif pfl_b and not pfl_a:
+                vol_a = min(vol_a, vol_a_main * 0.35)
+        else:
+            vol_a, vol_b = vol_a_main, vol_b_main
+
         self.deck_a.set_volume(max(0.0, min(1.0, vol_a)))
         self.deck_b.set_volume(max(0.0, min(1.0, vol_b)))
 

@@ -676,3 +676,99 @@ Priorytety + side: przekazać crew/Plan do "nowa lista przeróbek" (pierwsza dla
 *SZPIEG re-audit complete 2026-06-02. Hierarchy followed. All moves documented identical. "gotowe" + pass.*
 
 **Output dla Plan/crew:** Ten wpis + full raport powyżej jako primary input. User dostaje "nową listę przeróbek" first (z punktowaniem/rekomendacjami/krokami/side). Po "dalej" - crew exact. SZPIEG binding.
+
+---
+
+**2026-06-15 — SZPIEG research: layout + skalowanie + ikony (wszystkie typy odtwarzaczy; user "dalej" po Plan)**
+
+**Fragment:** Układy grid, skalowanie BoothMetrics, katalog ikon — Odtwarzacz (normal/compact) + Focused + Console + Dual Mixer.
+
+**12 narzędzi (punktowanie 1–10 dla Lumbago PyQt6 booth):**
+
+| # | Narzędzie | Layout insight | Skala | Ikony | Lumbago |
+|---|-----------|----------------|-------|-------|---------|
+| 1 | Rekordbox 7 Performance | Wave dominant, CUE\|PLAY\|STOP, 2×4 hotcue, RGB wave | Auto skin @ res | Tekst+ikony CDJ | 10 |
+| 2 | Serato DJ Pro 3 | Vertical/Horizontal/Extended modes; active deck border | Display mode switch | Play/pause glyph | 9 |
+| 3 | Traktor Pro 4 | Modular deck strips; platter optional | Resizable modules | Icon+label | 8 |
+| 4 | VirtualDJ 2024 | Skin XML zones; crossfader always bottom | Skin scale % | Mixed | 7 |
+| 5 | Mixxx 2.x | Waveform stretch in skin XML | num_pixels tokens | Unicode OK | 8 |
+| 6 | Engine DJ | 4-deck grid; wave stack | Deck width ref | Color badges | 7 |
+| 7 | CDJ-3000 hardware | **CUE left of PLAY**; wave top; hotcue row | Fixed 7" | Physical labels | 10 |
+| 8 | DJM-V10 mixer | Crossfader ~34mm; master L; cue HP R | Physical | A/B labels | 9 |
+| 9 | foobar2000 compact | Minimal density pilot | User CSS | Text-first | 7 |
+| 10 | Winamp/VLC pilot | Spin anim; mini transport | Tiny window | Symbol font | 8 |
+| 11 | djay Pro touch | 44pt min touch; icon-first | iPad scale | SF Symbols | 7 |
+| 12 | Pioneer DJ manuals | Official control order binding | — | CUE/PLAY/LOOP | 9 |
+
+**Katalog układów (binding Build Spec):**
+- `normal` (OdtwarzaczView): Header → Wave stretch7 → Time → Transport CUE|PLAY|STOP → Status
+- `compact`: jak normal, margins 8/6, spin w header, min wave 68px scaled
+- `deck_focused`: +Pitch/TRIM + Hotcue 2×4 + Q/SYNC/MEM (+20% air)
+- `deck_console`: Badge+title+BPM → Wave5 → Transport+TRIM+PITCH → SYNC/PFL/Q → EQ+Hotcue → MEM/LOOP
+- `dual_mixer`: Splitter 50/50 + crossfader min 34px + master/cue sliders
+
+**Katalog ikon (`BOOTH_ICONS`):** Unicode ▶ ❚❚ ■ CUE ⟳ SYNC ↻ LOOP Q HP — wystarczające @ 96–144 DPI Windows (Segoe UI Symbol); SVG opcjonalnie faza 2 @ 4K.
+
+**Punktowanie Lumbago (przed impl 2026-06-15):** air/wave 9, transport 9, metrics per-view 7, dual mixer legacy 5, menu PPM functional 6, icons scattered 6.
+
+**Build Spec binding (wykonane po user "dalej"):**
+1. `BOOTH_ICONS` + `booth_transport_text` + `pro_button_stylesheet` w `ui/dj/styles.py`
+2. Token `dual_mixer` + `crossfader_height()`, `mixer_slider_width()`, `pro_button_size()`
+3. `deck_view_helpers`: `metrics_for_mixer`, `apply_main_layout_margins`
+4. TransportBar + OdtwarzaczView → BOOTH_ICONS
+5. PitchControl/EQStrip `apply_metrics` + `bind_controller` + funkcjonalne menu PPM
+6. DualConsoleWidget BoothMetrics + menu cross/master/cue wired
+7. ConsoleDeckView loop/sync/memory menu → DeckController
+8. `DeckController.clear_memory()`
+
+**Lista przeróbek (wykonana):** 1–8 powyżej. Testy: `test_deck_views_cue.py`, `test_booth_metrics_cue.py`.
+
+*Per SZPIEG Build Spec + Plan user "dalej" 2026-06-15. must document identical.*
+
+**2026-06-15 — iteracja 2 (user "dalej"): `deck_layout.py` + dynamic wave + 4K font**
+- `ui/dj/deck_layout.py`: `build_deck_header`, `build_time_label`, `configure_waveform_widget`, `dynamic_wave_min_height`, `apply_waveform_resize`
+- Wspólny resize waveform: OdtwarzaczView + FocusedDeckView + ConsoleDeckView via `refresh_waveform_on_resize`
+- `metrics_for_odt()` w deck_view_helpers
+- Transport font: Segoe UI Symbol (high-DPI glyphs ▶ ■)
+- Console PFL menu funkcjonalne
+- Testy: `tests/test_deck_layout.py`
+
+**2026-06-15 — iteracja 3 (user "kontynuuj"): unified transport + compact labels**
+- `build_centered_transport`, `apply_transport_button_metrics`, `build_deck_badge`, `apply_header_metrics`
+- OdtwarzaczView: pełny header przez `build_deck_header` + spin; transport przez `build_centered_transport`
+- Compact transport: krótkie etykiety ▶ ❚❚ ■ (więcej miejsca w pilocie)
+- TransportBar → wspólny `apply_transport_button_metrics`
+- Console badge → `deck_badge_stylesheet`
+
+**2026-06-15 — iteracja 4 (user "dalej"): SVG ikony transportu @ 4K/DPI**
+- `ui/dj/booth_svg_icons.py`: inline SVG play/pause/stop/cue → `QIcon` via `QSvgRenderer`, cache per scale
+- `booth_transport_label()` w `styles.py` — tekst bez Unicode (para z ikoną)
+- `apply_transport_button_content` + `apply_transport_button_metrics(compact=)` w `deck_layout`
+- Normal: ikona + label; compact pilot: icon-only
+- Fallback: `booth_transport_text` gdy brak QtSvg
+- Testy: `tests/test_booth_svg_icons.py`
+- Konsumenci: TransportBar, OdtwarzaczView, `transport_labels_from_metrics`
+
+*Per SZPIEG Build Spec + user "dalej" 2026-06-15 iteracja 4. must document identical.*
+
+**2026-06-15 — iteracja 5 (user "dopracuj wszystkie elementy na wysoki połysk"):**
+- `BoothMetrics`: `section_label_stylesheet()`, `value_label_stylesheet()`, rozszerzony `status_stylesheet`
+- `action_button_stylesheet`, `deck_channel_badge_stylesheet`, `get_mixer_panel_stylesheet`
+- `deck_layout`: `apply_status_label`, `apply_section_label`, `apply_pro_buttons`, `apply_action_buttons`
+- Transport: padding ikon+tekst, tooltips CDJ (CUE hold / PPM play-stop)
+- Focused: pro SYNC/Q/MEM przez wspólne helpery; status/section scaled
+- Console: MEM/LOOP/IN/OUT styled + PFL active; section labels scaled
+- Dual: mixer panel token + A/B badge scaled + master/cue value labels
+- PitchControl + EQStrip: scaled section/value labels
+- Testy: `tests/test_booth_polish.py`
+
+*Per SZPIEG Build Spec + user "dopracuj wszystkie elementy na wysoki połysk" 2026-06-15. must document identical.*
+
+**2026-06-15 — iteracja 6 (user "dalej"): Cue HP + PFL w silniku**
+- `PlaybackEngine`: `set_cue_volume`, `set_deck_pfl`, `get_deck_pfl`, `is_any_pfl_active`
+- PFL = pre-fader cue path @ `cue_volume`; duck drugi deck gdy jeden PFL
+- `DeckController.set_pfl()`; Console PFL → engine
+- `DualConsoleWidget` cue slider + `dj_player_window` HP/PFL → engine
+- Testy: `tests/test_playback_cue_pfl.py`
+
+*Per user "dalej" 2026-06-15 iteracja 6. must document identical.*

@@ -14,6 +14,12 @@ from ui.dj.waveform_async import request_waveform_load as _request_waveform_load
 logger = logging.getLogger(__name__)
 
 
+def _format_cue_time(ms: int) -> str:
+    total = max(0, int(ms)) // 1000
+    m, s = divmod(total, 60)
+    return f"{m}:{s:02d}"
+
+
 class SimpleDeckController(QtCore.QObject):
     """
     Lekki kontroler tylko dla minimalnego single playera "Odtwarzacz" MVP.
@@ -47,6 +53,7 @@ class SimpleDeckController(QtCore.QObject):
     bpm_changed = QtCore.pyqtSignal(object)           # float | None
     play_state_changed = QtCore.pyqtSignal(bool)      # is_playing
     status_changed = QtCore.pyqtSignal(str)           # status tekst
+    cue_changed = QtCore.pyqtSignal(int)              # main cue ms
 
     def __init__(
         self,
@@ -64,6 +71,7 @@ class SimpleDeckController(QtCore.QObject):
         self._original_bpm: float | None = None
         self._current_waveform_token: str | None = None
         self._known_duration_ms: int = 0
+        self._cue_preview_active: bool = False
 
         # Timer playhead (basic)
         self._playhead_timer = QtCore.QTimer(self)
@@ -107,6 +115,7 @@ class SimpleDeckController(QtCore.QObject):
 
         self.current_track = track
         self._main_cue_ms = 0
+        self.cue_changed.emit(0)
         bpm = getattr(track, "bpm", None)
         self._original_bpm = bpm if bpm and bpm > 10 else None
 
@@ -148,6 +157,8 @@ class SimpleDeckController(QtCore.QObject):
         """
         self.current_track = None
         self._main_cue_ms = 0
+        self._cue_preview_active = False
+        self.cue_changed.emit(0)
         self._original_bpm = None
         if self.playback_engine:
             try:
@@ -183,7 +194,11 @@ class SimpleDeckController(QtCore.QObject):
                         self.playhead_changed.emit(cue)
                     except Exception:
                         pass
+            if hasattr(self.playback_engine, "poll_decks"):
+                self.playback_engine.poll_decks()
             self.playback_engine.play_deck(self.deck_id)  # STREAM start
+            if hasattr(self.playback_engine, "poll_decks"):
+                self.playback_engine.poll_decks()
             if not self._playhead_timer.isActive():
                 self._playhead_timer.start()
             self.play_state_changed.emit(True)
@@ -250,24 +265,83 @@ class SimpleDeckController(QtCore.QObject):
             logger.warning(f"SimpleDeck {self.deck_id} seek błąd: {e}")
 
     def set_cue(self) -> None:
-        """Ustaw _main_cue_ms na bieżącej pozycji (dla play prefer logic).
-        Nie zmienia pliku, tylko pozycję cue dla tego streamu.
-        Cue during play supported (STREAM pos, FILE unchanged). Reliability: guard no track.
-        """
-        if not self.playback_engine:
-            return
-        if not getattr(self, 'current_track', None):
+        """Alias: ustaw CUE na bieżącej pozycji playhead."""
+        self.set_cue_at_playhead()
+
+    def set_cue_at_playhead(self) -> None:
+        """Zapisz punkt CUE na aktualnej pozycji (Shift+CUE lub double-klik waveform)."""
+        if not self.playback_engine or not getattr(self, "current_track", None):
             return
         try:
             state = self.playback_engine.get_deck_state(self.deck_id)
             pos = state.position_ms if state else 0
             self._main_cue_ms = max(0, int(pos))
-            self.status_changed.emit("CUE SET")
-            logger.debug(
-                f"SimpleDeck {self.deck_id}: _main_cue_ms = {self._main_cue_ms}"
-            )
+            self.cue_changed.emit(self._main_cue_ms)
+            self.status_changed.emit(f"CUE ustawiony @ {_format_cue_time(self._main_cue_ms)}")
+            logger.debug(f"SimpleDeck {self.deck_id}: _main_cue_ms = {self._main_cue_ms}")
         except Exception as e:
             logger.warning(f"SimpleDeck {self.deck_id} set_cue błąd: {e}")
+
+    def jump_to_cue(self) -> None:
+        """Skok playhead do zapisanego punktu CUE (bez startu odtwarzania)."""
+        if not self.playback_engine or not getattr(self, "current_track", None):
+            return
+        cue = max(0, int(self._main_cue_ms))
+        try:
+            self.playback_engine.seek_deck(self.deck_id, cue)
+            if hasattr(self.playback_engine, "poll_decks"):
+                self.playback_engine.poll_decks()
+            self.playhead_changed.emit(cue)
+            self.status_changed.emit(f"CUE @ {_format_cue_time(cue)}")
+        except Exception as e:
+            logger.warning(f"SimpleDeck {self.deck_id} jump_to_cue błąd: {e}")
+
+    def cue_pressed(self) -> None:
+        """CDJ/Rekordbox: skok do CUE + podgląd (play) dopóki trzymany przycisk."""
+        if not self.playback_engine or not getattr(self, "current_track", None):
+            return
+        cue = max(0, int(self._main_cue_ms))
+        try:
+            self.playback_engine.seek_deck(self.deck_id, cue)
+            if hasattr(self.playback_engine, "poll_decks"):
+                self.playback_engine.poll_decks()
+            self.playhead_changed.emit(cue)
+            self.playback_engine.play_deck(self.deck_id)
+            if hasattr(self.playback_engine, "poll_decks"):
+                self.playback_engine.poll_decks()
+            if not self._playhead_timer.isActive():
+                self._playhead_timer.start()
+            self._cue_preview_active = True
+            self.play_state_changed.emit(True)
+            self.status_changed.emit("CUE ▶ podgląd")
+        except Exception as e:
+            logger.warning(f"SimpleDeck {self.deck_id} cue_pressed błąd: {e}")
+
+    def cue_released(self) -> None:
+        """CDJ: zwolnienie CUE = stop + powrót do punktu CUE."""
+        if not self.playback_engine:
+            return
+        cue = max(0, int(self._main_cue_ms))
+        try:
+            self.playback_engine.stop_deck(self.deck_id)
+            self.playback_engine.seek_deck(self.deck_id, cue)
+            if hasattr(self.playback_engine, "poll_decks"):
+                self.playback_engine.poll_decks()
+            self._playhead_timer.stop()
+            self._cue_preview_active = False
+            self.playhead_changed.emit(cue)
+            self.play_state_changed.emit(False)
+            self.status_changed.emit(f"CUE @ {_format_cue_time(cue)}")
+        except Exception as e:
+            logger.warning(f"SimpleDeck {self.deck_id} cue_released błąd: {e}")
+
+    def set_cue_at_ms(self, time_ms: int) -> None:
+        """Ustaw CUE na konkretnym czasie (np. double-klik waveform)."""
+        if not getattr(self, "current_track", None):
+            return
+        self._main_cue_ms = max(0, int(time_ms))
+        self.cue_changed.emit(self._main_cue_ms)
+        self.status_changed.emit(f"CUE ustawiony @ {_format_cue_time(self._main_cue_ms)}")
 
     def request_waveform_load(self, waveform_widget: Any, audio_path: str,
                               duration_ms: int, token: str = "") -> None:
@@ -303,6 +377,8 @@ class SimpleDeckController(QtCore.QObject):
         if not self.playback_engine:
             return
         try:
+            if hasattr(self.playback_engine, "poll_decks"):
+                self.playback_engine.poll_decks()
             state = self.playback_engine.get_deck_state(self.deck_id)
             if state:
                 if state.duration_ms and state.duration_ms > self._known_duration_ms:

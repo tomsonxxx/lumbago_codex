@@ -1315,7 +1315,11 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
                 self.global_mixer.set_hp(value)
             except Exception:
                 pass
-        # Na razie tylko UI — prawdziwy oddzielny output HP (w silniku) wymaga więcej
+        if self.playback_engine:
+            try:
+                self.playback_engine.set_cue_volume(value / 100.0)
+            except Exception:
+                pass
 
     def _on_pfl_changed(self, deck: str, checked: bool):
         # Obsługa global_mixer (MixerStrip) + delegacja do deck views jeśli mają pfl_btn (dla statusu)
@@ -1333,6 +1337,11 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
                 self.deck_b.pfl_btn.setChecked(checked)
         except Exception:
             pass
+        if self.playback_engine:
+            try:
+                self.playback_engine.set_deck_pfl(deck, checked)
+            except Exception:
+                pass
         logger.debug(f"PFL {deck}: {'ON' if checked else 'OFF'}")
 
     def _on_global_crossfader(self, value: int):

@@ -9,15 +9,21 @@ import uuid
 from PyQt6 import QtCore, QtGui, QtWidgets
 
 from core.models import Track
+from ui.dj.deck_layout import (
+    apply_header_metrics,
+    apply_transport_button_metrics,
+    build_centered_transport,
+    build_deck_header,
+    build_time_label,
+    configure_waveform_widget,
+)
+from ui.dj.deck_view_helpers import metrics_for_odt, refresh_waveform_on_resize
 from ui.dj.simple_deck_controller import SimpleDeckController
 from ui.dj.views.waveform_widget import WaveformWidget
 from ui.dj.styles import (
     BOOTH_COLORS,
-    BOOTH_SIZES,
+    BoothMetrics,
     get_deck_panel_stylesheet,
-    get_bpm_label_stylesheet,
-    get_time_label_stylesheet,
-    get_transport_button_stylesheet,
 )
 
 logger = logging.getLogger(__name__)
@@ -154,6 +160,9 @@ TESTER 2026-06-14 final (po "dalej"+lista 1-15): smoke0/pytest44p/python-c (comp
         self._is_playing: bool = False
         self._compact: bool = False
         self._applying_compact: bool = False
+        self._metrics = BoothMetrics(compact=False)
+        self._last_metrics_scale: float = 1.0
+        self._skip_cue_release: bool = False
 
         self.setObjectName("OdtwarzaczPanel")
         self._normal_stylesheet = get_deck_panel_stylesheet()
@@ -161,6 +170,7 @@ TESTER 2026-06-14 final (po "dalej"+lista 1-15): smoke0/pytest44p/python-c (comp
 
         self.setAcceptDrops(True)
 
+        self._refresh_metrics(force_apply=False)
         self._setup_ui()
         self._connect_controller_signals()
         self._connect_widget_signals()
@@ -185,105 +195,71 @@ TESTER 2026-06-14 final (po "dalej"+lista 1-15): smoke0/pytest44p/python-c (comp
         Komentarze i guardy w metodach.
         """
         layout = QtWidgets.QVBoxLayout(self)
-        # Dużo powietrza: 32px boki, 24 góra/dół, spacing 18 (per spec + "32px etc")
-        layout.setContentsMargins(32, 24, 32, 24)
-        layout.setSpacing(18)
+        m = self._metrics.layout_margins()
+        layout.setContentsMargins(*m)
+        layout.setSpacing(self._metrics.layout_spacing())
 
-        # === HEADER: title + BPM (HBox, spacing 16) ===
-        header = QtWidgets.QHBoxLayout()
-        header.setSpacing(16)
-
-        self.title_label = QtWidgets.QLabel(
-            "Brak utworu — upuść plik z biblioteki")
-        self.title_label.setStyleSheet(
-            "font-size: 18px; font-weight: 700; "
-            f"color: {BOOTH_COLORS['text_primary']};")
-        self.title_label.setWordWrap(False)
-        self.title_label.setSizePolicy(
-            QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Preferred
-        )
-        self.title_label.setToolTip("Tytuł i artysta załadowanego pliku audio. EFEKT: pokazuje metadane z Track (z DB lub filename). Upuść inny plik by zmienić załadowany plik (load = FILE [...]
-        header.addWidget(self.title_label, 1)
-
-        # Compact spin indicator (pilot-like, hidden by default; shown+spins in compact+play)
-        self._spin_indicator = _CompactSpinIndicator(self, size=20)
+        self._spin_indicator = _CompactSpinIndicator(self, size=self._metrics.spin_size())
         self._spin_indicator.setVisible(False)
-        header.addWidget(self._spin_indicator, 0)
-
-        self.bpm_label = QtWidgets.QLabel("— BPM")
-        self.bpm_label.setStyleSheet(get_bpm_label_stylesheet())
-        self.bpm_label.setAlignment(
-            QtCore.Qt.AlignmentFlag.AlignRight
-            | QtCore.Qt.AlignmentFlag.AlignVCenter)
-        self.bpm_label.setMinimumWidth(100)
-        self.bpm_label.setToolTip("BPM utworu (z metadanych lub analizy). EFEKT: wpływa na beatgrid waveformu. Wartość z pliku/DB, nie zmienia pliku.")
-        header.addWidget(self.bpm_label, 0)
-
-        layout.addLayout(header)
+        header_parts = build_deck_header(
+            self._metrics,
+            empty_title="Brak utworu — upuść plik z biblioteki",
+            extra_right=self._spin_indicator,
+        )
+        self._header_parts = header_parts
+        self.title_label = header_parts.title_label
+        self.bpm_label = header_parts.bpm_label
+        self.title_label.setToolTip(
+            "Tytuł i artysta załadowanego pliku audio. EFEKT: pokazuje metadane z Track "
+            "(z DB lub filename). Upuść inny plik by zmienić załadowany plik (load = FILE op)."
+        )
+        self.bpm_label.setToolTip(
+            "BPM utworu (z metadanych lub analizy). EFEKT: wpływa na beatgrid waveformu. "
+            "Wartość z pliku/DB, nie zmienia pliku."
+        )
+        layout.addLayout(header_parts.layout)
 
         # === DOMINANT WAVEFORM (stretch 7, minHeight 260+) ===
         self.waveform = WaveformWidget()
-        min_h = BOOTH_SIZES.get("waveform_min_height_single", 260)
-        self.waveform.setMinimumHeight(min_h)
-        self.waveform.setSizePolicy(
-            QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Expanding
-        )
+        configure_waveform_widget(self.waveform, self._metrics)
         # Expand tooltip on wave for EFFECT (file/stream + drag)
         self.waveform.setToolTip(
             "Waveform: Click=seek (strumień) • Double-click=seek + set main CUE (dla play near0). "
             "EFEKT: zmienia pozycję w streamie z załadowanego PLIKU (nie load nowego pliku). "
             "Drag&drop z biblioteki ładuje nowy PLIK. Shift+click ignorowane w odt (no advanced)."
         )
-        layout.addWidget(self.waveform, 7)
+        layout.addWidget(self.waveform, self._metrics.wave_stretch())
 
         # === TIME (center, fixed, 0 stretch, 18px mono) ===
-        self.time_label = QtWidgets.QLabel("0:00 / 0:00")
-        self.time_label.setStyleSheet(get_time_label_stylesheet())
-        self.time_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        self.time_label = build_time_label(self._metrics)
         self.time_label.setToolTip("Pozycja / czas trwania. EFEKT: aktualizowane z playhead streamu (timer 40ms z engine state). Nie wpływa na plik.")
         layout.addWidget(self.time_label, 0)
 
-        # === LARGE CENTERED TRANSPORT (3 buttons, reuse transport styles + sizes) ===
-        trans = QtWidgets.QHBoxLayout()
-        trans.setSpacing(14)
-        trans.addStretch(1)
-
-        # CUE (dla set_cue w MVP)
-        cue_size = BOOTH_SIZES.get("transport_cue", (78, 52))
-        self.cue_btn = QtWidgets.QPushButton("CUE")
-        self.cue_btn.setFixedSize(*cue_size)
-        self.cue_btn.setStyleSheet(get_transport_button_stylesheet("cue"))
-        self.cue_btn.clicked.connect(self.controller.set_cue)
-        self.cue_btn.setToolTip("Ustaw punkt CUE na bieżącej pozycji (lub skocz do istniejącego). EFEKT: następny PLAY zacznie odtwarzanie od tego punktu cue w załadowanym pliku audio (nie z[...]
-
-        # PLAY / toggle (duży)
-        play_size = BOOTH_SIZES.get("transport_play", (96, 58))
-        self.play_btn = QtWidgets.QPushButton("▶  ODTWÓRZ")
-        self.play_btn.setFixedSize(*play_size)
-        self.play_btn.setStyleSheet(get_transport_button_stylesheet("play"))
+        transport = build_centered_transport(self._metrics)
+        self.cue_btn = transport.cue_btn
+        self.play_btn = transport.play_btn
+        self.stop_btn = transport.stop_btn
+        self.cue_btn.pressed.connect(self._on_cue_pressed)
+        self.cue_btn.released.connect(self._on_cue_released)
+        self.cue_btn.setToolTip(
+            "Trzymaj = podgląd od CUE (CDJ). Zwolnij = stop na CUE. "
+            "Shift+trzymaj = ustaw CUE na bieżącej pozycji."
+        )
         self.play_btn.clicked.connect(self._on_play_or_pause_clicked)
-        self.play_btn.setToolTip("Rozpocznij lub wznów odtwarzanie załadowanego pliku audio. EFEKT: uruchamia silnik playback na fizycznym pliku (od pozycji lub cue jeśli blisko startu). Klikn[...]
-
-        # STOP
-        stop_size = BOOTH_SIZES.get("transport_stop", (68, 52))
-        self.stop_btn = QtWidgets.QPushButton("■  STOP")
-        self.stop_btn.setFixedSize(*stop_size)
-        self.stop_btn.setStyleSheet(get_transport_button_stylesheet("stop"))
+        self.play_btn.setToolTip(
+            "Rozpocznij lub wznów odtwarzanie załadowanego pliku audio. "
+            "EFEKT: uruchamia silnik playback (od pozycji lub cue jeśli blisko startu)."
+        )
         self.stop_btn.clicked.connect(self.controller.stop)
-        self.stop_btn.setToolTip("Zatrzymaj odtwarzanie i wróć do punktu CUE (lub 0). EFEKT: stop silnika + reset playhead do cue w załadowanym pliku (nie usuwa pliku z decku).")
-
-        trans.addWidget(self.cue_btn)
-        trans.addWidget(self.play_btn)
-        trans.addWidget(self.stop_btn)
-        trans.addStretch(1)
-
-        layout.addLayout(trans)
+        self.stop_btn.setToolTip(
+            "Zatrzymaj odtwarzanie i wróć do punktu CUE (lub 0). "
+            "EFEKT: stop silnika + reset playhead do cue (nie usuwa pliku z decku)."
+        )
+        layout.addLayout(transport.layout)
 
         # === MINIMAL STATUS ===
         self.status_label = QtWidgets.QLabel("— Gotowy (tryb Odtwarzacz MVP)")
-        self.status_label.setStyleSheet(
-            f"color: {BOOTH_COLORS.get('text_muted', '#6b7688')}; font-size: 11px;"
-        )
+        self.status_label.setStyleSheet(self._metrics.status_stylesheet())
         self.status_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
         self.status_label.setToolTip("Status decku (load/play/cue/set). EFEKT: informacyjny; nie wykonuje akcji. File ops w load, stream ops w transport.")
         layout.addWidget(self.status_label, 0)
@@ -296,10 +272,7 @@ TESTER 2026-06-14 final (po "dalej"+lista 1-15): smoke0/pytest44p/python-c (comp
         if hasattr(self.waveform, "seek_requested"):
             self.waveform.seek_requested.connect(self.controller.seek)
         if hasattr(self.waveform, "double_clicked"):
-            # Double = seek + set as cue (pro preview + basic cue logic)
-            self.waveform.double_clicked.connect(
-                lambda t: (self.controller.seek(t), self.controller.set_cue())
-            )
+            self.waveform.double_clicked.connect(self._on_waveform_set_cue)
         # Shift+click na waveform ignorujemy w MVP (no hotcues)
 
     def _connect_controller_signals(self) -> None:
@@ -310,6 +283,8 @@ TESTER 2026-06-14 final (po "dalej"+lista 1-15): smoke0/pytest44p/python-c (comp
         self.controller.bpm_changed.connect(self._on_bpm_changed)
         self.controller.play_state_changed.connect(self._on_play_state_changed)
         self.controller.status_changed.connect(self._on_status_changed)
+        if hasattr(self.controller, "cue_changed"):
+            self.controller.cue_changed.connect(self._on_cue_changed)
 
     # ------------------------------------------------------------------
     # UI update slots (dumb view)
@@ -362,12 +337,27 @@ TESTER 2026-06-14 final (po "dalej"+lista 1-15): smoke0/pytest44p/python-c (comp
         self.time_label.setText("0:00 / 0:00")
         if hasattr(self.waveform, "clear"):
             self.waveform.clear()
-        if hasattr(self, "play_btn"):
-            self.play_btn.setText("▶  ODTWÓRZ")
+        if hasattr(self, "play_btn") and hasattr(self, "cue_btn") and hasattr(self, "stop_btn"):
+            apply_transport_button_metrics(
+                self._metrics,
+                self.cue_btn,
+                self.play_btn,
+                self.stop_btn,
+                playing=False,
+                compact=self._compact,
+            )
 
         self.status_label.setText("— Gotowy (tryb Odtwarzacz MVP)")
         if hasattr(self, "_spin_indicator"):
             self._spin_indicator.stop()
+
+    def _refresh_metrics(self, force_apply: bool = False) -> None:
+        new_m = metrics_for_odt(self, compact=self._compact)
+        old_scale = self._last_metrics_scale
+        self._metrics = new_m
+        self._last_metrics_scale = new_m.scale_factor
+        if (force_apply or abs(new_m.scale_factor - old_scale) > 0.04) and hasattr(self, "play_btn"):
+            self._apply_compact_ui()
 
     def resizeEvent(self, event):
         """Scalability polish (per SZPIEG Build Spec + Plan step6 + exact match + grupa 5+9 lista po 'dalej'):
@@ -379,34 +369,15 @@ TESTER 2026-06-14 final (po "dalej"+lista 1-15): smoke0/pytest44p/python-c (comp
         Multi res safe. Per lista 5/9 black/empty + scalab.
         """
         super().resizeEvent(event)
-        # Dynamic tweak: ensure min wave respects current size (scalability per lista: dynamic min wave ok w compact i normal).
-        # Zachowuje air (margins/spacing z apply), dominant wave, no-overlap.
+        self._refresh_metrics(force_apply=False)
         if hasattr(self, "waveform"):
-            try:
-                if not self._compact:
-                    # Scalab precise (FIXER polish): exact avail_h estimate (header ~32 + time~22 + trans~62 + status~18 + margins 24*2 + spacing 18*3 ~ air preserved)
-                    header_est = 36
-                    time_est = 24
-                    trans_est = 64
-                    status_est = 20
-                    margins_air = 48 + 54  # top+bottom + spacings
-                    avail_h = max(80, self.height() - (header_est + time_est + trans_est + status_est + margins_air))
-                    cur_min = self.waveform.minimumHeight()
-                    target = min(260, max(120, avail_h))
-                    if target != cur_min:
-                        self.waveform.setMinimumHeight(target)
-                else:
-                    # W compact: dynamic min wave jeśli okno bardzo małe (air zachowany przez małe marginesy 8/6)
-                    cur_min = self.waveform.minimumHeight()
-                    target = max(40, min(100, self.height() - 80))  # pilot min, z air
-                    if target != cur_min:
-                        self.waveform.setMinimumHeight(target)
-            except Exception:
-                pass
+            refresh_waveform_on_resize(
+                self, self.waveform, self._metrics, compact=self._compact
+            )
         # Ensure spin size scales a bit in compact
         if self._compact and hasattr(self, "_spin_indicator"):
             try:
-                s = max(16, min(28, self.width() // 30))
+                s = max(self._metrics.px(14), min(self._metrics.px(26), self.width() // 24))
                 self._spin_indicator.setFixedSize(s, s)
             except Exception:
                 pass
@@ -445,8 +416,15 @@ TESTER 2026-06-14 final (po "dalej"+lista 1-15): smoke0/pytest44p/python-c (comp
 
     def _on_play_state_changed(self, playing: bool) -> None:
         self._is_playing = bool(playing)
-        if hasattr(self, "play_btn"):
-            self.play_btn.setText("❚❚  PAUZA" if playing else "▶  ODTWÓRZ")
+        if hasattr(self, "play_btn") and hasattr(self, "cue_btn") and hasattr(self, "stop_btn"):
+            apply_transport_button_metrics(
+                self._metrics,
+                self.cue_btn,
+                self.play_btn,
+                self.stop_btn,
+                playing=playing,
+                compact=self._compact,
+            )
         # Compact anim react (spin CD only when playing + compact)
         self._update_compact_play_state(playing)
 
@@ -456,11 +434,41 @@ TESTER 2026-06-14 final (po "dalej"+lista 1-15): smoke0/pytest44p/python-c (comp
     # ------------------------------------------------------------------
     # Transport MVP (explicit play vs pause, nie toggle w kontrolerze)
     # ------------------------------------------------------------------
+    def _on_cue_pressed(self) -> None:
+        mods = QtWidgets.QApplication.keyboardModifiers()
+        if mods & QtCore.Qt.KeyboardModifier.ShiftModifier:
+            self._skip_cue_release = True
+            self.controller.set_cue_at_playhead()
+            return
+        self._skip_cue_release = False
+        self.controller.cue_pressed()
+
+    def _on_cue_released(self) -> None:
+        if self._skip_cue_release:
+            self._skip_cue_release = False
+            return
+        self.controller.cue_released()
+
+    def _on_waveform_set_cue(self, time_ms: int) -> None:
+        self.controller.set_cue_at_ms(time_ms)
+        self.controller.seek(time_ms)
+
+    def _on_cue_changed(self, cue_ms: int) -> None:
+        if hasattr(self.waveform, "set_main_cue_ms"):
+            self.waveform.set_main_cue_ms(cue_ms)
+
     def _on_play_or_pause_clicked(self) -> None:
-        if getattr(self, "_is_playing", False):
-            self.controller.pause()
-        else:
-            self.controller.play()
+        try:
+            if getattr(self, "_is_playing", False):
+                self.controller.pause()
+            else:
+                if not getattr(self.controller, "current_track", None):
+                    self.status_label.setText("— Najpierw załaduj utwór (drag lub biblioteka)")
+                    return
+                self.controller.play()
+        except Exception as exc:
+            logger.warning(f"Odtwarzacz transport error: {exc}")
+            self.status_label.setText(f"✗ Błąd odtwarzania: {exc}")
 
     # ------------------------------------------------------------------
     # Drag & drop z pełnym repo lookup (identycznie jak w main window / _load_dropped_track)
@@ -577,6 +585,7 @@ TESTER 2026-06-14 final (po "dalej"+lista 1-15): smoke0/pytest44p/python-c (comp
         if self._compact == bool(compact):
             return
         self._compact = bool(compact)
+        self._refresh_metrics(force_apply=False)
         try:
             if hasattr(self.controller, "set_compact_mode"):
                 self.controller.set_compact_mode(compact)
@@ -599,67 +608,32 @@ TESTER 2026-06-14 final (po "dalej"+lista 1-15): smoke0/pytest44p/python-c (comp
         self._applying_compact = True
         try:
             compact = self._compact
-            sizes = BOOTH_SIZES
-            if compact:
-                # Collapse sizes (pilot-like mini)
-                play_s = sizes.get("compact_transport_play", (52, 32))
-                cue_s = sizes.get("compact_transport_cue", (42, 28))
-                stop_s = sizes.get("compact_transport_stop", (36, 28))
-                wave_min = sizes.get("compact_waveform_min_height", 80)
-                bpm_f = sizes.get("compact_bpm_font", 14)
-                title_f = sizes.get("compact_title_font", 11)
-                time_f = sizes.get("compact_time_font", 10)
-                stat_f = sizes.get("compact_status_font", 9)
-                # smaller margins for pilot + reduce empty bottom per Plan "nowa lista przeróbek" 2+5+12 + SZPIEG compact pilot spec (after user 'ok' + 'kontynuuj')
-                # tighter bottom (2px) to pack pilot notification-like, less "oddychanie" stretch push at end while keeping minimal air.
-                self.layout().setContentsMargins(8, 6, 8, 2)
-                self.layout().setSpacing(6)
-            else:
-                play_s = sizes.get("transport_play", (96, 58))
-                cue_s = sizes.get("transport_cue", (78, 52))
-                stop_s = sizes.get("transport_stop", (68, 52))
-                wave_min = sizes.get("waveform_min_height_single", 260)
-                bpm_f = 32
-                title_f = 18
-                time_f = 16
-                stat_f = 11
-                self.layout().setContentsMargins(32, 24, 32, 24)
-                self.layout().setSpacing(18)
+            m = self._metrics
+            self.layout().setContentsMargins(*m.layout_margins())
+            self.layout().setSpacing(m.layout_spacing())
 
-            # Apply transport sizes
-            if hasattr(self, "play_btn"):
-                self.play_btn.setFixedSize(*play_s)
-            if hasattr(self, "cue_btn"):
-                self.cue_btn.setFixedSize(*cue_s)
-            if hasattr(self, "stop_btn"):
-                self.stop_btn.setFixedSize(*stop_s)
+            if hasattr(self, "play_btn") and hasattr(self, "cue_btn") and hasattr(self, "stop_btn"):
+                apply_transport_button_metrics(
+                    m,
+                    self.cue_btn,
+                    self.play_btn,
+                    self.stop_btn,
+                    playing=getattr(self, "_is_playing", False),
+                    compact=compact,
+                )
 
-            # Wave min (dominant but smaller in compact)
             if hasattr(self, "waveform"):
-                self.waveform.setMinimumHeight(wave_min)
+                refresh_waveform_on_resize(self, self.waveform, m, compact=compact)
 
-            # Fonts
-            if hasattr(self, "title_label"):
-                self.title_label.setStyleSheet(
-                    f"font-size: {title_f}px; font-weight: 700; "
-                    f"color: {BOOTH_COLORS['text_primary']};")
-            if hasattr(self, "bpm_label"):
-                self.bpm_label.setStyleSheet(
-                    f"color: {BOOTH_COLORS['accent']}; font-size: {bpm_f}px; font-weight: 900; "
-                    "font-family: \"Consolas\", \"JetBrains Mono\", monospace;"
-                )
+            if hasattr(self, "_header_parts"):
+                apply_header_metrics(self._header_parts, m)
             if hasattr(self, "time_label"):
-                self.time_label.setStyleSheet(
-                    f"color: {BOOTH_COLORS['text_secondary']}; font-size: {time_f}px; font-weight: 700; "
-                    "font-family: \"Consolas\", \"JetBrains Mono\", monospace;"
-                )
+                self.time_label.setStyleSheet(m.time_stylesheet())
             if hasattr(self, "status_label"):
-                self.status_label.setStyleSheet(
-                    f"color: {BOOTH_COLORS.get('text_muted', '#6b7688')}; font-size: {stat_f}px;"
-                )
+                self.status_label.setStyleSheet(m.status_stylesheet())
 
-            # Spin indicator visible only in compact (pilot)
             if hasattr(self, "_spin_indicator"):
+                self._spin_indicator.setFixedSize(m.spin_size(), m.spin_size())
                 self._spin_indicator.setVisible(compact)
                 if compact:
                     # Upewnij spin visible w compact (test isVisible po set, po show stack current odt).

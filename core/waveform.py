@@ -117,6 +117,100 @@ except ImportError:
     pass
 
 
+@dataclass
+class RgbWaveformBands:
+    """Pasmowe piki do waveformy RGB (Rekordbox-style): low / mid / high + composite."""
+
+    low: list[float] = field(default_factory=list)
+    mid: list[float] = field(default_factory=list)
+    high: list[float] = field(default_factory=list)
+    peak: list[float] = field(default_factory=list)
+
+    def as_dict(self) -> dict[str, list[float]]:
+        return {"low": self.low, "mid": self.mid, "high": self.high, "peak": self.peak}
+
+
+def extract_rgb_peaks(audio_path: str | Path, num_points: int = 900) -> RgbWaveformBands:
+    """
+    Wyciąga pasmowe peaki [0..1] do kolorowej waveformy (bas/środek/góra).
+    librosa: FFT per segment; fallback: heurystyka z composite peak.
+    """
+    composite = extract_peaks(audio_path, num_points=num_points)
+    path = Path(audio_path)
+    if not path.exists() or not composite:
+        return _rgb_from_composite(composite, num_points)
+
+    if _HAS_LIBROSA and _librosa is not None and _np is not None:
+        try:
+            import warnings
+
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                y, sr = _librosa.load(str(path), sr=22050, mono=True)
+            if len(y) == 0:
+                return _rgb_from_composite(composite, num_points)
+
+            segment_length = max(1, len(y) // num_points)
+            low: list[float] = []
+            mid: list[float] = []
+            high: list[float] = []
+            for i in range(num_points):
+                start = i * segment_length
+                end = min((i + 1) * segment_length, len(y))
+                segment = y[start:end]
+                if len(segment) < 8:
+                    low.append(0.0)
+                    mid.append(0.0)
+                    high.append(0.0)
+                    continue
+                spectrum = _np.abs(_np.fft.rfft(segment))
+                freqs = _np.fft.rfftfreq(len(segment), 1.0 / sr)
+                # Podział zbliżony do Rekordbox RGB (bas / środek / góra)
+                lo_e = float(_np.sum(spectrum[freqs < 300]))
+                mid_e = float(_np.sum(spectrum[(freqs >= 300) & (freqs < 5000)]))
+                hi_e = float(_np.sum(spectrum[freqs >= 5000]))
+                low.append(lo_e)
+                mid.append(mid_e)
+                high.append(hi_e)
+
+            def _norm_band(vals: list[float]) -> list[float]:
+                m = max(vals) if vals else 1.0
+                if m <= 0:
+                    return [0.0] * len(vals)
+                return [min(1.0, v / m) for v in vals]
+
+            return RgbWaveformBands(
+                low=_norm_band(low),
+                mid=_norm_band(mid),
+                high=_norm_band(high),
+                peak=composite,
+            )
+        except Exception:
+            pass
+
+    return _rgb_from_composite(composite, num_points)
+
+
+def _rgb_from_composite(peaks: list[float], num_points: int) -> RgbWaveformBands:
+    """Heurystyczny podział RGB gdy brak librosa — wygładzenie = bas, reszta = góra."""
+    n = len(peaks) or num_points
+    if not peaks:
+        peaks = _generate_fallback_peaks(n)
+    window = max(3, n // 48)
+    low: list[float] = []
+    mid: list[float] = []
+    high: list[float] = []
+    for i in range(n):
+        lo_i = max(0, i - window)
+        hi_i = min(n, i + window + 1)
+        smooth = sum(peaks[lo_i:hi_i]) / (hi_i - lo_i)
+        transient = max(0.0, peaks[i] - smooth * 0.82)
+        low.append(min(1.0, smooth * 0.95))
+        mid.append(min(1.0, peaks[i] * 0.88))
+        high.append(min(1.0, transient * 1.35 + peaks[i] * 0.25))
+    return RgbWaveformBands(low=low, mid=mid, high=high, peak=list(peaks))
+
+
 def extract_peaks(audio_path: str | Path, num_points: int = 600) -> list[float]:
     """
     Wyciąga znormalizowane peaki [0.0-1.0] do rysowania waveformy.

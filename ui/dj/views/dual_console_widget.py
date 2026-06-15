@@ -15,7 +15,7 @@ Architektura:
 - Pełny wiring SYNC (A↔B)
 - Crossfader bezpośrednio steruje PlaybackEngine.set_crossfader()
 - Master Volume → engine.set_master_volume()
-- Cue Volume – wizualny + status (rozszerzenie silnika w przyszłości)
+- Cue Volume → `PlaybackEngine.set_cue_volume()` (monitor HP)
 
 Używa wyłącznie helperów ze styles.py.
 Zero logiki DJ w tym pliku – wszystko delegowane do DeckController + engine.
@@ -29,13 +29,16 @@ from PyQt6 import QtCore, QtWidgets
 from services.playback import PlaybackEngine
 from ui.dj.deck_controller import DeckController
 from ui.dj.views.console_deck_view import ConsoleDeckView
+from ui.dj.deck_view_helpers import apply_main_layout_margins, metrics_for_mixer
+from ui.dj.deck_layout import apply_section_label
 from ui.dj.styles import (
-    BOOTH_SIZES,
-    BOOTH_COLORS,
+    BoothMetrics,
+    booth_toggle_text,
+    deck_channel_badge_stylesheet,
     get_deck_panel_stylesheet,
+    get_mixer_panel_stylesheet,
     get_section_label_stylesheet,
     get_slider_stylesheet,
-    get_value_label_stylesheet,
 )
 
 
@@ -64,18 +67,19 @@ class DualConsoleWidget(QtWidgets.QWidget):
         self.playback_engine = playback_engine
 
         self.setStyleSheet(get_deck_panel_stylesheet())
+        self._metrics = BoothMetrics(mode="dual_mixer")
+        self._last_metrics_scale: float = 1.0
 
         self._setup_ui()
         self._wire_decks()
         self._wire_mixer()
+        self._refresh_metrics(force_apply=True)
 
-        # Inicjalne wartości miksera
         QtCore.QTimer.singleShot(0, self._apply_initial_mixer)
 
     def _setup_ui(self) -> None:
         main = QtWidgets.QVBoxLayout(self)
-        main.setContentsMargins(12, 10, 12, 10)
-        main.setSpacing(12)
+        self._main_layout = main
 
         # === DWA DECKI SIDE-BY-SIDE (QSplitter dla elastyczności) ===
         splitter = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
@@ -93,22 +97,15 @@ class DualConsoleWidget(QtWidgets.QWidget):
 
         # === GLOBALNY MIXER + CROSSFADER ===
         mixer_frame = QtWidgets.QFrame()
-        c = BOOTH_COLORS  # use central (imported via styles)
-        mixer_frame.setStyleSheet(
-            f"""
-            QFrame {{
-                background-color: {c["wave_bg"]};
-                border: 1px solid {c["border"]};
-                border-radius: 8px;
-            }}
-            """
-        )
+        mixer_frame.setObjectName("MixerPanel")
+        mixer_frame.setStyleSheet(get_mixer_panel_stylesheet())
+        self._mixer_frame = mixer_frame
         mixer_layout = QtWidgets.QVBoxLayout(mixer_frame)
         mixer_layout.setContentsMargins(16, 10, 16, 10)
         mixer_layout.setSpacing(8)
 
-        # Etykieta sekcji
         mix_title = QtWidgets.QLabel("MIXER / CROSSFADER")
+        self._mix_title = mix_title
         mix_title.setStyleSheet(get_section_label_stylesheet())
         mix_title.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
         mixer_layout.addWidget(mix_title)
@@ -117,14 +114,15 @@ class DualConsoleWidget(QtWidgets.QWidget):
         cross_row = QtWidgets.QHBoxLayout()
         cross_row.setSpacing(8)
 
-        a_lbl = QtWidgets.QLabel("A")
-        a_lbl.setStyleSheet("color:#00e0ff; font-size:16px; font-weight:900; min-width:18px;")
+        a_lbl = QtWidgets.QLabel(booth_toggle_text("deck_a"))
+        self._deck_a_lbl = a_lbl
+        a_lbl.setStyleSheet(deck_channel_badge_stylesheet(self._metrics))
         a_lbl.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
 
         self.crossfader = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
         self.crossfader.setRange(0, 100)
         self.crossfader.setValue(50)
-        self.crossfader.setMinimumHeight(BOOTH_SIZES["crossfader_height"])
+        self.crossfader.setMinimumHeight(self._metrics.crossfader_height())
         self.crossfader.setStyleSheet(get_slider_stylesheet("horizontal"))
         self.crossfader.setToolTip("Crossfader — środek = oba decki słyszalne. Przeciągnij A↔B")
 
@@ -132,8 +130,9 @@ class DualConsoleWidget(QtWidgets.QWidget):
         self.crossfader.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
         self.crossfader.customContextMenuRequested.connect(self._show_dual_cross_menu)
 
-        b_lbl = QtWidgets.QLabel("B")
-        b_lbl.setStyleSheet("color:#00e0ff; font-size:16px; font-weight:900; min-width:18px;")
+        b_lbl = QtWidgets.QLabel(booth_toggle_text("deck_b"))
+        self._deck_b_lbl = b_lbl
+        b_lbl.setStyleSheet(deck_channel_badge_stylesheet(self._metrics))
         b_lbl.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
 
         cross_row.addWidget(a_lbl, 0)
@@ -149,15 +148,15 @@ class DualConsoleWidget(QtWidgets.QWidget):
         master_box = QtWidgets.QVBoxLayout()
         master_box.setSpacing(2)
         m_lbl = QtWidgets.QLabel("MASTER")
-        m_lbl.setStyleSheet(get_section_label_stylesheet())
+        self._master_lbl = m_lbl
         master_box.addWidget(m_lbl)
         self.master_slider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
         self.master_slider.setRange(0, 100)
         self.master_slider.setValue(85)
         self.master_slider.setStyleSheet(get_slider_stylesheet("horizontal"))
-        self.master_slider.setFixedWidth(160)
+        self.master_slider.setFixedWidth(self._metrics.mixer_slider_width())
         self.master_val = QtWidgets.QLabel("85")
-        self.master_val.setStyleSheet(get_value_label_stylesheet())
+        self.master_val.setStyleSheet(self._metrics.value_label_stylesheet())
         master_box.addWidget(self.master_slider)
         master_box.addWidget(self.master_val, 0, QtCore.Qt.AlignmentFlag.AlignCenter)
 
@@ -171,15 +170,15 @@ class DualConsoleWidget(QtWidgets.QWidget):
         cue_box = QtWidgets.QVBoxLayout()
         cue_box.setSpacing(2)
         c_lbl = QtWidgets.QLabel("CUE (HP)")
-        c_lbl.setStyleSheet(get_section_label_stylesheet())
+        self._cue_lbl = c_lbl
         cue_box.addWidget(c_lbl)
         self.cue_slider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
         self.cue_slider.setRange(0, 100)
         self.cue_slider.setValue(70)
         self.cue_slider.setStyleSheet(get_slider_stylesheet("horizontal"))
-        self.cue_slider.setFixedWidth(140)
+        self.cue_slider.setFixedWidth(self._metrics.mixer_slider_width(cue=True))
         self.cue_val = QtWidgets.QLabel("70")
-        self.cue_val.setStyleSheet(get_value_label_stylesheet())
+        self.cue_val.setStyleSheet(self._metrics.value_label_stylesheet())
         cue_box.addWidget(self.cue_slider)
         cue_box.addWidget(self.cue_val, 0, QtCore.Qt.AlignmentFlag.AlignCenter)
 
@@ -206,38 +205,98 @@ class DualConsoleWidget(QtWidgets.QWidget):
         self.cue_slider.valueChanged.connect(self._on_cue_changed)
 
     def _apply_initial_mixer(self) -> None:
-        """Ustaw początkowe wartości (master 0.85, cross 0.0 = center)."""
+        """Ustaw początkowe wartości (master 0.85, cross 0.0 = center, cue 0.70)."""
         if self.playback_engine:
             try:
                 self.playback_engine.set_master_volume(0.85)
                 self.playback_engine.set_crossfader(0.0)
+                self.playback_engine.set_cue_volume(0.70)
             except Exception:
                 pass
 
-        # Wizualnie
         self.master_val.setText("85")
         self.cue_val.setText("70")
 
+    def _refresh_metrics(self, force_apply: bool = False) -> None:
+        new_m = metrics_for_mixer(self)
+        old = self._last_metrics_scale
+        self._metrics = new_m
+        self._last_metrics_scale = new_m.scale_factor
+        if force_apply or abs(new_m.scale_factor - old) > 0.04:
+            self._apply_metrics()
+
+    def _apply_metrics(self) -> None:
+        m = self._metrics
+        if hasattr(self, "_main_layout"):
+            apply_main_layout_margins(self._main_layout, m)
+        if hasattr(self, "crossfader"):
+            self.crossfader.setMinimumHeight(m.crossfader_height())
+        if hasattr(self, "master_slider"):
+            self.master_slider.setFixedWidth(m.mixer_slider_width())
+        if hasattr(self, "cue_slider"):
+            self.cue_slider.setFixedWidth(m.mixer_slider_width(cue=True))
+        badge_ss = deck_channel_badge_stylesheet(m)
+        if hasattr(self, "_deck_a_lbl"):
+            self._deck_a_lbl.setStyleSheet(badge_ss)
+        if hasattr(self, "_deck_b_lbl"):
+            self._deck_b_lbl.setStyleSheet(badge_ss)
+        val_ss = m.value_label_stylesheet()
+        if hasattr(self, "master_val"):
+            self.master_val.setStyleSheet(val_ss)
+        if hasattr(self, "cue_val"):
+            self.cue_val.setStyleSheet(val_ss)
+        for lbl in ("_mix_title", "_master_lbl", "_cue_lbl"):
+            if hasattr(self, lbl):
+                apply_section_label(getattr(self, lbl), m)
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._refresh_metrics(force_apply=False)
+
     def _show_dual_cross_menu(self, pos):
         menu = QtWidgets.QMenu(self)
-        menu.addAction("Wyśrodkuj crossfader")
-        menu.addAction("Pełne A")
-        menu.addAction("Pełne B")
-        menu.exec(self.crossfader.mapToGlobal(pos))
+        act_center = menu.addAction("Wyśrodkuj crossfader")
+        act_a = menu.addAction("Pełne A")
+        act_b = menu.addAction("Pełne B")
+        chosen = menu.exec(self.crossfader.mapToGlobal(pos))
+        if not chosen:
+            return
+        if chosen == act_center:
+            self.crossfader.setValue(50)
+        elif chosen == act_a:
+            self.crossfader.setValue(0)
+        elif chosen == act_b:
+            self.crossfader.setValue(100)
 
     def _show_dual_master_menu(self, pos):
         menu = QtWidgets.QMenu(self)
-        menu.addAction("Reset Master 85")
-        menu.addAction("Master 100")
-        menu.addAction("Master 50")
-        menu.exec(self.master_slider.mapToGlobal(pos))
+        act_85 = menu.addAction("Reset Master 85")
+        act_100 = menu.addAction("Master 100")
+        act_50 = menu.addAction("Master 50")
+        chosen = menu.exec(self.master_slider.mapToGlobal(pos))
+        if not chosen:
+            return
+        if chosen == act_85:
+            self.master_slider.setValue(85)
+        elif chosen == act_100:
+            self.master_slider.setValue(100)
+        elif chosen == act_50:
+            self.master_slider.setValue(50)
 
     def _show_dual_cue_menu(self, pos):
         menu = QtWidgets.QMenu(self)
-        menu.addAction("Reset Cue 70")
-        menu.addAction("Cue 100")
-        menu.addAction("Mute Cue")
-        menu.exec(self.cue_slider.mapToGlobal(pos))
+        act_70 = menu.addAction("Reset Cue 70")
+        act_100 = menu.addAction("Cue 100")
+        act_mute = menu.addAction("Mute Cue")
+        chosen = menu.exec(self.cue_slider.mapToGlobal(pos))
+        if not chosen:
+            return
+        if chosen == act_70:
+            self.cue_slider.setValue(70)
+        elif chosen == act_100:
+            self.cue_slider.setValue(100)
+        elif chosen == act_mute:
+            self.cue_slider.setValue(0)
 
     def _on_crossfader_changed(self, value: int) -> None:
         """0..100 → -1.0 (A) ... 0 (center) ... +1.0 (B)"""
@@ -258,21 +317,13 @@ class DualConsoleWidget(QtWidgets.QWidget):
                 pass
 
     def _on_cue_changed(self, value: int) -> None:
-        """Cue volume (headphone) – w tej fazie tylko status + wartość.
-        Gdy silnik dostanie set_cue_volume / set_headphone_volume – podłączymy.
-        """
+        """Cue / headphone monitor volume → PlaybackEngine.set_cue_volume."""
         self.cue_val.setText(str(value))
         if self.playback_engine:
-            # Placeholder – nie psujemy nic, tylko informujemy
             try:
-                # self.playback_engine.set_cue_volume(value / 100.0)  # gdy dostępne
-                pass
+                self.playback_engine.set_cue_volume(value / 100.0)
             except Exception:
                 pass
-        # Delikatny feedback
-        if value % 20 == 0:
-            # Nie spamujemy – tylko co kilka kroków
-            pass
 
     # ------------------------------------------------------------------
     # API dla DJPlayerWindow (przełączanie trybów, drag&drop itp.)

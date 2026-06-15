@@ -655,13 +655,28 @@ class AutoTagWorkerSignals(QtCore.QObject):
     progress = QtCore.pyqtSignal(int, int, str, str)
     finished = QtCore.pyqtSignal(int, int, int)
 
+    @QtCore.pyqtSlot(int, int, str, str)
+    def deliver_progress(self, current: int, total: int, track_name: str, detail: str) -> None:
+        """Slot na wątku GUI — bezpieczna emisja z QThreadPool / ThreadPoolExecutor."""
+        self.progress.emit(current, total, track_name, detail)
+
+    @QtCore.pyqtSlot(int, int, int)
+    def deliver_finished(self, processed: int, updated: int, errors: int) -> None:
+        self.finished.emit(processed, updated, errors)
+
 
 class AutoTagWorker(QtCore.QRunnable):
-    def __init__(self, tracks: list[Track], settings):
+    def __init__(
+        self,
+        tracks: list[Track],
+        settings,
+        signals: AutoTagWorkerSignals,
+    ):
         super().__init__()
+        self.setAutoDelete(False)
         self.tracks = tracks
         self.settings = settings
-        self.signals = AutoTagWorkerSignals()
+        self.signals = signals
         self._stop_requested = False
         self._processed_count = 0
         self._progress_lock = threading.Lock()
@@ -793,9 +808,9 @@ class AutoTagWorker(QtCore.QRunnable):
                 with self._progress_lock:
                     self._processed_count = processed
                 track_name = Path(track.path).name if track is not None else "-"
-                self.signals.progress.emit(processed, total, track_name, detail)
+                self._emit_stage(track_name, detail)
 
-        self.signals.finished.emit(processed, updated, errors)
+        self._emit_finished(processed, updated, errors)
 
     def _process_track_task(
         self,
@@ -994,7 +1009,44 @@ class AutoTagWorker(QtCore.QRunnable):
     def _emit_stage(self, track_name: str, detail: str) -> None:
         with self._progress_lock:
             current = self._processed_count
-        self.signals.progress.emit(current, len(self.tracks), track_name, detail)
+        self._emit_progress(current, len(self.tracks), track_name, detail)
+
+    def _emit_progress(self, current: int, total: int, track_name: str, detail: str) -> None:
+        if self.signals is None:
+            return
+        try:
+            QtCore.QMetaObject.invokeMethod(
+                self.signals,
+                "deliver_progress",
+                QtCore.Qt.ConnectionType.QueuedConnection,
+                QtCore.Q_ARG(int, current),
+                QtCore.Q_ARG(int, total),
+                QtCore.Q_ARG(str, track_name),
+                QtCore.Q_ARG(str, detail),
+            )
+        except (RuntimeError, TypeError):
+            try:
+                self.signals.progress.emit(current, total, track_name, detail)
+            except RuntimeError:
+                pass
+
+    def _emit_finished(self, processed: int, updated: int, errors: int) -> None:
+        if self.signals is None:
+            return
+        try:
+            QtCore.QMetaObject.invokeMethod(
+                self.signals,
+                "deliver_finished",
+                QtCore.Qt.ConnectionType.QueuedConnection,
+                QtCore.Q_ARG(int, processed),
+                QtCore.Q_ARG(int, updated),
+                QtCore.Q_ARG(int, errors),
+            )
+        except (RuntimeError, TypeError):
+            try:
+                self.signals.finished.emit(processed, updated, errors)
+            except RuntimeError:
+                pass
 
     def _fields_requiring_file_sync(self, track: Track) -> list[str]:
         try:
@@ -2441,7 +2493,20 @@ class MainWindow(QtWidgets.QMainWindow):
             self._show_message("Zaznacz co najmniej jeden utwór.")
             return
         settings = load_settings()
-        self._autotag_worker = AutoTagWorker(tracks, settings)
+        prev_worker = getattr(self, "_autotag_worker", None)
+        if prev_worker is not None:
+            prev_worker.stop()
+        prev_signals = getattr(self, "_autotag_signals", None)
+        if prev_signals is not None:
+            try:
+                prev_signals.progress.disconnect()
+                prev_signals.finished.disconnect()
+            except TypeError:
+                pass
+            prev_signals.deleteLater()
+        # Sygnały na wątku GUI (parent=self) — bez tego GC kasuje QObject przy QRunnable + ThreadPoolExecutor.
+        self._autotag_signals = AutoTagWorkerSignals(self)
+        self._autotag_worker = AutoTagWorker(tracks, settings, self._autotag_signals)
         task_id = self.task_manager.add_task("Autotagowanie", len(tracks), "Przygotowanie analizy i źródeł...")
         _process_log(f"[autotag] start | tracks={len(tracks)}")
 
@@ -2454,6 +2519,7 @@ class MainWindow(QtWidgets.QMainWindow):
             _process_log(f"[autotag] {current}/{total} | {name} | {detail}")
 
         def on_finished(processed: int, updated: int, errors: int):
+            self._autotag_worker = None
             self.task_manager.finish_task(task_id)
             self._load_tracks()
             self.status.showMessage(
@@ -2487,8 +2553,8 @@ class MainWindow(QtWidgets.QMainWindow):
                         "Autotagowanie zakończone. Zadania uzupełniania dodano do kolejki w tle."
                     )
 
-        self._autotag_worker.signals.progress.connect(on_progress)
-        self._autotag_worker.signals.finished.connect(on_finished)
+        self._autotag_signals.progress.connect(on_progress)
+        self._autotag_signals.finished.connect(on_finished)
         self.thread_pool.start(self._autotag_worker)
 
     def _run_background_enrichment_selected(self):

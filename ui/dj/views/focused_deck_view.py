@@ -40,14 +40,30 @@ from ui.dj.deck_controller import DeckController
 from ui.dj.views.hotcue_grid import HotcuePadGrid
 from ui.dj.views.transport_bar import TransportBar
 from ui.dj.views.pitch_control import PitchControl
+from ui.dj.deck_layout import (
+    apply_action_buttons,
+    apply_header_metrics,
+    apply_pro_buttons,
+    apply_section_label,
+    apply_status_label,
+    build_deck_header,
+    build_time_label,
+    configure_waveform_widget,
+)
+from ui.dj.deck_view_helpers import (
+    apply_main_layout_margins,
+    metrics_for_deck,
+    refresh_waveform_on_resize,
+    wire_cue_transport,
+    waveform_set_hotcue_free,
+    waveform_set_main_cue,
+)
 from ui.dj.styles import (
-    BOOTH_SIZES,
+    BoothMetrics,
+    booth_toggle_text,
     get_deck_panel_stylesheet,
-    get_bpm_label_stylesheet,
-    get_section_label_stylesheet,
-    get_time_label_stylesheet,
-    get_value_label_stylesheet,
     get_slider_stylesheet,
+    pro_button_stylesheet,
 )
 
 # WaveformWidget – extracted to dedicated module (clean separation, task 1)
@@ -86,6 +102,8 @@ class FocusedDeckView(QtWidgets.QFrame):
         self.controller = controller
         self._current_duration_ms: int = 0
         self._current_track: Track | None = None
+        self._metrics = BoothMetrics(mode="deck_focused")
+        self._last_metrics_scale: float = 1.0
 
         # Zastosuj stylesheet panelu decku (używa selektora FocusedDeckView)
         self.setObjectName("DeckPanel")
@@ -95,6 +113,7 @@ class FocusedDeckView(QtWidgets.QFrame):
 
         # Dużo powietrza – dokładnie jak w specyfikacji AGENT 3
         self._setup_ui()
+        self._refresh_metrics(force_apply=True)
         self._connect_controller_signals()
         self._connect_widget_signals()
 
@@ -108,52 +127,33 @@ class FocusedDeckView(QtWidgets.QFrame):
     def _setup_ui(self) -> None:
         """Buduje hierarchię widgetów zgodnie z sekcją 4 design doc."""
         main = QtWidgets.QVBoxLayout(self)
-        main.setContentsMargins(24, 20, 24, 20)
-        main.setSpacing(20)
+        self._main_layout = main
+        m = self._metrics
+        main.setContentsMargins(*m.layout_margins())
+        main.setSpacing(m.layout_spacing())
 
-        # 1. HEADER: Tytuł (stretch) + ogromny BPM po prawej
-        header = QtWidgets.QHBoxLayout()
-        header.setSpacing(16)
-
-        self.title_label = QtWidgets.QLabel("Brak utworu — upuść plik z biblioteki lub użyj drag&drop")
-        self.title_label.setStyleSheet(
-            f"font-size: 18px; font-weight: 700; color: #f0f4f8;"
+        header_parts = build_deck_header(
+            m,
+            empty_title="Brak utworu — upuść plik z biblioteki lub użyj drag&drop",
         )
-        self.title_label.setSizePolicy(
-            QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Preferred
-        )
-        self.title_label.setWordWrap(False)
-        self.title_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignVCenter)
+        self._header_parts = header_parts
+        self.title_label = header_parts.title_label
+        self.bpm_label = header_parts.bpm_label
+        main.addLayout(header_parts.layout)
 
-        self.bpm_label = QtWidgets.QLabel("— BPM")
-        self.bpm_label.setStyleSheet(get_bpm_label_stylesheet())
-        self.bpm_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
-        self.bpm_label.setMinimumWidth(110)
-
-        header.addWidget(self.title_label, 1)
-        header.addWidget(self.bpm_label, 0)
-        main.addLayout(header)
-
-        # 2. WAVEFORM – dominujący element (stretch 7, min 260px)
         if WaveformWidget is not None:
             self.waveform = WaveformWidget()
         else:
             self.waveform = QtWidgets.QLabel("[Waveform niedostępny]")
-        self.waveform.setMinimumHeight(BOOTH_SIZES["waveform_min_height_single"])
-        self.waveform.setSizePolicy(
-            QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Expanding
-        )
-        main.addWidget(self.waveform, 7)
+        configure_waveform_widget(self.waveform, m)
+        main.addWidget(self.waveform, m.wave_stretch())
 
         # PPM (prawy przycisk) – menu kontekstowe na waveformie (brakowało po redesignie)
         if WaveformWidget is not None:
             self.waveform.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
             self.waveform.customContextMenuRequested.connect(self._show_waveform_context_menu)
 
-        # 3. CZAS – czytelny, wycentrowany, 16-18px mono
-        self.time_label = QtWidgets.QLabel("0:00 / 0:00")
-        self.time_label.setStyleSheet(get_time_label_stylesheet())
-        self.time_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        self.time_label = build_time_label(m)
         main.addWidget(self.time_label, 0)
 
         # 4. TRANSPORT – wycentrowany klaster z dużymi przyciskami
@@ -174,9 +174,8 @@ class FocusedDeckView(QtWidgets.QFrame):
 
         trim_header = QtWidgets.QHBoxLayout()
         trim_lbl = QtWidgets.QLabel("TRIM")
-        trim_lbl.setStyleSheet(get_section_label_stylesheet())
+        self._trim_lbl = trim_lbl
         self.trim_value = QtWidgets.QLabel("85")
-        self.trim_value.setStyleSheet(get_value_label_stylesheet())
         trim_header.addWidget(trim_lbl)
         trim_header.addStretch()
         trim_header.addWidget(self.trim_value)
@@ -186,7 +185,7 @@ class FocusedDeckView(QtWidgets.QFrame):
         self.trim_slider.setRange(0, 100)
         self.trim_slider.setValue(85)
         self.trim_slider.setStyleSheet(get_slider_stylesheet("horizontal"))
-        self.trim_slider.setFixedWidth(BOOTH_SIZES.get("pitch_slider_width", 180))
+        self.trim_slider.setFixedWidth(self._metrics.px(170))
         self.trim_slider.valueChanged.connect(self._on_trim_changed)
         trim_box.addWidget(self.trim_slider)
 
@@ -196,7 +195,7 @@ class FocusedDeckView(QtWidgets.QFrame):
 
         # 6. HOT CUES – zawsze 8 padów 2×4 (duże, z paletą 8 kolorów)
         hc_section = QtWidgets.QLabel("HOT CUES")
-        hc_section.setStyleSheet(get_section_label_stylesheet())
+        self._hc_section = hc_section
         main.addWidget(hc_section, 0)
 
         self.hotcue_grid = HotcuePadGrid()
@@ -207,24 +206,22 @@ class FocusedDeckView(QtWidgets.QFrame):
         adv.setSpacing(10)
 
         # KEY jest już wewnątrz PitchControl – dodajemy tylko Q + SYNC + Memory
-        self.quantize_btn = QtWidgets.QPushButton("Q")
+        pw, ph = m.pro_button_size()
+        self.quantize_btn = QtWidgets.QPushButton(booth_toggle_text("quantize"))
         self.quantize_btn.setCheckable(True)
         self.quantize_btn.setChecked(True)
-        self.quantize_btn.setFixedSize(48, 32)
-        self.quantize_btn.setStyleSheet(get_section_label_stylesheet().replace("10px", "11px"))
+        self.quantize_btn.setFixedSize(pw, ph)
+        self.quantize_btn.setStyleSheet(pro_button_stylesheet(m, active=True))
         self.quantize_btn.clicked.connect(self._on_quantize_toggled)
 
-        self.sync_btn = QtWidgets.QPushButton("SYNC")
-        self.sync_btn.setFixedSize(58, 32)
+        self.sync_btn = QtWidgets.QPushButton(booth_toggle_text("sync"))
+        self.sync_btn.setFixedSize(pw, ph)
         self.sync_btn.setCheckable(True)
-        self.sync_btn.setStyleSheet(get_section_label_stylesheet().replace("10px", "11px"))
+        self.sync_btn.setStyleSheet(pro_button_stylesheet(m))
 
-        # Memory S / R (zachowanie z oryginału – snapshot sesyjny)
         self.mem_s_btn = QtWidgets.QPushButton("S")
-        self.mem_s_btn.setFixedSize(36, 28)
         self.mem_s_btn.setToolTip("Zapisz pamięć decku (hotcue, pitch, trim, loop, keylock)")
         self.mem_r_btn = QtWidgets.QPushButton("R")
-        self.mem_r_btn.setFixedSize(36, 28)
         self.mem_r_btn.setToolTip("Odtwórz zapamiętany stan decku")
 
         # Krok 6: menu PPM dla memory w focused
@@ -245,9 +242,6 @@ class FocusedDeckView(QtWidgets.QFrame):
 
         # Status (mały, prawy górny róg logiki – tylko prezentacja)
         self.status_label = QtWidgets.QLabel("")
-        self.status_label.setStyleSheet(
-            f"color: #6b7688; font-size: 10px; font-weight: 600;"
-        )
         self.status_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
         main.addWidget(self.status_label, 0)
 
@@ -258,10 +252,11 @@ class FocusedDeckView(QtWidgets.QFrame):
         """Tylko przekazywanie eventów do kontrolera – zero logiki."""
         # Transport
         self.transport.play_clicked.connect(self.controller.toggle_play)
-        self.transport.cue_clicked.connect(self._on_cue_clicked)
-        self.transport.stop_clicked.connect(self._on_stop_clicked)
+        wire_cue_transport(self.transport, self.controller, self)
+        self.transport.stop_clicked.connect(self.controller.stop)
 
         # Pitch + Keylock (PitchControl już emituje)
+        self.pitch_control.bind_controller(self.controller)
         self.pitch_control.pitch_changed.connect(self.controller.set_pitch)
         self.pitch_control.keylock_toggled.connect(self.controller.set_keylock)
 
@@ -285,22 +280,60 @@ class FocusedDeckView(QtWidgets.QFrame):
             self.waveform.cue_set_requested.connect(self._handle_waveform_shift_click)
             self.waveform.double_clicked.connect(self._handle_waveform_double_click)
 
-    def _on_cue_clicked(self) -> None:
-        """CUE – skok do main_cue lub pozycji 0 (zachowanie kompatybilne)."""
-        # W controllerze nie ma jeszcze publicznego main_cue, więc prosty seek(0) + status
-        # (pełna obsługa _main_cue_ms zostanie przeniesiona w fazie integracji do kontrolera)
-        self.controller.seek(0)
-        self.controller.status_changed.emit("CUE")
+    def _refresh_metrics(self, force_apply: bool = False) -> None:
+        new_m = metrics_for_deck(self, console=False)
+        old = self._last_metrics_scale
+        self._metrics = new_m
+        self._last_metrics_scale = new_m.scale_factor
+        if (force_apply or abs(new_m.scale_factor - old) > 0.04) and hasattr(self, "transport"):
+            self._apply_metrics()
 
-    def _on_stop_clicked(self) -> None:
-        """Stop + reset playhead wizualnie."""
-        if self.controller.playback_engine:
-            try:
-                self.controller.playback_engine.stop_deck(self.controller.deck_id)
-            except Exception:
-                pass
-        self.controller.play_state_changed.emit(False)
-        self.controller.playhead_changed.emit(0)
+    def _apply_metrics(self) -> None:
+        m = self._metrics
+        if hasattr(self, "_main_layout"):
+            apply_main_layout_margins(self._main_layout, m)
+        if hasattr(self, "_header_parts"):
+            apply_header_metrics(self._header_parts, m)
+        if hasattr(self, "time_label"):
+            self.time_label.setStyleSheet(m.time_stylesheet())
+        if hasattr(self, "waveform"):
+            self.waveform.setMinimumHeight(m.wave_min_height())
+        if hasattr(self, "transport"):
+            self.transport.apply_metrics(m)
+        if hasattr(self, "hotcue_grid"):
+            self.hotcue_grid.apply_metrics(m)
+        if hasattr(self, "pitch_control"):
+            self.pitch_control.apply_metrics(m)
+        if hasattr(self, "trim_slider"):
+            self.trim_slider.setFixedWidth(m.px(170))
+        if hasattr(self, "_trim_lbl"):
+            apply_section_label(self._trim_lbl, m)
+        if hasattr(self, "_hc_section"):
+            apply_section_label(self._hc_section, m)
+        if hasattr(self, "trim_value"):
+            self.trim_value.setStyleSheet(m.value_label_stylesheet())
+        if hasattr(self, "status_label"):
+            apply_status_label(self.status_label, m)
+        apply_pro_buttons(
+            m,
+            [
+                (self.quantize_btn, self.quantize_btn.isChecked()),
+                (self.sync_btn, self.sync_btn.isChecked()),
+            ],
+        )
+        apply_action_buttons(
+            m,
+            [
+                (self.mem_s_btn, "mem", False),
+                (self.mem_r_btn, "mem", False),
+            ],
+        )
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._refresh_metrics(force_apply=False)
+        if hasattr(self, "waveform"):
+            refresh_waveform_on_resize(self, self.waveform, self._metrics)
 
     def _on_trim_changed(self, value: int) -> None:
         """Trim slider → kontroler (0.0-1.0)."""
@@ -310,33 +343,16 @@ class FocusedDeckView(QtWidgets.QFrame):
     def _on_quantize_toggled(self, checked: bool) -> None:
         """Przełącz quantize przez kontroler."""
         self.controller.toggle_quantize()
-        # Stan rzeczywisty przychodzi z sygnału status_changed
+        self.quantize_btn.setStyleSheet(
+            pro_button_stylesheet(self._metrics, active=self.quantize_btn.isChecked())
+        )
 
     def _handle_waveform_shift_click(self, time_ms: int) -> None:
-        """
-        Shift + click na waveform = ustaw pierwszy wolny hotcue (0-7).
-        Dokładnie zachowanie z poprzedniej implementacji (DeckWidget / SinglePlayerView).
-        Mała logika wyboru indeksu – reszta (snap + persist + sygnał) w kontrolerze.
-        """
-        if not self.controller.current_track:
-            return
-        for idx in range(8):
-            if self.controller.get_hotcue(idx) is None:
-                self.controller.set_hotcue(idx)
-                return
-        # Wszystkie zajęte – nadpisz pierwszy
-        self.controller.set_hotcue(0)
+        """Shift + click na waveform = ustaw pierwszy wolny hotcue w miejscu kliknięcia."""
+        waveform_set_hotcue_free(self.controller, time_ms)
 
     def _handle_waveform_double_click(self, time_ms: int) -> None:
-        """
-        Double-click waveform = seek (z snap jeśli Q) + ustaw main cue (kompatybilność).
-        Zachowuje responsywność i stare zachowanie "pro DJ preview".
-        """
-        snapped = self.controller.snap_to_beat(time_ms)
-        self.controller.seek(snapped)
-        # W pełnej wersji kontroler będzie przechowywał _main_cue_ms
-        # Na razie emitujemy status (jak w oryginale)
-        self.controller.status_changed.emit("CUE SET (waveform)")
+        waveform_set_main_cue(self.controller, time_ms)
 
     def _request_hotcue_rename(self, index: int) -> None:
         """Proste okno do zmiany nazwy hotcue."""
@@ -352,13 +368,20 @@ class FocusedDeckView(QtWidgets.QFrame):
             self.controller.set_hotcue_label(index, text.strip() or None)
 
     def _show_memory_menu(self, pos: QtCore.QPoint) -> None:
-        """Menu dla memory S/R w focused."""
         menu = QtWidgets.QMenu(self)
-        menu.addAction("Zapisz stan (Save Memory)")
-        menu.addAction("Odtwórz stan (Recall Memory)")
+        act_save = menu.addAction("Zapisz stan (Save Memory)")
+        act_recall = menu.addAction("Odtwórz stan (Recall Memory)")
         menu.addSeparator()
-        menu.addAction("Wyczyść pamięć")
-        menu.exec(self.mem_s_btn.mapToGlobal(pos))
+        act_clear = menu.addAction("Wyczyść pamięć")
+        chosen = menu.exec(self.mem_s_btn.mapToGlobal(pos))
+        if not chosen:
+            return
+        if chosen == act_save:
+            self.controller.save_memory()
+        elif chosen == act_recall:
+            self.controller.recall_memory()
+        elif chosen == act_clear:
+            self.controller.clear_memory()
 
     def _show_waveform_context_menu(self, pos: QtCore.QPoint) -> None:
         """Menu kontekstowe PPM na waveformie – z precyzyjną pozycją kliknięcia."""
@@ -379,7 +402,9 @@ class FocusedDeckView(QtWidgets.QFrame):
         # Submenu z konkretnymi hotcue'ami
         hotcue_menu = menu.addMenu("Ustaw konkretny Hotcue")
         for i in range(8):
-            hotcue_menu.addAction(f"Hotcue {i+1}", lambda idx=i: self.controller.set_hotcue(idx))
+            hotcue_menu.addAction(
+                f"Hotcue {i+1}", lambda checked=False, idx=i: self.controller.set_hotcue(idx, click_ms)
+            )
 
         menu.addSeparator()
         act_loop_in = menu.addAction("Ustaw Loop In tutaj")
@@ -391,14 +416,9 @@ class FocusedDeckView(QtWidgets.QFrame):
             return
 
         if chosen == act_cue:
-            self.controller.seek(click_ms)
-            self.controller.status_changed.emit("CUE SET (waveform menu)")
+            self.controller.set_cue_at_ms(click_ms)
         elif chosen == act_hotcue_free:
-            for idx in range(8):
-                if self.controller.get_hotcue(idx) is None:
-                    self.controller.set_hotcue(idx, click_ms)
-                    return
-            self.controller.set_hotcue(0, click_ms)
+            waveform_set_hotcue_free(self.controller, click_ms)
         elif chosen == act_loop_in:
             self.controller.set_loop_points(click_ms, None)
         elif chosen == act_loop_out:
@@ -423,6 +443,7 @@ class FocusedDeckView(QtWidgets.QFrame):
         c.playhead_changed.connect(self._on_playhead_changed)
         c.bpm_changed.connect(self._on_bpm_changed)
         c.hotcue_changed.connect(self._on_hotcue_changed)
+        c.cue_changed.connect(self._on_cue_changed)
         c.play_state_changed.connect(self._on_play_state_changed)
         c.status_changed.connect(self._on_status_changed)
         c.keylock_changed.connect(self.pitch_control.set_keylock)
@@ -485,6 +506,10 @@ class FocusedDeckView(QtWidgets.QFrame):
         self.hotcue_grid.clear_all()
         self.transport.set_playing(False)
 
+    def _on_cue_changed(self, cue_ms: int) -> None:
+        if hasattr(self.waveform, "set_main_cue_ms"):
+            self.waveform.set_main_cue_ms(cue_ms)
+
     def _on_playhead_changed(self, ms: int) -> None:
         if hasattr(self.waveform, "set_playhead"):
             self.waveform.set_playhead(ms)
@@ -528,7 +553,8 @@ class FocusedDeckView(QtWidgets.QFrame):
     def _on_sync_changed(self, active: bool) -> None:
         if hasattr(self, "sync_btn"):
             self.sync_btn.setChecked(active)
-            self.sync_btn.setText("SYNC ✓" if active else "SYNC")
+            self.sync_btn.setText(booth_toggle_text("sync", active=active))
+            self.sync_btn.setStyleSheet(pro_button_stylesheet(self._metrics, active=active))
 
     # ------------------------------------------------------------------
     # API pomocnicze dla integracji (np. DJPlayerWindow)

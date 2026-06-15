@@ -75,6 +75,12 @@ def _safe_format_time(ms: int | None) -> str:
 
 logger = logging.getLogger(__name__)
 
+
+def _format_cue_time(ms: int) -> str:
+    total = max(0, int(ms)) // 1000
+    m, s = divmod(total, 60)
+    return f"{m}:{s:02d}"
+
 # ------------------------------------------------------------------
 # HotcueManager – CZysty import z dedykowanego modułu (faza final cleanup)
 # ZERO ryzyka cyklu! deck_controller nie dotyka już ui.dj_player_window.
@@ -124,6 +130,7 @@ class DeckController(QtCore.QObject):
     keylock_changed = QtCore.pyqtSignal(bool)
     status_changed = QtCore.pyqtSignal(str)           # tekst statusu (np. "MEM SAVED")
     play_state_changed = QtCore.pyqtSignal(bool)      # is_playing
+    cue_changed = QtCore.pyqtSignal(int)              # main cue ms
     waveform_ready = QtCore.pyqtSignal(list, int, str)  # peaks, duration_ms, token – dla przyszłych widoków
 
     def __init__(
@@ -162,6 +169,7 @@ class DeckController(QtCore.QObject):
 
         # Token anty-stale dla waveform
         self._current_waveform_token: str | None = None
+        self._cue_preview_active: bool = False
 
         # Referencja do sparowanego decku (dla sync)
         self._synced_partner: DeckController | None = None
@@ -216,6 +224,7 @@ class DeckController(QtCore.QObject):
         self._loop_out_ms = None
         self._loop_enabled = False
         self._main_cue_ms = 0
+        self.cue_changed.emit(0)
         self._hotcue_mgr.clear_all()
         self._memory = None  # nowa ścieżka – czyścimy pamięć sesyjną
         self.loop_changed.emit(None, None)
@@ -256,6 +265,9 @@ class DeckController(QtCore.QObject):
     def unload_track(self) -> None:
         """Zatrzymaj i wyczyść deck."""
         self.current_track = None
+        self._main_cue_ms = 0
+        self._cue_preview_active = False
+        self.cue_changed.emit(0)
         self._hotcue_mgr.clear_all()
         self._memory = None
         self._loop_in_ms = None
@@ -272,23 +284,191 @@ class DeckController(QtCore.QObject):
         self.status_changed.emit("— Wyczyszczono")
 
     def toggle_play(self) -> None:
-        """Przełącz play/pause. Uruchamia/zatrzymuje timer playhead."""
+        """Przełącz play/pause. Start od CUE gdy playhead blisko 0."""
+        if not self.playback_engine or not self.current_track:
+            return
+        try:
+            if self.playback_engine.deck(self.deck_id).is_playing():
+                self.pause()
+            else:
+                self.play()
+        except Exception as e:
+            logger.warning(f"Deck {self.deck_id} toggle_play błąd: {e}")
+
+    def play(self) -> None:
+        if not self.playback_engine or not self.current_track:
+            return
+        try:
+            if hasattr(self.playback_engine, "poll_decks"):
+                self.playback_engine.poll_decks()
+            state = self.playback_engine.get_deck_state(self.deck_id)
+            pos = state.position_ms if state else 0
+            if pos < 150 and self._main_cue_ms > 0:
+                self.playback_engine.seek_deck(self.deck_id, self._main_cue_ms)
+                self.playhead_changed.emit(self._main_cue_ms)
+            self.playback_engine.play_deck(self.deck_id)
+            if hasattr(self.playback_engine, "poll_decks"):
+                self.playback_engine.poll_decks()
+            if not self._playhead_timer.isActive():
+                self._playhead_timer.start()
+            self.play_state_changed.emit(True)
+            self.status_changed.emit("▶ Odtwarzanie")
+        except Exception as e:
+            logger.warning(f"Deck {self.deck_id} play błąd: {e}")
+
+    def pause(self) -> None:
         if not self.playback_engine:
             return
         try:
-            was_playing = self.playback_engine.deck(self.deck_id).is_playing()
-            self.playback_engine.toggle_deck(self.deck_id)
-            now_playing = self.playback_engine.deck(self.deck_id).is_playing()
-
-            if now_playing and not self._playhead_timer.isActive():
-                self._playhead_timer.start()
-            elif not now_playing:
-                self._playhead_timer.stop()
-
-            self.play_state_changed.emit(now_playing)
-            self.status_changed.emit("▶ Odtwarzanie" if now_playing else "❚❚ Pauza")
+            self.playback_engine.pause_deck(self.deck_id)
+            self._playhead_timer.stop()
+            self._cue_preview_active = False
+            self.play_state_changed.emit(False)
+            self.status_changed.emit("❚❚ Pauza")
         except Exception as e:
-            logger.warning(f"Deck {self.deck_id} toggle_play błąd: {e}")
+            logger.warning(f"Deck {self.deck_id} pause błąd: {e}")
+
+    def stop(self) -> None:
+        """Stop + powrót do punktu CUE (CDJ)."""
+        if not self.playback_engine:
+            return
+        cue = max(0, int(self._main_cue_ms))
+        try:
+            self.playback_engine.stop_deck(self.deck_id)
+            if cue > 0:
+                self.playback_engine.seek_deck(self.deck_id, cue)
+            if hasattr(self.playback_engine, "poll_decks"):
+                self.playback_engine.poll_decks()
+            self._playhead_timer.stop()
+            self._cue_preview_active = False
+            self.playhead_changed.emit(cue)
+            self.play_state_changed.emit(False)
+            self.status_changed.emit("■ Stop")
+        except Exception as e:
+            logger.warning(f"Deck {self.deck_id} stop błąd: {e}")
+
+    def set_cue_at_playhead(self) -> None:
+        if not self.playback_engine or not self.current_track:
+            return
+        try:
+            state = self.playback_engine.get_deck_state(self.deck_id)
+            pos = self.snap_to_beat(state.position_ms if state else 0)
+            self._main_cue_ms = max(0, int(pos))
+            self.cue_changed.emit(self._main_cue_ms)
+            self.status_changed.emit(f"CUE @ {_format_cue_time(self._main_cue_ms)}")
+        except Exception as e:
+            logger.warning(f"Deck {self.deck_id} set_cue_at_playhead błąd: {e}")
+
+    def set_cue_at_ms(self, time_ms: int) -> None:
+        if not self.current_track:
+            return
+        snapped = self.snap_to_beat(int(time_ms))
+        self._main_cue_ms = max(0, snapped)
+        self.cue_changed.emit(self._main_cue_ms)
+        self.status_changed.emit(f"CUE @ {_format_cue_time(self._main_cue_ms)}")
+
+    def jump_to_cue(self) -> None:
+        if not self.playback_engine or not self.current_track:
+            return
+        cue = max(0, int(self._main_cue_ms))
+        try:
+            self.playback_engine.seek_deck(self.deck_id, cue)
+            if hasattr(self.playback_engine, "poll_decks"):
+                self.playback_engine.poll_decks()
+            self.playhead_changed.emit(cue)
+            self.status_changed.emit(f"CUE @ {_format_cue_time(cue)}")
+        except Exception as e:
+            logger.warning(f"Deck {self.deck_id} jump_to_cue błąd: {e}")
+
+    def clear_cue(self) -> None:
+        """Wyzeruj punkt CUE (np. menu kontekstowe transportu)."""
+        self._main_cue_ms = 0
+        self.cue_changed.emit(0)
+        self.status_changed.emit("CUE wyczyszczony")
+
+    def stop_at_zero(self) -> None:
+        """Stop + powrót do początku utworu."""
+        if not self.playback_engine:
+            return
+        try:
+            self.playback_engine.stop_deck(self.deck_id)
+            self.playback_engine.seek_deck(self.deck_id, 0)
+            if hasattr(self.playback_engine, "poll_decks"):
+                self.playback_engine.poll_decks()
+            self._playhead_timer.stop()
+            self._cue_preview_active = False
+            self.playhead_changed.emit(0)
+            self.play_state_changed.emit(False)
+            self.status_changed.emit("■ Stop @ 0")
+        except Exception as e:
+            logger.warning(f"Deck {self.deck_id} stop_at_zero błąd: {e}")
+
+    def stop_hold_position(self) -> None:
+        """Stop bez powrotu do CUE — playhead zostaje na bieżącej pozycji."""
+        if not self.playback_engine:
+            return
+        try:
+            state = self.playback_engine.get_deck_state(self.deck_id)
+            pos = state.position_ms if state else 0
+            self.playback_engine.stop_deck(self.deck_id)
+            if hasattr(self.playback_engine, "poll_decks"):
+                self.playback_engine.poll_decks()
+            self._playhead_timer.stop()
+            self._cue_preview_active = False
+            self.playhead_changed.emit(pos)
+            self.play_state_changed.emit(False)
+            self.status_changed.emit("■ Stop (pozycja)")
+        except Exception as e:
+            logger.warning(f"Deck {self.deck_id} stop_hold_position błąd: {e}")
+
+    def play_from_cue(self) -> None:
+        """Odtwórz od zapisanego punktu CUE."""
+        self.jump_to_cue()
+        self.play()
+
+    def play_from_start(self) -> None:
+        """Odtwórz od początku utworu."""
+        if not self.playback_engine or not self.current_track:
+            return
+        self.seek(0)
+        self.play()
+
+    def cue_pressed(self) -> None:
+        if not self.playback_engine or not self.current_track:
+            return
+        cue = max(0, int(self._main_cue_ms))
+        try:
+            self.playback_engine.seek_deck(self.deck_id, cue)
+            if hasattr(self.playback_engine, "poll_decks"):
+                self.playback_engine.poll_decks()
+            self.playhead_changed.emit(cue)
+            self.playback_engine.play_deck(self.deck_id)
+            if hasattr(self.playback_engine, "poll_decks"):
+                self.playback_engine.poll_decks()
+            if not self._playhead_timer.isActive():
+                self._playhead_timer.start()
+            self._cue_preview_active = True
+            self.play_state_changed.emit(True)
+            self.status_changed.emit("CUE ▶ podgląd")
+        except Exception as e:
+            logger.warning(f"Deck {self.deck_id} cue_pressed błąd: {e}")
+
+    def cue_released(self) -> None:
+        if not self.playback_engine:
+            return
+        cue = max(0, int(self._main_cue_ms))
+        try:
+            self.playback_engine.stop_deck(self.deck_id)
+            self.playback_engine.seek_deck(self.deck_id, cue)
+            if hasattr(self.playback_engine, "poll_decks"):
+                self.playback_engine.poll_decks()
+            self._playhead_timer.stop()
+            self._cue_preview_active = False
+            self.playhead_changed.emit(cue)
+            self.play_state_changed.emit(False)
+            self.status_changed.emit(f"CUE @ {_format_cue_time(cue)}")
+        except Exception as e:
+            logger.warning(f"Deck {self.deck_id} cue_released błąd: {e}")
 
     def seek(self, time_ms: int) -> None:
         """Seek z opcjonalnym snap (jeśli quantize)."""
@@ -327,16 +507,17 @@ class DeckController(QtCore.QObject):
         self.status_changed.emit(f"Q: {state}")
         logger.debug(f"Deck {self.deck_id}: quantize = {self._quantize_enabled}")
 
-    def set_hotcue(self, index: int) -> None:
+    def set_hotcue(self, index: int, time_ms: int | None = None) -> None:
         """
-        Ustaw hotcue na bieżącej pozycji (z snap jeśli Q ON).
-        Deleguje do HotcueManager + zapis DB.
+        Ustaw hotcue na bieżącej pozycji lub podanym czasie (z snap jeśli Q ON).
         """
         if not self.playback_engine or not self.current_track:
             return
-        state = self.playback_engine.get_deck_state(self.deck_id)
-        current = state.position_ms if state else 0
-        current = self.snap_to_beat(current)
+        if time_ms is not None:
+            current = self.snap_to_beat(int(time_ms))
+        else:
+            state = self.playback_engine.get_deck_state(self.deck_id)
+            current = self.snap_to_beat(state.position_ms if state else 0)
 
         self._hotcue_mgr.set(index, current)
         # Persystencja (kolor z centralnej palety 8 unikalnych)
@@ -432,6 +613,11 @@ class DeckController(QtCore.QObject):
         QtCore.QTimer.singleShot(1100, lambda: self.status_changed.emit("✓ Gotowy"))
         logger.debug(f"Deck {self.deck_id}: pamięć zapisana ({len(self._memory.get('hotcues', {}))} hotcue)")
 
+    def clear_memory(self) -> None:
+        """Wyczyść zapisaną pamięć sesyjną decku."""
+        self._memory = None
+        self.status_changed.emit("MEM wyczyszczona")
+
     def recall_memory(self) -> None:
         """
         Odtwórz stan z pamięci. Reload track jeśli inny + przywrócenie parametrów.
@@ -482,7 +668,8 @@ class DeckController(QtCore.QObject):
 
         # Przywróć snapshot (nawet bez reloadu)
         if mem.get("main_cue_ms") is not None:
-            self._main_cue_ms = mem.get("main_cue_ms")
+            self._main_cue_ms = int(mem.get("main_cue_ms"))
+            self.cue_changed.emit(self._main_cue_ms)
 
         self._loop_in_ms = mem.get("loop_in_ms")
         self._loop_out_ms = mem.get("loop_out_ms")
@@ -559,6 +746,17 @@ class DeckController(QtCore.QObject):
         if self.playback_engine:
             self.playback_engine.set_deck_trim(self.deck_id, value)
 
+    def set_pfl(self, enabled: bool) -> None:
+        """PFL (pre-fader listen) — cue monitor path w PlaybackEngine."""
+        if self.playback_engine:
+            self.playback_engine.set_deck_pfl(self.deck_id, bool(enabled))
+        self.status_changed.emit("PFL ON" if enabled else "PFL OFF")
+
+    def is_pfl_enabled(self) -> bool:
+        if self.playback_engine:
+            return self.playback_engine.get_deck_pfl(self.deck_id)
+        return False
+
     def set_eq(self, low: float, mid: float, high: float) -> None:
         if self.playback_engine:
             self.playback_engine.set_deck_eq(self.deck_id, low, mid, high)
@@ -615,6 +813,8 @@ class DeckController(QtCore.QObject):
         if not self.playback_engine:
             return
         try:
+            if hasattr(self.playback_engine, "poll_decks"):
+                self.playback_engine.poll_decks()
             state = self.playback_engine.get_deck_state(self.deck_id)
             if state:
                 self.playhead_changed.emit(state.position_ms)
