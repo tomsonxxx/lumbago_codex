@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 import re
 from pathlib import Path
 
@@ -136,3 +137,160 @@ def _queue_repl(match: re.Match[str]) -> str:
     pending = int(match.group(1))
     running = int(match.group(2))
     return f"(kolejka: {format_queue_status(pending, running)})"
+
+
+# (etykieta legendy, kolor HTML)
+SOURCE_COLORS: dict[str, tuple[str, str]] = {
+    "youtube": ("YouTube", "#FF3B30"),
+    "soundcloud": ("SoundCloud", "#0099FF"),
+    "musicbrainz": ("MusicBrainz", "#C8509A"),
+    "discogs": ("Discogs", "#F28C28"),
+    "deezer": ("Deezer", "#A855F7"),
+    "apple_music": ("Apple Music", "#FA2D48"),
+    "theaudiodb": ("TheAudioDB", "#3B82F6"),
+    "listenbrainz": ("ListenBrainz", "#EF4444"),
+    "lastfm": ("Last.fm", "#D51007"),
+    "lrclib": ("LRCLIB", "#22C55E"),
+    "lyricsovh": ("Lyrics.ovh", "#94A3B8"),
+    "ai": ("AI", "#8B5CF6"),
+    "spotify": ("Spotify", "#1DB954"),
+    "genius": ("Genius", "#FACC15"),
+    "bandcamp": ("Bandcamp", "#1DA0C3"),
+    "bg_enrichment": ("Uzupełnianie w tle", "#38BDF8"),
+    "autotag_bg": ("Autotag w tle", "#FBBF24"),
+    "autotag": ("Autotag", "#F59E0B"),
+    "scan": ("Skan biblioteki", "#10B981"),
+    "import": ("Import", "#64748B"),
+    "recognition": ("Rozpoznawanie", "#EC4899"),
+    "duplicates": ("Duplikaty", "#F97316"),
+    "default": ("Inne", "#CBD5E1"),
+}
+
+LEGEND_SOURCE_ORDER: tuple[str, ...] = (
+    "youtube",
+    "soundcloud",
+    "musicbrainz",
+    "discogs",
+    "deezer",
+    "apple_music",
+    "theaudiodb",
+    "listenbrainz",
+    "lastfm",
+    "lrclib",
+    "ai",
+    "bg_enrichment",
+    "autotag",
+    "autotag_bg",
+    "scan",
+    "recognition",
+    "duplicates",
+    "default",
+)
+
+_PROVIDER_NAME_TO_KEY: dict[str, str] = {
+    "musicbrainz": "musicbrainz",
+    "discogs": "discogs",
+    "ai": "ai",
+    "apple music": "apple_music",
+    "deezer": "deezer",
+    "theaudiodb": "theaudiodb",
+    "listenbrainz": "listenbrainz",
+    "lrclib": "lrclib",
+    "lyrics.ovh": "lyricsovh",
+    "youtube": "youtube",
+    "soundcloud": "soundcloud",
+    "last.fm": "lastfm",
+    "spotify": "spotify",
+    "genius": "genius",
+    "bandcamp": "bandcamp",
+}
+
+_PROVIDER_FN_TO_KEY: dict[str, str] = {
+    "_search_musicbrainz": "musicbrainz",
+    "_search_discogs": "discogs",
+    "_search_ai": "ai",
+    "_search_itunes": "apple_music",
+    "_search_deezer": "deezer",
+    "_search_theaudiodb": "theaudiodb",
+    "_search_listenbrainz": "listenbrainz",
+    "_search_lrclib": "lrclib",
+    "_search_lyrics_ovh": "lyricsovh",
+    "_search_youtube": "youtube",
+    "_search_soundcloud": "soundcloud",
+}
+
+
+def legend_entries() -> list[tuple[str, str, str]]:
+    """Lista (klucz, etykieta, kolor) do legendy w UI."""
+    return [
+        (key, SOURCE_COLORS[key][0], SOURCE_COLORS[key][1])
+        for key in LEGEND_SOURCE_ORDER
+        if key in SOURCE_COLORS
+    ]
+
+
+def color_for_source_key(source_key: str) -> str:
+    return SOURCE_COLORS.get(source_key, SOURCE_COLORS["default"])[1]
+
+
+def detect_log_source_key(line: str) -> str:
+    """Przypisuje wiersz logu do źródła (kolor w oknie logów)."""
+    text = line.strip()
+    if not text:
+        return "default"
+
+    bullet = re.search(r"·\s*([^:]+):", text)
+    if bullet:
+        name = bullet.group(1).strip().lower()
+        for label, key in _PROVIDER_NAME_TO_KEY.items():
+            if name == label or name.startswith(label):
+                return key
+
+    lowered = text.lower()
+    category_rules = [
+        ("» uzupełnianie w tle", "bg_enrichment"),
+        ("[bg-service]", "bg_enrichment"),
+        ("» autotag w tle", "autotag_bg"),
+        ("[autotag-bg]", "autotag_bg"),
+        ("» skan biblioteki", "scan"),
+        ("[scan]", "scan"),
+        ("» import", "import"),
+        ("[import]", "import"),
+        ("[recognition]", "recognition"),
+        ("» rozpoznawanie", "recognition"),
+        ("[duplicates]", "duplicates"),
+        ("[dupmerge]", "duplicates"),
+    ]
+    for needle, key in category_rules:
+        if needle in lowered:
+            return key
+
+    fn_match = re.search(r"source=(_search_\w+)", text)
+    if fn_match:
+        return _PROVIDER_FN_TO_KEY.get(fn_match.group(1), "autotag")
+
+    portal_match = re.search(r"\b(youtube|soundcloud|spotify|genius|bandcamp)\b", lowered)
+    if portal_match:
+        return portal_match.group(1)
+
+    if "» autotag" in lowered or "[autotag]" in lowered:
+        return "autotag"
+
+    return "default"
+
+
+def format_log_line_html(line: str) -> str:
+    escaped = html.escape(line)
+    color = color_for_source_key(detect_log_source_key(line))
+    return f'<span style="color:{color}; white-space:pre;">{escaped}</span>'
+
+
+def build_colored_log_html(text: str) -> str:
+    if not text:
+        return ""
+    lines = text.splitlines()
+    body = "<br>".join(format_log_line_html(line) for line in lines)
+    return (
+        '<pre style="font-family:Consolas,monospace; font-size:10pt; '
+        f'margin:0; line-height:1.35;">{body}</pre>'
+    )
