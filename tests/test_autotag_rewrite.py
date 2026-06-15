@@ -5,9 +5,11 @@ from services.autotag_rewrite import (
     Candidate,
     UnifiedAutoTagger,
     _clean_text,
+    _clear_album_if_title_duplicate,
     _discogs_result_score,
     _itunes_result_score,
     _musicbrainz_recording_score,
+    _sanitize_album_value,
     _track_with_filename_identity,
 )
 
@@ -59,6 +61,43 @@ def test_unified_autotagger_picks_best_candidate(monkeypatch):
     assert result.best_match is not None
     assert result.best_match.source == "Discogs"
     assert result.best_match.score == 81
+
+
+def test_sanitize_album_value_rejects_title_duplicate():
+    assert _sanitize_album_value("Good In Goodbye", "Good In Goodbye", artist="Poylow") is None
+    assert _sanitize_album_value("Poylow - Good In Goodbye", "Good In Goodbye", artist="Poylow") is None
+    assert _sanitize_album_value("Ride The Lightning", "Fade to Black", artist="Metallica") == "Ride The Lightning"
+
+
+def test_sanitize_album_value_rejects_folder_name_duplicate():
+    assert (
+        _sanitize_album_value(
+            "bib5",
+            "Pepas",
+            artist="Farruko",
+            track_path=r"D:\Music\bib5\Farruko - Pepas.mp3",
+        )
+        is None
+    )
+
+
+def test_clear_album_if_title_duplicate_clears_existing_bad_tag():
+    track = Track(path="x.mp3", title="Frequency", artist="Artist", album="Frequency")
+    assert _clear_album_if_title_duplicate(track) is True
+    assert track.album is None
+
+
+def test_apply_best_match_clears_album_equal_to_title_without_replacement():
+    service = UnifiedAutoTagger(_settings())
+    track = Track(path="x.mp3", title="Frequency", artist="Artist", album="Frequency", genre=None)
+    candidate = Candidate(source="Discogs", score=90, title="Frequency", artist="Artist", genre="Trance")
+    result = type("R", (), {"candidates": [candidate], "best_match": candidate})()
+
+    changed = service.apply_best_match(track, result)
+
+    assert changed is True
+    assert track.album is None
+    assert track.genre == "Trance"
 
 
 def test_apply_best_match_updates_track():
@@ -219,7 +258,7 @@ def test_apply_best_match_does_not_replace_identity_from_online_candidate():
     assert track.artist is None
     assert track.album == "Diamond Heart - Single"
     assert track.year == "2018"
-    assert track.genre == "Dance"
+    assert track.genre is None
 
 
 def test_musicbrainz_ranking_prefers_more_complete_candidate():

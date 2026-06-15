@@ -14,6 +14,10 @@ class ProcessLogDialog(QtWidgets.QDialog):
         self.resize(980, 620)
         apply_dialog_fade(self)
 
+        self._last_size = -1
+        self._last_mtime_ns = -1
+        self._user_scrolled_up = False
+
         root = QtWidgets.QVBoxLayout(self)
         root.setContentsMargins(10, 10, 10, 10)
         root.setSpacing(8)
@@ -40,13 +44,15 @@ class ProcessLogDialog(QtWidgets.QDialog):
 
         self._view = QtWidgets.QPlainTextEdit()
         self._view.setReadOnly(True)
+        self._view.setLineWrapMode(QtWidgets.QPlainTextEdit.LineWrapMode.NoWrap)
         self._view.setFont(QtGui.QFont("Consolas", 10))
         self._view.setPlaceholderText("Brak wpisów w logu procesów.")
+        self._view.verticalScrollBar().valueChanged.connect(self._on_scroll_changed)
         card_layout.addWidget(self._view, 1)
 
         button_row = QtWidgets.QHBoxLayout()
-        self._auto_scroll = QtWidgets.QCheckBox("Auto-scroll")
-        self._auto_scroll.setChecked(True)
+        self._auto_scroll = QtWidgets.QCheckBox("Auto-scroll (tylko gdy jesteś na końcu)")
+        self._auto_scroll.setChecked(False)
         refresh_btn = QtWidgets.QPushButton("Odśwież")
         refresh_btn.clicked.connect(self._refresh_now)
         clear_btn = QtWidgets.QPushButton("Wyczyść log")
@@ -62,25 +68,72 @@ class ProcessLogDialog(QtWidgets.QDialog):
 
         self._timer = QtCore.QTimer(self)
         self._timer.timeout.connect(self._refresh_now)
-        self._timer.start(900)
+        self._timer.start(1200)
         self._refresh_now()
 
     def _log_path(self) -> Path:
         return Path.cwd() / ".lumbago_data" / "process.log"
 
-    def _refresh_now(self) -> None:
+    def _on_scroll_changed(self, value: int) -> None:
+        sb = self._view.verticalScrollBar()
+        self._user_scrolled_up = value < (sb.maximum() - 8)
+
+    def _is_near_bottom(self) -> bool:
+        sb = self._view.verticalScrollBar()
+        return sb.maximum() <= 0 or sb.value() >= (sb.maximum() - 8)
+
+    def _refresh_now(self, *, force_full: bool = False) -> None:
         path = self._log_path()
         if not path.exists():
-            self._view.setPlainText("")
+            if self._view.toPlainText():
+                self._view.clear()
+            self._last_size = 0
+            self._last_mtime_ns = 0
             return
+        try:
+            stat = path.stat()
+        except Exception:
+            return
+        if (
+            not force_full
+            and stat.st_size == self._last_size
+            and stat.st_mtime_ns == self._last_mtime_ns
+        ):
+            return
+
         try:
             text = path.read_text(encoding="utf-8", errors="ignore")
         except Exception:
             return
-        self._view.setPlainText(text)
-        if self._auto_scroll.isChecked():
-            sb = self._view.verticalScrollBar()
+
+        self._last_size = stat.st_size
+        self._last_mtime_ns = stat.st_mtime_ns
+
+        old_text = self._view.toPlainText()
+        if text == old_text:
+            return
+
+        sb = self._view.verticalScrollBar()
+        preserve_scroll = self._user_scrolled_up and not self._auto_scroll.isChecked()
+        scroll_pos = sb.value()
+
+        if not force_full and old_text and text.startswith(old_text):
+            delta = text[len(old_text) :]
+            if delta:
+                cursor = self._view.textCursor()
+                cursor.movePosition(QtGui.QTextCursor.MoveOperation.End)
+                cursor.insertText(delta)
+                self._view.setTextCursor(cursor)
+        else:
+            self._view.setPlainText(text)
+            if preserve_scroll:
+                sb.setValue(min(scroll_pos, sb.maximum()))
+            elif self._auto_scroll.isChecked() and not self._user_scrolled_up:
+                sb.setValue(sb.maximum())
+
+        if self._auto_scroll.isChecked() and (not preserve_scroll) and (not self._user_scrolled_up or self._is_near_bottom()):
             sb.setValue(sb.maximum())
+            self._user_scrolled_up = False
 
     def _clear_log(self) -> None:
         path = self._log_path()
@@ -89,4 +142,7 @@ class ProcessLogDialog(QtWidgets.QDialog):
             path.write_text("", encoding="utf-8")
         except Exception:
             return
-        self._refresh_now()
+        self._last_size = 0
+        self._last_mtime_ns = 0
+        self._user_scrolled_up = False
+        self._refresh_now(force_full=True)

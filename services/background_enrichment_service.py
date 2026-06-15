@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Optional
 from datetime import datetime
 
-from core.models import AnalysisJob
+from core.models import BACKGROUND_AUTOTAG_FIELDS, AnalysisJob
 from data import repository
 from services.metadata_writeback import PendingTrackWrite, apply_track_writes
 from PyQt6 import QtCore
@@ -43,7 +43,17 @@ class BackgroundEnrichmentService:
             except Exception as e:
                 self._log(f"[bg-service] Błąd tworzenia zadania dla track_id={track_id}: {e}")
 
-        self._log(f"[bg-service] Utworzono {len(created_job_ids)} zadań background_enrichment (źródło: {source})")
+        count = len(created_job_ids)
+        if count:
+            self._log(
+                f"[bg-service] Utworzono {count} nowych zadań uzupełniania w tle "
+                f"(źródło: {source})"
+            )
+        else:
+            self._log(
+                f"[bg-service] 0 nowych zadań — brak poprawnych ID utworów "
+                f"(próbowano: {len(track_ids)}, źródło: {source})"
+            )
         return created_job_ids
 
     def process_pending_jobs(self, max_jobs: int = 5) -> int:
@@ -93,23 +103,40 @@ class BackgroundEnrichmentService:
 
             autotagger = UnifiedAutoTagger(self.settings)
 
-            result = autotagger.enrich_missing_background_fields(
-                deepcopy(track)
-            )
+            already_filled = {
+                field
+                for field in BACKGROUND_AUTOTAG_FIELDS
+                if getattr(track, field, None)
+            }
+            if len(already_filled) == len(BACKGROUND_AUTOTAG_FIELDS):
+                repository.update_analysis_job_status(job.job_id, "completed")
+                return True
 
-            if result.best_match:
-                # Jedna ścieżka writebacku dla background enrichment:
-                # DB + changelog + plik tagów przechodzą przez wspólny helper.
-                background_fields = ["originalartist", "rating", "comment", "lyrics", "remixer"]
-                fields_to_write: dict[str, str] = {}
-                old_values: dict[str, str | None] = {}
-                for field in background_fields:
-                    value = getattr(result.best_match, field, None)
-                    current = getattr(track, field, None)
-                    if value and not current:
-                        setattr(track, field, value)
-                        fields_to_write[field] = str(value)
-                        old_values[field] = None if current is None else str(current)
+            result = autotagger.enrich_missing_background_fields(
+                deepcopy(track),
+                already_filled_fields=already_filled,
+            )
+            source_count = len(
+                [
+                    c
+                    for c in getattr(result, "candidates", []) or []
+                    if getattr(c, "error", None) is None and getattr(c, "score", 0) > 0
+                ]
+            )
+            changes = autotagger.apply_background_fields(
+                track,
+                result,
+                already_filled_fields=already_filled,
+            )
+            if not changes:
+                if source_count:
+                    self._log(
+                        f"[bg-service] Brak pól tła po {source_count} źródłach "
+                        f"dla track_id={job.track_id}"
+                    )
+            else:
+                fields_to_write: dict[str, str] = {field: str(value) for field, value in changes.items()}
+                old_values: dict[str, str | None] = {field: None for field in changes}
 
                 if fields_to_write:
                     writeback = apply_track_writes(

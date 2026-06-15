@@ -12,7 +12,15 @@ from typing import Any
 import requests
 
 from core.models import AnalysisResult, Track
+from services.ai_provider_resolver import (
+    PROVIDER_PROFILES,
+    invalidate_cached_provider,
+    is_model_not_found_error,
+    is_valid_model_hint,
+    resolve_ai_provider,
+)
 from core.services import heuristic_analysis
+from services.genre_specificity import is_broad_genre
 from services.ai_tagger_merge import _harmonize_batch_results
 from services.metadata_providers import (
     RateLimitedMusicBrainzProvider,
@@ -368,11 +376,44 @@ class CloudAiTagger:
         self.model = model
         self.timeout = timeout
         self.retries = max(0, retries)
-        self._resolved_base_url, self._resolved_model = _resolve_runtime_config(
+        self._resolved_base_url: str | None = None
+        self._resolved_model: str | None = None
+        self._apply_resolved_connection(force_refresh=False)
+
+    def _apply_resolved_connection(self, *, force_refresh: bool) -> bool:
+        if not self.provider or not self.api_key:
+            self._resolved_base_url, self._resolved_model = None, None
+            return False
+        explicit_base = (self.base_url or "").strip().rstrip("/")
+        explicit_model = (self.model or "").strip()
+        if (
+            not force_refresh
+            and explicit_base
+            and is_valid_model_hint(explicit_model)
+        ):
+            self._resolved_base_url = explicit_base
+            self._resolved_model = explicit_model
+            return True
+        hint = explicit_model if is_valid_model_hint(explicit_model) else None
+        resolved = resolve_ai_provider(
+            self.provider,
+            self.api_key,
+            base_url=self.base_url,
+            model_hint=hint,
+            force_refresh=force_refresh,
+        )
+        if resolved is not None:
+            self._resolved_base_url = resolved.base_url
+            self._resolved_model = resolved.model
+            return True
+        fallback_base, fallback_model = _resolve_runtime_config(
             self.provider,
             self.base_url,
             self.model,
         )
+        self._resolved_base_url = fallback_base
+        self._resolved_model = fallback_model
+        return bool(fallback_base and fallback_model)
 
     def analyze(self, track: Track) -> AnalysisResult:
         if not self.provider or not self.api_key:
@@ -388,7 +429,11 @@ class CloudAiTagger:
             return AnalysisResult(description="No missing fields", confidence=1.0)
         prompt = _build_prompt(track, fields_to_fill, noisy_fields=noisy)
         last_exc: Exception | None = None
+        retried_model = False
         for attempt in range(self.retries + 1):
+            base_url, model = self._resolved_base_url, self._resolved_model
+            if not base_url or not model:
+                return AnalysisResult(description="Cloud AI missing base URL or model", confidence=0.0)
             try:
                 if self.provider == "gemini":
                     text = _call_gemini_generate_content(base_url, self.api_key, model, prompt, self.timeout)
@@ -431,6 +476,16 @@ class CloudAiTagger:
                 return _validate_result(raw)
             except Exception as exc:
                 last_exc = exc
+                if (
+                    not retried_model
+                    and is_model_not_found_error(exc)
+                    and self.api_key
+                    and self.provider
+                ):
+                    invalidate_cached_provider(self.provider, self.api_key)
+                    if self._apply_resolved_connection(force_refresh=True):
+                        retried_model = True
+                        continue
                 if attempt >= self.retries or not _is_retryable_exception(exc):
                     break
                 time.sleep(_retry_backoff_seconds(attempt, exc))
@@ -494,7 +549,14 @@ class CloudAiTagger:
 
         prompt = _build_batch_prompt(tracks)
         last_exc: Exception | None = None
+        retried_model = False
         for attempt in range(self.retries + 1):
+            base_url, model = self._resolved_base_url, self._resolved_model
+            if not base_url or not model:
+                return [
+                    AnalysisResult(description="Cloud AI missing base URL or model", confidence=0.0)
+                    for _track in tracks
+                ]
             try:
                 if self.provider == "gemini":
                     text = _call_gemini_generate_batch_content(
@@ -508,6 +570,16 @@ class CloudAiTagger:
                 return _batch_payload_to_results(parsed, tracks)
             except Exception as exc:
                 last_exc = exc
+                if (
+                    not retried_model
+                    and is_model_not_found_error(exc)
+                    and self.api_key
+                    and self.provider
+                ):
+                    invalidate_cached_provider(self.provider, self.api_key)
+                    if self._apply_resolved_connection(force_refresh=True):
+                        retried_model = True
+                        continue
                 if attempt >= self.retries or not _is_retryable_exception(exc):
                     break
                 time.sleep(_retry_backoff_seconds(attempt, exc))
@@ -855,6 +927,21 @@ def _build_prompt(
     known_section = "\n".join(known_lines)
     fields_list = ", ".join(missing)
 
+    genre_note = ""
+    current_genre = getattr(track, "genre", None)
+    if not current_genre or (isinstance(current_genre, str) and is_broad_genre(current_genre)):
+        genre_note = (
+            "\nGENRE PRIORITY: Return a concrete DJ/club subgenre/style (not broad labels). "
+            "Prefer examples like 'Melodic Techno', 'Deep House', 'Progressive Trance', "
+            "'Liquid Drum & Bass', 'UK Garage', 'Afro House', 'Hard Techno'. "
+            "Never answer only 'Electronic', 'Dance', 'EDM' or 'House' if a narrower style fits.\n"
+        )
+    elif "genre" in missing:
+        genre_note = (
+            "\nGENRE: Upgrade to a more specific subgenre when evidence supports it "
+            "(e.g. 'Deep House' instead of 'House', 'Melodic Techno' instead of 'Techno').\n"
+        )
+
     clean_note = ""
     if noisy_set:
         noisy_current = []
@@ -897,6 +984,7 @@ def _build_prompt(
         "14) COMMENT: One short factual sentence about the track.\n"
         "15) COPYRIGHT: Label and year, e.g. '2007 Universal Records'.\n"
         "16) Latin alphabet only.\n"
+        + genre_note
         + clean_note
         + "\nFill or correct only these fields: "
         + fields_list
@@ -1369,9 +1457,13 @@ def _resolve_runtime_config(
     base_url: str | None,
     model: str | None,
 ) -> tuple[str | None, str | None]:
-    if provider == "gemini":
-        return base_url or "https://generativelanguage.googleapis.com/v1beta", model or "gemini-2.0-flash"
-    return base_url, model
+    normalized = (provider or "").strip().lower()
+    profile = PROVIDER_PROFILES.get(normalized)
+    resolved_base = (base_url or "").strip() or (profile.default_base_url if profile else "")
+    resolved_model = model if is_valid_model_hint(model) else None
+    if not resolved_model and profile:
+        resolved_model = profile.preferred_models[0]
+    return resolved_base or None, resolved_model
 
 
 def preflight_provider(
@@ -1381,34 +1473,24 @@ def preflight_provider(
     *,
     timeout: int = 8,
 ) -> tuple[bool, str]:
-    resolved_base_url, _ = _resolve_runtime_config(provider, base_url, None)
-    if not resolved_base_url:
-        return False, "Brak base URL"
-    if provider == "gemini":
-        url = f"{resolved_base_url.rstrip('/')}/models"
-        headers = {"x-goog-api-key": api_key}
-    else:
-        url = f"{resolved_base_url.rstrip('/')}/models"
-        headers = {"Authorization": f"Bearer {api_key}"}
-    try:
-        resp = requests.get(url, headers=headers, timeout=timeout)
-        if resp.status_code == 200:
-            return True, "OK"
-        detail = f"HTTP {resp.status_code}"
-        try:
-            payload = resp.json()
-            error = payload.get("error")
-            if isinstance(error, dict):
-                msg = str(error.get("message", "")).strip()
-                if msg:
-                    detail = f"{detail}: {msg}"
-            elif isinstance(error, str) and error.strip():
-                detail = f"{detail}: {error.strip()}"
-        except Exception:
-            pass
-        return False, detail
-    except Exception as exc:
-        return False, str(exc)
+    from services.ai_provider_resolver import resolve_ai_provider_with_detail
+
+    resolved, error = resolve_ai_provider_with_detail(
+        provider,
+        api_key,
+        base_url=base_url,
+        force_refresh=True,
+        timeout=timeout,
+    )
+    from services.ai_provider_resolver import format_resolve_source_label, provider_display_name
+
+    if resolved is None:
+        return False, error or "Nie udało się automatycznie skonfigurować modelu API"
+    source_label = format_resolve_source_label(resolved.source)
+    return (
+        True,
+        f"{provider_display_name(provider)}: połączenie OK — model {resolved.model} ({source_label})",
+    )
 
 
 def _is_retryable_exception(exc: Exception) -> bool:

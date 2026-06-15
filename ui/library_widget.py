@@ -273,6 +273,18 @@ class LibraryWidget(QtWidgets.QWidget):
         return [self._filtered[proxy.mapToSource(i).row()] for i in indices
                 if proxy.mapToSource(i).row() < len(self._filtered)]
 
+    def clear_selection(self) -> None:
+        for view in (self.list_view, self.grid_view, self.crate_view):
+            view.clearSelection()
+
+    def select_all(self) -> None:
+        if self._mode == LibraryViewMode.GRID:
+            self.grid_view.selectAll()
+        elif self._mode == LibraryViewMode.DJ_CRATE:
+            self.crate_view.selectAll()
+        else:
+            self.list_view.selectAll()
+
     def _on_filter(self, f: dict): self._filters = f; self._apply_filters()
 
     def _apply_filters(self):

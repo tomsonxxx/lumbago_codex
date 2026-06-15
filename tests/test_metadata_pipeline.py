@@ -97,6 +97,25 @@ def test_extract_metadata_treats_single_name_before_bitrate_as_title(monkeypatch
     assert track.title == "Diamond Heart"
 
 
+def test_extract_metadata_strips_album_equal_to_parent_folder(monkeypatch, tmp_path: Path):
+    folder = tmp_path / "bib5"
+    folder.mkdir()
+    audio_path = folder / "Farruko - Pepas.mp3"
+    audio_path.write_bytes(b"ID3")
+
+    class _FakeBib5Audio(_FakeAudio):
+        def __init__(self):
+            super().__init__()
+            self.tags["TALB"] = ["bib5"]
+
+    monkeypatch.setattr("core.audio.MutagenFile", lambda _path: _FakeBib5Audio())
+    monkeypatch.setattr("core.audio.read_tags", lambda _path: {})
+
+    track = extract_metadata(audio_path)
+
+    assert track.album is None
+
+
 def test_extract_metadata_does_not_use_date_folder_as_album(monkeypatch, tmp_path: Path):
     folder = tmp_path / "01.03.2025"
     folder.mkdir()

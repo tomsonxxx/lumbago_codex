@@ -14,6 +14,7 @@ def test_integration_db_roundtrip(monkeypatch):
         upsert_tracks([track])
         rows = list_tracks()
         assert len(rows) == 1
+        assert rows[0].id is not None
         assert rows[0].title == "Test"
         rows[0].title = "Test2"
         update_track(rows[0])

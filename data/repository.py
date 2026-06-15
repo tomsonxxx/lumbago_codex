@@ -154,7 +154,9 @@ _TRACK_READ_FIELDS = _TRACK_META_FIELDS + [
 
 
 def _orm_to_track(row: TrackOrm) -> Track:
-    kwargs = {"path": row.path}
+    from core.metadata_quality import strip_album_folder_artifact
+
+    kwargs = {"path": row.path, "id": row.id}
     for field in _TRACK_READ_FIELDS:
         kwargs[field] = getattr(row, field, None)
     kwargs["play_count"] = kwargs.get("play_count") or 0
@@ -164,7 +166,9 @@ def _orm_to_track(row: TrackOrm) -> Track:
         for t in (row.tags or [])
         if t.source != "autotag:file_sync"
     ]
-    return Track(**kwargs, tags=tags)
+    track = Track(**kwargs, tags=tags)
+    strip_album_folder_artifact(track)
+    return track
 
 
 def list_tracks() -> list[Track]:
@@ -844,6 +848,26 @@ def get_or_create_track_by_path(path: str) -> Track:
         # Awaryjnie zwracamy obiekt z minimalnymi danymi
         return new_track
     return created
+
+
+def resolve_track_ids(paths: list[str]) -> list[int]:
+    """Zwraca ID utworów w bazie; tworzy brakujące wpisy po ścieżce."""
+    track_ids: list[int] = []
+    seen: set[int] = set()
+    for path in paths:
+        text = str(path or "").strip()
+        if not text:
+            continue
+        track = get_or_create_track_by_path(text)
+        track_id = getattr(track, "id", None)
+        if not track_id:
+            continue
+        numeric_id = int(track_id)
+        if numeric_id in seen:
+            continue
+        seen.add(numeric_id)
+        track_ids.append(numeric_id)
+    return track_ids
 
 
 def create_playlist(name: str, description: str | None = None, is_smart: bool = False, rules: str | None = None) -> None:

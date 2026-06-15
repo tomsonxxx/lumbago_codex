@@ -6,7 +6,12 @@ from datetime import datetime, timezone
 from typing import Any
 
 from core.models import Track
-from services.autotag_rewrite import EnrichmentResult
+from services.autotag_rewrite import EnrichmentResult, _sanitize_album_value
+from services.genre_specificity import (
+    is_broad_genre,
+    pick_most_specific_genre,
+    should_upgrade_genre,
+)
 from services.metadata_consensus import (
     FieldEvidence,
     MetadataConsensusEngine,
@@ -91,6 +96,7 @@ class MetadataPipelineV2:
             if field_result.resolved is None:
                 continue
             setattr(resolved_track, field_name, field_result.resolved.value)
+        _refine_track_genre(resolved_track, evidence_by_field)
         return MetadataPipelineResult(
             track=resolved_track,
             consensus=consensus,
@@ -114,13 +120,20 @@ class MetadataPipelineV2:
         if include_baseline_evidence:
             for field_name in TRACK_METADATA_FIELDS:
                 baseline_value = getattr(baseline_track, field_name, None)
+                if field_name == "album":
+                    baseline_value = _sanitize_album_value(
+                        baseline_value,
+                        baseline_track.title,
+                        artist=baseline_track.artist,
+                        track_path=baseline_track.path,
+                    )
                 if _has_value(baseline_value):
                     evidence_by_field.setdefault(field_name, []).append(
                         FieldEvidence(
                             field_name=field_name,
                             value=baseline_value,
                             source="existing_tags",
-                            confidence=0.72,
+                            confidence=0.9,
                             verified=False,
                             timestamp=observed_at,
                         )
@@ -156,6 +169,13 @@ class MetadataPipelineV2:
                 confidence = max(0.0, min(1.0, float(getattr(candidate, "score", 0) or 0) / 100.0))
                 for field_name in TRACK_METADATA_FIELDS:
                     value = getattr(candidate, field_name, None)
+                    if field_name == "album":
+                        value = _sanitize_album_value(
+                            value,
+                            getattr(candidate, "title", None) or candidate_track.title,
+                            artist=getattr(candidate, "artist", None) or candidate_track.artist,
+                            track_path=candidate_track.path,
+                        )
                     if not _has_value(value):
                         continue
                     evidence_by_field.setdefault(field_name, []).append(
@@ -165,6 +185,20 @@ class MetadataPipelineV2:
                             source=source,
                             confidence=confidence,
                             verified=source == "acoustid",
+                            timestamp=observed_at,
+                        )
+                    )
+                for tag_value in getattr(candidate, "tags", []) or []:
+                    tag_text = str(tag_value).strip()
+                    if not _has_value(tag_text) or is_broad_genre(tag_text):
+                        continue
+                    evidence_by_field.setdefault("genre", []).append(
+                        FieldEvidence(
+                            field_name="genre",
+                            value=tag_text,
+                            source=f"{source}_tag",
+                            confidence=min(0.95, confidence + 0.08),
+                            verified=False,
                             timestamp=observed_at,
                         )
                     )
@@ -216,6 +250,17 @@ def _normalize_source_name(value: Any) -> str:
     if text in SOURCE_NORMALIZATION:
         return SOURCE_NORMALIZATION[text]
     return text.replace(" ", "_") or "unknown_source"
+
+
+def _refine_track_genre(track: Track, evidence_by_field: dict[str, list[FieldEvidence]]) -> None:
+    """Ostatni krok: wymuś najbardziej szczegółowy styl z zebranych dowodów."""
+    values: list[str] = []
+    for evidence in evidence_by_field.get("genre", []):
+        if _has_value(evidence.value):
+            values.append(str(evidence.value))
+    best = pick_most_specific_genre(values, current=getattr(track, "genre", None))
+    if best and should_upgrade_genre(getattr(track, "genre", None), best):
+        track.genre = best
 
 
 def _has_value(value: Any) -> bool:

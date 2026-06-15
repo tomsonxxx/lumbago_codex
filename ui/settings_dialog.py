@@ -9,6 +9,8 @@ from core.config import (
     normalize_musicbrainz_user_agent,
     save_settings,
 )
+from services.ai_provider_resolver import cleared_legacy_ai_settings
+from services.ai_tagger import preflight_provider
 from ui.widgets import apply_dialog_fade, dialog_icon_pixmap
 
 
@@ -200,6 +202,15 @@ class SettingsDialog(QtWidgets.QDialog):
     def _build_tab_ai(self) -> QtWidgets.QWidget:
         scroll, layout = _make_scroll_widget()
 
+        auto_info = QtWidgets.QLabel(
+            "Wystarczy podać klucz API i wybrać aktywnego dostawcę. "
+            "Model oraz adres API są <b>automatycznie wykrywane i weryfikowane</b> "
+            "(bez ręcznego wpisywania nazw modeli)."
+        )
+        auto_info.setWordWrap(True)
+        auto_info.setObjectName("HintLabel")
+        layout.addWidget(auto_info)
+
         # Active provider
         prov_box, prov_form = _group("Aktywny dostawca AI")
         self.cloud_provider = QtWidgets.QComboBox()
@@ -221,12 +232,6 @@ class SettingsDialog(QtWidgets.QDialog):
             "Google AI Studio →",
             "https://aistudio.google.com/app/apikey",
         )
-        self.gemini_base_url = QtWidgets.QLineEdit()
-        self.gemini_base_url.setPlaceholderText("https://generativelanguage.googleapis.com/v1beta")
-        gem_form.addRow("Base URL", self.gemini_base_url)
-        self.gemini_model = QtWidgets.QLineEdit()
-        self.gemini_model.setPlaceholderText("gemini-2.0-flash")
-        gem_form.addRow("Model", self.gemini_model)
         self.test_gemini_btn = QtWidgets.QPushButton("Test Gemini")
         self.test_gemini_btn.clicked.connect(self._test_gemini)
         gem_form.addRow("", self.test_gemini_btn)
@@ -242,12 +247,6 @@ class SettingsDialog(QtWidgets.QDialog):
             "platform.openai.com →",
             "https://platform.openai.com/api-keys",
         )
-        self.openai_base_url = QtWidgets.QLineEdit()
-        self.openai_base_url.setPlaceholderText("https://api.openai.com/v1")
-        oai_form.addRow("Base URL", self.openai_base_url)
-        self.openai_model = QtWidgets.QLineEdit()
-        self.openai_model.setPlaceholderText("gpt-4.1-mini")
-        oai_form.addRow("Model", self.openai_model)
         self.test_openai_btn = QtWidgets.QPushButton("Test OpenAI")
         self.test_openai_btn.clicked.connect(self._test_openai)
         oai_form.addRow("", self.test_openai_btn)
@@ -263,12 +262,6 @@ class SettingsDialog(QtWidgets.QDialog):
             "console.x.ai →",
             "https://console.x.ai/",
         )
-        self.grok_base_url = QtWidgets.QLineEdit()
-        self.grok_base_url.setPlaceholderText("https://api.x.ai/v1")
-        grok_form.addRow("Base URL", self.grok_base_url)
-        self.grok_model = QtWidgets.QLineEdit()
-        self.grok_model.setPlaceholderText("grok-2-latest")
-        grok_form.addRow("Model", self.grok_model)
         self.test_grok_btn = QtWidgets.QPushButton("Test Grok")
         self.test_grok_btn.clicked.connect(self._test_grok)
         grok_form.addRow("", self.test_grok_btn)
@@ -284,12 +277,6 @@ class SettingsDialog(QtWidgets.QDialog):
             "platform.deepseek.com →",
             "https://platform.deepseek.com/api_keys",
         )
-        self.deepseek_base_url = QtWidgets.QLineEdit()
-        self.deepseek_base_url.setPlaceholderText("https://api.deepseek.com/v1")
-        ds_form.addRow("Base URL", self.deepseek_base_url)
-        self.deepseek_model = QtWidgets.QLineEdit()
-        self.deepseek_model.setPlaceholderText("deepseek-chat")
-        ds_form.addRow("Model", self.deepseek_model)
         self.test_deepseek_btn = QtWidgets.QPushButton("Test DeepSeek")
         self.test_deepseek_btn.clicked.connect(self._test_deepseek)
         ds_form.addRow("", self.test_deepseek_btn)
@@ -427,20 +414,12 @@ class SettingsDialog(QtWidgets.QDialog):
         self.cloud_api_key.setText(s.cloud_ai_api_key or "")
 
         self.gemini_api_key.setText(s.gemini_api_key or "")
-        self.gemini_base_url.setText(s.gemini_base_url or "")
-        self.gemini_model.setText(s.gemini_model or "")
 
         self.openai_api_key.setText(s.openai_api_key or "")
-        self.openai_base_url.setText(s.openai_base_url or "")
-        self.openai_model.setText(s.openai_model or "")
 
         self.grok_api_key.setText(s.grok_api_key or "")
-        self.grok_base_url.setText(s.grok_base_url or "")
-        self.grok_model.setText(s.grok_model or "")
 
         self.deepseek_api_key.setText(s.deepseek_api_key or "")
-        self.deepseek_base_url.setText(s.deepseek_base_url or "")
-        self.deepseek_model.setText(s.deepseek_model or "")
 
         self.filename_patterns.setPlainText("\n".join(s.filename_patterns or []))
         self._set_validation_policy(s.validation_policy or "aggressive")
@@ -468,17 +447,9 @@ class SettingsDialog(QtWidgets.QDialog):
                 "CLOUD_AI_PROVIDER": self.cloud_provider.currentText().strip(),
                 "CLOUD_AI_API_KEY": self.cloud_api_key.text().strip(),
                 "GEMINI_API_KEY": self.gemini_api_key.text().strip(),
-                "GEMINI_BASE_URL": self.gemini_base_url.text().strip(),
-                "GEMINI_MODEL": self.gemini_model.text().strip(),
                 "OPENAI_API_KEY": self.openai_api_key.text().strip(),
-                "OPENAI_BASE_URL": self.openai_base_url.text().strip(),
-                "OPENAI_MODEL": self.openai_model.text().strip(),
                 "GROK_API_KEY": self.grok_api_key.text().strip(),
-                "GROK_BASE_URL": self.grok_base_url.text().strip(),
-                "GROK_MODEL": self.grok_model.text().strip(),
                 "DEEPSEEK_API_KEY": self.deepseek_api_key.text().strip(),
-                "DEEPSEEK_BASE_URL": self.deepseek_base_url.text().strip(),
-                "DEEPSEEK_MODEL": self.deepseek_model.text().strip(),
                 "FILENAME_PATTERNS": self.filename_patterns.toPlainText().strip(),
                 "VALIDATION_POLICY": self.validation_policy.currentText().strip() or "aggressive",
                 "METADATA_CACHE_TTL_DAYS": str(self.metadata_cache_ttl.value()),
@@ -487,6 +458,7 @@ class SettingsDialog(QtWidgets.QDialog):
                 "AUDIO_ANALYSIS_PARALLEL_WORKERS": str(self.audio_analysis_parallel_workers.value()),
                 "BACKGROUND_AUTOTAG_ENABLED": str(self.background_autotag_enabled.isChecked()).lower(),
                 "BACKGROUND_AUTOTAG_DELAY_SECONDS": str(self.background_autotag_delay.value()),
+                **cleared_legacy_ai_settings(),
             }
         )
         self.accept()
@@ -553,62 +525,28 @@ class SettingsDialog(QtWidgets.QDialog):
         except Exception as exc:
             self._show_test_result("MusicBrainz", False, str(exc))
 
-    def _test_gemini(self) -> None:
-        api_key = self.gemini_api_key.text().strip() or self.cloud_api_key.text().strip()
-        base_url = (
-            self.gemini_base_url.text().strip()
-            or "https://generativelanguage.googleapis.com/v1beta"
-        )
+    def _test_cloud_ai(self, provider: str, title: str, dedicated_key: QtWidgets.QLineEdit) -> None:
+        api_key = dedicated_key.text().strip() or self.cloud_api_key.text().strip()
         if not api_key:
-            self._show_test_result("Gemini", False, "Brak klucza API.")
+            self._show_test_result(title, False, "Brak klucza API.")
             return
-        self._test_http_get("Gemini", f"{base_url.rstrip('/')}/models", {"x-goog-api-key": api_key})
-
-    def _test_openai(self) -> None:
-        api_key = self.openai_api_key.text().strip() or self.cloud_api_key.text().strip()
-        base_url = self.openai_base_url.text().strip() or "https://api.openai.com/v1"
-        if not api_key:
-            self._show_test_result("OpenAI", False, "Brak klucza API.")
-            return
-        self._test_http_get("OpenAI", f"{base_url.rstrip('/')}/models", {"Authorization": f"Bearer {api_key}"})
-
-    def _test_grok(self) -> None:
-        api_key = self.grok_api_key.text().strip() or self.cloud_api_key.text().strip()
-        base_url = self.grok_base_url.text().strip() or "https://api.x.ai/v1"
-        if not api_key:
-            self._show_test_result("Grok", False, "Brak klucza API.")
-            return
-        self._test_http_get("Grok", f"{base_url.rstrip('/')}/models", {"Authorization": f"Bearer {api_key}"})
-
-    def _test_deepseek(self) -> None:
-        api_key = self.deepseek_api_key.text().strip() or self.cloud_api_key.text().strip()
-        base_url = self.deepseek_base_url.text().strip() or "https://api.deepseek.com/v1"
-        if not api_key:
-            self._show_test_result("DeepSeek", False, "Brak klucza API.")
-            return
-        self._test_http_get("DeepSeek", f"{base_url.rstrip('/')}/models", {"Authorization": f"Bearer {api_key}"})
-
-    def _test_http_get(self, title: str, url: str, headers: dict[str, str]) -> None:
         try:
-            resp = requests.get(url, headers=headers, timeout=12)
-            if resp.status_code == 200:
-                self._show_test_result(title, True, "Połączenie i autoryzacja działają.")
-                return
-            detail = f"HTTP {resp.status_code}"
-            try:
-                payload = resp.json()
-                error = payload.get("error")
-                if isinstance(error, dict):
-                    msg = str(error.get("message", "")).strip()
-                    if msg:
-                        detail = f"{detail}: {msg}"
-                elif isinstance(error, str) and error:
-                    detail = f"{detail}: {error}"
-            except Exception:
-                pass
-            self._show_test_result(title, False, detail)
+            ok, detail = preflight_provider(provider, api_key, base_url=None, timeout=12)
+            self._show_test_result(title, ok, detail)
         except Exception as exc:
             self._show_test_result(title, False, str(exc))
+
+    def _test_gemini(self) -> None:
+        self._test_cloud_ai("gemini", "Gemini", self.gemini_api_key)
+
+    def _test_openai(self) -> None:
+        self._test_cloud_ai("openai", "OpenAI", self.openai_api_key)
+
+    def _test_grok(self) -> None:
+        self._test_cloud_ai("grok", "Grok", self.grok_api_key)
+
+    def _test_deepseek(self) -> None:
+        self._test_cloud_ai("deepseek", "DeepSeek", self.deepseek_api_key)
 
 
 # ---------------------------------------------------------------------------
@@ -732,22 +670,19 @@ class ApiKeyCheckDialog(QtWidgets.QDialog):
         else:
             self._set_skipped("discogs")
 
-        provider_configs = {
-            "gemini": (s.gemini_api_key, s.gemini_base_url or "https://generativelanguage.googleapis.com/v1beta"),
-            "openai": (s.openai_api_key, s.openai_base_url or "https://api.openai.com/v1"),
-            "grok": (s.grok_api_key, s.grok_base_url or "https://api.x.ai/v1"),
-            "deepseek": (s.deepseek_api_key, s.deepseek_base_url or "https://api.deepseek.com/v1"),
+        provider_keys = {
+            "gemini": s.gemini_api_key or s.cloud_ai_api_key,
+            "openai": s.openai_api_key or s.cloud_ai_api_key,
+            "grok": s.grok_api_key or s.cloud_ai_api_key,
+            "deepseek": s.deepseek_api_key or s.cloud_ai_api_key,
         }
-        for provider, (api_key, base_url) in provider_configs.items():
+        for provider, api_key in provider_keys.items():
             if not api_key:
                 self._set_skipped(provider)
                 continue
             self._set_pending(provider)
             QtWidgets.QApplication.processEvents()
-            if provider == "gemini":
-                self._test_gemini_api(api_key, base_url)
-            else:
-                self._test_openai_like(provider, api_key, base_url)
+            self._test_cloud_ai_provider(provider, api_key)
 
         self._test_all_btn.setEnabled(True)
 
@@ -804,46 +739,9 @@ class ApiKeyCheckDialog(QtWidgets.QDialog):
         except Exception as exc:
             self._set_status("discogs", False, str(exc))
 
-    def _test_gemini_api(self, api_key: str, base_url: str) -> None:
+    def _test_cloud_ai_provider(self, provider: str, api_key: str) -> None:
         try:
-            resp = requests.get(
-                f"{base_url.rstrip('/')}/models",
-                headers={"x-goog-api-key": api_key},
-                timeout=12,
-            )
-            if resp.status_code == 200:
-                self._set_status("gemini", True, "Połączenie i autoryzacja działają")
-            else:
-                self._set_status("gemini", False, self._extract_http_error(resp))
-        except Exception as exc:
-            self._set_status("gemini", False, str(exc))
-
-    def _test_openai_like(self, provider: str, api_key: str, base_url: str) -> None:
-        try:
-            resp = requests.get(
-                f"{base_url.rstrip('/')}/models",
-                headers={"Authorization": f"Bearer {api_key}"},
-                timeout=12,
-            )
-            if resp.status_code == 200:
-                self._set_status(provider, True, "Połączenie i autoryzacja działają")
-            else:
-                self._set_status(provider, False, self._extract_http_error(resp))
+            ok, detail = preflight_provider(provider, api_key, base_url=None, timeout=12)
+            self._set_status(provider, ok, detail)
         except Exception as exc:
             self._set_status(provider, False, str(exc))
-
-    @staticmethod
-    def _extract_http_error(resp: requests.Response) -> str:
-        detail = f"HTTP {resp.status_code}"
-        try:
-            payload = resp.json()
-            error = payload.get("error")
-            if isinstance(error, dict):
-                msg = str(error.get("message", "")).strip()
-                if msg:
-                    detail = f"{detail}: {msg}"
-            elif isinstance(error, str) and error:
-                detail = f"{detail}: {error}"
-        except Exception:
-            pass
-        return detail

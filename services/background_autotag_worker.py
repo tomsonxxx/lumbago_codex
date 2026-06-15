@@ -78,25 +78,34 @@ class BackgroundAutotagWorker(QtCore.QObject):
                 continue  # nic więcej do uzupełnienia
 
             try:
+                working = deepcopy(track)
                 result = autotagger.enrich_missing_background_fields(
-                    deepcopy(track),
+                    working,
                     already_filled_fields=already_filled,
                 )
-
-                if result.best_match is None:
+                source_count = len(
+                    [
+                        c
+                        for c in getattr(result, "candidates", []) or []
+                        if getattr(c, "error", None) is None and getattr(c, "score", 0) > 0
+                    ]
+                )
+                changes = autotagger.apply_background_fields(
+                    track,
+                    result,
+                    already_filled_fields=already_filled,
+                )
+                if not changes:
+                    if source_count:
+                        _process_log(
+                            f"[autotag-bg] no background fields after {source_count} sources "
+                            f"file={filename}"
+                        )
                     continue
 
-                changes: dict[str, str | int | float] = {}
                 old_values: dict[str, str | None] = {}
-                for field in BACKGROUND_AUTOTAG_FIELDS:
-                    if field in already_filled:
-                        continue
-                    new_value = getattr(result.best_match, field, None)
-                    current_value = getattr(track, field, None)
-                    if new_value and not current_value:
-                        old_values[field] = None if current_value is None else str(current_value)
-                        setattr(track, field, new_value)
-                        changes[field] = new_value
+                for field, new_value in changes.items():
+                    old_values[field] = None
 
                 if changes:
                     try:

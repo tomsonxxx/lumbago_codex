@@ -50,6 +50,34 @@ def test_consensus_rejects_ai_release_year_without_non_ai_corroboration():
     assert "year" in report.rejected_fields
 
 
+def test_consensus_prefers_existing_tags_over_weak_competing_remote():
+    engine = MetadataConsensusEngine()
+
+    report = engine.resolve(
+        {
+            "genre": [
+                FieldEvidence(
+                    field_name="genre",
+                    value="Trance",
+                    source="existing_tags",
+                    confidence=0.9,
+                ),
+                FieldEvidence(
+                    field_name="genre",
+                    value="Dance",
+                    source="deezer",
+                    confidence=0.55,
+                ),
+            ]
+        }
+    )
+
+    genre = report.fields["genre"]
+    assert genre.resolved is not None
+    assert genre.resolved.value == "Trance"
+    assert genre.resolved.source == "existing_tags"
+
+
 def test_consensus_allows_ai_enrichment_for_mood_when_no_harder_source_exists():
     engine = MetadataConsensusEngine()
 

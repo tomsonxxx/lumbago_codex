@@ -15,9 +15,20 @@ from core.renamer import (
     undo_last_organize,
     _normalize_fs_path,
 )
+from ui.plan_conflict_ui import (
+    attach_plan_table_context_menu,
+    build_auto_resolve_controls,
+    run_auto_resolve_dialog,
+    set_plan_index_on_status_item,
+)
 from data.repository import update_track_paths_bulk
 from core.audio import write_tags
 from pathlib import Path
+
+from ui.file_track_ops import (
+    build_file_ops_button_bar,
+    reveal_in_file_manager,
+)
 
 
 class RenamerDialog(QtWidgets.QDialog):
@@ -27,7 +38,8 @@ class RenamerDialog(QtWidgets.QDialog):
         self.setMinimumSize(860, 520)
         apply_dialog_fade(self)
         self._tracks = tracks
-        self._plan = []
+        self._plan: list = []
+        self._full_plan: list = []
         self._build_ui()
 
     def _build_ui(self):
@@ -73,10 +85,54 @@ class RenamerDialog(QtWidgets.QDialog):
         write_row.addStretch(1)
         layout.addLayout(write_row)
 
+        resolve_row = build_auto_resolve_controls(self, on_resolve=self._auto_resolve_conflicts)
+        layout.addLayout(resolve_row)
+
+        filter_row = QtWidgets.QHBoxLayout()
+        self.only_conflicts_cb = QtWidgets.QCheckBox("Pokaż tylko konflikty")
+        self.only_conflicts_cb.setToolTip(
+            "Filtruj tabelę do wierszy z konfliktem nazw — ułatwia naprawę przed zastosowaniem planu."
+        )
+        self.only_conflicts_cb.toggled.connect(self._repopulate_table)
+        filter_row.addWidget(self.only_conflicts_cb)
+        filter_row.addStretch(1)
+        layout.addLayout(filter_row)
+
         self.table = QtWidgets.QTableWidget(0, 3)
         self.table.setHorizontalHeaderLabels(["Stara nazwa", "Nowa nazwa", "Status"])
         self.table.horizontalHeader().setStretchLastSection(True)
+        self.table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
+        self.table.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.ExtendedSelection)
         layout.addWidget(self.table, 1)
+
+        def _refresh_after_fs() -> None:
+            parent = self.parent()
+            if parent is not None and hasattr(parent, "_load_tracks"):
+                parent._load_tracks()
+            if self._full_plan:
+                self._preview()
+
+        file_ops = build_file_ops_button_bar(
+            self,
+            self.table,
+            path_column=0,
+            tracks=self._tracks,
+            on_library_changed=_refresh_after_fs,
+            open_organizer=None,
+        )
+        layout.addLayout(file_ops)
+        attach_plan_table_context_menu(
+            self.table,
+            self,
+            get_full_plan=lambda: self._full_plan,
+            on_plan_changed=self._repopulate_table,
+            path_column=0,
+            extra_path_column=1,
+            status_column=2,
+            tracks=self._tracks,
+            on_library_changed=_refresh_after_fs,
+        )
+        self.table.itemDoubleClicked.connect(self._on_table_double_click)
 
         actions = QtWidgets.QHBoxLayout()
         self.apply_btn = QtWidgets.QPushButton("Zastosuj")
@@ -93,10 +149,27 @@ class RenamerDialog(QtWidgets.QDialog):
         actions.addWidget(self.close_btn)
         layout.addLayout(actions)
 
+    def _on_table_double_click(self, item: QtWidgets.QTableWidgetItem) -> None:
+        path_item = self.table.item(item.row(), 0)
+        if path_item and path_item.text().strip():
+            reveal_in_file_manager(path_item.text().strip())
+
     def _preview(self):
-        self._plan = build_rename_plan(self._tracks, self.pattern.text().strip())
+        self._full_plan = build_rename_plan(self._tracks, self.pattern.text().strip())
+        self._repopulate_table()
+
+    def _repopulate_table(self) -> None:
+        if not self._full_plan:
+            return
+        show_conflicts_only = self.only_conflicts_cb.isChecked()
+        items = [
+            (idx, item)
+            for idx, item in enumerate(self._full_plan)
+            if not show_conflicts_only or item.conflict
+        ]
+        self._plan = [item for _, item in items]
         self.table.setRowCount(0)
-        for item in self._plan:
+        for plan_idx, item in items:
             row = self.table.rowCount()
             self.table.insertRow(row)
             self.table.setItem(row, 0, QtWidgets.QTableWidgetItem(str(item.old_path)))
@@ -105,13 +178,35 @@ class RenamerDialog(QtWidgets.QDialog):
             status_item = QtWidgets.QTableWidgetItem(status)
             if item.conflict:
                 status_item.setForeground(QtCore.Qt.GlobalColor.red)
+            set_plan_index_on_status_item(status_item, plan_idx)
             self.table.setItem(row, 2, status_item)
 
-    def _apply(self):
-        if not self._plan:
+    def _auto_resolve_conflicts(self, strategy: str) -> None:
+        if not self._full_plan:
             self._preview()
+        run_auto_resolve_dialog(
+            self,
+            self._full_plan,
+            strategy,
+            on_done=self._repopulate_table,
+        )
+
+    def _apply(self):
+        if not self._full_plan:
+            self._preview()
+        self._plan = self._full_plan
+        conflicts = [item for item in self._full_plan if item.conflict]
+        if conflicts:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Konflikty w planie",
+                f"Plan zawiera {len(conflicts)} konfliktów.\n\n"
+                "Użyj „Rozwiąż wszystkie konflikty”, filtr „Pokaż tylko konflikty” "
+                "lub PPM → „Rozwiąż konflikt” na wierszu.",
+            )
+            return
         try:
-            history = apply_rename_plan(self._plan)
+            history = apply_rename_plan(self._full_plan)
             update_track_paths_bulk(history)
             # Fix: optional tag writeback after rename (no integration before)
             if history and self.write_tags_cb.isChecked():
@@ -179,6 +274,7 @@ class FileOrganizerDialog(QtWidgets.QDialog):
         apply_dialog_fade(self)
         self._tracks = [t for t in tracks if t and t.path]  # filter valid
         self._plan: list = []
+        self._full_plan: list = []
         self._history: list[dict[str, str]] = []
         self._build_ui()
 
@@ -277,6 +373,19 @@ class FileOrganizerDialog(QtWidgets.QDialog):
         btn_row.addWidget(self.close_btn)
         layout.addLayout(btn_row)
 
+        resolve_row = build_auto_resolve_controls(self, on_resolve=self._auto_resolve_conflicts)
+        layout.addLayout(resolve_row)
+
+        filter_row = QtWidgets.QHBoxLayout()
+        self.only_conflicts_cb = QtWidgets.QCheckBox("Pokaż tylko konflikty")
+        self.only_conflicts_cb.setToolTip(
+            "Filtruj tabelę do wierszy z konfliktem nazw/ścieżek — ułatwia ręczną naprawę przed zastosowaniem planu."
+        )
+        self.only_conflicts_cb.toggled.connect(self._repopulate_table)
+        filter_row.addWidget(self.only_conflicts_cb)
+        filter_row.addStretch(1)
+        layout.addLayout(filter_row)
+
         # Preview table
         self.table = QtWidgets.QTableWidget(0, 4)
         self.table.setHorizontalHeaderLabels(["Stara ścieżka", "Nowa ścieżka (docelowa)", "Akcja", "Status"])
@@ -284,10 +393,54 @@ class FileOrganizerDialog(QtWidgets.QDialog):
         self.table.setColumnWidth(0, 280)
         self.table.setColumnWidth(1, 320)
         self.table.setColumnWidth(2, 60)
+        self.table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
+        self.table.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.ExtendedSelection)
         layout.addWidget(self.table, 1)
 
+        def _refresh_after_fs() -> None:
+            parent = self.parent()
+            if parent is not None and hasattr(parent, "_load_tracks"):
+                parent._load_tracks()
+            if self._full_plan:
+                self._preview()
+
+        def _open_org_subset(ts: list[Track]) -> None:
+            if not ts:
+                return
+            dlg = FileOrganizerDialog(ts, self)
+            if dlg.exec() and parent is not None and hasattr(parent, "_load_tracks"):
+                parent._load_tracks()
+            if self._full_plan:
+                self._preview()
+
+        parent = self.parent()
+        file_ops = build_file_ops_button_bar(
+            self,
+            self.table,
+            path_column=0,
+            tracks=self._tracks,
+            on_library_changed=_refresh_after_fs,
+            open_organizer=_open_org_subset,
+        )
+        layout.addLayout(file_ops)
+        attach_plan_table_context_menu(
+            self.table,
+            self,
+            get_full_plan=lambda: self._full_plan,
+            on_plan_changed=self._repopulate_table,
+            path_column=0,
+            extra_path_column=1,
+            status_column=3,
+            tracks=self._tracks,
+            on_library_changed=_refresh_after_fs,
+            open_organizer=_open_org_subset,
+        )
+        self.table.itemDoubleClicked.connect(self._on_table_double_click)
+
         # Status
-        self.status_label = QtWidgets.QLabel("Wybierz bazę, wzorce i naciśnij Podgląd. Pliki z biblioteki.")
+        self.status_label = QtWidgets.QLabel(
+            "Wybierz bazę, wzorce i naciśnij Podgląd. PPM: rozwiąż konflikt lub operacje na pliku."
+        )
         layout.addWidget(self.status_label)
 
     def _browse_target(self):
@@ -295,63 +448,97 @@ class FileOrganizerDialog(QtWidgets.QDialog):
         if d:
             self.target_dir.setText(d)
 
+    def _on_table_double_click(self, item: QtWidgets.QTableWidgetItem) -> None:
+        col = item.column()
+        text = item.text().strip()
+        if not text or text == "(do usunięcia)":
+            path_item = self.table.item(item.row(), 0)
+            text = path_item.text().strip() if path_item else ""
+        if text:
+            reveal_in_file_manager(text)
+
+    def _repopulate_table(self) -> None:
+        if not self._full_plan:
+            return
+        show_conflicts_only = self.only_conflicts_cb.isChecked()
+        items = [i for i in self._full_plan if (not show_conflicts_only or i.conflict)]
+        self._plan = items
+        self.table.setRowCount(0)
+        conflicts = sum(1 for i in self._full_plan if i.conflict)
+        for plan_idx, item in enumerate(self._full_plan):
+            if show_conflicts_only and not item.conflict:
+                continue
+            row = self.table.rowCount()
+            self.table.insertRow(row)
+            self.table.setItem(row, 0, QtWidgets.QTableWidgetItem(str(item.old_path)))
+            if item.action == "delete":
+                self.table.setItem(row, 1, QtWidgets.QTableWidgetItem("(do usunięcia)"))
+            else:
+                self.table.setItem(row, 1, QtWidgets.QTableWidgetItem(str(item.new_path)))
+            self.table.setItem(row, 2, QtWidgets.QTableWidgetItem(item.action))
+            status = "OK" if not item.conflict else f"Konflikt: {item.reason}"
+            status_item = QtWidgets.QTableWidgetItem(status)
+            if item.conflict:
+                status_item.setForeground(QtCore.Qt.GlobalColor.red)
+            set_plan_index_on_status_item(status_item, plan_idx)
+            self.table.setItem(row, 3, status_item)
+        base = self.target_dir.text().strip()
+        extra = f" (widoczne: {len(items)}/{len(self._full_plan)})" if show_conflicts_only else ""
+        self.status_label.setText(
+            f"Plan: {len(self._full_plan)} plików, konflikty: {conflicts}{extra}. "
+            f"PPM na wierszu → operacje na pliku. Baza: {base}"
+        )
+
     def _preview(self):
         try:
             base = Path(self.target_dir.text().strip() or (Path.home() / "Music" / "Organized"))
             idx = self.action_combo.currentIndex()
             action = "delete" if idx == 2 else ("copy" if idx == 1 else "move")
             if action == "delete":
-                # For delete, folder/fname templates ignored; use dummy base
                 base = Path(self.target_dir.text().strip() or (Path.home() / "Music" / "Organized"))
-                self._plan = build_organize_plan(
+                self._full_plan = build_organize_plan(
                     self._tracks,
-                    "{genre}",  # dummy
-                    "{title}",  # dummy
+                    "{genre}",
+                    "{title}",
                     base,
                     action="delete",
                 )
             else:
-                self._plan = build_organize_plan(
+                self._full_plan = build_organize_plan(
                     self._tracks,
                     self.folder_struct.text().strip(),
                     self.file_pattern.text().strip(),
                     base,
                     action=action,
                 )
-            self.table.setRowCount(0)
-            conflicts = 0
-            for item in self._plan:
-                row = self.table.rowCount()
-                self.table.insertRow(row)
-                self.table.setItem(row, 0, QtWidgets.QTableWidgetItem(str(item.old_path)))
-                if item.action == "delete":
-                    self.table.setItem(row, 1, QtWidgets.QTableWidgetItem("(do usunięcia)"))
-                else:
-                    self.table.setItem(row, 1, QtWidgets.QTableWidgetItem(str(item.new_path)))
-                act_item = QtWidgets.QTableWidgetItem(item.action)
-                self.table.setItem(row, 2, act_item)
-                status = "OK" if not item.conflict else f"Konflikt: {item.reason}"
-                if item.conflict:
-                    conflicts += 1
-                status_item = QtWidgets.QTableWidgetItem(status)
-                if item.conflict:
-                    status_item.setForeground(QtCore.Qt.GlobalColor.red)
-                self.table.setItem(row, 3, status_item)
-            self.status_label.setText(f"Plan: {len(self._plan)} plików, konflikty: {conflicts}. Baza: {base} (delete ignoruje strukturę)")
+            self._repopulate_table()
         except Exception as e:
             QtWidgets.QMessageBox.critical(self, "Błąd podglądu", str(e))
 
+    def _auto_resolve_conflicts(self, strategy: str) -> None:
+        if not self._full_plan:
+            self._preview()
+        run_auto_resolve_dialog(
+            self,
+            self._full_plan,
+            strategy,
+            on_done=self._repopulate_table,
+        )
+
     def _apply(self):
         self._preview()
-        if not self._plan:
+        if not self._full_plan:
             return
+        self._plan = self._full_plan
 
-        conflicts = [item for item in self._plan if item.conflict]
+        conflicts = [item for item in self._full_plan if item.conflict]
         if conflicts:
             QtWidgets.QMessageBox.warning(
                 self,
                 "Konflikty w planie",
-                f"Plan zawiera {len(conflicts)} konfliktów. Popraw wzorce lub usuń duplikaty przed zastosowaniem.",
+                f"Plan zawiera {len(conflicts)} konfliktów.\n\n"
+                "Użyj „Rozwiąż wszystkie konflikty”, filtr „Pokaż tylko konflikty” "
+                "lub PPM → „Rozwiąż konflikt” na wierszu.",
             )
             return
 

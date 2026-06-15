@@ -173,25 +173,14 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
         mode_bar.addWidget(self.mode_btn_console)
         # Compact toggle inline (pilot) — po prawej, przed ostatnim stretchem
         self.compact_btn = QtWidgets.QPushButton("☐ Compact")
+        self.compact_btn.setObjectName("CompactPilotBtn")
         self.compact_btn.setCheckable(True)
+        self.compact_btn.setAutoDefault(False)
+        self.compact_btn.setDefault(False)
+        self.compact_btn.setEnabled(True)
         self.compact_btn.setFixedHeight(26)
         self.compact_btn.setFixedWidth(90)
-        self.compact_btn.setStyleSheet(f"""
-            QPushButton {{
-                background-color: #1a2233;
-                border: 1px solid #2f3a52;
-                border-radius: 5px;
-                font-weight: 600;
-                font-size: 11px;
-                padding: 1px 4px;
-            }}
-            QPushButton:checked {{
-                background-color: {COLORS["accent"]};
-                color: {COLORS["bg"]};
-                border-color: {COLORS["accent"]};
-                font-weight: 700;
-            }}
-        """)
+        self._apply_compact_btn_style()
         self.compact_btn.setToolTip(
             "Otwórz pilot kompaktowy (osobne okno Winamp-mini). "
             "Waveform + głośność + transport + animacja spin. Tylko tryb Odtwarzacz (single)."
@@ -293,14 +282,12 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
                         logger.warning(f"ensure odt create failed: {e}")
                         self.odtwarzacz_view = None
                 # Jeśli odt nadal None po ensure: disable compact (per findings no odt guard) + log (lista 1+8)
-                if not getattr(self, "odtwarzacz_view", None):
-                    if hasattr(self, "compact_btn"):
-                        try:
-                            self.compact_btn.setEnabled(False)
-                            self.compact_btn.setToolTip("Compact niedostępny (odt init failed) — załaduj utwór FILE najpierw (per SZPIEG/Plan lista 1+8)")
-                            logger.debug("compact_btn disabled: no odt after ensure/init (per nowa lista 1+8)")
-                        except Exception:
-                            pass
+                if getattr(self, "odtwarzacz_view", None) and hasattr(self, "compact_btn"):
+                    self.compact_btn.setEnabled(True)
+                elif hasattr(self, "compact_btn"):
+                    self.compact_btn.setToolTip(
+                        "Pilot kompaktowy — kliknij aby utworzyć odtwarzacz (wymaga trybu Odtwarzacz)."
+                    )
             except Exception as e:
                 logger.exception("Nowa architektura zawiodła przy tworzeniu UI - nie ma fallbacku")
                 raise  # re-raise to be caught by outer except and show error dialog
@@ -426,6 +413,7 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
         # Usunięto martwy pasek przełączników i btn_layout (były przyczyną nakładania się elementów i marnowania miejsca).
 
         self._apply_base_style()
+        self._apply_compact_btn_style()
 
         # Status bar
         self.setStatusBar(QtWidgets.QStatusBar())
@@ -694,7 +682,7 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
         # Compact only for single odt
         if not use_single_mode and hasattr(self, "compact_btn"):
             try:
-                self.compact_btn.setChecked(False)
+                self._close_compact_pilot(sync_button=True)
                 self.compact_btn.setEnabled(True)  # allow reenable on back to single
             except Exception:
                 pass
@@ -755,25 +743,14 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
                 # extra isVisible + update for timing (headless/shown/floating), legacy single_container guard (post Opcja A sole), no core change.
                 # Per grupa 1+8: ensure odt ready + count guard before re-sync compact/play.
                 if hasattr(self, "compact_btn") and self.compact_btn.isChecked():
-                    # extra ensure odt (per 1+8 on-demand before any compact/play after switch)
-                    if not getattr(self, "odtwarzacz_view", None):
+                    ctrl = self._ensure_odt_controller()
+                    if ctrl is not None:
                         try:
-                            odt3 = self._create_odtwarzacz_ui()
-                            self.odtwarzacz_view = odt3
-                            if odt3 and hasattr(self, "content_stack") and self.content_stack.count() > self._ODT_IDX:
-                                if odt3 not in [self.content_stack.widget(i) for i in range(self.content_stack.count())]:
-                                    self.content_stack.addWidget(odt3)
-                        except Exception:
-                            pass
-                    if hasattr(self, "odtwarzacz_view") and self.odtwarzacz_view:
-                        try:
-                            self.odtwarzacz_view.set_compact_mode(True)
-                            # Po show stack current odt + compact: re-ensure spin visible (timing per findings)
-                            if hasattr(self.odtwarzacz_view, "_spin_indicator"):
-                                sp = self.odtwarzacz_view._spin_indicator
-                                if not sp.isVisible():
-                                    sp.setVisible(True)
-                                    sp.update()
+                            if self._compact_pilot is None:
+                                self._compact_pilot = CompactPilotWindow(ctrl, self)
+                                self._compact_pilot.closed_by_user.connect(self._on_compact_pilot_closed)
+                            self._compact_pilot.show_pilot()
+                            self.compact_btn.setText("☑ Compact")
                             # legacy single guard harden (lista 7): ensure hidden even in re-sync
                             if hasattr(self, "single_container") and self.single_container:
                                 try:
@@ -814,47 +791,110 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
             if hasattr(self, "single_container") and self.single_container:
                 self.single_container.setVisible(False)
 
-    def _on_compact_toggled(self, checked: bool):
-        """Otwórz/zamknij osobne okno pilota kompaktowego (nie modyfikuje flag głównego okna)."""
+    def _ensure_playback_for_compact(self) -> bool:
+        if not hasattr(self, "playback_engine") or self.playback_engine is None:
+            try:
+                self.playback_engine = PlaybackEngine()
+            except Exception as exc:
+                logger.warning("compact pilot: PlaybackEngine init failed: %s", exc)
+                return False
+        return True
+
+    def _ensure_odt_controller(self) -> SimpleDeckController | None:
+        if not self._ensure_playback_for_compact():
+            return None
+        ctrl = getattr(self, "_simple_deck_ctrl", None)
+        if ctrl is not None:
+            return ctrl
+        try:
+            if self.odtwarzacz_view is None:
+                view = self._create_odtwarzacz_ui()
+                if view is not None and hasattr(self, "content_stack"):
+                    if self.content_stack.indexOf(view) < 0:
+                        self.content_stack.addWidget(view)
+            return getattr(self, "_simple_deck_ctrl", None)
+        except Exception as exc:
+            logger.warning("compact pilot: odt init failed: %s", exc)
+            return None
+
+    def _apply_compact_btn_style(self) -> None:
+        if not hasattr(self, "compact_btn"):
+            return
+        self.compact_btn.setStyleSheet(f"""
+            QPushButton#CompactPilotBtn {{
+                background-color: #1a2233;
+                border: 1px solid #2f3a52;
+                border-radius: 5px;
+                font-weight: 600;
+                font-size: 11px;
+                padding: 1px 4px;
+            }}
+            QPushButton#CompactPilotBtn:hover {{
+                border-color: {COLORS["accent"]};
+                background-color: #232d42;
+            }}
+            QPushButton#CompactPilotBtn:checked {{
+                background-color: {COLORS["accent"]};
+                color: {COLORS["bg"]};
+                border-color: {COLORS["accent"]};
+                font-weight: 700;
+            }}
+            QPushButton#CompactPilotBtn:disabled {{
+                background-color: #121820;
+                color: #5a6478;
+                border-color: #2a3344;
+            }}
+        """)
+
+    def _close_compact_pilot(self, *, sync_button: bool = True) -> None:
+        if getattr(self, "_compact_pilot", None) is not None:
+            try:
+                self._compact_pilot.hide()
+            except Exception:
+                pass
+        if sync_button and hasattr(self, "compact_btn"):
+            try:
+                self.compact_btn.blockSignals(True)
+                self.compact_btn.setChecked(False)
+                self.compact_btn.setText("☐ Compact")
+            finally:
+                self.compact_btn.blockSignals(False)
+
+    def _on_compact_toggled(self, checked: bool) -> None:
+        """Otwórz/zamknij osobne okno pilota kompaktowego."""
         is_single = getattr(self, "_current_mode", "console") == "single"
         if not is_single:
-            self.compact_btn.setChecked(False)
-            self.compact_btn.setToolTip("Pilot kompaktowy tylko w trybie Odtwarzacz (single).")
+            self._close_compact_pilot(sync_button=True)
+            QtWidgets.QMessageBox.information(
+                self,
+                "Pilot kompaktowy",
+                "Przełącz najpierw na tryb „Odtwarzacz” (nie Konsola DJ).",
+            )
             return
-
-        ctrl = getattr(self, "_simple_deck_ctrl", None)
-        if not ctrl:
-            try:
-                if self.odtwarzacz_view is None:
-                    self._create_odtwarzacz_ui()
-                ctrl = getattr(self, "_simple_deck_ctrl", None)
-            except Exception as exc:
-                logger.warning("compact pilot: nie udało się utworzyć odt: %s", exc)
-        if not ctrl:
-            self.compact_btn.setChecked(False)
-            self.compact_btn.setEnabled(False)
-            logger.debug("compact pilot: brak SimpleDeckController")
-            return
-
-        self.compact_btn.setText("☑ Compact" if checked else "☐ Compact")
 
         if checked:
+            ctrl = self._ensure_odt_controller()
+            if ctrl is None:
+                self._close_compact_pilot(sync_button=True)
+                QtWidgets.QMessageBox.warning(
+                    self,
+                    "Pilot kompaktowy",
+                    "Nie udało się uruchomić odtwarzacza (silnik audio). Sprawdź logi.",
+                )
+                return
             if self._compact_pilot is None:
                 self._compact_pilot = CompactPilotWindow(ctrl, self)
                 self._compact_pilot.closed_by_user.connect(self._on_compact_pilot_closed)
             self._compact_pilot.show_pilot()
-        elif self._compact_pilot is not None:
-            self._compact_pilot.hide()
+            self.compact_btn.setText("☑ Compact")
+        else:
+            self._close_compact_pilot(sync_button=False)
+            self.compact_btn.setText("☐ Compact")
 
-        logger.debug("Compact pilot toggled: %s", checked)
+        logger.debug("Compact pilot toggled: checked=%s", checked)
 
     def _on_compact_pilot_closed(self) -> None:
-        try:
-            self.compact_btn.blockSignals(True)
-            self.compact_btn.setChecked(False)
-            self.compact_btn.setText("☐ Compact")
-        finally:
-            self.compact_btn.blockSignals(False)
+        self._close_compact_pilot(sync_button=True)
 
     def _apply_base_style(self):
         """Rich pro dark booth stylesheet — high contrast, larger controls, readable everywhere."""

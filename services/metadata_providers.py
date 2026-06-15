@@ -211,7 +211,15 @@ def _parse_mb_recording(recording: dict) -> dict:
         earliest = sorted_releases[0]
 
         if album := earliest.get("title"):
-            meta["album"] = album
+            from services.autotag_rewrite import _sanitize_album_value
+
+            safe_album = _sanitize_album_value(
+                album,
+                meta.get("title"),
+                artist=meta.get("artist"),
+            )
+            if safe_album:
+                meta["album"] = safe_album
 
         date_str = earliest.get("date", "")
         if date_str and len(date_str) >= 4:

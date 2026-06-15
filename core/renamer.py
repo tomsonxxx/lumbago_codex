@@ -7,10 +7,12 @@ import shutil
 from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path, PureWindowsPath
-from typing import Iterable
+from typing import Iterable, TypeAlias
 
 from core.config import cache_dir
 from core.models import Track
+
+PlanItem: TypeAlias = "RenamePlanItem | OrganizePlanItem"
 
 
 @dataclass
@@ -61,6 +63,185 @@ def build_rename_plan(tracks: Iterable[Track], pattern: str) -> list[RenamePlanI
             )
         )
     return plan
+
+
+def refresh_plan_conflicts(plan: list[PlanItem]) -> None:
+    """Przelicz flagi konfliktu w istniejącym planie (po ręcznej edycji ścieżek)."""
+    old_paths = {item.old_path for item in plan}
+    target_count: dict[Path, int] = {}
+    for item in plan:
+        if getattr(item, "action", "rename") == "delete":
+            continue
+        target_count[item.new_path] = target_count.get(item.new_path, 0) + 1
+
+    for item in plan:
+        if getattr(item, "action", None) == "delete":
+            item.conflict = False
+            item.reason = None
+            continue
+        conflict = False
+        reason = None
+        if target_count.get(item.new_path, 0) > 1:
+            conflict = True
+            reason = "Konflikt nazwy w planie"
+        elif (
+            item.new_path.exists()
+            and item.new_path != item.old_path
+            and item.new_path not in old_paths
+        ):
+            conflict = True
+            reason = (
+                "Plik już istnieje w docelowej lokalizacji"
+                if isinstance(item, OrganizePlanItem)
+                else "Plik już istnieje"
+            )
+        item.conflict = conflict
+        item.reason = reason
+
+
+def _path_is_taken(
+    path: Path,
+    *,
+    reserved: set[Path],
+    old_paths: set[Path],
+) -> bool:
+    if path in reserved:
+        return True
+    return path.exists() and path not in old_paths
+
+
+def _allocate_unique_path(
+    desired: Path,
+    *,
+    reserved: set[Path],
+    old_paths: set[Path],
+    strategy: str = "suffix",
+) -> Path:
+    """Zwróć wolną ścieżkę: sufiks _2/_3… lub podfolder _Konflikty."""
+    if not _path_is_taken(desired, reserved=reserved, old_paths=old_paths):
+        return desired
+
+    stem, suffix = desired.stem, desired.suffix
+    parent = desired.parent
+
+    if strategy == "duplicates_folder":
+        parent = parent / "_Konflikty"
+        candidate = parent / f"{stem}{suffix}"
+        if not _path_is_taken(candidate, reserved=reserved, old_paths=old_paths):
+            return candidate
+        n = 2
+        while True:
+            candidate = parent / f"{stem}_{n}{suffix}"
+            if not _path_is_taken(candidate, reserved=reserved, old_paths=old_paths):
+                return candidate
+            n += 1
+
+    n = 2
+    while True:
+        candidate = parent / f"{stem}_{n}{suffix}"
+        if not _path_is_taken(candidate, reserved=reserved, old_paths=old_paths):
+            return candidate
+        n += 1
+
+
+def auto_resolve_plan_conflicts(
+    plan: list[PlanItem],
+    *,
+    strategy: str = "suffix",
+) -> int:
+    """Automatycznie rozwiąż konflikty w planie. Zwraca liczbę zmienionych pozycji."""
+    if not plan:
+        return 0
+    changed_total = 0
+    max_passes = max(len(plan) * 3, 1)
+    for _ in range(max_passes):
+        refresh_plan_conflicts(plan)
+        conflicts = [
+            item
+            for item in plan
+            if item.conflict and getattr(item, "action", "rename") != "delete"
+        ]
+        if not conflicts:
+            break
+        old_paths = {item.old_path for item in plan}
+        changed_pass = 0
+        for item in conflicts:
+            reserved_other = {
+                p.new_path
+                for p in plan
+                if getattr(p, "action", "rename") != "delete" and p is not item
+            }
+            new_path = _allocate_unique_path(
+                item.new_path,
+                reserved=reserved_other,
+                old_paths=old_paths,
+                strategy=strategy,
+            )
+            if new_path != item.new_path:
+                item.new_path = new_path
+                changed_pass += 1
+        changed_total += changed_pass
+        if changed_pass == 0:
+            break
+    refresh_plan_conflicts(plan)
+    return changed_total
+
+
+def resolve_plan_item_with_suffix(item: PlanItem, plan: list[PlanItem]) -> bool:
+    """Dodaj sufiks numerowany do docelowej nazwy jednej pozycji planu."""
+    if getattr(item, "action", "rename") == "delete":
+        return False
+    old_paths = {p.old_path for p in plan}
+    reserved = {
+        p.new_path for p in plan if getattr(p, "action", "rename") != "delete" and p is not item
+    }
+    new_path = _allocate_unique_path(
+        item.new_path,
+        reserved=reserved,
+        old_paths=old_paths,
+        strategy="suffix",
+    )
+    if new_path == item.new_path:
+        return False
+    item.new_path = new_path
+    refresh_plan_conflicts(plan)
+    return True
+
+
+def resolve_plan_item_to_conflicts_folder(item: PlanItem, plan: list[PlanItem]) -> bool:
+    """Przenieś docelową ścieżkę do podfolderu _Konflikty."""
+    if getattr(item, "action", "rename") == "delete":
+        return False
+    old_paths = {p.old_path for p in plan}
+    reserved = {
+        p.new_path for p in plan if getattr(p, "action", "rename") != "delete" and p is not item
+    }
+    new_path = _allocate_unique_path(
+        item.new_path,
+        reserved=reserved,
+        old_paths=old_paths,
+        strategy="duplicates_folder",
+    )
+    if new_path == item.new_path:
+        return False
+    item.new_path = new_path
+    refresh_plan_conflicts(plan)
+    return True
+
+
+def set_plan_item_target_path(item: PlanItem, new_path: Path, plan: list[PlanItem]) -> None:
+    item.new_path = _normalize_fs_path(Path(new_path))
+    refresh_plan_conflicts(plan)
+
+
+def remove_plan_items_at_indices(plan: list[PlanItem], indices: Iterable[int]) -> int:
+    """Usuń pozycje z planu (pomiń w operacji). Zwraca liczbę usuniętych."""
+    to_remove = sorted({i for i in indices if 0 <= i < len(plan)}, reverse=True)
+    for idx in to_remove:
+        plan.pop(idx)
+    if to_remove:
+        refresh_plan_conflicts(plan)
+    return len(to_remove)
 
 
 def apply_rename_plan(plan: Iterable[RenamePlanItem]) -> list[dict[str, str]]:

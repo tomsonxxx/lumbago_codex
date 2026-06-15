@@ -21,6 +21,13 @@ from core.models import (
 )
 from core.renamer import parse_filename_tags
 from services.ai_tagger import CloudAiTagger, MultiAiTagger
+from services.ai_provider_resolver import resolve_provider_triplet
+from services.genre_specificity import (
+    collect_genre_values_from_candidates,
+    genre_specificity_score,
+    is_broad_genre,
+    pick_most_specific_genre,
+)
 
 
 _MB_BASE = "https://musicbrainz.org/ws/2"
@@ -205,7 +212,7 @@ class UnifiedAutoTagger:
         best = result.best_match
         if best is None and not candidates:
             return False
-        changed = False
+        changed = _clear_album_if_title_duplicate(track)
         filename_artist, filename_title = parse_filename_tags(track.path)
         protect_filename_identity = bool(
             filename_title and not filename_artist and _normalize(filename_title) == _normalize(track.title)
@@ -258,6 +265,16 @@ class UnifiedAutoTagger:
             if field_name in _LOCALLY_MEASURED and _has_value(current):
                 continue
 
+            if field_name == "album":
+                incoming = _sanitize_album_value(
+                    str(incoming) if incoming is not None else None,
+                    track.title,
+                    artist=track.artist,
+                    track_path=track.path,
+                )
+                if incoming is None:
+                    continue
+
             # For genre, prefer more specific values among candidates when available.
             # Never clobber a good value coming from best_match when the candidates
             # list is empty or provides no usable genre (fixes best_match-only results).
@@ -266,6 +283,8 @@ class UnifiedAutoTagger:
                     specific = _best_specific_genre(candidates, current)
                     if specific:
                         incoming = specific
+                if incoming and is_broad_genre(incoming):
+                    incoming = None
                 # else: no candidates -> keep incoming from best_match fallback (or None)
             elif field_name == "remixer":
                 style_value = _best_style_for_remixer(candidates, current)
@@ -386,10 +405,9 @@ class UnifiedAutoTagger:
                         genre = rg_tags[0]
 
             # If we only got a very broad genre from MusicBrainz, try to use more specific tags
-            broad_genres = {"electronic", "dance", "rock", "pop", "hip hop", "jazz", "classical"}
-            if genre and genre.lower() in broad_genres and tags:
+            if genre and is_broad_genre(genre) and tags:
                 for t in tags:
-                    if t.lower() not in broad_genres:
+                    if not is_broad_genre(t):
                         genre = t
                         break
         release_artists = release.get("artist-credit", [])
@@ -425,7 +443,7 @@ class UnifiedAutoTagger:
             score=final_score,
             title=rec_title or track.title,
             artist=rec_artist or track.artist,
-            album=release.get("title") or None,
+            album=_sanitize_album_value(release.get("title"), rec_title or track.title, artist=rec_artist or track.artist),
             albumartist=albumartist,
             year=year,
             genre=genre,
@@ -470,7 +488,11 @@ class UnifiedAutoTagger:
             score=max(1, min(95, score)),
             title=_to_clean_str(best.get("trackName")) or track.title,
             artist=_to_clean_str(best.get("artistName")) or track.artist,
-            album=_to_clean_str(best.get("collectionName")),
+            album=_sanitize_album_value(
+                _to_clean_str(best.get("collectionName")),
+                _to_clean_str(best.get("trackName")) or track.title,
+                artist=_to_clean_str(best.get("artistName")) or track.artist,
+            ),
             albumartist=_to_clean_str(best.get("collectionArtistName")) or _to_clean_str(best.get("artistName")),
             year=year,
             genre=_to_clean_str(best.get("primaryGenreName")),
@@ -580,7 +602,11 @@ class UnifiedAutoTagger:
 
         rec_title = _to_clean_str(best.get("title")) or _to_clean_str(best.get("title_short"))
         rec_artist = _to_clean_str((best.get("artist") or {}).get("name"))
-        rec_album = _to_clean_str((best.get("album") or {}).get("title"))
+        rec_album = _sanitize_album_value(
+            _to_clean_str((best.get("album") or {}).get("title")),
+            rec_title or track.title,
+            artist=rec_artist or track.artist,
+        )
         return Candidate(
             source="Deezer",
             score=max(1, min(90, score)),
@@ -631,7 +657,11 @@ class UnifiedAutoTagger:
             score=score,
             title=_to_clean_str(item.get("strTrack")) or track.title,
             artist=_to_clean_str(item.get("strArtist")) or track.artist,
-            album=_to_clean_str(item.get("strAlbum")),
+            album=_sanitize_album_value(
+                _to_clean_str(item.get("strAlbum")),
+                _to_clean_str(item.get("strTrack")) or track.title,
+                artist=_to_clean_str(item.get("strArtist")) or track.artist,
+            ),
             genre=genre,
             year=year,
             publisher=_to_clean_str(item.get("strLabel")),
@@ -676,7 +706,11 @@ class UnifiedAutoTagger:
             score=80,
             title=_to_clean_str(rec_title) or track.title,
             artist=_to_clean_str(artist_name) or track.artist,
-            album=_to_clean_str(release.get("name") or release.get("title")),
+            album=_sanitize_album_value(
+                _to_clean_str(release.get("name") or release.get("title")),
+                _to_clean_str(rec_title) or track.title,
+                artist=_to_clean_str(artist_name) or track.artist,
+            ),
             year=year,
             publisher=pub,
         )
@@ -721,16 +755,15 @@ class UnifiedAutoTagger:
 
         # Prefer more specific "style" over broad "genre"
         # Try to pick the most detailed style first
-        broad_genres = {"electronic", "dance", "rock", "pop", "hip hop", "jazz", "classical", "blues", "folk", "metal"}
         genre = None
 
         for s in styles:
-            if s.lower() not in broad_genres:
+            if not is_broad_genre(s):
                 genre = s
                 break
         if not genre:
             for g in genres:
-                if g.lower() not in broad_genres:
+                if not is_broad_genre(g):
                     genre = g
                     break
         if not genre:
@@ -743,7 +776,14 @@ class UnifiedAutoTagger:
             score=score,
             title=title_part or track.title,
             artist=artist_part or track.artist,
-            album=title_field or track.album,
+            album=_sanitize_album_value(
+                title_field,
+                title_part or track.title,
+                artist=artist_part or track.artist,
+            )
+            or _sanitize_album_value(
+                track.album, track.title, artist=track.artist, track_path=track.path
+            ),
             year=str(best.get("year") or "") or None,
             genre=genre,
             tags=[str(tag).strip() for tag in tags[:10] if str(tag).strip()],
@@ -796,7 +836,10 @@ class UnifiedAutoTagger:
             score=score,
             title=result.title or track.title,
             artist=result.artist or track.artist,
-            album=result.album or track.album,
+            album=_sanitize_album_value(result.album, result.title or track.title, artist=result.artist or track.artist)
+            or _sanitize_album_value(
+                track.album, track.title, artist=track.artist, track_path=track.path
+            ),
             albumartist=result.albumartist or track.albumartist,
             year=result.year or track.year,
             tracknumber=result.tracknumber or track.tracknumber,
@@ -877,7 +920,14 @@ class UnifiedAutoTagger:
             score=score,
             title=_to_clean_str(best.get("trackName")) or track.title,
             artist=_to_clean_str(best.get("artistName")) or track.artist,
-            album=_to_clean_str(best.get("albumName")) or track.album,
+            album=_sanitize_album_value(
+                _to_clean_str(best.get("albumName")),
+                _to_clean_str(best.get("trackName")) or track.title,
+                artist=_to_clean_str(best.get("artistName")) or track.artist,
+            )
+            or _sanitize_album_value(
+                track.album, track.title, artist=track.artist, track_path=track.path
+            ),
             lyrics=lyrics,
             comment=comment,
         )
@@ -956,40 +1006,45 @@ class UnifiedAutoTagger:
         already_filled_fields: set[str] | None = None,
     ) -> EnrichmentResult:
         """
-        Uzupełnia pola z BACKGROUND_AUTOTAG_FIELDS (te mniej priorytetowe).
+        Pełne wzbogacanie (wszystkie źródła równolegle) dla pól tła.
 
-        Przeznaczona do wywoływania w tle, po tym jak użytkownik już dostał
-        priorytetowe 10 pól i może normalnie pracować z plikiem.
+        Zwraca komplet kandydatów — do zapisu użyj apply_background_fields(),
+        które scala wartości ze wszystkich trafień (nie tylko best_match).
         """
+        _ = already_filled_fields  # kompatybilność API; merge robi apply_background_fields
+        return self.enrich_track(track, priority_only=False)
+
+    def apply_background_fields(
+        self,
+        track: Track,
+        result: EnrichmentResult,
+        *,
+        already_filled_fields: set[str] | None = None,
+    ) -> dict[str, str | int | float]:
+        """Uzupełnij pola tła, wybierając najlepszą wartość per pole ze wszystkich kandydatów."""
         already_filled = already_filled_fields or set()
+        raw_candidates = getattr(result, "candidates", []) or []
+        candidates = [
+            candidate
+            for candidate in raw_candidates
+            if candidate.error is None and candidate.score > 0
+        ]
+        candidates.sort(key=lambda candidate: candidate.score, reverse=True)
 
-        # Uruchamiamy pełny tryb (priority_only=False)
-        result = self.enrich_track(track, priority_only=False)
-
-        # Filtrowanie — interesują nas tylko pola tła, których jeszcze nie mamy
-        filtered_candidates: list[Candidate] = []
-        for cand in result.candidates:
-            if cand.error:
+        changes: dict[str, str | int | float] = {}
+        for field_name in BACKGROUND_AUTOTAG_FIELDS:
+            if field_name in already_filled:
                 continue
-            # Sprawdź czy kandydat wnosi coś nowego w polach tła
-            has_new_background_value = False
-            for field in BACKGROUND_AUTOTAG_FIELDS:
-                if field in already_filled:
-                    continue
-                val = getattr(cand, field, None)
-                if val:
-                    has_new_background_value = True
-                    break
-            if has_new_background_value:
-                filtered_candidates.append(cand)
-
-        if not filtered_candidates:
-            return EnrichmentResult(candidates=[], best_match=None)
-
-        filtered_candidates.sort(key=lambda c: c.score, reverse=True)
-        best = filtered_candidates[0]
-
-        return EnrichmentResult(candidates=filtered_candidates, best_match=best)
+            if _has_value(getattr(track, field_name, None)):
+                continue
+            incoming = _best_field_value(candidates, field_name)
+            if incoming is None and result.best_match is not None:
+                incoming = getattr(result.best_match, field_name, None)
+            if incoming is None:
+                continue
+            setattr(track, field_name, incoming)
+            changes[field_name] = incoming
+        return changes
 
 
 def _best_artwork_url(candidates: list[Candidate]) -> str | None:
@@ -1021,15 +1076,7 @@ def _download_artwork(url: str, dest: Path) -> bool:
 
 
 def _resolve_provider_config(provider: str, settings) -> tuple[str | None, str | None, str | None]:
-    if provider == "gemini":
-        return settings.gemini_api_key or settings.cloud_ai_api_key, settings.gemini_base_url, settings.gemini_model
-    if provider == "openai":
-        return settings.openai_api_key or settings.cloud_ai_api_key, settings.openai_base_url, settings.openai_model
-    if provider == "grok":
-        return settings.grok_api_key or settings.cloud_ai_api_key, settings.grok_base_url, settings.grok_model
-    if provider == "deepseek":
-        return settings.deepseek_api_key or settings.cloud_ai_api_key, settings.deepseek_base_url, settings.deepseek_model
-    return None, None, None
+    return resolve_provider_triplet(provider, settings)
 
 
 def _clean_text(value: str | None) -> str:
@@ -1059,59 +1106,24 @@ def _has_value(value: Any) -> bool:
     return True
 
 
-_BROAD_GENRES = {
-    "electronic", "dance", "rock", "pop", "hip hop", "jazz", "classical",
-    "blues", "folk", "metal", "indie", "alternative", "r&b", "soul", "funk"
-}
-
-
 def _is_specific_style(value: str | None) -> bool:
-    if not value:
-        return False
-    text = str(value).strip()
-    if not text:
-        return False
-    lowered = text.lower()
-    if lowered in _BROAD_GENRES:
-        return False
-    if len(lowered) < 4:
-        return False
-    return True
+    return genre_specificity_score(value) >= 10
 
 
 def _best_specific_genre(candidates: list[Candidate], current: str | None) -> str | None:
-    """Wybiera najbardziej precyzyjny gatunek spośród dobrych kandydatów.
-    Preferuje dłuższe i mniej ogólne wartości (np. 'Deep House' > 'Electronic').
-    """
+    """Wybiera najbardziej precyzyjny gatunek spośród kandydatów i tagów źródeł."""
     if not candidates:
-        return current
+        return None if is_broad_genre(current) else current
 
-    scored = []
-    for c in candidates:
-        if not c.genre or c.score < 50:
+    filtered: list[str] = []
+    for candidate in candidates:
+        if candidate.score < 45:
             continue
-        g = c.genre.strip()
-        if not g:
-            continue
-        is_broad = g.lower() in _BROAD_GENRES
-        specificity = (0 if is_broad else 10) + len(g)
-        scored.append((specificity, c.score, g))
+        filtered.extend(collect_genre_values_from_candidates([candidate]))
+    if not filtered:
+        filtered = collect_genre_values_from_candidates(candidates)
 
-    if not scored:
-        return current
-
-    scored.sort(key=lambda x: (x[0], x[1]), reverse=True)
-    best = scored[0][2]
-
-    if current and _has_value(current):
-        current_lower = current.lower().strip()
-        if current_lower in _BROAD_GENRES and best.lower() not in _BROAD_GENRES:
-            return best
-        if len(best) > len(current) * 1.15:
-            return best
-        return current
-
-    return best
+    return pick_most_specific_genre(filtered, current=current, min_score=6)
 
 
 def _best_style_for_remixer(candidates: list[Candidate], current: str | None) -> str | None:
@@ -1241,6 +1253,55 @@ def _track_with_filename_identity(track: Track) -> Track:
     if artist != track.artist:
         return replace(track, artist=artist)
     return track
+
+
+def _clear_album_if_title_duplicate(track: Track) -> bool:
+    """Wyczyść album błędny: duplikat tytułu lub nazwa folderu nadrzędnego."""
+    if not track.album:
+        return False
+    if _sanitize_album_value(
+        track.album,
+        track.title,
+        artist=track.artist,
+        track_path=track.path,
+    ) is None:
+        track.album = None
+        return True
+    return False
+
+
+def _sanitize_album_value(
+    album: str | None,
+    title: str | None,
+    *,
+    artist: str | None = None,
+    track_path: str | None = None,
+) -> str | None:
+    """Odrzuć album identyczny z tytułem lub z katalogiem nadrzędnym pliku."""
+    if not album or not str(album).strip():
+        return None
+    alb = str(album).strip()
+    tit = str(title or "").strip()
+    if tit and _normalize(alb) == _normalize(tit):
+        return None
+    if tit and " - " in alb:
+        left, right = alb.split(" - ", 1)
+        right = right.strip()
+        left = left.strip()
+        if _normalize(right) == _normalize(tit):
+            return None
+        if (
+            artist
+            and _normalize(left) == _normalize(str(artist))
+            and _normalize(right) == _normalize(tit)
+        ):
+            return None
+    if track_path:
+        from core.metadata_quality import album_matches_parent_folder
+
+        if album_matches_parent_folder(alb, track_path):
+            return None
+    return alb
 
 
 def _normalize(value: str | None) -> str:

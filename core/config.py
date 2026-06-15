@@ -199,7 +199,7 @@ def load_settings() -> Settings:
             payload.get("OPENAI_MODEL"),
             os.getenv("OPENAI_MODEL"),
         )
-        or "gpt-4.1-mini",
+        or "gpt-4o-mini",
         grok_base_url=_first_value(
             payload.get("GROK_BASE_URL"),
             os.getenv("GROK_BASE_URL"),

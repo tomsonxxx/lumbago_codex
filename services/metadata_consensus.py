@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
+from services.genre_specificity import genre_effective_weight, is_broad_genre
+
 
 AI_SOURCE_PREFIXES = ("ai", "openai", "gemini", "grok", "deepseek")
 AI_RESTRICTED_FIELDS = {
@@ -40,8 +42,8 @@ SOURCE_WEIGHTS: dict[str, float] = {
     "listenbrainz": 0.80,
     "lrclib": 0.65,
     "lyricsovh": 0.55,
-    "existing_tags": 0.72,
-    "file_tags": 0.72,
+    "existing_tags": 0.88,
+    "file_tags": 0.82,
     "local_library": 0.74,
     "filename": 0.52,
     "filename_pattern": 0.52,
@@ -138,8 +140,12 @@ class MetadataConsensusEngine:
             key=lambda items: (_aggregate_group_score(field_name, items, grouped), max(_score_evidence(item) for item in items)),
             reverse=True,
         )
-        top_group = ranked_groups[0]
-        top_choice = max(top_group, key=_score_evidence)
+        if field_name == "genre":
+            top_choice = _best_genre_evidence(ranked_groups, grouped)
+            top_group = next(group for group in ranked_groups if top_choice in group)
+        else:
+            top_group = ranked_groups[0]
+            top_choice = max(top_group, key=_score_evidence)
         top_score = _aggregate_group_score(field_name, top_group, grouped)
 
         resolved: FieldEvidence | None = None
@@ -189,6 +195,7 @@ def _aggregate_group_score(
     score = 0.0
     normalized_group = _normalized_value(grouped_items[0].value)
     corroborated_non_ai = any(not _is_ai_source(item.source) for item in grouped_items)
+    has_existing_tags = any(_canonical_source(item.source) == "existing_tags" for item in grouped_items)
     for item in grouped_items:
         item_score = _score_evidence(item)
         if _is_ai_restricted(field_name, item.source) and not corroborated_non_ai:
@@ -200,7 +207,33 @@ def _aggregate_group_score(
         score += 0.12
     if normalized_group in all_groups and len(all_groups[normalized_group]) >= 2:
         score += 0.03
+    # Stabilność: nie podważaj pól już uzupełnionych bez wyraźnie lepszego dowodu.
+    if has_existing_tags:
+        boost = 0.18
+        if field_name == "genre" and is_broad_genre(grouped_items[0].value):
+            boost = 0.05
+        score += boost
+    if field_name == "genre":
+        score = genre_effective_weight(score, grouped_items[0].value)
     return score
+
+
+def _best_genre_evidence(
+    ranked_groups: list[list[FieldEvidence]],
+    grouped: dict[str, list[FieldEvidence]],
+) -> FieldEvidence:
+    """Preferuj najbardziej szczegółowy styl, nie tylko najwyższy score źródła."""
+    best_choice: FieldEvidence | None = None
+    best_weight = -1.0
+    for group in ranked_groups:
+        aggregate = _aggregate_group_score("genre", group, grouped)
+        choice = max(group, key=_score_evidence)
+        weight = genre_effective_weight(aggregate, choice.value)
+        if weight > best_weight:
+            best_weight = weight
+            best_choice = choice
+    assert best_choice is not None
+    return best_choice
 
 
 def _score_evidence(evidence: FieldEvidence) -> float:
@@ -210,7 +243,10 @@ def _score_evidence(evidence: FieldEvidence) -> float:
     if evidence.verified:
         score += 0.25
     if _is_ai_source(evidence.source):
-        score = min(score, 0.3)
+        if evidence.field_name == "genre":
+            score = max(score, source_weight * bounded_confidence)
+        else:
+            score = min(score, 0.3)
     return score
 
 

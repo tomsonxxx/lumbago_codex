@@ -1146,20 +1146,9 @@ def _supports_batch_ai(tagger: Any) -> bool:
 
 
 def _resolve_provider_config(provider: str, settings) -> tuple[str | None, str | None, str | None]:
-    """Return (api_key, base_url, model) resolved specifically for the selected provider."""
-    if provider == "gemini":
-        key = settings.gemini_api_key or settings.cloud_ai_api_key
-        return key, settings.gemini_base_url, settings.gemini_model
-    if provider == "openai":
-        key = settings.openai_api_key or settings.cloud_ai_api_key
-        return key, settings.openai_base_url, settings.openai_model
-    if provider == "grok":
-        key = settings.grok_api_key or settings.cloud_ai_api_key
-        return key, settings.grok_base_url, settings.grok_model
-    if provider == "deepseek":
-        key = settings.deepseek_api_key or settings.cloud_ai_api_key
-        return key, settings.deepseek_base_url, settings.deepseek_model
-    return None, None, None
+    from services.ai_provider_resolver import resolve_provider_triplet
+
+    return resolve_provider_triplet(provider, settings)
 
 
 def _is_valid_key(value: str) -> bool:

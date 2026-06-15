@@ -137,15 +137,14 @@ class RecognitionPipelineV2:
         self._add_filename_evidence(working, search_source, evidence_by_field, observed_at, attempts)
 
         fingerprint_hit = self._recognize_from_fingerprint(working, evidence_by_field, observed_at, attempts)
-        portal_hit = False
-        if not fingerprint_hit:
-            portal_hit = self._recognize_from_portals(
-                working,
-                search_source,
-                evidence_by_field,
-                observed_at,
-                attempts,
-            )
+        # Portale zawsze — nawet po trafieniu fingerprintu (genre, lyrics, mood itd.).
+        portal_hit = self._recognize_from_portals(
+            working,
+            search_source,
+            evidence_by_field,
+            observed_at,
+            attempts,
+        )
 
         primary_source: str | None = None
         if fingerprint_hit:

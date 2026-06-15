@@ -277,13 +277,22 @@ def _apply_musicbrainz_metadata(
         release = releases[0]
         album_candidate = release.get("title")
         if album_candidate and not _is_compilation_album(album_candidate):
-            _apply_preferred_remote_value(
-                track,
-                "album",
+            from services.autotag_rewrite import _sanitize_album_value
+
+            safe_album = _sanitize_album_value(
                 album_candidate,
-                source_confidence=0.93,
-                policy=policy,
+                track.title,
+                artist=track.artist,
+                track_path=track.path,
             )
+            if safe_album:
+                _apply_preferred_remote_value(
+                    track,
+                    "album",
+                    safe_album,
+                    source_confidence=0.93,
+                    policy=policy,
+                )
         release_id = release.get("id")
         release_date = release.get("date")
         release_year = _parse_year(release_date)
@@ -697,7 +706,13 @@ class AutoMetadataFiller:
         report = self.fill_missing_with_report(track, method)
         return track if report.changed_fields else None
 
-    def fill_missing_with_report(self, track: Track, method: str) -> MetadataFillReport:
+    def fill_missing_with_report(
+        self,
+        track: Track,
+        method: str,
+        *,
+        exhaustive_online: bool = False,
+    ) -> MetadataFillReport:
         enricher = MetadataEnricher(
             self.musicbrainz_app,
             validation_policy=self.validation_policy,
@@ -720,11 +735,15 @@ class AutoMetadataFiller:
             self._run_local_sources(track, report)
             self._run_local_library_source(track, report)
         elif resolved == "online":
-            self._run_online_sources_parallel(enricher, track, report)
+            self._run_online_sources_parallel(
+                enricher, track, report, exhaustive=exhaustive_online
+            )
         elif resolved == "mix":
             self._run_local_sources(track, report)
             self._run_local_library_source(track, report)
-            self._run_online_sources_parallel(enricher, track, report)
+            self._run_online_sources_parallel(
+                enricher, track, report, exhaustive=exhaustive_online
+            )
         else:
             report.sources.append(SourceProbe(method, method, "miss", detail="Nieznana metoda"))
 
@@ -852,14 +871,18 @@ class AutoMetadataFiller:
         enricher: MetadataEnricher,
         track: Track,
         report: MetadataFillReport,
+        *,
+        exhaustive: bool = False,
     ) -> None:
         """Race MusicBrainz and portal searches in parallel.
 
         After FAST_TIMEOUT_S the first responder wins per field; late arrivals
         still fill remaining empty fields up to SLOW_TIMEOUT_S.
+        exhaustive=True czeka na wszystkie źródła (pass uzupełniający autotagu).
         """
         FAST_TIMEOUT_S = 4.0
         SLOW_TIMEOUT_S = 8.0
+        EXHAUSTIVE_TIMEOUT_S = 22.0
 
         futures: dict[Any, str] = {}
         pool = ThreadPoolExecutor(max_workers=2)
@@ -869,7 +892,14 @@ class AutoMetadataFiller:
             portal_future = pool.submit(self._collect_portal_snapshot, track)
             futures[portal_future] = "portals"
 
-            before = deepcopy(track)
+            if exhaustive:
+                for future in as_completed(futures.keys(), timeout=EXHAUSTIVE_TIMEOUT_S):
+                    source_id = futures[future]
+                    try:
+                        self._apply_snapshot(future.result(), source_id, track, report)
+                    except Exception:
+                        pass
+                return
 
             # Fast pass — apply first response that arrives within FAST_TIMEOUT_S
             done, pending = _futures_wait(futures.keys(), timeout=FAST_TIMEOUT_S, return_when=FIRST_COMPLETED)
@@ -1518,9 +1548,18 @@ def _apply_portal_candidate(
             track, "albumartist", candidate["artist"], source_confidence=0.82, policy=policy
         )
     if candidate.get("album"):
-        _apply_preferred_remote_value(
-            track, "album", candidate["album"], source_confidence=0.82, policy=policy
+        from services.autotag_rewrite import _sanitize_album_value
+
+        safe_album = _sanitize_album_value(
+            candidate.get("album"),
+            track.title,
+            artist=track.artist,
+            track_path=track.path,
         )
+        if safe_album:
+            _apply_preferred_remote_value(
+                track, "album", safe_album, source_confidence=0.82, policy=policy
+            )
     if candidate.get("genre"):
         _apply_preferred_remote_value(
             track, "genre", candidate["genre"], source_confidence=0.82, policy=policy

@@ -24,9 +24,10 @@ class BackgroundTask:
 
 
 class BackgroundTaskManager(QtCore.QObject):
-    task_added    = QtCore.pyqtSignal(str)
-    task_updated  = QtCore.pyqtSignal(str)
+    task_added = QtCore.pyqtSignal(str)
+    task_updated = QtCore.pyqtSignal(str)
     task_finished = QtCore.pyqtSignal(str)
+    log_appended = QtCore.pyqtSignal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -53,8 +54,9 @@ class BackgroundTaskManager(QtCore.QObject):
         task.current = current
         if total is not None:
             task.total = total
-        if detail is not None:
+        if detail is not None and detail != task.detail:
             task.detail = detail
+            self.log_appended.emit(f"[{task.name}] {detail}")
         self.task_updated.emit(task_id)
 
     def finish_task(self, task_id: str):
@@ -216,7 +218,10 @@ class _TaskRow(QtWidgets.QFrame):
         self._lbl_detail = QtWidgets.QLabel()
         self._lbl_detail.setStyleSheet("color:#88a8c8;font-size:11px;")
         self._lbl_detail.setWordWrap(True)
+        self._lbl_detail.setMaximumHeight(40)
         vl.addWidget(self._lbl_detail)
+        self._last_detail = ""
+        self._last_meta = ""
         self._lbl_meta = QtWidgets.QLabel()
         self._lbl_meta.setStyleSheet("color:#6f8bab;font-size:10px;")
         self._lbl_meta.setWordWrap(True)
@@ -235,19 +240,29 @@ class _TaskRow(QtWidgets.QFrame):
 
         self.refresh(task)
 
-    def refresh(self, task: BackgroundTask):
+    def refresh(self, task: BackgroundTask, *, update_detail: bool = True):
         total = max(task.total, 1)
         self._bar.setMaximum(total)
         self._bar.setValue(min(task.current, total))
         pct = task.current / total
         self._pie.set_progress(pct)
-        self._lbl_count.setText(f"{task.current} / {task.total}")
-        self._lbl_eta.setText(_eta_str(task))
-        detail = task.detail.strip()
-        self._lbl_detail.setText(detail)
-        self._lbl_detail.setVisible(bool(detail))
+        count_text = f"{task.current} / {task.total}"
+        if self._lbl_count.text() != count_text:
+            self._lbl_count.setText(count_text)
+        eta_text = _eta_str(task)
+        if self._lbl_eta.text() != eta_text:
+            self._lbl_eta.setText(eta_text)
+        if update_detail:
+            detail = task.detail.strip()
+            if detail != self._last_detail:
+                self._last_detail = detail
+                self._lbl_detail.setText(detail)
+                self._lbl_detail.setVisible(bool(detail))
         elapsed = max(0.0, time.monotonic() - task.started_at)
-        self._lbl_meta.setText(f"Czas: {int(elapsed)}s | ID: {task.task_id}")
+        meta_text = f"Czas: {int(elapsed)}s | ID: {task.task_id}"
+        if meta_text != self._last_meta:
+            self._last_meta = meta_text
+            self._lbl_meta.setText(meta_text)
 
         if task.finished:
             self.setStyleSheet(
@@ -306,6 +321,23 @@ class BackgroundTaskMonitorWidget(QtWidgets.QWidget):
         self._vl.addStretch()
         scroll.setWidget(self._container)
         outer.addWidget(scroll)
+        self._scroll = scroll
+        self._user_scrolled_up = False
+        scroll.verticalScrollBar().valueChanged.connect(self._on_scroll_changed)
+
+        log_hdr = QtWidgets.QLabel("Log zadań")
+        log_hdr.setStyleSheet("color:#6f8bab;font-size:10px;font-weight:bold;")
+        outer.addWidget(log_hdr)
+        self._log_view = QtWidgets.QPlainTextEdit()
+        self._log_view.setReadOnly(True)
+        self._log_view.setMaximumBlockCount(400)
+        self._log_view.setMinimumHeight(90)
+        self._log_view.setMaximumHeight(180)
+        self._log_view.setFont(QtGui.QFont("Consolas", 9))
+        self._log_view.setPlaceholderText("Postęp i komunikaty zadań...")
+        self._log_view.verticalScrollBar().valueChanged.connect(self._on_log_scroll_changed)
+        outer.addWidget(self._log_view)
+        self._log_user_scrolled_up = False
 
         # Refresh timer for ETA updates
         t = QtCore.QTimer(self)
@@ -315,10 +347,35 @@ class BackgroundTaskMonitorWidget(QtWidgets.QWidget):
         manager.task_added.connect(self._on_added)
         manager.task_updated.connect(self._on_updated)
         manager.task_finished.connect(self._on_finished)
+        manager.log_appended.connect(self._append_log_line)
 
         self.setVisible(False)
 
     # --- slots ---
+
+    def _on_scroll_changed(self, value: int) -> None:
+        sb = self._scroll.verticalScrollBar()
+        self._user_scrolled_up = value < (sb.maximum() - 8)
+
+    def _on_log_scroll_changed(self, value: int) -> None:
+        sb = self._log_view.verticalScrollBar()
+        self._log_user_scrolled_up = value < (sb.maximum() - 8)
+
+    def _append_log_line(self, line: str) -> None:
+        if not line.strip():
+            return
+        sb = self._log_view.verticalScrollBar()
+        at_bottom = sb.maximum() <= 0 or sb.value() >= (sb.maximum() - 8)
+        self._log_view.appendPlainText(line)
+        if at_bottom and not self._log_user_scrolled_up:
+            sb.setValue(sb.maximum())
+
+    def _with_preserved_scroll(self, callback) -> None:
+        sb = self._scroll.verticalScrollBar()
+        pos = sb.value()
+        callback()
+        if self._user_scrolled_up:
+            sb.setValue(min(pos, sb.maximum()))
 
     def _on_added(self, task_id: str):
         task = self._manager.get_task(task_id)
@@ -327,20 +384,25 @@ class BackgroundTaskMonitorWidget(QtWidgets.QWidget):
         row = _TaskRow(task)
         row.cancel_requested.connect(self._manager.cancel_task)
         self._rows[task_id] = row
-        self._vl.insertWidget(self._vl.count() - 1, row)
+        def _insert() -> None:
+            self._vl.insertWidget(self._vl.count() - 1, row)
+
+        self._with_preserved_scroll(_insert)
+        self._append_log_line(f"[{task.name}] start ({task.total})")
         self._sync_visibility()
 
     def _on_updated(self, task_id: str):
         task = self._manager.get_task(task_id)
         row = self._rows.get(task_id)
         if task and row:
-            row.refresh(task)
+            self._with_preserved_scroll(lambda: row.refresh(task, update_detail=True))
 
     def _on_finished(self, task_id: str):
         task = self._manager.get_task(task_id)
         row = self._rows.get(task_id)
         if task and row:
-            row.refresh(task)
+            self._with_preserved_scroll(lambda: row.refresh(task, update_detail=True))
+            self._append_log_line(f"[{task.name}] zakończono")
         self._sync_visibility()
         QtCore.QTimer.singleShot(4000, lambda: self._remove_row(task_id))
 
@@ -356,7 +418,7 @@ class BackgroundTaskMonitorWidget(QtWidgets.QWidget):
         for task_id, row in self._rows.items():
             task = self._manager.get_task(task_id)
             if task and not task.finished:
-                row.refresh(task)
+                self._with_preserved_scroll(lambda r=row, t=task: r.refresh(t, update_detail=False))
 
     def _sync_visibility(self):
         n = len(self._rows)

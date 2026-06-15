@@ -67,6 +67,7 @@ from ui.playlist_dialog import PlaylistEditorDialog
 from ui.playlist_order_dialog import PlaylistOrderDialog
 from ui.recognition_queue import RecognitionBatchWorker
 from ui.renamer_dialog import RenamerDialog, FileOrganizerDialog
+from ui.file_track_ops import add_file_operations_to_menu
 from ui.settings_dialog import ApiKeyCheckDialog, SettingsDialog
 from ui.tag_compare_dialog import TagCompareDialog
 from ui.theme import get_scale_factor
@@ -377,11 +378,10 @@ def _reset_track_for_refresh(track: Track) -> None:
     track.waveform_path = None
 
 
-def _should_refresh_existing_metadata(track_path: str) -> bool:
-    try:
-        return bool(list_metadata_history(track_path))
-    except Exception:
-        return False
+def _should_refresh_existing_metadata(track_path: str, *, force_refresh: bool = False) -> bool:
+    """Domyślnie uzupełniaj (False). force_refresh=True tylko po świadomym wyborze użytkownika."""
+    _ = track_path
+    return bool(force_refresh)
 
 
 def _normalize_text(value: str | None) -> str:
@@ -420,6 +420,9 @@ class _LibraryDragListView(QtWidgets.QListView):
         super().startDrag(supportedActions)
 
 
+ROW_SORT_COLUMN = -1
+
+
 class TrackFilterProxy(QtCore.QSortFilterProxyModel):
     def __init__(self):
         super().__init__()
@@ -429,6 +432,7 @@ class TrackFilterProxy(QtCore.QSortFilterProxyModel):
         self.bpm_max = None
         self.key = ""
         self.genre = ""
+        self._row_sort_active = False
 
     def filterAcceptsRow(self, source_row: int, source_parent: QtCore.QModelIndex) -> bool:
         model = self.sourceModel()
@@ -483,6 +487,51 @@ class TrackFilterProxy(QtCore.QSortFilterProxyModel):
 
         return True
 
+    def _row_sort_dummy_column(self) -> int:
+        return max(0, self.columnCount() - 1)
+
+    def sort(
+        self,
+        column: int,
+        order: QtCore.Qt.SortOrder = QtCore.Qt.SortOrder.AscendingOrder,
+    ) -> None:
+        if column == ROW_SORT_COLUMN:
+            self._row_sort_active = True
+            # Dummy column — Qt pomija re-sort przy tym samym sortColumn().
+            super().sort(self._row_sort_dummy_column(), order)
+            return
+        self._row_sort_active = False
+        super().sort(column, order)
+
+    def invalidateFilter(self) -> None:
+        keep_row_sort = self._row_sort_active
+        order = self.sortOrder()
+        super().invalidateFilter()
+        if keep_row_sort:
+            self._row_sort_active = True
+            super().sort(self._row_sort_dummy_column(), order)
+
+    def is_sorting_by_source_row(self) -> bool:
+        return self._row_sort_active
+
+    def sort_by_source_row(self, order: QtCore.Qt.SortOrder) -> None:
+        self.sort(ROW_SORT_COLUMN, order)
+
+    def lessThan(self, left: QtCore.QModelIndex, right: QtCore.QModelIndex) -> bool:
+        if self._row_sort_active:
+            return left.row() < right.row()
+        source = self.sourceModel()
+        if source is None or not left.isValid() or not right.isValid():
+            return False
+        col = left.column()
+        left_track = source.track_at(left.row()) if hasattr(source, "track_at") else None
+        right_track = source.track_at(right.row()) if hasattr(source, "track_at") else None
+        left_key = _track_sort_key(left_track, col)
+        right_key = _track_sort_key(right_track, col)
+        if isinstance(left_key, (int, float)) and isinstance(right_key, (int, float)):
+            return float(left_key) < float(right_key)
+        return str(left_key).casefold() < str(right_key).casefold()
+
     def _build_search_blob(self, track: Track) -> str:
         field_values: dict[str, str] = {
             "title": str(track.title or ""),
@@ -504,6 +553,68 @@ class TrackFilterProxy(QtCore.QSortFilterProxyModel):
         if self.search_category and self.search_category != "all":
             return field_values.get(self.search_category, "").lower()
         return " ".join(field_values.values()).lower()
+
+
+def _track_sort_key(track: Track | None, column: int):
+    if track is None:
+        return ""
+    if column == 0:
+        title = str(track.title or "")
+        return re.sub(r"^▶[AB]\s+", "", title)
+    if column == 1:
+        return track.artist or ""
+    if column == 2:
+        return track.album or ""
+    if column == 3:
+        return _sort_numeric(track.year)
+    if column == 4:
+        return track.genre or ""
+    if column == 5:
+        return _sort_numeric(track.bpm)
+    if column == 6:
+        return track.key or ""
+    if column == 7:
+        return track.mood or ""
+    if column == 8:
+        return _sort_numeric(track.energy)
+    if column == 9:
+        return track.comment or ""
+    if column == 10:
+        return track.lyrics or ""
+    if column == 11:
+        return track.remixer or ""
+    if column == 12:
+        return _sort_numeric(track.duration)
+    if column == 13:
+        return track.format or ""
+    if column == 14:
+        return _sort_numeric(track.file_size)
+    if column == 15:
+        return _sort_numeric(track.play_count)
+    if column == 16:
+        return _sort_numeric(track.rating)
+    if column == 25:
+        return track.path or ""
+    if column == 26:
+        return " ".join(t.value for t in (track.tags or []))
+    return ""
+
+
+def _sort_numeric(value) -> float:
+    if value is None:
+        return -1.0
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value).strip()
+    if not text:
+        return -1.0
+    match = re.search(r"-?\d+(?:\.\d+)?", text)
+    if match:
+        try:
+            return float(match.group(0))
+        except ValueError:
+            return -1.0
+    return -1.0
 
 
 class ScanWorkerSignals(QtCore.QObject):
@@ -671,14 +782,18 @@ class AutoTagWorker(QtCore.QRunnable):
         tracks: list[Track],
         settings,
         signals: AutoTagWorkerSignals,
+        *,
+        force_refresh: bool = False,
     ):
         super().__init__()
         self.setAutoDelete(False)
         self.tracks = tracks
         self.settings = settings
         self.signals = signals
+        self.force_refresh = force_refresh
         self._stop_requested = False
         self._processed_count = 0
+        self._started_count = 0
         self._progress_lock = threading.Lock()
 
     def stop(self) -> None:
@@ -702,6 +817,8 @@ class AutoTagWorker(QtCore.QRunnable):
             except Exception as e:
                 _process_log(f"[autotag] preload_ai_batch error: {e}")
 
+        mode_label = "odświeżenie od zera" if self.force_refresh else "uzupełnianie brakujących"
+        self._emit_stage("-", f"Start — tryb: {mode_label} ({total} utworów)...")
         self._emit_stage("-", "Przygotowanie źródeł i analizy...")
         metadata_filler = AutoMetadataFiller(
             getattr(self.settings, "musicbrainz_app_name", None),
@@ -821,6 +938,15 @@ class AutoTagWorker(QtCore.QRunnable):
         recognition_pipeline: RecognitionPipelineV2,
     ) -> dict[str, object]:
         before = deepcopy(track)
+        with self._progress_lock:
+            self._started_count += 1
+            active_index = self._started_count
+        self._emit_progress(
+            max(self._processed_count, active_index - 1),
+            len(self.tracks),
+            Path(track.path).name,
+            f"Rozpoczynam ({active_index}/{len(self.tracks)})...",
+        )
         self._emit_stage(Path(track.path).name, "Lokalne metadane i biblioteka...")
         metadata_report: MetadataFillReport | None = None
         try:
@@ -832,11 +958,15 @@ class AutoTagWorker(QtCore.QRunnable):
             autotag_summary = self._run_single_track(
                 track,
                 autotagger,
+                metadata_filler=metadata_filler,
                 metadata_pipeline=metadata_pipeline,
                 recognition_pipeline=recognition_pipeline,
                 baseline_track=before,
                 metadata_report=metadata_report,
-                refresh_existing=_should_refresh_existing_metadata(track.path),
+                refresh_existing=_should_refresh_existing_metadata(
+                    track.path,
+                    force_refresh=self.force_refresh,
+                ),
             )
             return {
                 "track": track,
@@ -859,6 +989,7 @@ class AutoTagWorker(QtCore.QRunnable):
         track: Track,
         autotagger: UnifiedAutoTagger,
         *,
+        metadata_filler: AutoMetadataFiller,
         metadata_pipeline: MetadataPipelineV2,
         recognition_pipeline: RecognitionPipelineV2,
         baseline_track: Track,
@@ -920,13 +1051,7 @@ class AutoTagWorker(QtCore.QRunnable):
         self._emit_stage(path_obj.name, "AI i źródła muzyczne...")
         _process_log(f"[autotag] file={path_obj.name} | fn=_run_single_track | stage=unified_autotagger")
 
-        # === NOWY MECHANIZM PRIORYTETOWY ===
-        # Domyślnie używamy trybu szybkiego (priority_only=True).
-        # Najpierw uzupełniamy 10 najważniejszych pól (PRIORITY_AUTOTAG_FIELDS),
-        # potem przechodzimy do kolejnego pliku.
-        # Reszta pól będzie uzupełniana później w tle (jeszcze do zaimplementowania).
-        use_priority_mode = True
-        enriched = autotagger.enrich_track(track, priority_only=use_priority_mode)
+        enriched = autotagger.enrich_track(track, priority_only=True)
         self._emit_stage(path_obj.name, "Konsensus metadanych...")
         _process_log(f"[autotag] file={path_obj.name} | fn=_run_single_track | stage=metadata_consensus")
         resolved = metadata_pipeline.resolve_track(
@@ -939,6 +1064,29 @@ class AutoTagWorker(QtCore.QRunnable):
         )
         for field_name in _AUTOTAG_FIELDS:
             setattr(track, field_name, getattr(resolved.track, field_name, None))
+
+        remaining = _missing_autotag_fields(track)
+        if remaining:
+            self._emit_stage(path_obj.name, "Dodatkowe źródła dla brakujących pól...")
+            _process_log(
+                f"[autotag] file={path_obj.name} | supplemental_online | missing={remaining}"
+            )
+            try:
+                before_supplemental = deepcopy(track)
+                metadata_filler.fill_missing_with_report(
+                    track,
+                    "online",
+                    exhaustive_online=True,
+                )
+                supplemental_fields = _changed_fields(before_supplemental, track)
+                if supplemental_fields:
+                    _process_log(
+                        f"[autotag] file={path_obj.name} | supplemental_online | filled={supplemental_fields}"
+                    )
+            except Exception as exc:
+                _process_log(
+                    f"[autotag] file={path_obj.name} | supplemental_online | error={exc}"
+                )
 
         # Krok 4: zbierz wyniki analizy audio (zazwyczaj już gotowe, bo pipeline trwał dłużej).
         self._emit_stage(path_obj.name, "Domykanie analizy audio...")
@@ -1147,11 +1295,16 @@ class MainWindow(QtWidgets.QMainWindow):
         self.table_view.customContextMenuRequested.connect(self._table_context_menu)
         self.table_view.setAlternatingRowColors(True)
         self.table_view.setSortingEnabled(True)
+        self._row_sort_ascending = True
+        row_header = self.table_view.verticalHeader()
+        row_header.setSectionsClickable(True)
+        row_header.sectionClicked.connect(self._on_library_row_header_clicked)
 
         # Włączamy drag & drop na zewnątrz (do DJ Playera itp.)
         self.table_view.setDragEnabled(True)
         self.table_view.setDragDropMode(QtWidgets.QAbstractItemView.DragDropMode.DragOnly)
         self.filter_proxy.setSortCaseSensitivity(QtCore.Qt.CaseSensitivity.CaseInsensitive)
+        self.filter_proxy.setDynamicSortFilter(True)
         header = self.table_view.horizontalHeader()
         header.setStretchLastSection(True)
         header.setSectionResizeMode(QtWidgets.QHeaderView.ResizeMode.Interactive)
@@ -1313,15 +1466,21 @@ class MainWindow(QtWidgets.QMainWindow):
         self.header_label = QtWidgets.QLabel("Przegladarka biblioteki")
         self.header_label.setObjectName("SectionTitle")
         title_row.addWidget(self.header_label)
-        self.header_subtitle = QtWidgets.QLabel("Smart Search + priorytet metadanych")
+        self.header_subtitle = QtWidgets.QLabel("")
         self.header_subtitle.setObjectName("DialogHint")
-        title_row.addWidget(self.header_subtitle)
+        self.header_subtitle.setVisible(False)
         title_row.addStretch(1)
+        self.view_toggle = QtWidgets.QComboBox()
+        self.view_toggle.setObjectName("ViewToggle")
+        self.view_toggle.addItems(["Lista", "Siatka", "DJ Crate"])
+        self.view_toggle.setToolTip("Przełącz widok biblioteki")
+        self.view_toggle.currentIndexChanged.connect(self._on_view_toggle)
+        title_row.addWidget(self.view_toggle)
         self.filter_toggle_btn = QtWidgets.QPushButton("🔍")
         self.filter_toggle_btn.setFixedSize(self._s(28), self._s(28))
         self.filter_toggle_btn.setCheckable(True)
-        self.filter_toggle_btn.setChecked(True)
-        self.filter_toggle_btn.setToolTip("Pokaż / ukryj pasek filtrów")
+        self.filter_toggle_btn.setChecked(False)
+        self.filter_toggle_btn.setToolTip("Pokaż / ukryj wyszukiwanie i filtry")
         self.filter_toggle_btn.clicked.connect(self._toggle_filter_row)
         title_row.addWidget(self.filter_toggle_btn)
         self.dj_player_btn = QtWidgets.QPushButton("🎛  DJ Player")
@@ -1342,31 +1501,10 @@ class MainWindow(QtWidgets.QMainWindow):
         layout.addLayout(title_row)
 
         self.filter_row_widget = QtWidgets.QWidget()
+        self.filter_row_widget.setVisible(False)
         row = QtWidgets.QHBoxLayout(self.filter_row_widget)
         row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(8)
-
-        self.search_category = QtWidgets.QComboBox()
-        self.search_category.setObjectName("ViewToggle")
-        self.search_category.addItems(
-            [
-                "Wszystkie pola",
-                "Genre",
-                "Subgenre / Gatunki szczegółowe",
-                "Tags / Tagi AI",
-                "Date",
-                "BPM",
-                "Key",
-                "Rating",
-                "Comment",
-                "Lyrics",
-                "Remixer",
-                "Mood",
-            ]
-        )
-        self.search_category.setToolTip("Wybierz kategorię wyszukiwania. 'Subgenre / Gatunki szczegółowe' szuka precyzyjnie w gatunkach i tagach AI (Deep House, Melodic Techno itp. – nie tylko broad EDM)")
-        self.search_category.currentIndexChanged.connect(self._apply_filters)
-        row.addWidget(self.search_category)
 
         self.search_input = QtWidgets.QLineEdit()
         self.search_input.setObjectName("SearchInput")
@@ -1404,18 +1542,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.genre_input.setToolTip("Filtrowanie po gatunku lub subgatunku (w tym tagi AI jak 'Melodic Techno', 'Deep House'). Szuka też w tagach szczegółowych.")
         self.genre_input.textChanged.connect(self._apply_filters)
         row.addWidget(self.genre_input)
-
-        self.clear_filters_btn = AnimatedButton("Wyczysc")
-        self.clear_filters_btn.setToolTip("Wyczysc wszystkie filtry")
-        self.clear_filters_btn.clicked.connect(self._clear_filters)
-        row.addWidget(self.clear_filters_btn)
-
-        self.view_toggle = QtWidgets.QComboBox()
-        self.view_toggle.setObjectName("ViewToggle")
-        self.view_toggle.addItems(["Lista", "Siatka", "DJ Crate"])
-        self.view_toggle.setToolTip("Przełącz widok listy/siatki")
-        self.view_toggle.currentIndexChanged.connect(self._on_view_toggle)
-        row.addWidget(self.view_toggle)
         layout.addWidget(self.filter_row_widget)
         return frame
 
@@ -1601,22 +1727,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.table_model.update_tracks(list_playlist_tracks(playlist.playlist_id))
 
     def _apply_filters(self):
-        category_map = {
-            "Wszystkie pola": "all",
-            "Genre": "genre",
-            "Subgenre / Gatunki szczegółowe": "subgenre",
-            "Tags / Tagi AI": "tags",
-            "Date": "date",
-            "BPM": "bpm",
-            "Key": "key",
-            "Rating": "rating",
-            "Comment": "comment",
-            "Lyrics": "lyrics",
-            "Remixer": "remixer",
-            "Mood": "mood",
-        }
         self.filter_proxy.search_text = self.search_input.text().strip().lower()
-        self.filter_proxy.search_category = category_map.get(self.search_category.currentText(), "all")
+        self.filter_proxy.search_category = "all"
         self.filter_proxy.bpm_min = self.bpm_min.value() or None
         self.filter_proxy.bpm_max = self.bpm_max.value() or None
         self.filter_proxy.key = self.key_input.text().strip()
@@ -1657,16 +1769,17 @@ class MainWindow(QtWidgets.QMainWindow):
     def _toggle_filter_row(self):
         visible = self.filter_toggle_btn.isChecked()
         self.filter_row_widget.setVisible(visible)
+        if visible:
+            self.search_input.setFocus()
 
-    def _clear_filters(self):
-        self.search_input.clear()
-        self.bpm_min.setValue(0)
-        self.bpm_max.setValue(0)
-        self.key_input.clear()
-        self.genre_input.clear()
-        if hasattr(self, "search_category"):
-            self.search_category.setCurrentIndex(0)
-        self._apply_filters()
+    def _toggle_filter_from_menu(self) -> None:
+        self.filter_toggle_btn.toggle()
+
+    def _focus_search(self) -> None:
+        self.filter_toggle_btn.setChecked(True)
+        self.filter_row_widget.setVisible(True)
+        self.search_input.setFocus()
+        self.search_input.selectAll()
 
     def _on_view_toggle(self, index: int):
         self.view_stack.setCurrentIndex(index)
@@ -1870,6 +1983,22 @@ class MainWindow(QtWidgets.QMainWindow):
         selection_clear = selection_menu.addAction("Wyczyść zaznaczenie")
         selection_bulk = selection_menu.addAction("Edycja zbiorcza")
         selection_compare = selection_menu.addAction("Porównaj tagi")
+        organize_action = menu.addAction("Organizuj pliki (File Manager)")
+        tracks_sel = self._selected_tracks()
+        source_index = self.filter_proxy.mapToSource(index)
+        row_track = self.table_model.track_at(source_index.row())
+        if not tracks_sel and row_track:
+            tracks_sel = [row_track]
+        file_paths = [t.path for t in tracks_sel if t and t.path]
+        if file_paths:
+            add_file_operations_to_menu(
+                menu,
+                self,
+                file_paths,
+                tracks=tracks_sel,
+                on_library_changed=self._load_tracks,
+                open_organizer=lambda ts: self._open_organizer(ts),
+            )
         action = menu.exec(self.grid_view.mapToGlobal(pos))
         if action == play_action:
             self._play_selected()
@@ -1917,18 +2046,26 @@ class MainWindow(QtWidgets.QMainWindow):
             self._bulk_edit()
         if action == selection_compare:
             self._compare_tags()
+        if action == organize_action:
+            self._open_organizer()
 
     def _select_all(self):
-        if self.view_stack.currentIndex() == 0:
+        index = self.view_stack.currentIndex()
+        if index == 0:
             self.table_view.selectAll()
-        else:
+        elif index == 1:
             self.grid_view.selectAll()
+        elif hasattr(self, "library_widget"):
+            self.library_widget.select_all()
 
     def _clear_selection(self):
-        if self.view_stack.currentIndex() == 0:
+        index = self.view_stack.currentIndex()
+        if index == 0:
             self.table_view.clearSelection()
-        else:
+        elif index == 1:
             self.grid_view.clearSelection()
+        elif hasattr(self, "library_widget"):
+            self.library_widget.clear_selection()
 
     def _reset_library(self):
         confirm = QtWidgets.QMessageBox.question(
@@ -1936,6 +2073,8 @@ class MainWindow(QtWidgets.QMainWindow):
             "Zerowanie biblioteki",
             "Czy na pewno chcesz usunąć całą bibliotekę?\n"
             "To skasuje utwory, playlisty i historię zmian.",
+            QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
+            QtWidgets.QMessageBox.StandardButton.No,
         )
         if confirm != QtWidgets.QMessageBox.StandardButton.Yes:
             return
@@ -1985,11 +2124,12 @@ class MainWindow(QtWidgets.QMainWindow):
             # Integrate: offer File Manager / organize after rename changes
             self._offer_organize_after_change("Zmiana nazw zakończona.")
 
-    def _open_organizer(self):
+    def _open_organizer(self, tracks: list[Track] | None = None):
         """Open the new File Manager dialog for organizing audio files into structured folders based on tags.
         Supports selection or falls back to library. Updates repo after FS.
         """
-        tracks = self._selected_tracks()
+        if tracks is None:
+            tracks = self._selected_tracks()
         if not tracks:
             # allow all if none selected (common after batch autotag)
             tracks = list_tracks()
@@ -2069,6 +2209,19 @@ class MainWindow(QtWidgets.QMainWindow):
         selection_bulk = selection_menu.addAction("Edycja zbiorcza")
         selection_compare = selection_menu.addAction("Porównaj tagi")
         organize_action = menu.addAction("Organizuj pliki (File Manager)")
+        tracks_sel = self._selected_tracks()
+        if not tracks_sel and track:
+            tracks_sel = [track]
+        file_paths = [t.path for t in tracks_sel if t and t.path]
+        if file_paths:
+            add_file_operations_to_menu(
+                menu,
+                self,
+                file_paths,
+                tracks=tracks_sel,
+                on_library_changed=self._load_tracks,
+                open_organizer=lambda ts: self._open_organizer(ts),
+            )
         menu.addSeparator()
         col_menu = menu.addMenu("Kolumny")
         show_all_col = col_menu.addAction("Pokaż wszystkie")
@@ -2174,6 +2327,20 @@ class MainWindow(QtWidgets.QMainWindow):
                             self.table_view.setColumnHidden(col, True)
                             self._save_column_state()
                     break
+
+    def _on_library_row_header_clicked(self, _section: int) -> None:
+        """Sortuj tabelę wg kolejności źródłowej (lp. / pozycja na playliście)."""
+        if self.filter_proxy.is_sorting_by_source_row():
+            self._row_sort_ascending = not self._row_sort_ascending
+        else:
+            self._row_sort_ascending = True
+        order = (
+            QtCore.Qt.SortOrder.AscendingOrder
+            if self._row_sort_ascending
+            else QtCore.Qt.SortOrder.DescendingOrder
+        )
+        self.filter_proxy.sort_by_source_row(order)
+        self.table_view.horizontalHeader().setSortIndicator(-1)
 
     def _show_table_column_menu(self, pos):
         menu = QtWidgets.QMenu(self)
@@ -2487,10 +2654,50 @@ class MainWindow(QtWidgets.QMainWindow):
         if event.type() == QtCore.QEvent.Type.WindowStateChange:
             QtCore.QTimer.singleShot(0, self._refresh_responsive_ui)
 
+    def _confirm_autotag_mode(self, track_count: int) -> bool | None:
+        """Zwraca force_refresh (True=od zera, False=uzupełnij) lub None gdy anulowano."""
+        dlg = QtWidgets.QDialog(self)
+        dlg.setWindowTitle("Tryb autotagowania")
+        layout = QtWidgets.QVBoxLayout(dlg)
+        layout.addWidget(
+            QtWidgets.QLabel(
+                f"Wybrano <b>{track_count}</b> utworów.\n"
+                "Wybierz sposób przetwarzania metadanych:"
+            )
+        )
+        rb_fill = QtWidgets.QRadioButton(
+            "Uzupełnij brakujące (zachowaj istniejące tagi — zalecane)"
+        )
+        rb_force = QtWidgets.QRadioButton(
+            "Wymuś odświeżenie od zera (usuwa tagi w pliku przed analizą)"
+        )
+        rb_fill.setChecked(True)
+        layout.addWidget(rb_fill)
+        layout.addWidget(rb_force)
+        hint = QtWidgets.QLabel(
+            "Drugi przebieg w trybie uzupełniania nie kasuje pól uzupełnionych wcześniej."
+        )
+        hint.setWordWrap(True)
+        hint.setStyleSheet("color:#88a8c8;font-size:11px;")
+        layout.addWidget(hint)
+        buttons = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.StandardButton.Ok
+            | QtWidgets.QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(dlg.accept)
+        buttons.rejected.connect(dlg.reject)
+        layout.addWidget(buttons)
+        if dlg.exec() != QtWidgets.QDialog.DialogCode.Accepted:
+            return None
+        return rb_force.isChecked()
+
     def _run_ai_tagger(self):
         tracks = self._selected_tracks()
         if not tracks:
             self._show_message("Zaznacz co najmniej jeden utwór.")
+            return
+        force_refresh = self._confirm_autotag_mode(len(tracks))
+        if force_refresh is None:
             return
         settings = load_settings()
         prev_worker = getattr(self, "_autotag_worker", None)
@@ -2506,9 +2713,19 @@ class MainWindow(QtWidgets.QMainWindow):
             prev_signals.deleteLater()
         # Sygnały na wątku GUI (parent=self) — bez tego GC kasuje QObject przy QRunnable + ThreadPoolExecutor.
         self._autotag_signals = AutoTagWorkerSignals(self)
-        self._autotag_worker = AutoTagWorker(tracks, settings, self._autotag_signals)
-        task_id = self.task_manager.add_task("Autotagowanie", len(tracks), "Przygotowanie analizy i źródeł...")
-        _process_log(f"[autotag] start | tracks={len(tracks)}")
+        self._autotag_worker = AutoTagWorker(
+            tracks,
+            settings,
+            self._autotag_signals,
+            force_refresh=force_refresh,
+        )
+        mode_label = "odświeżenie od zera" if force_refresh else "uzupełnianie"
+        task_id = self.task_manager.add_task(
+            "Autotagowanie",
+            len(tracks),
+            f"Tryb: {mode_label} — przygotowanie analizy...",
+        )
+        _process_log(f"[autotag] start | tracks={len(tracks)} mode={mode_label}")
 
         def on_progress(current: int, total: int, name: str, detail: str):
             self.task_manager.update_task(task_id, current, total, detail)
@@ -2567,13 +2784,16 @@ class MainWindow(QtWidgets.QMainWindow):
         settings = load_settings()
         service = self._get_bg_enrichment_service()
 
-        track_ids = [t.id for t in tracks if hasattr(t, 'id') and t.id]
-        if not track_ids:
-            # fallback – jeśli tracki nie mają jeszcze id (rzadko)
-            track_ids = [get_or_create_track_by_path(t.path).id for t in tracks if get_or_create_track_by_path(t.path).id]
+        from data.repository import resolve_track_ids
 
-        service.enqueue_background_enrichment(track_ids, priority=3, source="manual")
-        self.status.showMessage(f"Dodano {len(track_ids)} zadań uzupełniania w tle.")
+        track_ids = resolve_track_ids([t.path for t in tracks])
+        if not track_ids:
+            self._show_message("Nie udało się przypisać utworów do bazy — brak ID w kolejce.")
+            _process_log("[autotag-bg] BŁĄD: brak track_id dla zaznaczonych utworów")
+            return
+
+        created = service.enqueue_background_enrichment(track_ids, priority=3, source="manual")
+        self.status.showMessage(f"Dodano {len(created)} zadań uzupełniania w tle.")
 
     def _get_bg_enrichment_service(self) -> BackgroundEnrichmentService:
         if self._bg_enrichment_service is None:
@@ -2588,19 +2808,26 @@ class MainWindow(QtWidgets.QMainWindow):
         Nie uruchamia workera bezpośrednio – robi to procesor w tle.
         """
         try:
+            from data.repository import resolve_track_ids
+
             service = self._get_bg_enrichment_service()
+            track_ids = resolve_track_ids([t.path for t in tracks])
+            if not track_ids:
+                _process_log(
+                    "[autotag-bg] BŁĄD: 0 zadań — utwory nie mają ID w bazie "
+                    f"(ścieżek={len(tracks)}). Sprawdź import biblioteki."
+                )
+                return
 
-            track_ids = []
-            for t in tracks:
-                if hasattr(t, 'id') and t.id:
-                    track_ids.append(t.id)
-                else:
-                    db_track = get_or_create_track_by_path(t.path)
-                    if db_track and db_track.id:
-                        track_ids.append(db_track.id)
-
-            service.enqueue_background_enrichment(track_ids, priority=5, source="autotag_finish")
-            _process_log(f"[autotag-bg] Dodano {len(track_ids)} zadań do kolejki AnalysisJob")
+            created = service.enqueue_background_enrichment(
+                track_ids,
+                priority=5,
+                source="autotag_finish",
+            )
+            _process_log(
+                f"[autotag-bg] Dodano {len(created)} zadań do kolejki AnalysisJob "
+                f"(utworów={len(track_ids)})"
+            )
 
         except Exception as e:
             _process_log(f"[autotag-bg] failed to enqueue jobs: {e}")
@@ -3110,7 +3337,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _setup_shortcuts(self):
         # Old player Space shortcut removed (new DJ Player has its own shortcuts)
-        QtGui.QShortcut(QtGui.QKeySequence("Ctrl+F"), self, activated=self.search_input.setFocus)
+        QtGui.QShortcut(QtGui.QKeySequence("Ctrl+F"), self, activated=self._focus_search)
         QtGui.QShortcut(QtGui.QKeySequence("Ctrl+I"), self, activated=self._open_import_wizard)
         QtGui.QShortcut(QtGui.QKeySequence("Ctrl+D"), self, activated=self._open_duplicates)
         QtGui.QShortcut(QtGui.QKeySequence("Ctrl+R"), self, activated=self._open_renamer)
@@ -3139,7 +3366,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.settings_btn.setIcon(icon("settings.svg"))
         self.auto_tag_btn.setIcon(icon("magic.svg"))
         self.actions_btn.setIcon(icon("dialog.svg"))
-        self.clear_filters_btn.setIcon(self.style().standardIcon(QtWidgets.QStyle.StandardPixmap.SP_DialogResetButton))
         # Old embedded player icons removed (new DJ Player is in separate window)
 
     def _build_menu(self):
@@ -3147,7 +3373,6 @@ class MainWindow(QtWidgets.QMainWindow):
         tools = menu.addMenu("Narzędzia")
         tools.addAction("Importuj / Skanuj", self._open_import_wizard)
         tools.addAction("Importuj XML", self._open_xml_import)
-        tools.addAction("Wyczyść bibliotekę", self._reset_library)
         tools.addAction("Autotagowanie teraz", self._run_ai_tagger)
         tools.addAction("Analiza loudness (LUFS)", self._run_loudness_analysis)
         tools.addAction("Normalizuj do -14 LUFS (nowy plik)", self._run_loudness_normalize)
@@ -3172,7 +3397,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         view_menu = menu.addMenu("Widok")
         view_menu.addAction("Pokaż / ukryj panel boczny", self.sidebar_toggle_btn.click)
-        view_menu.addAction("Pokaż / ukryj filtry", self.filter_toggle_btn.click)
+        view_menu.addAction("Pokaż / ukryj wyszukiwanie", self._toggle_filter_from_menu)
         view_menu.addAction("Otwórz DJ Player (2 decki + waveform)", self.dj_player_btn.click)
         view_menu.addAction("Zatrzymaj wszystkie decki (DJ Player)", self._stop_all_decks_from_main)
         view_menu.addAction("Pokaż / ukryj panel szczegółów", self._toggle_detail_panel)
@@ -3358,9 +3583,6 @@ class MainWindow(QtWidgets.QMainWindow):
         tools_menu.addAction("Organizuj pliki (File Manager)", self._open_organizer)
         tools_menu.addAction("Log procesów", self._open_process_log)
 
-        self.toolbar_actions_menu.addSeparator()
-        reset_action = self.toolbar_actions_menu.addAction("Wyczyść bibliotekę", self._reset_library)
-        reset_action.setIcon(self.style().standardIcon(QtWidgets.QStyle.StandardPixmap.SP_TrashIcon))
         self.actions_btn.setMenu(self.toolbar_actions_menu)
 
     def _set_toolbar_button_compact(
@@ -3416,12 +3638,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         if hasattr(self, "header_label"):
             self.header_label.setText("Przegladarka biblioteki" if mode == "full" else "Biblioteka")
-        if hasattr(self, "header_subtitle"):
-            self.header_subtitle.setVisible(mode == "full")
         if hasattr(self, "search_input"):
             self.search_input.setPlaceholderText("Szukaj metadanych..." if mode == "full" else "Szukaj...")
-        if hasattr(self, "search_category"):
-            self.search_category.setMinimumWidth(self._s(170 if mode == "full" else 120 if mode == "medium" else 92))
         if hasattr(self, "bpm_min"):
             self.bpm_min.setPrefix("BPM min " if mode == "full" else "Min ")
         if hasattr(self, "bpm_max"):
@@ -3430,11 +3648,6 @@ class MainWindow(QtWidgets.QMainWindow):
             self.key_input.setPlaceholderText("Tonacja" if mode != "compact" else "Key")
         if hasattr(self, "genre_input"):
             self.genre_input.setPlaceholderText("Gatunek" if mode != "compact" else "Genre")
-        if hasattr(self, "clear_filters_btn"):
-            clear_compact = mode == "compact"
-            self.clear_filters_btn.setText("" if clear_compact else "Wyczysc")
-            self.clear_filters_btn.setMinimumWidth(self._s(40 if clear_compact else 110))
-            self.clear_filters_btn.setMaximumWidth(self._s(44) if clear_compact else 16777215)
 
         sidebar_auto_threshold = self._s(1180)
         auto_collapsed = getattr(self, "_sidebar_auto_collapsed", False)

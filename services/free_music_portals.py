@@ -10,6 +10,19 @@ from urllib.parse import quote_plus
 import requests
 
 
+def _portal_album(
+    album: str | None,
+    title: str | None,
+    *,
+    artist: str | None = None,
+) -> str | None:
+    from services.autotag_rewrite import _sanitize_album_value
+
+    if not album:
+        return None
+    return _sanitize_album_value(str(album).strip() or None, title, artist=artist)
+
+
 @dataclass
 class PortalCandidate:
     source_key: str
@@ -175,7 +188,7 @@ class FreeMusicPortalSearch:
             source_label=label,
             title=rec_title,
             artist=artist_name,
-            album=release.get("name") or release.get("title"),
+            album=_portal_album(release.get("name") or release.get("title"), rec_title, artist=artist_name),
             year=year,
             publisher=(release.get("label") or {}).get("name"),
             url=(
@@ -222,7 +235,7 @@ class FreeMusicPortalSearch:
             source_label=label,
             title=item.get("strTrack"),
             artist=item.get("strArtist"),
-            album=item.get("strAlbum"),
+            album=_portal_album(item.get("strAlbum"), item.get("strTrack"), artist=item.get("strArtist")),
             genre=genre,
             year=str(item.get("intYearReleased") or "") or None,
             publisher=item.get("strLabel"),
@@ -274,7 +287,11 @@ class FreeMusicPortalSearch:
                 source_key=key, source_label=label,
                 title=item.get("name"),
                 artist=(item.get("artist") or {}).get("name") or item.get("artist"),
-                album=album_data.get("title"),
+                album=_portal_album(
+                    album_data.get("title"),
+                    item.get("name"),
+                    artist=(item.get("artist") or {}).get("name") or item.get("artist"),
+                ),
                 genre=genre,
                 url=item.get("url"),
             )
@@ -339,7 +356,7 @@ class FreeMusicPortalSearch:
             source_key=key, source_label=label,
             title=item.get("track_name"),
             artist=item.get("artist_name"),
-            album=item.get("album_name"),
+            album=_portal_album(item.get("album_name"), item.get("track_name"), artist=item.get("artist_name")),
             genre=genre,
             year=year,
             url=item.get("track_share_url"),
@@ -491,7 +508,11 @@ class FreeMusicPortalSearch:
             source_label=label,
             title=item.get("title_short") or item.get("title"),
             artist=(item.get("artist") or {}).get("name"),
-            album=(item.get("album") or {}).get("title"),
+            album=_portal_album(
+                (item.get("album") or {}).get("title"),
+                item.get("title_short") or item.get("title"),
+                artist=(item.get("artist") or {}).get("name"),
+            ),
             year=year,
             url=item.get("link"),
         )
@@ -519,7 +540,7 @@ class FreeMusicPortalSearch:
             source_label=label,
             title=item.get("trackName"),
             artist=item.get("artistName"),
-            album=item.get("collectionName"),
+            album=_portal_album(item.get("collectionName"), item.get("trackName"), artist=item.get("artistName")),
             genre=item.get("primaryGenreName"),
             year=year,
             publisher=item.get("collectionName"),
@@ -622,7 +643,7 @@ class FreeMusicPortalSearch:
             source_label=label,
             title=item.get("song"),
             artist=item.get("primary_artists"),
-            album=item.get("album"),
+            album=_portal_album(item.get("album"), item.get("song"), artist=item.get("primary_artists")),
             year=str(item.get("year") or "") or None,
             publisher=item.get("music"),
             url=f"https://www.jiosaavn.com/song/{item.get('song')}/{item.get('id')}" if item.get("id") else None,
@@ -692,7 +713,11 @@ class FreeMusicPortalSearch:
             source_label=label,
             title=_clean_lyrics_text(best.get("trackName")),
             artist=_clean_lyrics_text(best.get("artistName")),
-            album=_clean_lyrics_text(best.get("albumName")),
+            album=_portal_album(
+                _clean_lyrics_text(best.get("albumName")),
+                _clean_lyrics_text(best.get("trackName")),
+                artist=_clean_lyrics_text(best.get("artistName")),
+            ),
             lyrics=lyrics,
             url=f"https://lrclib.net/track/{best.get('id')}" if best.get("id") else None,
         )
