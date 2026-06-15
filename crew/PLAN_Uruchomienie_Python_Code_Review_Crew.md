@@ -131,13 +131,13 @@ Dlatego **wszystkie uruchomienia Code Review Crew (i wszelkie prace na fragmenta
 - Po Opcja A: preferuj pracę przez controllery + dumb views. Logika cue/playback/waveform — w `SimpleDeckController` / `DeckController`. UI tylko wiring + prezentacja.
 
 ### Pliki referencyjne (dołączane do promptów crew)
-- `memory.md` (dla nowych: zasady, stan, SZPIEG, jak dokumentować).
-- `crew/SZPIEG_agent_spec_and_archive.md` (nadrzędny research + Build Spec + encyklopedia + Plan wnioski).
+- `memory.md` (dla nowych: zasady, stan, SZPIEG, jak dokumentować; zawiera Archiwum pełnej historii + wykonanych checklist).
+- `crew/SZPIEG_agent_spec_and_archive.md` (nadrzędny research + Build Spec + encyklopedia + Plan wnioski; żywy).
 - Ten plik (`crew/PLAN_Uruchomienie_Python_Code_Review_Crew.md`).
 - `AGENTS.md`, `CLAUDE.md`.
-- `crew/AGENT3_UI_Designer_Rekordbox_Redo.md` (przykład output UI-DESIGNER).
-- `crew/CHECKLIST_reczny_test_nowy_DJ_Player.md`, `crew/LISTA_POPRAWEK_*.md`.
-- `docs/HISTORY.md`.
+- `crew/CHECKLIST_reczny_test_nowy_DJ_Player.md` (bieżący manual test checklist – aktywny).
+- Historyczne przykłady (AGENT3_UI_Designer, UI_Designer_Odtwarzacz_MVP_Redesign, LISTA_POPRAWEK, SZPIEG_DJ_Player_Redesign_2026) – przeniesione w 2026-06-15 do `docs/archive/crew/` (uporządkowanie per user request; zachowane dla continuity).
+- `docs/HISTORY.md`, `docs/archive/` (mockups, web-remnants, build artifacts).
 - Aktualny kod + git status.
 
 ### Weryfikacja po crew
