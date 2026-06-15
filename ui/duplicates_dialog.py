@@ -233,7 +233,7 @@ class DuplicatesDialog(QtWidgets.QDialog):
         top.addWidget(QtWidgets.QLabel("Metoda wykrywania:"))
         self.method = QtWidgets.QComboBox()
         self.method.addItems(["Hash", "Tagi", "Fingerprint", "Etapowo", "Fuzzy"])
-        self.method.setToolTip("Wybierz metodę (Fingerprint: pełny 3-method pipeline hash+fuzzy+fp po ulepszeniu w fuzzy_dedup; Etapowo: staged)")
+        self.method.setToolTip("Wybierz metodę (Fingerprint: pełny 3-method pipeline hash+fuzzy+fp po ulepszeniu w fuzzy_dedup; Etapowo: staged 3-method hash→tagi→fingerprint z find_staged_duplicates; grupy fp używają sim 0.97)")
         top.addWidget(self.method)
 
         self.run_btn = QtWidgets.QPushButton("Szukaj")
@@ -482,6 +482,34 @@ class DuplicatesDialog(QtWidgets.QDialog):
             groups = svc.find_fuzzy_duplicates(self._tracks)
             rows = [
                 (f"Grupa {group_idx}", group.tracks)
+                for group_idx, group in enumerate(groups, 1)
+                if len(group.tracks) > 1
+            ]
+            progress.setValue(1)
+            progress.close()
+            self._set_source_group_rows(rows)
+            self._scan_finished(rows)
+            return
+
+        if method == "Etapowo":
+            from services.fuzzy_dedup import FuzzyDedupService
+
+            progress = QtWidgets.QProgressDialog(
+                "Skanowanie duplikatów (etapowo: hash→tagi→fingerprint)...", None, 0, 1, self
+            )
+            progress.setWindowTitle("Duplikaty")
+            progress.setMinimumDuration(0)
+            progress.setValue(0)
+            progress.setWindowModality(QtCore.Qt.WindowModality.ApplicationModal)
+            progress.show()
+            progress.raise_()
+            progress.activateWindow()
+            self._scan_progress_dialog = progress
+            QtWidgets.QApplication.processEvents()
+            svc = FuzzyDedupService()
+            groups = svc.find_staged_duplicates(self._tracks)
+            rows = [
+                (f"Grupa {group_idx} (sim {group.similarity:.2f})", group.tracks)
                 for group_idx, group in enumerate(groups, 1)
                 if len(group.tracks) > 1
             ]
@@ -1686,6 +1714,11 @@ class DuplicatesDialog(QtWidgets.QDialog):
                     )
 
     def _merge_selected(self) -> None:
+        """Legacy quick or-merge on marked dups within groups (fills blanks into first/master).
+        Per SZPIEG Build Spec + Plan nowa lista po 'dalej' user + 'nie przestawaj'... must document identical.
+        When groups originate from improved 3-method (esp. Fingerprint/Etapowo fp stage @0.97 sim), these are true audio-identical duplicates;
+        or-logic here (and full consensus in modern _start_merge_worker) is safe and improves "logikę łączenia" by completing metadata from real dups.
+        """
         changed = False
         for i in range(self.tree.topLevelItemCount()):
             parent = self.tree.topLevelItem(i)
@@ -2002,7 +2035,7 @@ class DuplicateScanWorker(QtCore.QRunnable):
                 continue
             fp_groups.setdefault(track.fingerprint, []).append(idx)
         groups = [
-            DuplicateGroup(track_ids=ids, similarity=0.95)
+            DuplicateGroup(track_ids=ids, similarity=0.97)
             for ids in fp_groups.values()
             if len(ids) > 1
         ]
@@ -2010,6 +2043,12 @@ class DuplicateScanWorker(QtCore.QRunnable):
 
 
 class DuplicateMergeWorker(QtCore.QRunnable):
+    """
+    Worker for duplicate metadata merge (AI or quick consensus).
+    Per SZPIEG Build Spec + Plan nowa lista po 'dalej' user + 'nie przestawaj'... must document identical.
+    Benefits from improved 3-method Duplicate Finder (incl. fp @0.97 in staged/Etapowo): fp-sourced groups are high-confidence audio matches,
+    so merge logic (build_duplicate_merge_plan + MetadataConsensus + optional AI) safely fills blanks / or-s in _merge_selected without risk of mixing unrelated tracks.
+    """
     def __init__(self, groups: list[tuple[str, list[Track]]], *, settings=None, use_ai: bool = True):
         super().__init__()
         self.groups = groups

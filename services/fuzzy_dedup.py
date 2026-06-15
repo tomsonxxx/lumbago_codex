@@ -136,14 +136,18 @@ class FuzzyDedupService:
         return self._find_fingerprint_duplicates(tracks)
 
     def _find_fingerprint_duplicates(self, tracks: list) -> list[DuplicateGroup]:
-        """Group tracks by precomputed fingerprint (AcoustID). Fallback for when hash/fuzzy miss but audio matches."""
+        """Group tracks by precomputed fingerprint (AcoustID). Fallback for when hash/fuzzy miss but audio matches.
+        Per SZPIEG Build Spec + Plan nowa lista po 'dalej' user + 'nie przestawaj'... must document identical.
+        Returns object-based DuplicateGroup (tracks=list[Track], similarity=0.97, match_method) consistent with find_exact/find_fuzzy.
+        """
         from collections import defaultdict
         groups = defaultdict(list)
-        for i, t in enumerate(tracks):
-            if getattr(t, 'fingerprint', None):
-                groups[t.fingerprint].append(i)
+        for t in tracks:
+            fp = getattr(t, 'fingerprint', None)
+            if fp:
+                groups[fp].append(t)
         return [
-            DuplicateGroup(track_ids=ids, similarity=0.97)
-            for fp, ids in groups.items()
-            if len(ids) > 1 and fp
+            DuplicateGroup(tracks=ts, similarity=0.97, match_method="fingerprint")
+            for fp, ts in groups.items()
+            if len(ts) > 1 and fp
         ]

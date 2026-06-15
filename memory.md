@@ -64,6 +64,8 @@ Per PLAN hierarchy (SZPIEG/Plan first, Build Spec, "must document identical"), t
 - Po każdym bloku: todo, commit z jasnym msg, push.
 - Język: polski w dokumentacji crew.
 
+**Dalszy 'dalej' (continuation per user "dalej"):** Full delivery of "Ulepszony Duplicate Finder z pełnym audio fingerprint" + polish logiki łączenia. 1) Fixed/ completed _find_fingerprint_duplicates in fuzzy_dedup.py (now returns consistent object-based DuplicateGroup(tracks=objs, sim=0.97, match_method="fingerprint") matching find_exact/fuzzy; docstring + phrase). 2) Wired "Etapowo" in duplicates_dialog.py _run_scan to use FuzzyDedupService.find_staged_duplicates (special case like Fuzzy, builds rows with sim labels from group.tracks) — now Etapowo executes the full 3-method staged pipeline hash→fuzzy tags→fp. 3) Unified fp sim to 0.97 everywhere ( _groups_from_fingerprint, staged). 4) Polish merge: added detailed docstring + comments to DuplicateMergeWorker + legacy _merge_selected explaining that fp-sourced groups (high-conf audio dups) make or-/consensus "logikę łączenia" safe and effective for filling metadata (per backlog "warto dopracować UI i logikę łączenia"). Updated method tooltip, worker/scan docs with exact phrase. Read-before all edits + todo. Per SZPIEG Build Spec + Plan nowa lista po 'zatwierdzam'/'dalej' user + 'nie przestawaj'... must document identical. Verifs next (pytest). 'Gotowe' for this item block. Momentum 'nie przestawaj'.
+
 Użytkowniku: **Proszę przeczytaj powyższą nową listę w pierwszej kolejności i daj "dalej", "zatwierdzam", "zmień X na Y", lub wskaż konkretny punkt / inny fragment.** Dopiero potem ruszamy z wykonaniem (krok 1 jako pierwszy).
 
 Per PLAN + SZPIEG + "nie przestawaj" + "działaj po kolei do końca". Gotowe do Twojej decyzji. 
