@@ -142,7 +142,7 @@ def test_apply_organize_plan_move_updates_paths_and_creates_dirs(tmp_path: Path)
 
     tracks = [Track(path=str(f), artist="Artist X", title="Song Y", genre="Electronic", album="Album Z", year="2020")]
     target = tmp_path / "newlib"
-    plan, history = organize_tracks(
+    plan, result = organize_tracks(
         tracks,
         folder_structure="{genre}/{artist}",
         filename_pattern="{title}",
@@ -150,6 +150,7 @@ def test_apply_organize_plan_move_updates_paths_and_creates_dirs(tmp_path: Path)
         action="move",
         do_write_tags=False,
     )
+    history = result.history
     assert len(history) == 1
     moved = target / "Electronic" / "Artist X" / "Song Y.mp3"
     assert moved.exists()
@@ -165,7 +166,8 @@ def test_apply_organize_plan_copy_and_undo_ish(tmp_path: Path):
     f.write_text("xx", encoding="utf-8")
     tracks = [Track(path=str(f), artist="A", title="T", genre="G", album="", year="")]
     target = tmp_path / "copydest"
-    plan, hist = organize_tracks(tracks, "{genre}", "{artist} - {title}", target, action="copy")
+    plan, result = organize_tracks(tracks, "{genre}", "{artist} - {title}", target, action="copy")
+    hist = result.history
     assert len(hist) == 1
     assert hist[0]["action"] == "copy"
     copied = target / "G" / "A - T.mp3"
@@ -205,7 +207,8 @@ def test_apply_organize_plan_delete_removes_file_and_history(tmp_path: Path):
     f.write_text("to-delete", encoding="utf-8")
     tracks = [Track(path=str(f), artist="Del", title="Me", genre="X")]
     target = tmp_path / "ignored_for_delete"
-    plan, hist = organize_tracks(tracks, "{genre}", "{title}", target, action="delete")
+    plan, result = organize_tracks(tracks, "{genre}", "{title}", target, action="delete")
+    hist = result.history
     assert len(hist) == 1
     assert hist[0]["action"] == "delete"
     assert not f.exists()

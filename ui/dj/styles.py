@@ -402,7 +402,8 @@ BOOTH_TOKENS: dict[str, dict[str, int | float | tuple[int, int]]] = {
         "spin_size": 18,
         "bpm_min_w": 80,
         "transport_gap": 10,
-        "hotcue_pad": (68, 50),
+        "hotcue_pad": (58, 44),
+        "pro_btn": (50, 28),
     },
     "dual_mixer": {
         "ref_width": 1100,

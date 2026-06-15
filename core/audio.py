@@ -197,6 +197,10 @@ def read_tags(path: Path) -> dict[str, str]:
 
 
 def write_tags(path: Path, tags: dict[str, str]) -> None:
+    if not path.exists():
+        raise FileNotFoundError(f"Nie można zapisać tagów — plik nie istnieje: {path}")
+    if path.stat().st_size < 1:
+        raise ValueError(f"Nie można zapisać tagów — plik jest pusty: {path}")
     if path.suffix.lower() in _MP4_EXTENSIONS:
         _write_mp4_tags(path, tags)
         return

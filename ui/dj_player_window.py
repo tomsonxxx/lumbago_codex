@@ -19,6 +19,7 @@ from ui.dj.views import (
 # Minimal Odtwarzacz MVP single (new lightweight path for "Odtwarzacz" mode only)
 from ui.dj.simple_deck_controller import SimpleDeckController
 from ui.dj.views.odtwarzacz_view import OdtwarzaczView
+from ui.dj.compact_pilot_window import CompactPilotWindow
 print("[DJ] Nowa architektura zaimportowana pomyślnie (DeckController + views) - sole impl")
 print("[DJ] Odtwarzacz MVP: SimpleDeckController + OdtwarzaczView zaimportowane (single mode only)")
 # REVIEWER 2026-06 note (crew per PLAN/SZPIEG): QStack dual0+odt1, compact only single, reentr guards, init order documented; remaining P0 spin in odt, P1 dual always. See crew/SZPIEG (REVIEWER) + memory. Exact per spec.
@@ -165,6 +166,7 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
         self._current_mode = "single"   # "console" or "single"
         self._simple_deck_ctrl: Optional["SimpleDeckController"] = None
         self.odtwarzacz_view: Optional["OdtwarzaczView"] = None
+        self._compact_pilot: CompactPilotWindow | None = None
 
         mode_bar.addStretch(1)
         mode_bar.addWidget(self.mode_btn_single)
@@ -190,7 +192,10 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
                 font-weight: 700;
             }}
         """)
-        self.compact_btn.setToolTip("Włącz tryb compact (pilot-like) dla Odtwarzacza. EFEKT: mniejsze rozmiary, mniejszy waveform, spinning CD animowany przy play, ikony mini; zachowuje cue/drag/file-stream. Tylko dla single odt (nie dual).")
+        self.compact_btn.setToolTip(
+            "Otwórz pilot kompaktowy (osobne okno Winamp-mini). "
+            "Waveform + głośność + transport + animacja spin. Tylko tryb Odtwarzacz (single)."
+        )
         self.compact_btn.toggled.connect(self._on_compact_toggled)
         mode_bar.addWidget(self.compact_btn)
         mode_bar.addStretch(1)
@@ -810,90 +815,46 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
                 self.single_container.setVisible(False)
 
     def _on_compact_toggled(self, checked: bool):
-        """Toggle compact na odt (single only). Pilot-like + anim spin.
-        W console: no-op lub info.
-        Per spec: toggle w window, set na odt + simple.
-        2026-06-02 UI-DESIGNER re-audit "uruchmo jeszcze raz... nie przestawaj": dynamic minSize pilot 380x280 + gentle resize, re-sync vis spin, guards if not single, odt check. Per SZPIEG compact pilot + PLAN lista. Exact match, docs identical.
-        Per grupa 1+8 + nowa lista po 'dalej': odt ensure/ready guard + compact_btn disable + log when !odt (before any set_compact). Dual0 odt1 order, count, legacy hide only preserved.
-        """
-        is_single = getattr(self, '_current_mode', 'console') == 'single'
+        """Otwórz/zamknij osobne okno pilota kompaktowego (nie modyfikuje flag głównego okna)."""
+        is_single = getattr(self, "_current_mode", "console") == "single"
         if not is_single:
             self.compact_btn.setChecked(False)
-            try:
-                self.compact_btn.setToolTip("Compact tylko w trybie Odtwarzacz (single). W konsoli dual — wyłączone.")
-            except Exception:
-                pass
+            self.compact_btn.setToolTip("Pilot kompaktowy tylko w trybie Odtwarzacz (single).")
             return
-        odt = getattr(self, "odtwarzacz_view", None)
-        if not odt:
-            # More guards (FIXER + lista 1+8): no odt -> disable compact, no crash on rapid toggle/switch. Ensure before use.
+
+        ctrl = getattr(self, "_simple_deck_ctrl", None)
+        if not ctrl:
             try:
-                self.compact_btn.setChecked(False)
-                self.compact_btn.setEnabled(False)
-                logger.debug("compact toggle: odt None -> disable btn (per SZPIEG/Plan grupa 1+8 on-demand/guards)")
-            except Exception:
-                pass
+                if self.odtwarzacz_view is None:
+                    self._create_odtwarzacz_ui()
+                ctrl = getattr(self, "_simple_deck_ctrl", None)
+            except Exception as exc:
+                logger.warning("compact pilot: nie udało się utworzyć odt: %s", exc)
+        if not ctrl:
+            self.compact_btn.setChecked(False)
+            self.compact_btn.setEnabled(False)
+            logger.debug("compact pilot: brak SimpleDeckController")
             return
-        if odt and hasattr(odt, "set_compact_mode"):
-            try:
-                odt.set_compact_mode(checked)
-                # Playback compact vis polish (FIXER): re-sync play_state / spin / btn / wave if was playing during toggle/switch.
-                # Ensures spin starts, title/time current, no vis desync in compact pilot.
-                if getattr(odt, "_is_playing", False):
-                    try:
-                        odt._update_compact_play_state(True)
-                        # force wave/playhead if controller has state
-                        if hasattr(self, "_simple_deck_ctrl") and self._simple_deck_ctrl and hasattr(odt, "waveform"):
-                            state = None
-                            if self.playback_engine:
-                                state = self.playback_engine.get_deck_state("A")
-                            if state:
-                                odt.waveform.set_playhead(getattr(state, "position_ms", 0))
-                    except Exception:
-                        pass
-            except Exception as e:
-                logger.warning(f"compact toggle odt failed: {e}")
-        # sync text
+
+        self.compact_btn.setText("☑ Compact" if checked else "☐ Compact")
+
+        if checked:
+            if self._compact_pilot is None:
+                self._compact_pilot = CompactPilotWindow(ctrl, self)
+                self._compact_pilot.closed_by_user.connect(self._on_compact_pilot_closed)
+            self._compact_pilot.show_pilot()
+        elif self._compact_pilot is not None:
+            self._compact_pilot.hide()
+
+        logger.debug("Compact pilot toggled: %s", checked)
+
+    def _on_compact_pilot_closed(self) -> None:
         try:
-            self.compact_btn.setText("☑ Compact" if checked else "☐ Compact")
-        except Exception:
-            pass
-        # Pilot feel: auto adjust min size for compact (per SZPIEG/Plan step2 + FIXER polish + grupa 2+12 nowa lista po 'dalej') -- smaller for mini pilot, restore for normal. dynamic min/floating.
-        # window min shrink comment, resize self-manage: per lista 2/12 compact toggle+anim spin + always-on-top.
-        # Scalability preserved (no fixed, user can still resize larger; air/margins inside odt).
-        # Używa _orig_ zapisane w init (dynamic). Shrink/floating: always-on-top for pilot (notification bubble per SZPIEG compact spec).
-        # Non-radical polish: setWindowFlags + show after change (standard Qt for StaysOnTop toggle). re-sync timing reinforced.
-        # Per SZPIEG/Plan + lista 2+12: reduce empty bottom in compact handled in odt apply (less stretch), option always-on-top on toggle.
-        try:
-            from ui.dj.styles import BOOTH_SIZES
-            cmin = BOOTH_SIZES.get("compact_window_min", (420, 300))
-            if checked:
-                self.setMinimumSize(*cmin)
-                # optional gentle shrink if current larger (non-destructive)
-                if self.width() > 520 or self.height() > 420:
-                    self.resize(max(420, min(self.width(), 520)), max(300, min(self.height(), 380)))
-                # always-on-top compact pilot (floating-like, useful booth/multi-monitor per SZPIEG research + lista 12)
-                try:
-                    flags = self.windowFlags() | QtCore.Qt.WindowType.WindowStaysOnTopHint
-                    self.setWindowFlags(flags)
-                    self.show()  # re-show after flag change
-                except Exception:
-                    pass
-            else:
-                if hasattr(self, "_orig_min_w"):
-                    self.setMinimumSize(self._orig_min_w, self._orig_min_h)
-                else:
-                    self.setMinimumSize(980, 720)
-                # remove always-on-top when back to normal
-                try:
-                    flags = self.windowFlags() & ~QtCore.Qt.WindowType.WindowStaysOnTopHint
-                    self.setWindowFlags(flags)
-                    self.show()
-                except Exception:
-                    pass
-        except Exception:
-            pass
-        logger.debug(f"Compact toggled: {checked} (single={is_single})")
+            self.compact_btn.blockSignals(True)
+            self.compact_btn.setChecked(False)
+            self.compact_btn.setText("☐ Compact")
+        finally:
+            self.compact_btn.blockSignals(False)
 
     def _apply_base_style(self):
         """Rich pro dark booth stylesheet — high contrast, larger controls, readable everywhere."""

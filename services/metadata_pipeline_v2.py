@@ -48,6 +48,9 @@ SOURCE_NORMALIZATION = {
     "ai": "ai_enrichment",
     "biblioteka lokalna": "local_library",
     "tagi pliku": "file_tags",
+    "lrclib": "lrclib",
+    "lyrics.ovh": "lyricsovh",
+    "filename": "filename_pattern",
 }
 
 

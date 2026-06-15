@@ -9,9 +9,11 @@ from core.renamer import (
     build_rename_plan,
     undo_last_rename,
     # File Manager / organizer exports (added to renamer module)
+    OrganizeApplyResult,
     build_organize_plan,
     apply_organize_plan,
     undo_last_organize,
+    _normalize_fs_path,
 )
 from data.repository import update_track_paths_bulk
 from core.audio import write_tags
@@ -340,71 +342,128 @@ class FileOrganizerDialog(QtWidgets.QDialog):
             QtWidgets.QMessageBox.critical(self, "Błąd podglądu", str(e))
 
     def _apply(self):
-        if not self._plan:
-            self._preview()
+        self._preview()
         if not self._plan:
             return
+
+        conflicts = [item for item in self._plan if item.conflict]
+        if conflicts:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Konflikty w planie",
+                f"Plan zawiera {len(conflicts)} konfliktów. Popraw wzorce lub usuń duplikaty przed zastosowaniem.",
+            )
+            return
+
+        idx = self.action_combo.currentIndex()
+        action = "delete" if idx == 2 else ("copy" if idx == 1 else "move")
+        missing = [
+            item
+            for item in self._plan
+            if item.action != "delete" and not _normalize_fs_path(item.old_path).exists()
+        ]
+        if missing and action != "delete":
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Brak plików źródłowych",
+                f"{len(missing)} plików nie istnieje na dysku (ścieżki w bibliotece mogą być nieaktualne).\n"
+                "Biblioteka NIE zostanie zmieniona. Odśwież skan lub cofnij poprzednią organizację.",
+            )
+            return
+
         try:
-            base = Path(self.target_dir.text().strip())
-            idx = self.action_combo.currentIndex()
-            action = "delete" if idx == 2 else ("copy" if idx == 1 else "move")
-            # re-build to be fresh? but use current plan
-            track_lookup = {str(t.path): t for t in self._tracks}
-            self._history = apply_organize_plan(
+            track_lookup: dict[str, Track] = {}
+            for t in self._tracks:
+                p = _normalize_fs_path(Path(t.path))
+                track_lookup[str(p)] = t
+                track_lookup[str(t.path)] = t
+
+            result: OrganizeApplyResult = apply_organize_plan(
                 self._plan,
                 do_write_tags=self.write_cb.isChecked() and action != "delete",
                 track_lookup=track_lookup,
             )
-            # NOW update library/repo after FS ops (key requirement)
-            if self._history:
-                from data.repository import update_track_paths_bulk, upsert_tracks, list_tracks
-                from copy import deepcopy as _deep
+            self._history = result.history
 
-                moves = [{"old": h["old"], "new": h["new"]} for h in self._history if h.get("action") == "move"]
-                if moves:
-                    update_track_paths_bulk(moves)
+            if result.errors:
+                QtWidgets.QMessageBox.critical(
+                    self,
+                    "Błąd organizacji",
+                    "Operacja przerwana — pliki nie zostały przeniesione, biblioteka bez zmian.\n\n"
+                    + "\n".join(result.errors[:8]),
+                )
+                return
 
-                deletes = [h for h in self._history if h.get("action") == "delete"]
-                if deletes:
-                    # Remove from DB (simple path match)
-                    # Note: for production better batch delete by path, here use repo if avail
-                    try:
-                        from data.repository import get_session_factory
-                        from data.schema import TrackOrm
-                        Session = get_session_factory()
-                        with Session() as sess:
-                            for d in deletes:
-                                sess.query(TrackOrm).filter(TrackOrm.path == d["old"]).delete()
-                            sess.commit()
-                    except Exception as de:
-                        # fallback: nothing, or log
-                        pass
+            if not self._history:
+                QtWidgets.QMessageBox.warning(
+                    self,
+                    "Nic nie wykonano",
+                    "Żaden plik nie został przetworzony (brak plików, konflikty lub ten sam katalog docelowy).",
+                )
+                return
 
-                copies = [h for h in self._history if h.get("action") == "copy"]
-                if copies:
-                    new_ts: list[Track] = []
-                    old_lookup = {str(t.path): t for t in self._tracks}
-                    for h in copies:
-                        orig = old_lookup.get(h["old"])
-                        if orig:
-                            ct = _deep(orig)
-                            ct.path = h["new"]
-                            ct.id = None  # new entry
-                            # ensure dates fresh-ish
-                            ct.date_added = None
-                            new_ts.append(ct)
-                    if new_ts:
-                        upsert_tracks(new_ts)
+            verified: list[dict[str, str]] = []
+            for h in self._history:
+                act = h.get("action")
+                if act == "delete":
+                    verified.append(h)
+                    continue
+                newp = Path(h.get("new", ""))
+                if newp.is_file() and newp.stat().st_size >= 1:
+                    verified.append(h)
 
-            n = len(self._history)
+            if len(verified) != len(self._history):
+                QtWidgets.QMessageBox.critical(
+                    self,
+                    "Weryfikacja nieudana",
+                    "Pliki docelowe nie istnieją lub są puste — biblioteka NIE została zaktualizowana.",
+                )
+                return
+
+            from data.repository import update_track_paths_bulk, upsert_tracks
+            from copy import deepcopy as _deep
+
+            moves = [{"old": h["old"], "new": h["new"]} for h in verified if h.get("action") == "move"]
+            if moves:
+                update_track_paths_bulk(moves)
+
+            deletes = [h for h in verified if h.get("action") == "delete"]
+            if deletes:
+                try:
+                    from data.repository import get_session_factory
+                    from data.schema import TrackOrm
+
+                    Session = get_session_factory()
+                    with Session() as sess:
+                        for d in deletes:
+                            sess.query(TrackOrm).filter(TrackOrm.path == d["old"]).delete()
+                        sess.commit()
+                except Exception:
+                    pass
+
+            copies = [h for h in verified if h.get("action") == "copy"]
+            if copies:
+                new_ts: list[Track] = []
+                old_lookup = {str(t.path): t for t in self._tracks}
+                for h in copies:
+                    orig = old_lookup.get(h["old"])
+                    if orig:
+                        ct = _deep(orig)
+                        ct.path = h["new"]
+                        ct.id = None
+                        ct.date_added = None
+                        new_ts.append(ct)
+                if new_ts:
+                    upsert_tracks(new_ts)
+
+            n = len(verified)
             self.accept()
-            # show after close to parent
             parent = self.parent()
             if parent:
                 QtWidgets.QMessageBox.information(
                     parent,
                     "Organizacja zakończona",
-                    f"Przetworzono {n} plików (ruchy/kopie). Biblioteka/repo zaktualizowane po operacjach FS. Użyj Cofnij w dialogu jeśli potrzeba.",
+                    f"Przetworzono {n} plików na dysku. Biblioteka zaktualizowana dopiero po weryfikacji plików.",
                 )
         except Exception as exc:
             QtWidgets.QMessageBox.critical(self, "Błąd organizacji", f"Nie udało się: {exc}")

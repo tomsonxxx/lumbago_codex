@@ -165,6 +165,11 @@ class ConsoleDeckView(QtWidgets.QFrame):
         self.time_label = build_time_label(m)
         main.addWidget(self.time_label, 0)
 
+        scroll_host = QtWidgets.QWidget()
+        scroll_layout = QtWidgets.QVBoxLayout(scroll_host)
+        scroll_layout.setContentsMargins(0, 0, 0, 0)
+        scroll_layout.setSpacing(m.layout_spacing())
+
         self.transport: TransportBar | None = None
         if self._embed_transport:
             trans_row = QtWidgets.QHBoxLayout()
@@ -172,7 +177,7 @@ class ConsoleDeckView(QtWidgets.QFrame):
             self.transport = TransportBar()
             trans_row.addWidget(self.transport, 0)
             trans_row.addStretch(1)
-            main.addLayout(trans_row, 0)
+            scroll_layout.addLayout(trans_row, 0)
 
         controls_row = QtWidgets.QHBoxLayout()
         controls_row.setSpacing(m.px(10))
@@ -193,7 +198,7 @@ class ConsoleDeckView(QtWidgets.QFrame):
 
         self.pitch_control = PitchControl()
         controls_row.addWidget(self.pitch_control, 2)
-        main.addLayout(controls_row, 0)
+        scroll_layout.addLayout(controls_row, 0)
 
         # === PRO KONTROLKI: KEY/SYNC/PFL/Q (KEY jest w PitchControl) ===
         pro_row = QtWidgets.QHBoxLayout()
@@ -228,7 +233,7 @@ class ConsoleDeckView(QtWidgets.QFrame):
         pro_row.addWidget(self.sync_btn, 0)
         pro_row.addWidget(self.pfl_btn, 0)
         pro_row.addWidget(self.quantize_btn, 0)
-        main.addLayout(pro_row, 0)
+        scroll_layout.addLayout(pro_row, 0)
 
         # === EQ + HOT CUES (EQ po lewej, pady po prawej – klasyczny układ) ===
         eq_hc = QtWidgets.QHBoxLayout()
@@ -252,7 +257,7 @@ class ConsoleDeckView(QtWidgets.QFrame):
         hc_col.addWidget(self.hotcue_grid)
         eq_hc.addLayout(hc_col, 1)
 
-        main.addLayout(eq_hc, 0)
+        scroll_layout.addLayout(eq_hc, 0)
 
         # === MEMORY + LOOP (dolny rząd) ===
         mem_loop = QtWidgets.QHBoxLayout()
@@ -299,7 +304,14 @@ class ConsoleDeckView(QtWidgets.QFrame):
         self.loop_toggle_btn.customContextMenuRequested.connect(lambda p: self._show_loop_menu(p, "LOOP"))
         mem_loop.addStretch(1)
 
-        main.addLayout(mem_loop, 0)
+        scroll_layout.addLayout(mem_loop, 0)
+
+        deck_scroll = QtWidgets.QScrollArea()
+        deck_scroll.setWidgetResizable(True)
+        deck_scroll.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
+        deck_scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        deck_scroll.setWidget(scroll_host)
+        main.addWidget(deck_scroll, 1)
 
         # Status
         self.status_label = QtWidgets.QLabel("")

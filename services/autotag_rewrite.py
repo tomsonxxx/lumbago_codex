@@ -126,20 +126,17 @@ class UnifiedAutoTagger:
         supplemental_only_sources = {"LRCLIB", "Lyrics.ovh"}
 
         if priority_only:
-            # === TRYB SZYBKI (priorytetowe 10 pól) ===
-            # Optymalna kolejność pod kątem szybkości + jakości (darmowe źródła):
-            # 1. MusicBrainz – bardzo dobre, wiarygodne dane
-            # 2. Discogs     – świetny na label, year, gatunek
-            # 3. AI (batch)  – jeśli już załadowany preload'em
-            # 4. iTunes + Deezer – szybkie uzupełnienie
             providers = (
                 self._search_musicbrainz,
                 self._search_discogs,
-                self._search_ai,           # AI batch (największy zysk po preload)
+                self._search_ai,
                 self._search_itunes,
                 self._search_deezer,
                 self._search_theaudiodb,
                 self._search_listenbrainz,
+                self._search_lrclib,
+                self._search_lyrics_ovh,
+                self._search_filename_remixer,
             )
         else:
             # === TRYB PEŁNY (wszystkie pola + tło) ===
@@ -368,9 +365,11 @@ class UnifiedAutoTagger:
         publisher = None
         comment_parts: list[str] = []
         mbid = best.get("id")
+        mb_remixer = None
         if mbid:
             detail = self._musicbrainz_detail(mbid)
             tags = detail.get("tags", [])
+            mb_remixer = detail.get("remixer")
             if detail.get("genres"):
                 genre = detail["genres"][0]
             elif tags:
@@ -432,7 +431,7 @@ class UnifiedAutoTagger:
             genre=genre,
             comment=" / ".join(comment_parts) or None,
             publisher=publisher,
-            remixer=None,
+            remixer=mb_remixer,
             tags=tags,
             artwork_url=mb_artwork_url,
         )
@@ -478,24 +477,35 @@ class UnifiedAutoTagger:
             artwork_url=artwork_url,
         )
 
-    def _musicbrainz_detail(self, mbid: str) -> dict[str, list[str]]:
+    def _musicbrainz_detail(self, mbid: str) -> dict[str, list[str] | str | None]:
         try:
             response = requests.get(
                 f"{_MB_BASE}/recording/{mbid}",
-                params={"inc": "tags+genres", "fmt": "json"},
+                params={"inc": "tags+genres+artist-rels", "fmt": "json"},
                 headers={"Accept": "application/json", "User-Agent": _USER_AGENT},
                 timeout=15,
             )
             response.raise_for_status()
             payload = response.json()
         except Exception:
-            return {"tags": [], "genres": []}
+            return {"tags": [], "genres": [], "remixer": None}
 
         tags = sorted(payload.get("tags", []), key=lambda item: item.get("count", 0), reverse=True)
         genres = sorted(payload.get("genres", []), key=lambda item: item.get("count", 0), reverse=True)
+        remixer = None
+        for relation in payload.get("relations", []) or []:
+            if not isinstance(relation, dict):
+                continue
+            rel_type = str(relation.get("type", "")).strip().lower()
+            artist_info = relation.get("artist")
+            artist_name = artist_info.get("name") if isinstance(artist_info, dict) else None
+            if rel_type in {"mix", "remixer"} and artist_name:
+                remixer = str(artist_name).strip()
+                break
         return {
             "tags": [str(item.get("name")).strip() for item in tags[:8] if item.get("name")],
             "genres": [str(item.get("name")).strip() for item in genres[:4] if item.get("name")],
+            "remixer": remixer,
         }
 
     def _musicbrainz_release_group_detail(self, release_group_id: str) -> dict[str, list[str]]:
@@ -813,6 +823,12 @@ class UnifiedAutoTagger:
             if self._ai_tagger is None:
                 self._ai_tagger = self._build_multi_ai_tagger()
             return self._ai_tagger
+
+    def _search_filename_remixer(self, track: Track) -> Candidate | None:
+        remixer = _extract_remixer_name(track.title)
+        if not remixer:
+            return None
+        return Candidate(source="filename", score=42, remixer=remixer)
 
     def _search_lrclib(self, track: Track) -> Candidate | None:
         track = _track_with_filename_identity(track)

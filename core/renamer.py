@@ -315,6 +315,57 @@ class OrganizePlanItem:
     reason: str | None = None
 
 
+@dataclass
+class OrganizeApplyResult:
+    history: list[dict[str, str]]
+    errors: list[str]
+    skipped: int = 0
+
+
+def _normalize_fs_path(path: Path) -> Path:
+    try:
+        return path.expanduser().resolve()
+    except OSError:
+        return path.expanduser().absolute()
+
+
+def _audio_suffix(path: Path) -> str:
+    if path.suffix:
+        return path.suffix.lower()
+    return ".mp3"
+
+
+def _verify_audio_file(path: Path) -> None:
+    if not path.is_file():
+        raise FileNotFoundError(f"Plik nie istnieje: {path}")
+    if path.stat().st_size < 1:
+        raise ValueError(f"Plik jest pusty: {path}")
+
+
+def _safe_move_file(src: Path, dst: Path) -> None:
+    """Przeniesienie z fallbackiem copy+unlink (różne wolumeny Windows)."""
+    _verify_audio_file(src)
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    if dst.exists():
+        raise FileExistsError(f"Cel już istnieje: {dst}")
+    try:
+        src.rename(dst)
+    except OSError:
+        shutil.copy2(src, dst)
+        _verify_audio_file(dst)
+        src.unlink()
+    _verify_audio_file(dst)
+
+
+def _safe_copy_file(src: Path, dst: Path) -> None:
+    _verify_audio_file(src)
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    if dst.exists():
+        raise FileExistsError(f"Cel już istnieje: {dst}")
+    shutil.copy2(src, dst)
+    _verify_audio_file(dst)
+
+
 def _render_structure_segment(track: Track, segment: str, index: int) -> str:
     """Render one folder segment, reusing cleanup. Empty -> 'Unknown' for structure."""
     # Use the improved _render_pattern logic but for single segment (no index usually)
@@ -339,9 +390,9 @@ def build_organize_plan(
     For delete, folder_structure/filename_pattern are ignored.
     """
     prepared: list[OrganizePlanItem] = []
-    target_base = Path(target_base)
+    target_base = _normalize_fs_path(Path(target_base))
     for index, track in enumerate(tracks, 1):
-        old_path = Path(track.path)
+        old_path = _normalize_fs_path(Path(track.path))
         if action == "delete":
             # For delete, ignore folder/fname templates. Mark for removal.
             prepared.append(
@@ -371,8 +422,9 @@ def build_organize_plan(
         fname = _sanitize_filename(fname)
         if not fname or fname == "untitled":
             fname = f"track_{index}"
-        new_name = f"{fname}{old_path.suffix}"
-        new_path = (target_base / folder_rel / new_name).resolve()
+        suffix = _audio_suffix(old_path)
+        new_name = f"{fname}{suffix}"
+        new_path = _normalize_fs_path(target_base / folder_rel / new_name)
 
         prepared.append(
             OrganizePlanItem(
@@ -424,67 +476,93 @@ def apply_organize_plan(
     *,
     do_write_tags: bool = False,
     track_lookup: dict[str, Track] | None = None,
-) -> list[dict[str, str]]:
-    """Execute the organize: move or copy files, create folder structures, optional tag writeback.
-    Returns history list with 'old','new','action'. Updates FS, caller must update repo/DB.
-    Supports undo-ish via returned history (for moves).
-    """
-    executable = [
-        item
-        for item in plan
-        if not item.conflict and item.old_path.exists() and (item.action == "delete" or item.old_path != item.new_path)
-    ]
+) -> OrganizeApplyResult:
+    """Wykonaj organizację: move/copy/delete na FS. DB aktualizuje wyłącznie caller po weryfikacji."""
+    plan_list = list(plan)
+    executable = []
+    skipped = 0
+    for item in plan_list:
+        if item.conflict:
+            skipped += 1
+            continue
+        old = _normalize_fs_path(item.old_path)
+        new = _normalize_fs_path(item.new_path)
+        if item.action == "delete":
+            if old.exists():
+                executable.append(item)
+            else:
+                skipped += 1
+        elif old.exists() and old != new:
+            executable.append(item)
+        else:
+            skipped += 1
+
     if not executable:
         _store_organize_history([])
-        return []
+        return OrganizeApplyResult(history=[], errors=[], skipped=skipped)
 
     history: list[dict[str, str]] = []
     errors: list[str] = []
+    completed_moves: list[tuple[Path, Path]] = []
 
     for item in executable:
+        old = _normalize_fs_path(item.old_path)
+        new = _normalize_fs_path(item.new_path)
         try:
             if item.action == "delete":
-                if item.old_path.exists():
-                    item.old_path.unlink()
-                hist_entry = {"old": str(item.old_path), "new": "", "action": "delete"}
+                if not old.is_file():
+                    raise FileNotFoundError(f"Plik nie istnieje: {old}")
+                old.unlink()
+                hist_entry = {"old": str(old), "new": "", "action": "delete"}
+            elif item.action == "copy":
+                _safe_copy_file(old, new)
+                hist_entry = {"old": str(old), "new": str(new), "action": "copy"}
             else:
-                item.new_path.parent.mkdir(parents=True, exist_ok=True)
-                if item.action == "copy":
-                    shutil.copy2(item.old_path, item.new_path)
-                    hist_entry = {"old": str(item.old_path), "new": str(item.new_path), "action": "copy"}
-                else:
-                    # move (rename across dirs ok)
-                    item.old_path.rename(item.new_path)
-                    hist_entry = {"old": str(item.old_path), "new": str(item.new_path), "action": "move"}
-                # optional tag writeback to the *target* file using provided lookup (library state)
-                if do_write_tags and track_lookup:
-                    tr = track_lookup.get(hist_entry["old"])
+                _safe_move_file(old, new)
+                completed_moves.append((old, new))
+                hist_entry = {"old": str(old), "new": str(new), "action": "move"}
+
+            if do_write_tags and track_lookup and item.action != "delete":
+                lookup_keys = {str(old), str(item.old_path), str(_normalize_fs_path(item.old_path))}
+                tr = None
+                for key in lookup_keys:
+                    tr = track_lookup.get(key)
                     if tr:
-                        tags: dict[str, str] = {}
-                        for fld in (
-                            "title", "artist", "album", "albumartist", "genre", "year",
-                            "bpm", "key", "tracknumber", "discnumber", "composer", "remixer",
-                            "originalartist", "publisher", "isrc", "comment", "lyrics", "mood", "energy",
-                        ):
-                            val = getattr(tr, fld, None)
-                            if val is not None:
-                                tags[fld] = str(val)
-                        if getattr(tr, "rating", 0):
-                            tags["rating"] = str(tr.rating)
-                        try:
-                            from core.audio import write_tags as _wt
-                            _wt(Path(hist_entry["new"]), tags)
-                        except Exception as we:
-                            errors.append(f"write_tags {Path(hist_entry['new']).name}: {we}")
+                        break
+                if tr:
+                    tags: dict[str, str] = {}
+                    for fld in (
+                        "title", "artist", "album", "albumartist", "genre", "year",
+                        "bpm", "key", "tracknumber", "discnumber", "composer", "remixer",
+                        "originalartist", "publisher", "isrc", "comment", "lyrics", "mood", "energy",
+                    ):
+                        val = getattr(tr, fld, None)
+                        if val is not None:
+                            tags[fld] = str(val)
+                    if getattr(tr, "rating", 0):
+                        tags["rating"] = str(tr.rating)
+                    try:
+                        from core.audio import write_tags as _wt
+
+                        _wt(Path(hist_entry["new"]), tags)
+                    except Exception as we:
+                        errors.append(f"write_tags {Path(hist_entry['new']).name}: {we}")
+
             history.append(hist_entry)
         except Exception as e:
-            errors.append(f"{item.action} {item.old_path.name} -> {item.new_path}: {e}")
+            errors.append(f"{item.action} {old.name} -> {new}: {e}")
+            for src, dst in reversed(completed_moves):
+                try:
+                    if dst.exists() and not src.exists():
+                        _safe_move_file(dst, src)
+                except Exception:
+                    pass
+            completed_moves.clear()
+            history.clear()
+            break
 
     _store_organize_history(history)
-    if errors:
-        # non-fatal, return what succeeded; caller can log
-        pass
-    return history
+    return OrganizeApplyResult(history=history, errors=errors, skipped=skipped)
 
 
 def undo_last_organize() -> list[dict[str, str]]:
@@ -540,6 +618,10 @@ def organize_tracks(
     """High-level: build + apply. Returns (plan, history). Caller responsible for repo updates after.
     """
     plan = build_organize_plan(tracks, folder_structure, filename_pattern, Path(target_base), action)
-    track_lookup = {str(t.path): t for t in tracks}
-    history = apply_organize_plan(plan, do_write_tags=do_write_tags, track_lookup=track_lookup)
-    return plan, history
+    track_lookup: dict[str, Track] = {}
+    for t in tracks:
+        p = _normalize_fs_path(Path(t.path))
+        track_lookup[str(p)] = t
+        track_lookup[str(t.path)] = t
+    result = apply_organize_plan(plan, do_write_tags=do_write_tags, track_lookup=track_lookup)
+    return plan, result

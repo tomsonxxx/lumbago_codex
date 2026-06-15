@@ -103,7 +103,7 @@ class MixerCompactBar(QtWidgets.QFrame):
         m = self._metrics
         root = QtWidgets.QHBoxLayout(self)
         root.setContentsMargins(m.px(10), m.px(6), m.px(10), m.px(6))
-        root.setSpacing(m.px(12))
+        root.setSpacing(m.px(8))
 
         self.transport_a = _MiniTransport("a")
         root.addWidget(self.transport_a, 0)
@@ -127,7 +127,7 @@ class MixerCompactBar(QtWidgets.QFrame):
         self.transport_b = _MiniTransport("b")
         root.addWidget(self.transport_b, 0)
 
-        root.addSpacing(m.px(16))
+        root.addSpacing(m.px(8))
 
         master_box = self._vol_column("MASTER", default=85)
         self.master_slider = master_box["slider"]

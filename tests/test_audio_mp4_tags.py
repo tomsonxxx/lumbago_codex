@@ -37,12 +37,14 @@ def test_read_tags_mp4_includes_dj_fields(monkeypatch):
     assert tags["energy"] == "0.73"
 
 
-def test_write_tags_mp4_persists_dj_fields(monkeypatch):
+def test_write_tags_mp4_persists_dj_fields(monkeypatch, tmp_path):
     stub = _Mp4Stub({})
     monkeypatch.setattr(audio, "MutagenFile", lambda path, easy=False: stub)
+    demo = tmp_path / "demo.m4a"
+    demo.write_bytes(b"\x00" * 128)
 
     audio.write_tags(
-        Path("demo.m4a"),
+        demo,
         {
             "title": "My Title",
             "artist": "My Artist",
@@ -64,7 +66,7 @@ def test_write_tags_mp4_persists_dj_fields(monkeypatch):
     assert bytes(stub.tags["----:com.apple.iTunes:ENERGY"][0]) == b"0.66"
 
 
-def test_write_tags_mp4_does_not_delete_unspecified_fields(monkeypatch):
+def test_write_tags_mp4_does_not_delete_unspecified_fields(monkeypatch, tmp_path):
     stub = _Mp4Stub(
         {
             "\xa9nam": ["Old Title"],
@@ -73,8 +75,10 @@ def test_write_tags_mp4_does_not_delete_unspecified_fields(monkeypatch):
         }
     )
     monkeypatch.setattr(audio, "MutagenFile", lambda path, easy=False: stub)
+    demo = tmp_path / "demo.m4a"
+    demo.write_bytes(b"\x00" * 128)
 
-    audio.write_tags(Path("demo.m4a"), {"key": "9A"})
+    audio.write_tags(demo, {"key": "9A"})
 
     assert stub.saved is True
     assert stub.tags["\xa9nam"] == ["Old Title"]
