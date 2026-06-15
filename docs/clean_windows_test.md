@@ -41,3 +41,5 @@ Uwaga: nowa architektura sole (ui/dj/* + dj_player_window.py hardcoded True) —
 ## Zakończenie
 1. Sprawdź, czy w `%APPDATA%\LumbagoMusicAI` powstały pliki `lumbago.db` i `settings.json`.
 2. Zapisz wynik testu oraz ewentualne błędy.
+
+Per SZPIEG research 2026-06-15 Clean Windows P1 closure (full coverage of docs/clean_windows_test.md in portable smoke + scripts, note VM pending) + Duplicate Finder dopinanie to the absolute last detail (tests for staged/Etapowo/fp + match_method labels, merge on fp groups, any remaining UI/guards, no silent errors) + manual punkt 4 + full CHECKLIST closure with all auto-verifiable parts + status updates + Etap4 playback reliability + finalny efekt końcowy (VLC prio, visible '⚠ Audio niedostępne' + 'Pobierz VLC z videolan.org', diagnostics, targeted updates, file=load vs stream=transport, guards, EFFECT, booth-visible states, portable notes) — must document identical. Local smoke + scripts full coverage of portable exe run/resources (SAFE); full manual (import/detail/player/DB) + clean-VM test pending per original plan + 'nie przestawaj'. 'Gotowe' local buttoned. Per PLAN.
