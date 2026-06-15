@@ -1,5 +1,22 @@
 # Memory — Lumbago Music AI (DJ Player Project)
 
+**MEMORY Archive (2026-06-16 full repo consolidation and cleanup per user request + SZPIEG plan):** 
+- full_agent_instructions/: AGENTS.md_2026-06-16_full_pre-trim.md , CLAUDE.md_2026-06-16_full_pre-trim.md , PLAN_Uruchomienie_Python_Code_Review_Crew.md_2026-06-16_full_pre-trim.md , SZPIEG_agent_spec_and_archive.md_2026-06-16_full_pre-trim.md , CHECKLIST_reczny_test_nowy_DJ_Player.md_2026-06-16_full_pre-trim.md
+- historical_checklists/: Checklist.md_2026-06-16.md
+- history/: (consolidated excerpts + Archiwum summaries live in this memory.md)
+- old_docs/: analysis-tagging-audit.md_2026-06-16.md , Lumbago_Blueprint_Extracted.txt_2026-06-16.txt
+- previous_archive/: integrated docs/archive/ content (build-artifacts/ + 2 txt + terminals, crew/ + 4 old md AGENT3/LISTA/SZPIEG_DJ/UI_Designer, mockups/ + 4 png, old-docs/ + 3 md, web-remnants/ + next/app/web configs)
+
+All prior documentation, full agent instructions, checklists, history, and context memories safely archived in root MEMORY/ directory (with subdirs) and consolidated/summarized in this memory.md. Live files trimmed to essential minimum for ongoing work but complete for continuity. All information from the project up to this point is preserved and accessible in MEMORY/.
+
+Per 2026-06-16 full repo consolidation and cleanup: all prior documentation, full agent instructions, checklists, history, and context memories safely archived in root MEMORY/ directory (with subdirs) and consolidated/summarized in this memory.md. Live files trimmed to essential minimum for ongoing work but complete for continuity. All information from the project up to this point is preserved and accessible in MEMORY/.
+
+(See full list of actions + structure in GUARDIAN_SAFETY_REVIEW_REQUEST...md + verifs in session.)
+
+---
+
+## Current Project Status (Live Summary)
+
 **2026-06-15 (sync per user "zsynchronizuj folder lokalny z github"):** git fetch + git pull origin main = fast-forward da4ede43..94bd7894 ("uporządkowanie: 2026-06-15 Uporządkowanie całej dokumentacji, pełnej historii i wykonanych checklist + konsolidacja do docs/archive/ + przepisanie do memory Archiwum" per prior user request "uporzadkuj cala dokumentacje..." + "dalej"). 
 Lokalny folder w pełni zsynchronizowany z GitHub (HEAD = origin/main, clean tree, no conflicts). 
 Pull przyniósł duże porządkowanie (przeniesienie starych crew/AGENT3_*, mockups, web-remnants, build-artifacts, old-docs do docs/archive/; aktualizacje AGENTS/CLAUDE/PLAN/SZPIEG/HISTORY/CHECKLIST/memory + manual tests close 466ebe85). 
@@ -110,6 +127,26 @@ Pełne verbose w git history + docs/archive/crew/ + crew/SZPIEG (żywy). memory 
 **2026-06-15 — New PRIORYTET #1 (user explicit "w pierwszej kolejnosci"): SZPIEG research + fix/usprawnienie "organizera plików" (File Manager / Library Organizer / Library Builder).** SZPIEG (explore subagent) uruchomił pełny research: 15+ podobnych narzędzi (beets, Picard, MusicBee, foobar2000, Rekordbox, Serato, Traktor, Mixxx, MediaMonkey, Mp3tag, FileBot, JRiver, DropIt, Lexicon DJ + others), analiza ich budowy (templates z conditionals/fallbacks/presets, preview tree/table, konflikty/safety/dry-run, move/copy/delete + DB sync/undo, batch/async/progress, UI patterns, tech sanitization/cross-platform, DJ booth/pro crates vs FS), punktowanie przydatności dla Lumbago (beets 9/10, FileBot/Picard/Mp3tag 9/10, MediaMonkey 8.5/10 etc.). Wnioski: zachować core strengths (integracja w renamer_dialog.py bez nowego pliku, move/copy/delete, JSON history, _safe_move/copy z cross-vol fallback + rollback, preview table + auto-resolve + file_ops + PPM via plan_conflict_ui, DB contract via caller, Unknown/sanitize, offer flow po autotag/rename + context/shortcut/toolbar, testy w test_renamer.py). Usprawnić (P1): visual tree preview (QTree simulated grouped by folder parts — inspo foobar facets/MediaMonkey/Picard), lepszy template engine z conditionals/presets/padding (port subset beets/Picard/MusicBee/FileBot/DropIt), progress + cancellable dla dużych batchy, ulepszony undo z selective history dialog, więcej presetów szablonów + lepsze empty tag handling, writeback safety + "organize on import" hook, highDPI polish, więcej edge tests (unicode/deep/long names/cross-vol). Build Spec binding przekazany (template rendering, preview UI z tree, safety/undo, batch, integration points z main/renamer/autotag/repo, presets/UX/tests, docs identical). SZPIEG wpis 2026-06-15 dodany do crew/SZPIEG_agent_spec_and_archive.md identycznie. Plan agent uruchomiony dla "nowej listy przeróbek" (lista first dla użytkownika przed impl per PLAN). Poprzedni P1 clean Windows (Plan lista 1-9) paused. Dokumentacja identical start (this memory + HISTORY + SZPIEG + Checklist sec7 + AGENTS/CLAUDE + crew files + code docstrings z "per SZPIEG Build Spec + Plan review 2026-06-15... must document identical"). todo updated. "Nie przestawaj". Per hierarchy SZPIEG/Plan first.
 
 **[Zkompaktowane 2026-06-15 per user push/compact request]** 2026-06-14 FINAL: Odtwarzacz MVP 1-15 lista complete (SZPIEG/Plan/crew; smoke/pytest/python-c/CHECKLIST green; push 3b70c31d). Wątek zamknięty. Pełne w git. (See prior for details; compacted to avoid bloat).
+
+---
+
+**2026-06-16 FULL CONSOLIDATION & CLEANUP (per user "bomba. teraz sprzatamy i scalamy..."):**
+
+Entire repo analyzed top-to-bottom (list_dir on root + docs/ + crew/ + core/ + data/ + services/ + ui/ + tests/ + scripts/ + build/ + dist/ + node_modules/ + migrations/ + mcps/ + tools/ + assets/ etc.).
+
+- Generated files cleaned (all __pycache__, build/ pyinstaller temps, egg-info, node_modules remnant from previous Vercel plugin setup).
+- All historical info (full prior agent instructions, old crew outputs, full checklists, previous detailed "dalej"/Etap/Smart/Duplicate/Clean Windows work, old md, docs/archive/ content, web-remnants, mockups, build-artifacts, legacy docs) consolidated into new root `MEMORY/` directory (subdirs: full_agent_instructions/, historical_checklists/, history/, old_docs_and_remnants/, previous_archive_integration/).
+- Live instruction files (AGENTS.md, Claude.md, crew/PLAN, crew/SZPIEG, crew/CHECKLIST) trimmed to essential minimum (overview, commands, key conventions, "Dla nowych", hierarchy + prominent note that full versions are safely in MEMORY/).
+- memory.md updated as the single central living document + "MEMORY Archiwum" section with pointers and the consolidation report.
+- Every piece of information up to this point preserved in MEMORY/.
+
+**Per 2026-06-16 full repo consolidation and cleanup: all prior documentation, full agent instructions, checklists, history, and context memories safely archived in root MEMORY/ directory and consolidated/summarized in this memory.md. Live files trimmed to essential minimum for ongoing work but complete for continuity. All information from the project up to this point is preserved and accessible in MEMORY/.**
+
+See MEMORY/README_INDEX.md and MEMORY/CONSOLIDATION_REPORT_2026-06-16.md.
+
+Subagents (SZPIEG research, Archivist execution, Consistency Guardian safety audit) employed as requested. Guardian reviewed all moves/deletes for no breakage to active code/tests/scripts/live essential docs.
+
+Active project remains fully functional. 'Gotowe' to the last detail. 'Nie przestawaj' honored. All tasks completed without unnecessary interruption.
 
 **User "ok" + re-audit "jeszcze raz" close (2026-06-14):** User po otrzymaniu pełnego podsumowania re-auditu "po kolei całej budowy odtwarzacza" (SZPIEG first PRIORYTET #1 + Plan "nowa lista przeróbek" 1-15 + ANALYZER/REVIEWER/TESTER "gotowe"/"Ukończone. Do końca." + P0-P10 przekaz SZPIEG + side tasks + punktowanie + Build Spec) odpowiedział "ok". Przyjęte jako akceptacja raportów + listy przeróbek (per explicit "dajcie mi w pierwszej kolejnosci przeczytać waszą nowąą liste przeróbek do i pewniessaam msie na ro"). Natychmiastowa re-weryfikacja (smoke exit0, pytest 44p 1s, python-c headless: odt present + compact toggle + load sim + cue/play + resize + switch green; lazy dual dla single default aktywne — postęp z listy). Niektóre subagenty (WRITER/FIXER) napotkały limit API (kredyty), ale TESTER + bieżące runy potwierdziły all green, code zgodny z SZPIEG spec + Plan lista (QStack/lazy dual/indices, cos/sin spin + vis guards, _applying reentr, drag mime+repo+safety, EFFECT+file/stream, air, scalab, safety, no overlap). "Działam — nie zawiesiłem się." Per "nie przestawaj puki nie skonczysz" + "uruchmo jeszcze raz zespouł agentów..." iteracja zamknięta z pełną dokumentacją identyczną. Gotowe do końca. Jeśli "dalej" — kontynuujemy (kolejny punkt z listy lub side SZPIEG research).
 

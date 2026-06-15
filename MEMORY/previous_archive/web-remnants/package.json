@@ -1,0 +1,22 @@
+{
+    "dependencies": {
+        "@vercel/speed-insights": "^2.0.0",
+        "next": "^16.2.7",
+        "react": "^19.2.7",
+        "react-dom": "^19.2.7"
+    },
+    "name": "lumbago-codex",
+    "version": "0.1.0",
+    "private": true,
+    "scripts": {
+        "lint": "next lint",
+        "build": "next build",
+        "dev": "next dev",
+        "start": "next start"
+    },
+    "devDependencies": {
+        "@types/node": "25.9.1",
+        "@types/react": "19.2.16",
+        "typescript": "6.0.3"
+    }
+}

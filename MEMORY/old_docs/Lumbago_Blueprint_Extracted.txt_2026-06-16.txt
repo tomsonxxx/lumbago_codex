@@ -1,0 +1,968 @@
+LUMBAGO MUSIC AI - COMPLETE PROJECT BLUEPRINT
+Extracted text content for analysis
+Total pages: 25
+================================================================================
+
+
+================================================================================
+PAGE 1
+================================================================================
+
+LumbagoLumbago Music AIMusic AI
+Complete Project Blueprint
+Inteligentny menedżer i analityk muzyki nowej generacji
+Autor: Tomasz Bielaszka | Zermatt 2025
+📑  Spis treści
+1. Executive Summary
+2. Wprowadzenie i wizja projektu
+3. Pełna lista funkcji (z nowymi modułami)
+4. User Stories & Use Cases
+5. Szczegółowe procesy (flow diagrams)
+6. Architektura techniczna
+7. Projekt UI/UX (makiety okien)
+8. Baza danych (ERD i schema)
+9. API i integracje
+10. Przykłady kodu i testy
+11. Słownik pojęć (PL/EN)
+12. Plan wdrożenia
+13. Budżet i zasoby
+📥  Downlo ad PDF
+30.05.2026, 06:58 Lumbago Music AI - Complete Project Blueprint
+file:///D:/Downloads/lumbago-complete-doc (1).html 1/25
+
+================================================================================
+PAGE 2
+================================================================================
+
+📊  Executive Summary
+Lumbago Music AI to innowacyjna aplikacja łącząca klasyczne narzędzia DJ-skie z zaawansowaną sztuczną
+inteligencją, stworzona dla profesjonalnych DJ-ów, kolekcjonerów muzyki i producentów.
+Kluczowe wartości
+🎯  Problem
+DJ-e tracą godziny na ręczne tagowanie,
+porządkowanie i konwersję bibliotek muzycznych
+między różnymi platformami.
+💡  Rozwiązanie
+Inteligentny system automatyzujący 80% pracy
+nad biblioteką, z precyzyjną konwersją baz
+Rekordbox/VirtualDJ i rozpoznawaniem utworów.
+🎪  Rynek docelowy
+15 milionów DJ-ów na świecie, 3 mln aktywnych
+użytkowników Rekordbox/VirtualDJ.
+💰  Model biznesowy
+Freemium: wersja podstawowa darmowa, Pro (49
+PLN/msc), Enterprise (API dla klubów).
+Unikalne cechy (USP)
+✓  Jedyna aplikacja z pełną konwersją Rekordbox ↔ VirtualDJ (zachowanie cue points z dokładnością do ms)
+✓  AI rozpoznające utwory z 10-sekundowego fragmentu (acoustic fingerprinting)
+✓  Inteligentne sugesti kolejności tracków w secie (harmonic mixing + energy flow)
+✓  Automatyczne wykrywanie i rozwiązywanie duplikatów (3 metody: hash, tags, audio fingerprint)
+🚀  Wprowadzenie i wizja projektu
+Kontekst
+Nowoczesne narzędzia DJ-skie (Rekordbox, VirtualDJ, Traktor) działają w izolowanych ekosystemach. Przejście
+między platformami wiąże się z utratą metadanych, cue points i struktury biblioteki. Ręczne tagowanie i
+organizacja tysiąca utworów zajmuje setki godzin.
+📥  Downlo ad PDF
+30.05.2026, 06:58 Lumbago Music AI - Complete Project Blueprint
+file:///D:/Downloads/lumbago-complete-doc (1).html 2/25
+
+================================================================================
+PAGE 3
+================================================================================
+
+Wizja
+Lumbago Music AI to "szwajcarski scyzoryk" dla DJ-a — jedno narzędzie do wszystkiego:
+Automatyczne tagowanie i rozpoznawanie utworów
+Konwersja baz między platformami bez utraty danych
+Inteligentne sugestie tracków i kolejności w setach
+Wykrywanie duplikatów i czyszczenie biblioteki
+Backup i synchronizacja z chmurą
+Analiza quality mixów i transition scoring
+Technologia
+Projekt wykorzystuje najnowsze technologie:
+Desktop: Python 3.11+, PyQt6, SQLite, Mutagen, lxml
+Mobile: Kotlin, Jetpack Compose (Android first)
+AI/ML: PyTorch, librosa, chromaprint (AcoustID), scikit-learn
+Cloud: AWS S3 / Google Drive API, OAuth 2.0
+Performance: Opcjonalne mikroserwisy w Rust dla heavy computations
+⚡  Pełna lista funkcji
+📁  Core Features (z oryginalnej specyfikacji)
+1. Import & Scanner
+Opis: Skanowanie folderów, automatyczna detekcja formatów audio (MP3, FLAC, M4A, WAV, OGG, AIFF, AAC,
+DSF), ekstrakcja metadanych z użyciem biblioteki Mutagen.
+Wejście: Ścieżka do katalogu, opcje rekursji, wzorce include/exclude
+Wyjście: Lista tracków z pełnymi metadanymi, raport błędów
+UI: Progress bar, live preview skanowanych plików, opcje Skip/Retry dla błędów
+2. Library Builder
+Opis: Tworzenie nowej biblioteki na dysku według szablonu (np. {genre}/{year}/{artist}/{album}), kopiowanie
+lub przenoszenie plików z generowaniem struktury folderów.
+Funkcje: Symulacja przed wykonaniem, filtrowanie według kryteriów (genre, BPM range, year), automatyczne
+tworzenie bazy SQLite dla nowej biblioteki.
+UI: Wizard wieloekranowy: krok 1 (kryteria), krok 2 (mapowanie), krok 3 (podgląd), krok 4 (wykonanie z
+progress)
+3. Duplicate Finder
+📥  Downlo ad PDF
+30.05.2026, 06:58 Lumbago Music AI - Complete Project Blueprint
+file:///D:/Downloads/lumbago-complete-doc (1).html 3/25
+
+================================================================================
+PAGE 4
+================================================================================
+
+Opis: Wykrywanie duplikatów trzema metodami:
+Hash/Checksum: MD5/SHA1 - porównanie binarne plików
+Tag-based: Porównanie metadanych (title, artist, duration)
+Audio Fingerprint: Chromaprint/AcoustID - sygnatura akustyczna
+Akcje: Keep/Delete selection, Move to backup, Merge metadata, Batch operations
+UI: Tabela wyników z similarity score, podgląd waveform, porównanie metadanych
+4. Smart Tagger AI Pro+
+Opis: Model ML analizuje cechy akustyczne (BPM, key, spectral centroid, MFCC, energy) i sugeruje tagi: genre,
+mood, energy, danceability.
+Trenowanie: Model uczy się na bazie użytkownika - im więcej akceptacji/odrzuceń, tym lepsze sugestie
+Tryby: Local (offline model), Cloud (API z dokładniejszym modelem)
+UI: Panel z confidence score, przyciski Accept/Reject/Apply All, historia zmian
+5. Audio Recognizer
+Opis: Rozpoznawanie utworów z fragmentu audio (min. 10s) lub na podstawie nazwy pliku/tagów:
+Acoustic fingerprinting (Chromaprint)
+Wyszukiwanie w MusicBrainz / AcoustID
+Fuzzy matching nazw plików z bazą Discogs
+Wyjście: Lista dopasowań z confidence, możliwość pobrania pełnych metadanych (okładka, rok, label)
+UI: Waveform fragmentu, wyniki dopasowań, przycisk "Apply metadata"
+6. XML Converter (Rekordbox ↔ VirtualDJ)
+Opis: Parser i generator XML z pełnym mapowaniem pól:
+Track info: Title, Artist, Album, Genre, BPM, Key, Comment
+Cue points z dokładnością do milisekund
+Loops (in/out points)
+Rating, PlayCount, DateAdded
+Funkcje: Dry-run mode (podgląd bez zapisu), diff viewer, backup oryginału, log zmian
+UI: Drag & drop pliku, edytor mapowania pól, preview sample track
+7. Renamer (Batch File Renaming)
+Opis: Masowa zmiana nazw plików według wzorców z placeholderami:
+{artist} - {title}.{ext}
+{year}/{album}/{track_num} - {title}
+{genre}/{bpm}/{key} - {artist} - {title}
+Funkcje: Live preview, undo log, slugify (usuwanie znaków specjalnych), numbering, regex support
+UI: Pattern editor z przykładami, tabela preview (old → new), conflict detection
+8. Player & Waveform Viewer
+📥  Downlo ad PDF
+30.05.2026, 06:58 Lumbago Music AI - Complete Project Blueprint
+file:///D:/Downloads/lumbago-complete-doc (1).html 4/25
+
+================================================================================
+PAGE 5
+================================================================================
+
+Funkcje:
+Waveform z zoom, drag to seek
+Hotcues (8 punktów) z kolorami
+Loop controls (in/out, length)
+Pitch slider, Key lock, Tempo sync
+Spectrogram toggle
+Channel meters (L/R)
+UI: Duży waveform display, kontrolki play/pause/cue, mini mixer
+✨  Nowe moduły (propozycje rozszerzeń)
+9. Playlist Intelligence 🧠
+Opis: AI sugeruje optymalną kolejność tracków w playliście na podstawie:
+Harmonic mixing (kompatybilność tonacji - Camelot Wheel)
+Energy flow (stopniowy wzrost/spadek intensywności)
+BPM progression (płynne przejścia tempa)
+Genre transitions (logiczne przejścia stylistyczne)
+Wyjście: Reordered playlist z wizualizacją energy curve i BPM flow
+UI: Drag & drop tracków, auto-sort button, graf energy/BPM
+10. Crate Digger Mode 🔍
+Opis: Analiza podobieństwa utworów - znajdowanie tracków podobnych do wybranego
+Audio similarity (MFCC, spectral features)
+Metadata matching (genre, BPM, key, year)
+Collaborative filtering (co inni DJ-e grają z tym trackiem)
+Wyjście: Lista rekomendacji z similarity score
+UI: Right-click → "Find Similar", panel wyników z podglądem
+11. Set Recorder & Analyzer 🎙
+Opis: Nagrywanie mixów i automatyczna analiza jakości:
+Transition quality score (smoothness, timing)
+BPM matching accuracy
+Energy flow analysis
+Tracklist recognition (auto-detect played tracks)
+Wyjście: Raport PDF z wykresami, export audio, tracklist
+UI: Recorder panel, timeline z markerami przejść, scoring dashboard
+12. Cloud Backup & Sync ☁
+Opis: Automatyczna synchronizacja biblioteki z chmurą:
+Google Drive / Dropbox integration
+📥  Downlo ad PDF
+30.05.2026, 06:58 Lumbago Music AI - Complete Project Blueprint
+file:///D:/Downloads/lumbago-complete-doc (1).html 5/25
+
+================================================================================
+PAGE 6
+================================================================================
+
+Incremental backups (tylko zmiany)
+Version history (rollback do poprzednich wersji)
+Multi-device sync (desktop + mobile)
+Funkcje: Schedule backups, conflict resolution, bandwidth throttling
+UI: Settings panel, sync status indicator, version browser
+13. Metadata Auto-Complete 📝
+Opis: Automatyczne pobieranie brakujących metadanych:
+Okładki (album art) z MusicBrainz/Discogs
+Rok wydania, label, catalog number
+Genre suggestions z Last.fm tags
+Artist bio, album description
+Batch mode: Uzupełnianie całej biblioteki w tle
+UI: Progress bar, preview zmian, manual override option
+14. Waveform Color Coding 🌈
+Opis: Kolorowanie waveformu według intensywności i charakteru dźwięku:
+🔴  Czerwony: Kick/bass (niskie częstotliwości)
+🟡  Żółty: Hi-hat/percussion (wysokie)
+🟢  Zielony: Wokale
+🔵  Niebieski: Pauzy/breakdown
+Korzyść: Wizualna identyfikacja sekcji utworu (intro, drop, outro)
+UI: Toggle color/mono waveform, legend overlay
+15. Smart Collections 📋
+Opis: Dynamiczne playlisty aktualizujące się automatycznie według reguł:
+"House 126-130 BPM, dodane ostatni miesiąc"
+"Techno w A minor, energy > 80%"
+"Top 100 most played, rating >= 4 stars"
+"Tracks bez okładki OR bez BPM"
+Rule engine: AND/OR/NOT logic, 20+ kryteriów
+UI: Rule builder z dropdown criteria, live count preview
+16. Export Manager 💾
+Opis: Eksport biblioteki na USB z optymalizacją dla sprzętu DJ:
+Format CDJ (Rekordbox analysis files)
+Format XDJ (eksport bez laptopa)
+Denon Engine Prime compatibility
+Generic USB (FAT32, struktura folderów)
+Funkcje: Transcode to MP3 (jeśli FLAC), copy playlist, include artwork
+📥  Downlo ad PDF
+30.05.2026, 06:58 Lumbago Music AI - Complete Project Blueprint
+file:///D:/Downloads/lumbago-complete-doc (1).html 6/25
+
+================================================================================
+PAGE 7
+================================================================================
+
+UI: Device selector, format options, progress with ETA
+👤  User Stories & Use Cases
+Persona 1: DJ Tomek (początkujący DJ)
+Profil: 25 lat, DJ od roku, biblioteka 2000 utworów, używa VirtualDJ
+Problem: Chaos w bibliotece, brak tagów, nie wie jak zorganizować muzykę
+Use Case:
+Importuje folder z muzyką → Scanner wykrywa 2000 plików
+Uruchamia Smart Tagger AI → Automatycznie dostaje sugestie BPM/key/genre
+Używa Library Builder → Tworzy strukturę {genre}/{year}/{artist}
+Duplicate Finder → Znajduje 150 duplikatów, usuwa
+Export Manager → Eksportuje clean library na USB
+Rezultat: 2 godziny pracy zamiast 20+ godzin ręcznie
+Persona 2: DJ Pro Max (profesjonalny DJ)
+Profil: 35 lat, DJ od 15 lat, biblioteka 50k utworów, przechodzi z Rekordbox na VirtualDJ
+Problem: Utrata wszystkich cue points i hot cues przy migracji
+Use Case:
+Eksportuje bazę Rekordbox XML (50k tracków, 400k cue points)
+XML Converter → Konwersja do VirtualDJ z full mapping
+Log pokazuje: 99.8% success, 10 konfliktów do ręcznej korekty
+Import do VirtualDJ → Wszystkie cue points zachowane
+Rezultat: Bezbolesna migracja, oszczędność 100+ godzin pracy
+Persona 3: Kolekcjoner muzyki
+Profil: 40 lat, kolekcjonuje muzykę od 20 lat, 100k plików (FLAC/MP3)
+Problem: Duplikaty, brakujące okładki, niespójne tagi
+Use Case:
+Duplicate Finder (audio fingerprint mode) → 5k duplikatów
+Metadata Auto-Complete → Pobiera 10k brakujących okładek
+Renamer → Ujednolica nazwy według schematu
+Cloud Backup → Automatyczny backup do Google Drive
+📥  Downlo ad PDF
+30.05.2026, 06:58 Lumbago Music AI - Complete Project Blueprint
+file:///D:/Downloads/lumbago-complete-doc (1).html 7/25
+
+================================================================================
+PAGE 8
+================================================================================
+
+Rezultat: Czysta, zorganizowana kolekcja z backup
+⚙  Szczegółowe procesy (flow)
+Proces 1: Import & Scan
+Import Wizard
+Krok 1: Wybór źródła
+[ 📁  Select Folder ] → /Music/DJ_Collection/
+☑  Recursive scan | ☐  Follow symlinks
+Krok 2: Opcje skanowania
+Include: *.mp3, *.flac, *.m4a, *.wav
+Exclude: *_backup*, *.txt
+Krok 3: Postęp
+[ ████████████████░░░░ ] 82% (1642/2000 files)
+Current: Artist - Track.mp3
+Start Scan Pause Cancel
+Backend Flow:
+1. User selects folder(s) + options
+2. Worker thread starts: os.walk() for recursive scan
+3. For each file:
+detect_format() → check extension + magic bytes
+read_tags() → Mutagen.File(path)
+compute_duration() → get length in seconds
+Optional: enqueue for BPM/key analysis
+4. Save to temp index (CSV/JSON buffer)
+5. Commit to SQLite in transaction after batch (500 files)
+6. Generate report: errors, warnings, stats
+📥  Downlo ad PDF
+30.05.2026, 06:58 Lumbago Music AI - Complete Project Blueprint
+file:///D:/Downloads/lumbago-complete-doc (1).html 8/25
+
+================================================================================
+PAGE 9
+================================================================================
+
+Proces 2: XML Conversion (Rekordbox → VirtualDJ)
+XML Converter
+Source: rekordbox_library.xml (Rekordbox 6.x)
+Target: virtualdj_database.xml (VirtualDJ 2024)
+Mapping:
+Title → Title ✓
+Artist → Artist ✓
+Tempo (BPM) → Bpm ✓
+Tonality → Key ✓
+POSITION_MARK → Poi (Cue) ⚠  Convert ms
+Convert  Dry Run
+Backend Flow:
+1. Parse source XML: etree.parse(source_path)
+2. Extract tracks: for track in root.findall('.//TRACK')
+3. Map fields to internal Track model:
+class Track: title: str artist: str bpm: float key: str cues:
+List[CuePoint] # time_ms, type, label loops: List[Loop] # in_ms, out_ms
+4. Convert cues: Rekordbox uses float seconds → VirtualDJ uses int milliseconds
+5. Build target XML: construct new tree with VirtualDJ schema
+6. Validate: check required fields, warn on missing data
+7. Write output + backup original + save conversion log
+Proces 3: Duplicate Detection
+Duplicate Finder
+Mode: Audio Fingerprint (most accurate)
+📥  Downlo ad PDF
+30.05.2026, 06:58 Lumbago Music AI - Complete Project Blueprint
+file:///D:/Downloads/lumbago-complete-doc (1).html 9/25
+
+================================================================================
+PAGE 10
+================================================================================
+
+Results:
+Group 1 Artist - Track.mp3 98% Keep
+Artist - Track (copy).flac 98% Delete
+Auto-Resolve  Export Report
+Algorytm Audio Fingerprint:
+import chromaprint def generate_fingerprint(audio_path): # Load audio y, sr =
+librosa.load(audio_path, duration=120, sr=11025) # Generate chromaprint fp =
+chromaprint.encode_fingerprint( chromaprint.decode_fingerprint(y)[0] ) return
+fp def compare_fingerprints(fp1, fp2): # Hamming distance similarity = 1 -
+(hamming_distance(fp1, fp2) / len(fp1)) return similarity # Grouping
+duplicates = [] for i, track1 in enumerate(library): for track2 in
+library[i+1:]: if compare_fingerprints(track1.fp, track2.fp) > 0.95:
+duplicates.append((track1, track2))
+🏗  Architektura techniczna
+Stack technologiczny
+Frontend (Desktop)
+Python 3.11+
+PyQt6 / PySide6
+QtQuick (QML) dla animations
+Frontend (Mobile)
+Kotlin
+Jetpack Compose
+Material Design 3
+Backend / Core
+Python (business logic)
+Rust (performance modules)
+SQLite (local DB)
+AI/ML
+PyTorch
+librosa (audio analysis)
+chromaprint (fingerprinting)
+scikit-learn
+📥  Downlo ad PDF
+30.05.2026, 06:58 Lumbago Music AI - Complete Project Blueprint
+file:///D:/Downloads/lumbago-complete-doc (1).html 10/25
+
+================================================================================
+PAGE 11
+================================================================================
+
+Diagram architektury (layers)
+┌─────────────────────────────────────────────────┐
+│         UI Layer (PyQt6 / Compose)              │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐        │
+│  │ Library  │ │ Converter│ │  Tagger  │        │
+│  └──────────┘ └──────────┘ └──────────┘        │
+└─────────────────────────────────────────────────┘
+                      ↓
+┌─────────────────────────────────────────────────┐
+│       Application Core (Python/Rust)            │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐        │
+│  │ Scanner  │ │ Converter│ │ AI Engine│        │
+│  └──────────┘ └──────────┘ └──────────┘        │
+└─────────────────────────────────────────────────┘
+                      ↓
+┌─────────────────────────────────────────────────┐
+│         Data Layer (SQLite + Files)             │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐        │
+│  │   DB     │ │   XML    │ │  Audio   │        │
+│  └──────────┘ └──────────┘ └──────────┘        │
+└─────────────────────────────────────────────────┘
+                      ↓
+┌─────────────────────────────────────────────────┐
+│    External Services (Cloud + APIs)             │
+│  MusicBrainz | AcoustID | Discogs | Drive       │
+└─────────────────────────────────────────────────┘
+Moduły core (Python)
+lumbago_music_ai/ ├── core/ │ ├── scanner.py # File discovery & metadata
+extraction │ ├── library.py # Library management │ ├── converter.py # XML
+conversion logic │ ├── tagger.py # AI tagging engine │ ├── recognizer.py #
+Audio recognition │ ├── duplicate_finder.py # Duplicate detection │ └──
+renamer.py # Batch file renaming ├── models/ │ ├── track.py # Track data model
+│ ├── playlist.py # Playlist model │ └── database.py # SQLite ORM ├── ui/ │
+├── main_window.py # Main application window │ ├── import_dialog.py # Import
+wizard │ ├── converter_panel.py # XML converter UI │ └── tagger_panel.py #
+Tagger UI ├── utils/ │ ├── audio_utils.py # Audio processing helpers │ ├──
+xml_utils.py # XML parsing/building │ └── fingerprint.py # Chromaprint wrapper
+└── tests/ ├── test_scanner.py ├── test_converter.py └── test_tagger.py
+📥  Downlo ad PDF
+30.05.2026, 06:58 Lumbago Music AI - Complete Project Blueprint
+file:///D:/Downloads/lumbago-complete-doc (1).html 11/25
+
+================================================================================
+PAGE 12
+================================================================================
+
+🎨  Projekt UI/UX (makiety okien)
+Główne okno - Library View
+Lumbago Music AI - Library
+Import  Scan Tag AI Convert XML Find Duplicates
+Rename
+📁  Sources
+📚  All Tracks (2,847)
+⭐  Favorites (156)
+🕐  Recently Added
+🎵  Playlists
+Deep House Set
+Techno Warm-up
++New Playlist
+Track List
+BPM: 120-130 | Key: A minor | Genre:
+House
+Title Artist BPMKey Time
+Deep
+Feelings
+DJ
+Tomek126 9A 6:32
+Sunrise
+Groove
+Various
+Artists128 1A 5:48
+📀  Track Info
+Title: Deep Feelings
+Artist: DJ Tomek
+Album: Summer Vibes 2024
+BPM: 126
+Key: 9A (A minor)
+Genre: Deep House
+Edit Tags
+Player & Waveform
+Player
+📥  Downlo ad PDF
+30.05.2026, 06:58 Lumbago Music AI - Complete Project Blueprint
+file:///D:/Downloads/lumbago-complete-doc (1).html 12/25
+
+================================================================================
+PAGE 13
+================================================================================
+
+95%
+92%
+88%
+⏮  Prev  ▶  Play ⏭  Next 🔁  Loop
+2:47 6:12
+Smart Tagger AI Panel
+Smart Tagger AI Pro+
+Analyzing: Artist - Track.mp3
+AI Suggestions:
+Genre: Deep House
+✓  Accept  ✗  Reject
+Key: 9A (A minor)
+✓  Accept  ✗  Reject
+Mood: Energetic
+✓  Accept  ✗  Reject
+✓  Accept All  ✗  Reject All
+HOT CUE 1
+📥  Downlo ad PDF
+30.05.2026, 06:58 Lumbago Music AI - Complete Project Blueprint
+file:///D:/Downloads/lumbago-complete-doc (1).html 13/25
+
+================================================================================
+PAGE 14
+================================================================================
+
+🗄  Baza danych (ERD i schema)
+Schemat bazy SQLite
+-- Tracks table (główna tabela utworów) CREATE TABLE tracks ( id INTEGER
+PRIMARY KEY AUTOINCREMENT, path TEXT NOT NULL UNIQUE, title TEXT, artist TEXT,
+album TEXT, genre TEXT, bpm REAL, key TEXT, duration INTEGER, -- w sekundach
+file_size INTEGER, -- w bajtach format TEXT, -- mp3, flac, m4a, etc. bitrate
+INTEGER, sample_rate INTEGER, date_added DATETIME DEFAULT CURRENT_TIMESTAMP,
+date_modified DATETIME, play_count INTEGER DEFAULT 0, rating INTEGER DEFAULT
+0, -- 0-5 stars energy REAL, -- 0-100 mood TEXT, fingerprint TEXT, -- acoustic
+fingerprint hash waveform_path TEXT, -- path to cached waveform image
+artwork_path TEXT, -- path to cached artwork CONSTRAINT valid_rating CHECK
+(rating >= 0 AND rating <= 5) ); CREATE INDEX idx_tracks_artist ON
+tracks(artist); CREATE INDEX idx_tracks_genre ON tracks(genre); CREATE INDEX
+idx_tracks_bpm ON tracks(bpm); CREATE INDEX idx_tracks_key ON tracks(key);
+CREATE INDEX idx_tracks_path ON tracks(path); -- Playlists table CREATE TABLE
+playlists ( id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL,
+description TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, modified_at
+DATETIME DEFAULT CURRENT_TIMESTAMP, is_smart BOOLEAN DEFAULT 0, -- smart
+collection flag rules TEXT -- JSON rules for smart collections ); -- Playlist
+tracks (many-to-many) CREATE TABLE playlist_tracks ( playlist_id INTEGER NOT
+NULL, track_id INTEGER NOT NULL, position INTEGER NOT NULL, added_at DATETIME
+DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (playlist_id, track_id), FOREIGN KEY
+(playlist_id) REFERENCES playlists(id) ON DELETE CASCADE, FOREIGN KEY
+(track_id) REFERENCES tracks(id) ON DELETE CASCADE ); CREATE INDEX
+idx_playlist_tracks_position ON playlist_tracks(playlist_id, position); -- Cue
+points table CREATE TABLE cues ( id INTEGER PRIMARY KEY AUTOINCREMENT,
+track_id INTEGER NOT NULL, time_ms INTEGER NOT NULL, -- position in
+milliseconds type TEXT NOT NULL, -- 'cue', 'loop_in', 'loop_out', 'memory'
+label TEXT, color TEXT, -- hex color code FOREIGN KEY (track_id) REFERENCES
+tracks(id) ON DELETE CASCADE ); CREATE INDEX idx_cues_track ON cues(track_id);
+-- Tags table (user-defined tags) CREATE TABLE tags ( id INTEGER PRIMARY KEY
+AUTOINCREMENT, track_id INTEGER NOT NULL, tag TEXT NOT NULL, source TEXT
+DEFAULT 'user', -- 'user', 'ai', 'discogs', etc. confidence REAL, -- for AI
+tags created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (track_id)
+REFERENCES tracks(id) ON DELETE CASCADE ); CREATE INDEX idx_tags_track ON
+tags(track_id); CREATE INDEX idx_tags_tag ON tags(tag); -- XML mappings (for
+conversion tracking) CREATE TABLE xml_mappings ( id INTEGER PRIMARY KEY
+AUTOINCREMENT, track_id INTEGER NOT NULL, source_format TEXT NOT NULL, --
+'rekordbox', 'virtualdj', 'traktor' source_id TEXT, -- original TrackID from
+source meta_json TEXT, -- JSON with original metadata last_sync DATETIME
+DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (track_id) REFERENCES tracks(id) ON
+DELETE CASCADE ); -- Backup/Sync history CREATE TABLE sync_history ( id
+INTEGER PRIMARY KEY AUTOINCREMENT, timestamp DATETIME DEFAULT
+CURRENT_TIMESTAMP, type TEXT NOT NULL, -- 'backup', 'import', 'export',
+📥  Downlo ad PDF
+30.05.2026, 06:58 Lumbago Music AI - Complete Project Blueprint
+file:///D:/Downloads/lumbago-complete-doc (1).html 14/25
+
+================================================================================
+PAGE 15
+================================================================================
+
+'cloud_sync' status TEXT NOT NULL, -- 'success', 'failed', 'partial' details
+TEXT, -- JSON with details files_count INTEGER, errors_count INTEGER ); --
+Settings table CREATE TABLE settings ( key TEXT PRIMARY KEY, value TEXT NOT
+NULL, modified_at DATETIME DEFAULT CURRENT_TIMESTAMP );
+Przykładowe zapytania SQL
+-- Znajdź wszystkie tracki w zakresie BPM SELECT * FROM tracks WHERE bpm
+BETWEEN 126 AND 130 ORDER BY bpm; -- Top 10 najczęściej granych utworów SELECT
+title, artist, play_count FROM tracks ORDER BY play_count DESC LIMIT 10; --
+Znajdź utwory bez tagów SELECT t.* FROM tracks t LEFT JOIN tags tg ON t.id =
+tg.track_id WHERE tg.id IS NULL; -- Smart Collection: House 126-130 BPM,
+dodane ostatni miesiąc SELECT * FROM tracks WHERE genre LIKE '%House%' AND bpm
+BETWEEN 126 AND 130 AND date_added >= date('now', '-1 month') ORDER BY
+date_added DESC; -- Znajdź duplikaty po artist + title SELECT artist, title,
+COUNT(*) as count FROM tracks GROUP BY LOWER(artist), LOWER(title) HAVING
+count > 1;
+🔌  API i integracje
+REST API Endpoints (opcjonalnie dla wersji server)
+# Tracks GET /api/tracks # List all tracks (with pagination) GET
+/api/tracks/:id # Get track details POST /api/tracks # Add new track PUT
+/api/tracks/:id # Update track DELETE /api/tracks/:id # Delete track GET
+/api/tracks/search?q= # Search tracks # Playlists GET /api/playlists # List
+playlists POST /api/playlists # Create playlist GET /api/playlists/:id # Get
+playlist details PUT /api/playlists/:id # Update playlist DELETE
+/api/playlists/:id # Delete playlist POST /api/playlists/:id/tracks # Add
+track to playlist # AI Tagging POST /api/analyze # Analyze track (returns BPM,
+key, genre) POST /api/recognize # Recognize track from audio fragment #
+Conversion POST /api/convert/xml # Convert XML (Rekordbox <-> VirtualDJ) #
+Duplicates POST /api/duplicates/find # Find duplicates POST
+/api/duplicates/resolve # Resolve duplicates # Sync GET /api/sync/status # Get
+sync status POST /api/sync/start # Start sync
+Integracje zewnętrzne
+📥  Downlo ad PDF
+30.05.2026, 06:58 Lumbago Music AI - Complete Project Blueprint
+file:///D:/Downloads/lumbago-complete-doc (1).html 15/25
+
+================================================================================
+PAGE 16
+================================================================================
+
+🎵  MusicBrainz
+API: https://musicbrainz.org/ws/2/
+Pobieranie metadanych, okładek, informacji o
+wydaniach
+🔊  AcoustID
+API: https://api.acoustid.org/v2/
+Audio fingerprinting, rozpoznawanie utworów
+💿  Discogs
+API: https://api.discogs.com/
+Informacje o wydaniach, labelach, cenach
+☁  Google Drive API
+OAuth 2.0, backup/sync biblioteki
+Automatyczna synchronizacja i wersjonowanie
+💻  Przykłady kodu i testy
+Python: XML Parser (Rekordbox)
+from lxml import etree from dataclasses import dataclass from typing import
+List, Optional @dataclass class Track: title: str artist: str album: str bpm:
+Optional[float] = None key: Optional[str] = None duration: Optional[int] =
+None cues: List[dict] = None def parse_rekordbox_xml(xml_path: str) ->
+List[Track]: """Parse Rekordbox XML and extract tracks""" tree =
+etree.parse(xml_path) root = tree.getroot() tracks = [] for track_el in
+root.findall('.//TRACK'): title = track_el.get('Name') or '' artist =
+track_el.get('Artist') or '' album = track_el.get('Album') or '' # BPM and Key
+bpm = track_el.get('AverageBpm') bpm = float(bpm) if bpm else None tonality =
+track_el.get('Tonality') key = tonality if tonality else None # Cue points
+cues = [] for cue in track_el.findall('.//POSITION_MARK'): cue_type =
+cue.get('Type') start = cue.get('Start') if start: cues.append({ 'type':
+cue_type, 'time_ms': int(float(start) * 1000), 'name': cue.get('Name', '') })
+track = Track( title=title, artist=artist, album=album, bpm=bpm, key=key,
+cues=cues ) tracks.append(track) return tracks # Usage tracks =
+parse_rekordbox_xml('rekordbox_library.xml') print(f"Found {len(tracks)}
+tracks") for track in tracks[:5]: print(f"{track.artist} - {track.title}
+({track.bpm} BPM)")
+Python: Duplicate Finder (Fingerprint)
+📥  Downlo ad PDF
+30.05.2026, 06:58 Lumbago Music AI - Complete Project Blueprint
+file:///D:/Downloads/lumbago-complete-doc (1).html 16/25
+
+================================================================================
+PAGE 17
+================================================================================
+
+import chromaprint import acoustid import hashlib from pathlib import Path def
+generate_fingerprint(audio_path: str) -> str: """Generate acoustic fingerprint
+using chromaprint""" try: duration, fingerprint =
+acoustid.fingerprint_file(audio_path) return fingerprint except Exception as
+e: print(f"Error generating fingerprint: {e}") return None def
+find_duplicates_by_fingerprint(library_path: Path, threshold=0.95): """Find
+duplicate tracks by comparing fingerprints""" fingerprints = {} duplicates =
+[] # Generate fingerprints for all files for audio_file in
+library_path.rglob('*.mp3'): fp = generate_fingerprint(str(audio_file)) if fp:
+fingerprints[audio_file] = fp # Compare all pairs files =
+list(fingerprints.keys()) for i, file1 in enumerate(files): for file2 in
+files[i+1:]: similarity = compare_fingerprints( fingerprints[file1],
+fingerprints[file2] ) if similarity >= threshold: duplicates.append({ 'file1':
+file1, 'file2': file2, 'similarity': similarity }) return duplicates def
+compare_fingerprints(fp1: str, fp2: str) -> float: """Calculate similarity
+between two fingerprints""" # Simplified comparison using hamming distance #
+Real implementation would use chromaprint's compare function fp1_bytes =
+bytes.fromhex(fp1) fp2_bytes = bytes.fromhex(fp2) if len(fp1_bytes) !=
+len(fp2_bytes): return 0.0 differences = sum(b1 != b2 for b1, b2 in
+zip(fp1_bytes, fp2_bytes)) similarity = 1 - (differences / len(fp1_bytes))
+return similarity # Usage library = Path('/Music/DJ_Collection') dupes =
+find_duplicates_by_fingerprint(library, threshold=0.95) print(f"Found
+{len(dupes)} duplicate groups")
+Unit Tests (pytest)
+import pytest from lumbago.core.converter import parse_rekordbox_xml,
+build_virtualdj_xml from lumbago.core.library import Library from pathlib
+import Path def test_parse_rekordbox_xml(tmp_path): """Test Rekordbox XML
+parsing""" # Create sample XML xml_content = ''' ''' xml_file = tmp_path /
+"test.xml" xml_file.write_text(xml_content) # Parse tracks =
+parse_rekordbox_xml(str(xml_file)) # Assertions assert len(tracks) == 1 assert
+tracks[0].title == "Test Track" assert tracks[0].artist == "Test Artist"
+assert tracks[0].bpm == 126.0 assert tracks[0].key == "Am" assert
+len(tracks[0].cues) == 1 assert tracks[0].cues[0]['time_ms'] == 45234 def
+test_library_add_track(): """Test adding track to library""" lib = Library()
+track_id = lib.add_track( path="/music/test.mp3", title="Test",
+artist="Artist", bpm=128.0 ) assert track_id is not None track =
+lib.get_track(track_id) assert track['title'] == "Test" assert track['bpm'] ==
+128.0 def test_duplicate_detection(): """Test duplicate finder""" from
+lumbago.core.duplicate_finder import find_duplicates # Mock library with
+duplicates tracks = [ {'path': '/a.mp3', 'title': 'Track', 'artist':
+'Artist'}, {'path': '/b.mp3', 'title': 'Track', 'artist': 'Artist'}, {'path':
+'/c.mp3', 'title': 'Other', 'artist': 'Other'}, ] dupes =
+📥  Downlo ad PDF
+30.05.2026, 06:58 Lumbago Music AI - Complete Project Blueprint
+file:///D:/Downloads/lumbago-complete-doc (1).html 17/25
+
+================================================================================
+PAGE 18
+================================================================================
+
+find_duplicates(tracks, method='tag') assert len(dupes) == 1 assert
+len(dupes[0]) == 2 # 2 files in duplicate group
+📚  Słownik pojęć (PL/EN)
+Terminy DJ-skie i muzyczne
+BPM (Beats Per Minute)
+PL: Uderzenia na minutę | EN: Beats Per Minute
+Tempo utworu wyrażone w liczbie uderzeń (beatów) na minutę. Np. 126 BPM = 126 uderzeń/minutę.
+Beatgrid
+PL: Siatka rytmiczna | EN: Beat grid
+Mapa uderzeń w utworze, używana do synchronizacji i automatycznego dopasowania tempa.
+Cue Point
+PL: Punkt startowy/znacznik | EN: Cue point
+Zaznaczony moment w tracku, do którego DJ może szybko wrócić. Hot Cue = punkt z przypisanym
+klawiszem.
+Harmonic Mixing / Camelot Wheel
+PL: Miksowanie harmoniczne | EN: Harmonic mixing
+Technika łączenia utworów w zgodnych tonacjach (np. 8A → 9A). Camelot Wheel to system notacji kluczy
+muzycznych (1A-12B).
+Loop
+PL: Pętla | EN: Loop
+Zapętlony fragment utworu (np. 4, 8, 16 taktów), odtwarzający się w kółko.
+Pitch / Tempo
+PL: Wysokość tonu / Tempo | EN: Pitch / Tempo
+Pitch = wysokość dźwięku. Pitch slider zmienia tempo utworu. Key Lock = zachowanie tonacji przy
+zmianie tempa.
+📥  Downlo ad PDF
+30.05.2026, 06:58 Lumbago Music AI - Complete Project Blueprint
+file:///D:/Downloads/lumbago-complete-doc (1).html 18/25
+
+================================================================================
+PAGE 19
+================================================================================
+
+Waveform
+PL: Przebieg fali / Fala dźwiękowa | EN: Waveform
+Wizualizacja amplitudy dźwięku w czasie. Pozwala na wizualną identyfikację struktur utworu (drop,
+breakdown).
+Terminy techniczne
+Audio Fingerprint
+PL: Odcisk akustyczny | EN: Audio fingerprint
+Unikalna sygnatura dźwiękowa utworu, używana do identyfikacji (np. Shazam). Niezależna od formatu i
+jakości.
+Tag / Metadata
+PL: Etykieta / Metadane | EN: Tag / Metadata
+Informacje o pliku audio zapisane w nagłówku (ID3 dla MP3): tytuł, artysta, album, rok, okładka, etc.
+Bitrate
+PL: Przepływność bitowa | EN: Bitrate
+Jakość audio wyrażona w kbps (kilobitów na sekundę). 320 kbps = najwyższa jakość MP3, 1411 kbps =
+FLAC.
+Sample Rate
+PL: Częstotliwość próbkowania | EN: Sample rate
+Liczba próbek audio na sekundę (Hz). Standard: 44100 Hz (CD quality), 48000 Hz (studio).
+FLAC
+PL/EN: Free Lossless Audio Codec
+Format audio bez strat jakości. Większe pliki niż MP3, ale zachowuje 100% oryginalnego dźwięku.
+XML
+PL/EN: Extensible Markup Language
+Format pliku tekstowego do przechowywania danych. Rekordbox i VirtualDJ używają XML do eksportu
+bibliotek.
+SQLite
+PL/EN: SQLite Database
+📥  Downlo ad PDF
+30.05.2026, 06:58 Lumbago Music AI - Complete Project Blueprint
+file:///D:/Downloads/lumbago-complete-doc (1).html 19/25
+
+================================================================================
+PAGE 20
+================================================================================
+
+Lekka baza danych przechowywana w pojedynczym pliku. Idealna do aplikacji desktopowych.
+📅  Plan wdrożenia
+Faza 0: Specyfikacja i prototypy UI
+Czas: 2 tygodnie
+Finalizacja wymagań funkcjonalnych
+Projektowanie UI/UX (mockupy w Figma)
+Wybór stacku technologicznego
+Setup repozytorium Git i CI/CD
+Faza 1: Core - Scanner, DB, Basic Player
+Czas: 6-8 tygodni
+Import & Scanner (wsparcie dla MP3, FLAC, M4A, WAV)
+SQLite database setup + ORM
+Basic library view (lista, sortowanie, filtrowanie)
+Simple player z waveform
+Unit tests (coverage >80%)
+Faza 2: XML Converter & Renamer
+Czas: 4 tygodnie
+Rekordbox XML parser
+VirtualDJ XML generator
+Field mapping system
+Batch renamer z preview
+Integration tests
+Faza 3: AI Tagger & Audio Recognizer
+Czas: 6 tygodni
+BPM detection (librosa)
+Key detection (essentia)
+Genre classification (ML model)
+Audio fingerprinting (chromaprint)
+MusicBrainz/AcoustID integration
+Training pipeline dla user model
+📥  Downlo ad PDF
+30.05.2026, 06:58 Lumbago Music AI - Complete Project Blueprint
+file:///D:/Downloads/lumbago-complete-doc (1).html 20/25
+
+================================================================================
+PAGE 21
+================================================================================
+
+💰  Szacunkowy budżet (opcjonalnie)
+👨‍💻  Zespół deweloperski
+1x Senior Python Developer (8 mies.)
+1x UI/UX Designer (3 mies.)
+1x ML Engineer (4 mies.)
+1x Mobile Developer - Kotlin (6 mies.)
+☁  Infrastruktura
+Cloud hosting (AWS/GCP): $200/mies.
+API keys (MusicBrainz, Discogs): $100/mies.
+CDN dla assetów: $50/mies.
+CI/CD pipeline: $100/mies.
+Faza 4: Duplicate Finder & Library Builder
+Czas: 4 tygodnie
+Hash-based duplicate detection
+Tag-based comparison
+Fingerprint-based similarity
+Library Builder wizard
+Bulk operations
+Faza 5: Advanced Features
+Czas: 6 tygodni
+Playlist Intelligence
+Crate Digger Mode
+Set Recorder & Analyzer
+Cloud Backup & Sync
+Export Manager
+Faza 6: Mobile Port (Android)
+Czas: 6 tygodni
+Kotlin + Jetpack Compose setup
+Core features port
+Mobile-optimized UI
+Sync with desktop app
+Play Store release preparation
+Faza 7: QA, Docs & Release
+Czas: 4 tygodnie
+Comprehensive QA testing
+Performance optimization
+User documentation & tutorials
+Beta testing program
+Public release v1.0
+📥  Downlo ad PDF
+30.05.2026, 06:58 Lumbago Music AI - Complete Project Blueprint
+file:///D:/Downloads/lumbago-complete-doc (1).html 21/25
+
+================================================================================
+PAGE 22
+================================================================================
+
+1x QA Tester (2 mies.)
+📱  Publikacja
+Google Play Developer: $25 (jednorazowo)
+Code signing certificates: $200/rok
+Marketing & PR: $2000
+🛠  Narzędzia & Licencje
+JetBrains licenses: $200/rok
+Figma Professional: $144/rok
+GitHub Team: $48/rok
+Monitoring (Sentry): $50/mies.
+💵  Budżet i zasoby
+Model monetyzacji (Freemium)
+🆓  Free (Wersja podstawowa)
+Biblioteka do 5,000 utworów
+Basic player z waveform
+Import/Export M3U
+Ręczne tagowanie
+1 playlist
+$0 / msc
+⭐  Pro (Dla DJ-ów)
+Nieograniczona biblioteka
+AI Smart Tagger (offline)
+XML Converter (Rekordbox/VirtualDJ)
+Duplicate Finder
+Advanced Renamer
+Cloud Backup (50 GB)
+Export Manager
+Playlist Intelligence
+Priority support
+49 PLN / msc
+🚀  Enterprise (Kluby/Agencje)
+Wszystko z Pro +
+AI Cloud Tagger (99% accuracy)
+Set Recorder & Analyzer
+Multi-user collaboration
+API access
+Cloud Backup (unlimited)
+Custom integrations
+White-label option
+Dedicated support
+📥  Downlo ad PDF
+30.05.2026, 06:58 Lumbago Music AI - Complete Project Blueprint
+file:///D:/Downloads/lumbago-complete-doc (1).html 22/25
+
+================================================================================
+PAGE 23
+================================================================================
+
+Kontakt / Custom pricing
+Szacowana trajektoria wzrostu
+Miesiąc Free Users Pro Users Enterprise MRR (PLN)
+Miesiąc 1-3 (Beta)500 50 0 2,450
+Miesiąc 4-6 2,000 200 2 14,800
+Miesiąc 7-12 8,000 800 5 54,200
+Rok 2 25,000 2,500 20 182,500
+* MRR = Monthly Recurring Revenue | Założenie: Enterprise avg 5,000 PLN/msc
+Kluczowe metryki sukcesu (KPI)
+📊  User Acquisition
+Conversion rate Free→Pro: 10%
+Monthly active users (MAU): 15,000
+Churn rate: <5% miesięcznie
+⚡  Performance
+Library load time: <2s (10k tracks)
+Import speed: >500 tracks/min
+AI tagging: <5s per track
+😊  User Satisfaction
+App Store rating: >4.5/5
+NPS (Net Promoter Score): >50
+Support ticket resolution: <24h
+🔧  Technical
+Uptime: 99.9%
+Test coverage: >85%
+Critical bugs: 0
+🎯  Następne kroki
+📥  Downlo ad PDF
+30.05.2026, 06:58 Lumbago Music AI - Complete Project Blueprint
+file:///D:/Downloads/lumbago-complete-doc (1).html 23/25
+
+================================================================================
+PAGE 24
+================================================================================
+
+Roadmap do MVP (Minimum Viable Product)
+✅  Faza MVP - 3 miesiące
+Cel: Wersja beta z core features gotowa do testów przez early adopters
+Tydzień 1-2: Setup projektu, wybór stacku, CI/CD
+Tydzień 3-6: Import & Scanner + SQLite database
+Tydzień 7-8: Library View (UI desktop)
+Tydzień 9-10: XML Converter (Rekordbox→VirtualDJ)
+Tydzień 11-12: Basic player + QA + Beta release
+Potrzebne zasoby do startu
+💻  Development Environment
+Python 3.11+ environment
+PyQt6 / PySide6 setup
+Git + GitHub repo
+IDE (PyCharm / VS Code)
+📚  Libraries & Tools
+Mutagen (metadata)
+lxml (XML parsing)
+SQLite + SQLAlchemy
+librosa (audio analysis)
+pytest (testing)
+🎨  Design Assets
+Figma mockups
+Icon set (Lucide/Heroicons)
+Logo design
+Brand guidelines
+🔑  API Keys
+MusicBrainz (free)
+AcoustID (free)
+Discogs (free tier)
+Google Drive API
+Zaproszenie do współpracy
+Lumbago Music AI to ambitny projekt, który może zrewolucjonizować sposób, w jaki DJ-e i
+kolekcjonerzy muzyki zarządzają swoimi bibliotekami. Jeśli jesteś zainteresowany współpracą
+przy tym projekcie (jako deweloper, tester, inwestor lub early adopter), skontaktuj się:
+📧  Email: tomasz.bielaszka@example.com
+🌐  GitHub: github.com/lumbago-music-ai
+Dokumentacja stworzona: Listopad 2024 | Zermatt, Szwajcaria
+📥  Downlo ad PDF
+30.05.2026, 06:58 Lumbago Music AI - Complete Project Blueprint
+file:///D:/Downloads/lumbago-complete-doc (1).html 24/25
+
+================================================================================
+PAGE 25
+================================================================================
+
+Lumbago Music AI
+Complete Project Blueprint v1.0
+© 2024-2025 Tomasz Bielaszka. All rights reserved.
+Made with 💜  in Zermatt, Switzerland
+📥  Downlo ad PDF
+30.05.2026, 06:58 Lumbago Music AI - Complete Project Blueprint
+file:///D:/Downloads/lumbago-complete-doc (1).html 25/25
