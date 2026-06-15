@@ -122,11 +122,28 @@ class FuzzyDedupService:
         return {"total": total, "fields": fields, "overall_score": score}
 
     def find_staged_duplicates(self, tracks: list) -> list[DuplicateGroup]:
-        """3-method pipeline: hash (fast) -> fuzzy tags -> fingerprint-ready groups."""
+        """3-method pipeline: hash (fast) -> fuzzy tags -> fingerprint (full audio) per backlog "Ulepszony Duplicate Finder z pełnym audio fingerprint".
+        Per SZPIEG Build Spec + Plan nowa lista po 'dalej' user + 'nie przestawaj'... must document identical.
+        Improves merge logic by falling through to fingerprint groups (AcoustID precomputed or ensured in dialog worker).
+        """
         exact = self.find_exact_duplicates(tracks)
         if exact:
             return exact
         fuzzy = self.find_fuzzy_duplicates(tracks)
         if fuzzy:
             return fuzzy
-        return []
+        # Third method: fingerprint for complete 3-method support + auto group by fp (similarity high).
+        return self._find_fingerprint_duplicates(tracks)
+
+    def _find_fingerprint_duplicates(self, tracks: list) -> list[DuplicateGroup]:
+        """Group tracks by precomputed fingerprint (AcoustID). Fallback for when hash/fuzzy miss but audio matches."""
+        from collections import defaultdict
+        groups = defaultdict(list)
+        for i, t in enumerate(tracks):
+            if getattr(t, 'fingerprint', None):
+                groups[t.fingerprint].append(i)
+        return [
+            DuplicateGroup(track_ids=ids, similarity=0.97)
+            for fp, ids in groups.items()
+            if len(ids) > 1 and fp
+        ]

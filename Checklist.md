@@ -222,6 +222,7 @@ Szczegóły historyczne znajdują się w `docs/HISTORY.md` i `RECOVERY.md`.
 
 - [ ] **Ulepszony Duplicate Finder z pełnym audio fingerprint**  
   Obecny: `fuzzy_dedup.py` + AcoustID. Blueprint zakłada 3 metody (hash + tags + fingerprint) + automatyczne merge. Warto dopracować UI i logikę łączenia.
+  **2026-06-15 'dalej' + 'nie przestawaj' start:** Added _find_fingerprint_duplicates + wired as third step in find_staged_duplicates (exact -> fuzzy -> fingerprint groups, similarity 0.97). Dialog worker already supports "Fingerprint" method + _ensure_fingerprints. Per Plan nowa lista po 'dalej' user + SZPIEG... must document identical. UI/merge polish ongoing. Verifs next.
 
 - [ ] **Metadata Auto-Complete w tle (batch mode dla całej biblioteki)**  
   Już częściowo zaimplementowane przez `BackgroundEnrichmentService` + `AnalysisJob` + `BackgroundAutotagWorker`.  

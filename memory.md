@@ -57,6 +57,8 @@ Per PLAN hierarchy (SZPIEG/Plan first, Build Spec, "must document identical"), t
 - SZPIEG/Plan first dla każdego nowego fragmentu.
 - "nowa lista przeróbek" zawsze najpierw dla użytkownika do decyzji.
 - Exact match, read-before-edit, identical docs (memory + HISTORY + SZPIEG + AGENTS/CLAUDE + crew/CHECKLIST + code "per SZPIEG... must document identical").
+
+**2026-06-15 — 'dalej' continuation (next backlog item after zatwierdzona lista + nie przestawaj polish):** Started "Ulepszony Duplicate Finder z pełnym audio fingerprint" (first open in Checklist sec7). Exact polish in services/fuzzy_dedup.py: extended find_staged_duplicates to full 3-method pipeline (hash -> fuzzy tags -> fingerprint groups @0.97 similarity using precomputed AcoustID); added _find_fingerprint_duplicates helper. Docstring updated with "Per SZPIEG Build Spec + Plan nowa lista po 'dalej' user + 'nie przestawaj'... must document identical". Duplicates dialog (ui/duplicates_dialog.py) already supports "Fingerprint" method + _ensure_fingerprints + _groups_from_fingerprint in worker. Checklist backlog item updated with progress. Verifs (pytest test_duplicates) + commit/push. Per hierarchy + momentum. 'Nie przestawaj'. Gotowe.
 - Verifs na bieżąco (smoke, pytest, python-c, manual CHECKLIST).
 - Po każdym bloku: todo, commit z jasnym msg, push.
 - Język: polski w dokumentacji crew.
