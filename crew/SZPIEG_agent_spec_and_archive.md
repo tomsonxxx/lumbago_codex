@@ -1,5 +1,9 @@
 # SZPIEG (SPY) — Kluczowy Agent Badawczy / Research Spy
 
+Per 2026-06-16 full repo consolidation and cleanup: all prior documentation, full agent instructions, checklists, history, and context memories safely archived in root MEMORY/ directory (with subdirs) and consolidated/summarized in this memory.md. Live files trimmed to essential minimum for ongoing work but complete for continuity. All information from the project up to this point is preserved and accessible in MEMORY/.
+
+**2026-06-16 note:** Long 2026-06-14/15 impl reports, re-audits, encyklopedia entries (full history) preserved in MEMORY/full_agent_instructions/SZPIEG..._full_pre-trim.md + previous_archive/ + memory Archiwum. Live SZPIEG trimmed/ noted; core role/instrukcje/hierarchy/PRIORYTET binding kept for use. Per Guardian + task + "must document identical".
+
 **Rola:** Nadrzędny agent do głębokich badań UI/UX, wzorców, implementacji konkretnych fragmentów w oprogramowaniu audio/DJ/file management. Jego badania i Build Spec są **nadrzędne** (overriding) dla reszty zespołu (designer, writer, fixer, tester, plan itp.).
 
 **Instrukcje na stałe (z user query):**
