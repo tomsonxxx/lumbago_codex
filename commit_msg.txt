@@ -1,5 +1,0 @@
-﻿docs: compact Checklist.md (verbose old Odtwarzacz history summarized; P1 table + backlog updated) + memory/HISTORY/AGENTS/CLAUDE (identical notes).
-feat: clean Windows P1 (step2 get_resource_path frozen helper in core/config.py + callers; step3 pyinstaller.spec enhancement with datas/hiddenimports/fpcalc per Plan lista) + organizer complete (user PRIORYTET #1 + SZPIEG research 15+ + Plan 1-9 "zatwierdzam listę").
-Push per exact user request "wypchnij zmiany do github zkompaktuj checklist.md i w razie potrzeby reszte dokumentacji, postępuj dalej wedlug planu".
-Refs SZPIEG 2026-06-15, clean Windows Plan list steps 2-3, hierarchy SZPIEG/Plan first.
-Per "must document identical" + todo.

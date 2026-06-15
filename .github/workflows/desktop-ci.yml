@@ -100,6 +100,10 @@ jobs:
           pip install -r requirements.txt
       - name: Build
         run: pyinstaller pyinstaller.spec --noconfirm
+      - name: Create portable ZIP (per clean Windows P1 Plan lista step 4 + 2026-06-15 push/compact)
+        shell: powershell
+        run: |
+          Compress-Archive -Path dist/LumbagoMusicAI/* -DestinationPath dist/LumbagoMusicAI-portable.zip -Force
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
@@ -107,3 +111,4 @@ jobs:
           path: |
             dist/LumbagoMusicAI/**
             dist/LumbagoMusicAI.exe
+            dist/LumbagoMusicAI-portable.zip
