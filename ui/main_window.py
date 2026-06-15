@@ -94,6 +94,9 @@ def _debug_log(message: str) -> None:
 
 def _process_log(message: str) -> None:
     try:
+        from core.process_log_pl import humanize_process_log
+
+        message = humanize_process_log(message)
         target = Path.cwd() / ".lumbago_data" / "process.log"
         target.parent.mkdir(parents=True, exist_ok=True)
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -1811,14 +1814,14 @@ class MainWindow(QtWidgets.QMainWindow):
 
         worker = ScanWorker(folder_path, per_file_timeout_s=25.0)
         task_id = self.task_manager.add_task("Skanowanie biblioteki", 1, "Przygotowanie listy plikow...")
-        _process_log(f"[scan] start | folder={folder_path}")
+        _process_log(f"[scan] Rozpoczęto skanowanie folderu: {folder_path}")
 
         def on_progress(current: int, total: int, name: str, stage: str):
             total_safe = max(total, 1)
             detail = f"{stage} | {name}"
             self.task_manager.update_task(task_id, current, total_safe, detail)
             self.status.showMessage(f"Skanowanie {current}/{total_safe}: {name} [{stage}]")
-            _process_log(f"[scan] {current}/{total_safe} | file={name} | stage={stage}")
+            _process_log(f"[scan] {current}/{total_safe}: {name} — {stage}")
 
         def on_finished(tracks: list[Track], errors: list[str]):
             self.task_manager.finish_task(task_id)
@@ -1829,7 +1832,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.status.showMessage(
                 f"Skanowanie zakonczone. Zapisano: {len(tracks)}, problemy: {len(errors)}"
             )
-            _process_log(f"[scan] done | tracks={len(tracks)} errors={len(errors)}")
+            _process_log(f"[scan] Zakończono — znaleziono {len(tracks)} utworów, problemów: {len(errors)}")
 
         worker.signals.progress.connect(on_progress)
         worker.signals.finished.connect(on_finished)
@@ -2725,7 +2728,7 @@ class MainWindow(QtWidgets.QMainWindow):
             len(tracks),
             f"Tryb: {mode_label} — przygotowanie analizy...",
         )
-        _process_log(f"[autotag] start | tracks={len(tracks)} mode={mode_label}")
+        _process_log(f"[autotag] Rozpoczęto autotagowanie — utworów: {len(tracks)}, tryb: {mode_label}")
 
         def on_progress(current: int, total: int, name: str, detail: str):
             self.task_manager.update_task(task_id, current, total, detail)
@@ -2733,7 +2736,7 @@ class MainWindow(QtWidgets.QMainWindow):
             if detail:
                 message = f"{message} — {detail}"
             self.status.showMessage(message)
-            _process_log(f"[autotag] {current}/{total} | {name} | {detail}")
+            _process_log(f"[autotag] {current}/{total}: {name} — {detail}")
 
         def on_finished(processed: int, updated: int, errors: int):
             self._autotag_worker = None
@@ -2742,7 +2745,9 @@ class MainWindow(QtWidgets.QMainWindow):
             self.status.showMessage(
                 f"Autotagowanie zakończone. Przetworzono: {processed}, zapisano: {updated}, błędy: {errors}"
             )
-            _process_log(f"[autotag] done | processed={processed} updated={updated} errors={errors}")
+            _process_log(
+                f"[autotag] Zakończono — przetworzono: {processed}, zapisano: {updated}, błędów: {errors}"
+            )
 
             # Integrate File Manager offer after autotag updates (as requested)
             if updated > 0:
@@ -2789,7 +2794,7 @@ class MainWindow(QtWidgets.QMainWindow):
         track_ids = resolve_track_ids([t.path for t in tracks])
         if not track_ids:
             self._show_message("Nie udało się przypisać utworów do bazy — brak ID w kolejce.")
-            _process_log("[autotag-bg] BŁĄD: brak track_id dla zaznaczonych utworów")
+            _process_log("[autotag-bg] Błąd: zaznaczone utwory nie mają ID w bazie — zaimportuj bibliotekę ponownie")
             return
 
         created = service.enqueue_background_enrichment(track_ids, priority=3, source="manual")
@@ -2814,8 +2819,8 @@ class MainWindow(QtWidgets.QMainWindow):
             track_ids = resolve_track_ids([t.path for t in tracks])
             if not track_ids:
                 _process_log(
-                    "[autotag-bg] BŁĄD: 0 zadań — utwory nie mają ID w bazie "
-                    f"(ścieżek={len(tracks)}). Sprawdź import biblioteki."
+                    f"[autotag-bg] Nie dodano zadań do kolejki — brak ID w bazie "
+                    f"dla {len(tracks)} utworów. Sprawdź import biblioteki."
                 )
                 return
 
@@ -2825,12 +2830,12 @@ class MainWindow(QtWidgets.QMainWindow):
                 source="autotag_finish",
             )
             _process_log(
-                f"[autotag-bg] Dodano {len(created)} zadań do kolejki AnalysisJob "
-                f"(utworów={len(track_ids)})"
+                f"[autotag-bg] Dodano {len(created)} zadań uzupełniania w tle "
+                f"(z {len(track_ids)} utworów)"
             )
 
         except Exception as e:
-            _process_log(f"[autotag-bg] failed to enqueue jobs: {e}")
+            _process_log(f"[autotag-bg] Nie udało się dodać zadań do kolejki: {e}")
 
     def _refresh_track_in_view(self, track_path: str, changes: dict):
         """Odświeża widok po uzupełnieniu w tle (prosta wersja)."""

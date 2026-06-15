@@ -54,12 +54,15 @@ class BackgroundAutotagWorker(QtCore.QObject):
         updated_count = 0
         total = len(self.tracks)
 
-        # Log startu (jeśli main_window ma _process_log)
-        try:
-            from ui.main_window import _process_log
-            _process_log(f"[autotag-bg] start | tracks={total}")
-        except Exception:
-            pass
+        def _log(msg: str) -> None:
+            try:
+                from ui.main_window import _process_log
+
+                _process_log(msg)
+            except Exception:
+                pass
+
+        _log(f"[autotag-bg] Rozpoczęto uzupełnianie dodatkowych pól — utworów: {total}")
 
         for idx, track in enumerate(self.tracks):
             if self._stop_requested:
@@ -97,9 +100,8 @@ class BackgroundAutotagWorker(QtCore.QObject):
                 )
                 if not changes:
                     if source_count:
-                        _process_log(
-                            f"[autotag-bg] no background fields after {source_count} sources "
-                            f"file={filename}"
+                        _log(
+                            f"[autotag-bg] Brak nowych pól (sprawdzono {source_count} źródeł) — {filename}"
                         )
                     continue
 
@@ -127,12 +129,14 @@ class BackgroundAutotagWorker(QtCore.QObject):
                             update_mode="single",
                         )
                         if writeback.file_write_errors:
-                            _process_log(
-                                f"[autotag-bg] writeback errors file={Path(track.path).name} "
-                                f"errors={len(writeback.file_write_errors)}"
+                            _log(
+                                f"[autotag-bg] Błąd zapisu tagów w pliku {Path(track.path).name} "
+                                f"(błędów: {len(writeback.file_write_errors)})"
                             )
                     except Exception as exc:
-                        _process_log(f"[autotag-bg] writeback failed file={Path(track.path).name} err={exc}")
+                        _log(
+                            f"[autotag-bg] Nie udało się zapisać tagów — {Path(track.path).name}: {exc}"
+                        )
                     updated_count += 1
                     self.track_updated.emit(track.path, changes)
 
@@ -143,10 +147,6 @@ class BackgroundAutotagWorker(QtCore.QObject):
                 # W tle nie chcemy wysadzać całego programu
                 continue
 
-        try:
-            from ui.main_window import _process_log
-            _process_log(f"[autotag-bg] finished | updated={updated_count}/{total}")
-        except Exception:
-            pass
+        _log(f"[autotag-bg] Zakończono — uzupełniono {updated_count} z {total} utworów")
 
         self.finished.emit(updated_count, total)
