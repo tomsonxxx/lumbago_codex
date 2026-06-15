@@ -2797,7 +2797,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _get_bg_enrichment_service(self) -> BackgroundEnrichmentService:
         if self._bg_enrichment_service is None:
-            self._bg_enrichment_service = BackgroundEnrichmentService(self.settings, self)
+            self._bg_enrichment_service = BackgroundEnrichmentService(self.settings, self, parent=self)
             # Uruchamiamy procesor zadań w tle
             self._bg_enrichment_service.start_processor(interval_ms=7000)
         return self._bg_enrichment_service

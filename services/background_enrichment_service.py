@@ -1,39 +1,169 @@
 from __future__ import annotations
 
-from typing import Optional
-from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
+from copy import deepcopy
+from typing import Callable, Optional
+
+from PyQt6 import QtCore
 
 from core.models import BACKGROUND_AUTOTAG_FIELDS, AnalysisJob
 from data import repository
 from services.metadata_writeback import PendingTrackWrite, apply_track_writes
-from PyQt6 import QtCore
+
+JOB_TIMEOUT_SECONDS = 90
+MAX_CONCURRENT_JOBS = 1
 
 
-class BackgroundEnrichmentService:
+class _BackgroundEnrichmentSignals(QtCore.QObject):
+    job_finished = QtCore.pyqtSignal(int, str, str)  # job_id, status, error_msg
+
+
+class BackgroundEnrichmentJobRunnable(QtCore.QRunnable):
+    def __init__(
+        self,
+        job: AnalysisJob,
+        settings,
+        signals: _BackgroundEnrichmentSignals,
+        *,
+        timeout_seconds: int = JOB_TIMEOUT_SECONDS,
+    ):
+        super().__init__()
+        self.job = job
+        self.settings = settings
+        self.signals = signals
+        self.timeout_seconds = timeout_seconds
+        self.setAutoDelete(True)
+
+    def run(self) -> None:
+        job_id = self.job.job_id
+        try:
+            execute_background_enrichment_job(self.job, self.settings, self.timeout_seconds)
+            self.signals.job_finished.emit(job_id, "completed", "")
+        except Exception as exc:
+            repository.update_analysis_job_status(job_id, "failed", str(exc))
+            self.signals.job_finished.emit(job_id, "failed", str(exc))
+
+
+def execute_background_enrichment_job(
+    job: AnalysisJob,
+    settings,
+    timeout_seconds: int = JOB_TIMEOUT_SECONDS,
+) -> None:
+    """Wykonuje pojedyncze zadanie uzupełniania (poza wątkiem GUI)."""
+    from services.autotag_rewrite import UnifiedAutoTagger
+
+    track = repository.get_track_by_id(job.track_id)
+    if not track:
+        repository.update_analysis_job_status(job.job_id, "failed", "Track nie istnieje")
+        return
+
+    already_filled = {
+        field for field in BACKGROUND_AUTOTAG_FIELDS if getattr(track, field, None)
+    }
+    if len(already_filled) == len(BACKGROUND_AUTOTAG_FIELDS):
+        repository.update_analysis_job_status(job.job_id, "completed")
+        return
+
+    autotagger = UnifiedAutoTagger(settings)
+
+    def _enrich() -> tuple[object, dict]:
+        result = autotagger.enrich_missing_background_fields(
+            deepcopy(track),
+            already_filled_fields=already_filled,
+        )
+        changes = autotagger.apply_background_fields(
+            track,
+            result,
+            already_filled_fields=already_filled,
+        )
+        return result, changes
+
+    with ThreadPoolExecutor(max_workers=1, thread_name_prefix="bg-enrich") as pool:
+        future = pool.submit(_enrich)
+        try:
+            result, changes = future.result(timeout=timeout_seconds)
+        except FuturesTimeoutError as exc:
+            raise TimeoutError(
+                f"Przekroczono limit {timeout_seconds}s dla track_id={job.track_id}"
+            ) from exc
+
+    source_count = len(
+        [
+            c
+            for c in getattr(result, "candidates", []) or []
+            if getattr(c, "error", None) is None and getattr(c, "score", 0) > 0
+        ]
+    )
+
+    if changes:
+        fields_to_write = {field: str(value) for field, value in changes.items()}
+        old_values = {field: None for field in changes}
+        writeback = apply_track_writes(
+            [
+                PendingTrackWrite(
+                    track=track,
+                    fields=fields_to_write,
+                    source="background_enrichment",
+                    confidence=None,
+                    change_log_source="background_enrichment",
+                    old_values=old_values,
+                )
+            ],
+            max_workers=1,
+            update_mode="single",
+        )
+        if writeback.file_write_errors:
+            raise RuntimeError(
+                f"Błędy zapisu tagów ({len(writeback.file_write_errors)}) "
+                f"dla track_id={job.track_id}"
+            )
+    elif source_count:
+        _safe_process_log(
+            f"[bg-service] Brak pól tła po {source_count} źródłach "
+            f"dla track_id={job.track_id}"
+        )
+
+    repository.update_analysis_job_status(job.job_id, "completed")
+
+
+def _safe_process_log(message: str) -> None:
+    try:
+        from ui.main_window import _process_log
+
+        _process_log(message)
+    except Exception:
+        print(message)
+
+
+class BackgroundEnrichmentService(QtCore.QObject):
     """
-    Serwis zarządzający kolejką zadań AnalysisJob dla uzupełniania tagów w tle.
+    Kolejka AnalysisJob dla uzupełniania tagów w tle.
+    Przetwarzanie odbywa się poza wątkiem GUI (QThreadPool).
     """
 
     def __init__(self, settings, main_window_ref=None):
+        super().__init__()
         self.settings = settings
-        self.main_window_ref = main_window_ref  # do logowania i UI
+        self.main_window_ref = main_window_ref
         self._processor_timer: Optional[QtCore.QTimer] = None
-        self._is_processing = False
+        self._signals = _BackgroundEnrichmentSignals()
+        self._signals.job_finished.connect(self._on_job_finished)
+        self._thread_pool = QtCore.QThreadPool.globalInstance()
+        self._jobs_in_flight = 0
+        self._log_fn: Callable[[str], None] = self._log
 
     def enqueue_background_enrichment(
         self,
         track_ids: list[int],
         priority: int = 5,
-        source: str = "manual"
+        source: str = "manual",
     ) -> list[int]:
-        """
-        Tworzy zadania AnalysisJob dla podanych tracków.
-        Zwraca listę utworzonych job_id.
-        """
         created_job_ids = []
 
         for track_id in track_ids:
             try:
+                if repository.has_active_analysis_job(track_id, "background_enrichment"):
+                    continue
                 job = repository.create_analysis_job(
                     track_id=track_id,
                     job_type="background_enrichment",
@@ -49,156 +179,78 @@ class BackgroundEnrichmentService:
                 f"[bg-service] Utworzono {count} nowych zadań uzupełniania w tle "
                 f"(źródło: {source})"
             )
+            self._dispatch_jobs()
         else:
             self._log(
-                f"[bg-service] 0 nowych zadań — brak poprawnych ID utworów "
+                f"[bg-service] 0 nowych zadań — brak poprawnych ID lub duplikaty w kolejce "
                 f"(próbowano: {len(track_ids)}, źródło: {source})"
             )
         return created_job_ids
 
-    def process_pending_jobs(self, max_jobs: int = 5) -> int:
-        """
-        Przetwarza do max_jobs oczekujących zadań.
-        Zwraca liczbę przetworzonych zadań.
-        """
-        if self._is_processing:
-            return 0
+    def start_processor(self, interval_ms: int = 8000) -> None:
+        reset = repository.reset_running_analysis_jobs_on_startup()
+        if reset:
+            self._log(f"[bg-service] Przywrócono {reset} zawieszonych zadań (running → pending)")
 
-        self._is_processing = True
-        processed = 0
-
-        try:
-            pending_jobs = repository.get_pending_analysis_jobs(limit=max_jobs)
-
-            for job in pending_jobs:
-                if not self._process_single_job(job):
-                    break  # przerwij jeśli coś poszło nie tak (np. worker już działa)
-                processed += 1
-
-        finally:
-            self._is_processing = False
-
-        return processed
-
-    def _process_single_job(self, job: AnalysisJob) -> bool:
-        """Przetwarza pojedyncze zadanie. Zwraca True jeśli zadanie zostało podjęte."""
-        # Oznacz jako running
-        success = repository.update_analysis_job_status(job.job_id, "running")
-        if not success:
-            return False
-
-        try:
-            # Pobierz track
-            track = repository.get_track_by_id(job.track_id)
-            if not track:
-                repository.update_analysis_job_status(job.job_id, "failed", "Track nie istnieje")
-                return True
-
-            # Uruchom właściwe uzupełnianie (używamy istniejącego workera)
-            # Na razie robimy to synchronicznie w ramach procesora (proste rozwiązanie na start)
-            # W przyszłości można to przenieść do osobnego wątku.
-
-            from copy import deepcopy
-            from services.autotag_rewrite import UnifiedAutoTagger
-
-            autotagger = UnifiedAutoTagger(self.settings)
-
-            already_filled = {
-                field
-                for field in BACKGROUND_AUTOTAG_FIELDS
-                if getattr(track, field, None)
-            }
-            if len(already_filled) == len(BACKGROUND_AUTOTAG_FIELDS):
-                repository.update_analysis_job_status(job.job_id, "completed")
-                return True
-
-            result = autotagger.enrich_missing_background_fields(
-                deepcopy(track),
-                already_filled_fields=already_filled,
-            )
-            source_count = len(
-                [
-                    c
-                    for c in getattr(result, "candidates", []) or []
-                    if getattr(c, "error", None) is None and getattr(c, "score", 0) > 0
-                ]
-            )
-            changes = autotagger.apply_background_fields(
-                track,
-                result,
-                already_filled_fields=already_filled,
-            )
-            if not changes:
-                if source_count:
-                    self._log(
-                        f"[bg-service] Brak pól tła po {source_count} źródłach "
-                        f"dla track_id={job.track_id}"
-                    )
-            else:
-                fields_to_write: dict[str, str] = {field: str(value) for field, value in changes.items()}
-                old_values: dict[str, str | None] = {field: None for field in changes}
-
-                if fields_to_write:
-                    writeback = apply_track_writes(
-                        [
-                            PendingTrackWrite(
-                                track=track,
-                                fields=fields_to_write,
-                                source="background_enrichment",
-                                confidence=None,
-                                change_log_source="background_enrichment",
-                                old_values=old_values,
-                            )
-                        ],
-                        max_workers=1,
-                        update_mode="single",
-                    )
-                    if writeback.file_write_errors:
-                        self._log(
-                            f"[bg-service] writeback errors for track_id={job.track_id}: "
-                            f"{len(writeback.file_write_errors)}"
-                        )
-
-            repository.update_analysis_job_status(job.job_id, "completed")
-            self._log(f"[bg-service] Zakończono zadanie #{job.job_id} dla track_id={job.track_id}")
-
-        except Exception as e:
-            repository.update_analysis_job_status(job.job_id, "failed", str(e))
-            self._log(f"[bg-service] Błąd przetwarzania zadania #{job.job_id}: {e}")
-
-        return True
-
-    def start_processor(self, interval_ms: int = 8000):
-        """Uruchamia timer, który co pewien czas sprawdza oczekujące zadania."""
         if self._processor_timer:
             return
 
-        self._processor_timer = QtCore.QTimer()
+        self._processor_timer = QtCore.QTimer(self)
         self._processor_timer.timeout.connect(self._on_processor_tick)
         self._processor_timer.start(interval_ms)
-        self._log("[bg-service] Procesor zadań w tle uruchomiony")
+        self._log("[bg-service] Procesor zadań w tle uruchomiony (poza wątkiem GUI)")
+        self._dispatch_jobs()
 
-    def _on_processor_tick(self):
-        try:
-            processed = self.process_pending_jobs(max_jobs=3)
-            if processed > 0:
-                self._log(f"[bg-service] Przetworzono {processed} zadań w tle")
-        except Exception as e:
-            self._log(f"[bg-service] Błąd w procesorze: {e}")
-
-    def stop_processor(self):
+    def stop_processor(self) -> None:
         if self._processor_timer:
             self._processor_timer.stop()
             self._processor_timer = None
 
-    def _log(self, message: str):
+    def _on_processor_tick(self) -> None:
         try:
-            from ui.main_window import _process_log
-            _process_log(message)
-        except Exception:
-            print(message)
+            self._dispatch_jobs()
+        except Exception as e:
+            self._log(f"[bg-service] Błąd w procesorze: {e}")
 
-    def reset_stale_running_jobs(self):
-        """Przy starcie aplikacji resetuje zadania, które zostały w stanie 'running'."""
-        # Na razie prosty mechanizm – w pełnej wersji można by to zrobić w repo
-        pass
+    def _dispatch_jobs(self) -> None:
+        if self._jobs_in_flight >= MAX_CONCURRENT_JOBS:
+            return
+
+        slots = MAX_CONCURRENT_JOBS - self._jobs_in_flight
+        pending_jobs = repository.get_pending_analysis_jobs(limit=slots)
+        if not pending_jobs:
+            return
+
+        for job in pending_jobs:
+            if not repository.update_analysis_job_status(job.job_id, "running"):
+                continue
+            self._jobs_in_flight += 1
+            runnable = BackgroundEnrichmentJobRunnable(job, self.settings, self._signals)
+            self._thread_pool.start(runnable)
+
+    def _on_job_finished(self, job_id: int, status: str, error_msg: str) -> None:
+        self._jobs_in_flight = max(0, self._jobs_in_flight - 1)
+        pending = repository.count_analysis_jobs_by_status("pending")
+        running = repository.count_analysis_jobs_by_status("running")
+
+        if status == "completed":
+            self._log(
+                f"[bg-service] Zakończono zadanie #{job_id} "
+                f"(kolejka: pending={pending}, running={running})"
+            )
+        else:
+            self._log(
+                f"[bg-service] Błąd zadania #{job_id}: {error_msg} "
+                f"(kolejka: pending={pending}, running={running})"
+            )
+
+        if pending > 0 and self._jobs_in_flight < MAX_CONCURRENT_JOBS:
+            QtCore.QTimer.singleShot(250, self._dispatch_jobs)
+
+    def reset_stale_running_jobs(self) -> None:
+        reset = repository.reset_running_analysis_jobs_on_startup()
+        if reset:
+            self._log(f"[bg-service] Zresetowano {reset} zawieszonych zadań")
+
+    def _log(self, message: str) -> None:
+        _safe_process_log(message)

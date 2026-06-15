@@ -615,6 +615,56 @@ def create_analysis_job(
         )
 
 
+def has_active_analysis_job(track_id: int, job_type: str) -> bool:
+    """Czy utwór ma już oczekujące lub uruchomione zadanie danego typu."""
+    if not track_id:
+        return False
+    Session = get_session_factory()
+    with Session() as session:
+        row = session.scalar(
+            select(AnalysisJobOrm.id)
+            .where(
+                AnalysisJobOrm.track_id == int(track_id),
+                AnalysisJobOrm.job_type == job_type,
+                AnalysisJobOrm.status.in_(("pending", "running")),
+            )
+            .limit(1)
+        )
+        return row is not None
+
+
+def count_analysis_jobs_by_status(status: str) -> int:
+    Session = get_session_factory()
+    with Session() as session:
+        return int(
+            session.scalar(
+                select(func.count())
+                .select_from(AnalysisJobOrm)
+                .where(AnalysisJobOrm.status == status)
+            )
+            or 0
+        )
+
+
+def reset_running_analysis_jobs_on_startup() -> int:
+    """Po restarcie aplikacji: running → pending (odzysk po zawieszeniu)."""
+    Session = get_session_factory()
+    with Session() as session:
+        rows = session.scalars(
+            select(AnalysisJobOrm.id).where(AnalysisJobOrm.status == "running")
+        ).all()
+        if not rows:
+            return 0
+        now = datetime.now(timezone.utc)
+        session.execute(
+            update(AnalysisJobOrm)
+            .where(AnalysisJobOrm.status == "running")
+            .values(status="pending", updated_at=now, error_msg=None)
+        )
+        session.commit()
+        return len(rows)
+
+
 def get_pending_analysis_jobs(limit: int = 10) -> list[AnalysisJob]:
     """Pobiera oczekujące zadania posortowane po priorytecie i dacie."""
     Session = get_session_factory()
