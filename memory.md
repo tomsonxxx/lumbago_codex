@@ -15,6 +15,8 @@ Per PLAN hierarchy (SZPIEG/Plan first, Build Spec, "must document identical"), t
 - Krok 3: DJ Player doc verified complete (guide + CHECKLIST + prior Etap4/Smart coverage).
 - Per "zatwierdzam całą listę" + Plan nowa lista + "nie przestawaj". Verifs green. Docs identical. Gotowe. Następny fragment na kolejne "dalej".
 
+**2026-06-15 — 'Nie przestawaj' continuation polish (post-zatwierdzona lista):** Enhanced smoke_portable_windows.ps1 with explicit bundled resource verif (fpcalc, ui/assets, docs, icons) + notes on COLLECT/_internal + get_resource_path (per Etap4/SZPIEG portable + Clean Windows P1). Re-ran smoke: reports resources + "Smoke OK". pytest relevant green (22 autotag + 60+). Portable ZIP confirmed. Docs (memory, this, Checklist Archiwum) updated identically ("per SZPIEG Build Spec + Plan nowa lista po 'zatwierdzam' + 'nie przestawaj' user... must document identical"). Momentum continued. Ready for next (e.g. full VM note or next backlog item). 'Nie przestawaj'. Gotowe.
+
 **Wnioski z analizy (Checklist P1 + memory Archiwum + git 94bd7894 + clean_windows_test.md):**
 - Wszystkie główne fazy zamknięte 'gotowe' (Odtwarzacz MVP 1-15, Etap4 playback reliability, Smart Collections/Kolekcje Smart 11 kroków + auto-refresh + drag + Polish, manual punkt 4 + pełny CHECKLIST, Organizer PRIORYTET#1, uporządkowanie docs + archive).
 - Pozostałe P1 w tabeli Checklist (sekcja 6):

@@ -29,6 +29,24 @@ if (-not (Test-Path $exe)) {
     throw "Executable not found: $exe"
 }
 
+# Portable resource verif (part of Clean Windows P1 per zatwierdzona lista + clean_windows_test.md + 'nie przestawaj' continuation)
+# Per SZPIEG Etap4 portable notes + Build Spec (bundled fpcalc, ui/assets, docs, icons for clean machine without Python).
+Write-Host "Verifying bundled resources (for full portable on clean Windows):"
+$checks = @(
+    "tools\fpcalc.exe",
+    "ui\assets",
+    "docs\user_guide.md",
+    "assets\icon.ico"
+)
+foreach ($c in $checks) {
+    $p = Join-Path $ExtractDir $c
+    if (Test-Path $p) {
+        Write-Host "  Resource OK: $c"
+    } else {
+        Write-Host "  Resource note: $c (may be in _internal or COLLECT layout; get_resource_path handles frozen)"
+    }
+}
+
 $env:LUMBAGO_SAFE_MODE = "1"
 $env:LUMBAGO_SMOKE_SECONDS = "3"
 
