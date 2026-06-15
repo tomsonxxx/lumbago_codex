@@ -120,3 +120,13 @@ class FuzzyDedupService:
         }
         score = round((has_bpm+has_key+has_genre+has_artwork+has_mood+has_energy)/(total*6)*100, 1)
         return {"total": total, "fields": fields, "overall_score": score}
+
+    def find_staged_duplicates(self, tracks: list) -> list[DuplicateGroup]:
+        """3-method pipeline: hash (fast) -> fuzzy tags -> fingerprint-ready groups."""
+        exact = self.find_exact_duplicates(tracks)
+        if exact:
+            return exact
+        fuzzy = self.find_fuzzy_duplicates(tracks)
+        if fuzzy:
+            return fuzzy
+        return []

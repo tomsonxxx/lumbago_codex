@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field, replace
 from hashlib import md5
 from pathlib import Path, PureWindowsPath
@@ -86,6 +87,14 @@ class EnrichmentResult:
 
 
 class UnifiedAutoTagger:
+    """
+    Unified autotagger per 2026-06-03 decisions (SOURCE TOLERANCE MATRIX, YT+SC FIRST PASS,
+    EMERGENCY QUEUE legacy, REMIXER AS STYLE SLOT, STYLE DETERMINATION strict non-hallucination).
+    Provider order in priority/full modes reflects first-pass cheap sources (incl portals YT/SC via free_music_portals in v2/recog pipelines)
+    + matrix (MB high rank, ListenBrainz mapping, portals rescue last). Remixer only as final style slot.
+    Uses writeback via PendingTrackWrite + apply_track_writes (unified with bg workers).
+    Sequential mode for deterministic tests. Exact match to audit + user "posepuj dalej zgodnie z planem".
+    """
     def __init__(self, settings, logger: Callable[[str], None] | None = None):
         self.settings = settings
         self._logger = logger
@@ -159,19 +168,33 @@ class UnifiedAutoTagger:
                 self._search_ai,
             )
 
-        max_workers = int(getattr(self.settings, "provider_parallel_workers", 6) or 6)
-        max_workers = max(2, min(max_workers, len(providers)))
+        sequential = bool(
+            getattr(self.settings, "autotag_sequential", False)
+            or os.environ.get("LUMBAGO_AUTOTAG_SEQUENTIAL") == "1"
+        )
 
-        with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="autotag-src") as pool:
-            future_map = {pool.submit(self._timed_provider_call, fn, track): fn for fn in providers}
-            for future in as_completed(future_map):
-                fn = future_map[future]
+        if sequential:
+            for fn in providers:
                 try:
-                    candidate = future.result()
+                    candidate = self._timed_provider_call(fn, track)
                     if candidate is not None:
                         candidates.append(candidate)
                 except Exception as exc:
                     candidates.append(Candidate(source=fn.__name__, score=0, error=str(exc)))
+        else:
+            max_workers = int(getattr(self.settings, "provider_parallel_workers", 6) or 6)
+            max_workers = max(2, min(max_workers, len(providers)))
+
+            with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="autotag-src") as pool:
+                future_map = {pool.submit(self._timed_provider_call, fn, track): fn for fn in providers}
+                for future in as_completed(future_map):
+                    fn = future_map[future]
+                    try:
+                        candidate = future.result()
+                        if candidate is not None:
+                            candidates.append(candidate)
+                    except Exception as exc:
+                        candidates.append(Candidate(source=fn.__name__, score=0, error=str(exc)))
 
         valid = [candidate for candidate in candidates if candidate.error is None and candidate.score > 0]
         valid.sort(key=lambda candidate: candidate.score, reverse=True)

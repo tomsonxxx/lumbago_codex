@@ -209,6 +209,8 @@ Zasady:
 
 To ma chronić jakość, żeby `remixer` nie zamienił się w przypadkowy śmietnik z tytułu lub zbyt szerokich gatunków.
 
+**2026-06-15 status (posepuj dalej zgodnie z planem):** Zaimplementowano w UnifiedAutoTagger.apply_best_match (wywołanie _best_style_for_remixer) + docstring reference do macierzy/2026-06-03 decisions. Używane przez bg workers via writeback.
+
 ### Jak wyznaczamy styl
 
 Styl nie jest traktowany jako wiedza wprost dostępna jak tytuł czy artysta. To wynik złożenia kilku sygnałów:

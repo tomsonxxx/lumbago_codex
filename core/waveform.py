@@ -271,6 +271,84 @@ def _generate_fallback_peaks(num_points: int) -> list[float]:
     return [p / m for p in peaks]
 
 
+# Band codes for DJ waveform color coding:
+# 0=kick/bass, 1=percussion, 2=vocal/mid, 3=breakdown/quiet
+BAND_KICK = 0
+BAND_PERC = 1
+BAND_VOCAL = 2
+BAND_BREAKDOWN = 3
+
+
+def classify_band_from_ratios(low: float, mid: float, high: float) -> int:
+    """Classify spectral energy into one of four DJ waveform bands."""
+    total = low + mid + high
+    if total <= 0.05:
+        return BAND_BREAKDOWN
+    low_r = low / total
+    mid_r = mid / total
+    high_r = high / total
+    if low_r >= 0.45:
+        return BAND_KICK
+    if mid_r >= 0.42:
+        return BAND_PERC
+    if high_r >= 0.38:
+        return BAND_VOCAL
+    return BAND_BREAKDOWN
+
+
+def extract_spectral_bands(audio_path: str | Path, num_points: int = 600) -> list[int]:
+    """
+    Per-segment spectral band codes aligned with extract_peaks() sampling.
+    Uses librosa STFT when available; otherwise derives bands from fallback peaks.
+    Per 2026-06-15 continuation "posepuj dalej zgodnie z planem" + Checklist "Waveform Color Coding"
+    (kick/bass red, perc yellow, vocal green, breakdown blue) for DJ visual in WaveformWidget.
+    """
+    path = Path(audio_path)
+    if _HAS_LIBROSA and _librosa is not None and _np is not None and path.exists():
+        try:
+            import warnings
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                y, sr = _librosa.load(str(path), sr=22050, mono=True)
+            if len(y) > 0:
+                segment_length = max(1, len(y) // num_points)
+                bands: list[int] = []
+                for i in range(num_points):
+                    start = i * segment_length
+                    end = min((i + 1) * segment_length, len(y))
+                    segment = y[start:end]
+                    if len(segment) < 32:
+                        bands.append(BAND_BREAKDOWN)
+                        continue
+                    rms = float(_np.sqrt(_np.mean(segment ** 2)))
+                    if rms < 0.01:
+                        bands.append(BAND_BREAKDOWN)
+                        continue
+                    spec = _np.abs(_librosa.stft(segment, n_fft=512, hop_length=len(segment) // 2 + 1))
+                    freqs = _librosa.fft_frequencies(sr=sr, n_fft=512)
+                    power = spec.mean(axis=1)
+                    low = float(power[freqs < 250].sum())
+                    mid = float(power[(freqs >= 250) & (freqs < 4000)].sum())
+                    high = float(power[freqs >= 4000].sum())
+                    bands.append(classify_band_from_ratios(low, mid, high))
+                return bands
+        except Exception:
+            pass
+
+    peaks = extract_peaks(path, num_points=num_points)
+    bands = []
+    for amp in peaks:
+        if amp < 0.18:
+            bands.append(BAND_BREAKDOWN)
+        elif amp < 0.42:
+            bands.append(BAND_VOCAL)
+        elif amp < 0.72:
+            bands.append(BAND_PERC)
+        else:
+            bands.append(BAND_KICK)
+    return bands
+
+
 def paint_waveform_pixmap(peaks: list[float], width: int, height: int,
                           bg: str = "#0e1220", peak_color: str = "#39ff14",
                           rms_color: str = "#1f6f3a") -> QtGui.QPixmap:

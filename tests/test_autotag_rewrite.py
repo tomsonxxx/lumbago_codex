@@ -43,7 +43,7 @@ def test_clean_text_removes_noise_tokens():
 
 
 def test_unified_autotagger_picks_best_candidate(monkeypatch):
-    service = UnifiedAutoTagger(_settings())
+    service = UnifiedAutoTagger(_settings(autotag_sequential=True))
     track = Track(path="x.mp3", title="Take Me Away", artist="4 Strings")
 
     monkeypatch.setattr(service, "_search_musicbrainz", lambda _track: Candidate(source="MusicBrainz", score=74, title="Take Me Away", artist="4 Strings"))

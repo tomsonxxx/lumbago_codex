@@ -272,7 +272,7 @@ class RenamerDialog(QtWidgets.QDialog):
 class FileOrganizerDialog(QtWidgets.QDialog):
     def __init__(self, tracks: list[Track], parent=None):
         super().__init__(parent)
-        self.setWindowTitle("File Manager / Organizuj pliki")
+        self.setWindowTitle("Library Builder / Organizuj pliki")
         self.setMinimumSize(920, 620)
         apply_dialog_fade(self)
         self._tracks = [t for t in tracks if t and t.path]  # filter valid
@@ -346,6 +346,20 @@ class FileOrganizerDialog(QtWidgets.QDialog):
         self.folder_struct.setToolTip("Np. {genre}/{artist}/{year} lub {genre}/{artist}/{album}. Użyj / jako separator. Puste segmenty -> 'Unknown'. Wspiera {field|default} i {field:02} (nowe).")
         struct_row.addWidget(self.folder_struct, 1)
         layout.addLayout(struct_row)
+
+        preset_row = QtWidgets.QHBoxLayout()
+        preset_row.addWidget(QtWidgets.QLabel("Szablony:"))
+        for label, pattern in (
+            ("Genre/Artist/Album", "{genre}/{artist}/{album}"),
+            ("Genre/Year/Artist/Album", "{genre}/{year}/{artist}/{album}"),
+            ("Artist/Album", "{artist}/{album} ({year})"),
+        ):
+            btn = QtWidgets.QPushButton(label)
+            btn.setToolTip(f"Ustaw strukturę: {pattern}")
+            btn.clicked.connect(lambda _checked=False, p=pattern: self.folder_struct.setText(p))
+            preset_row.addWidget(btn)
+        preset_row.addStretch(1)
+        layout.addLayout(preset_row)
 
         fname_row = QtWidgets.QHBoxLayout()
         fname_row.addWidget(QtWidgets.QLabel("Wzorzec nazwy pliku:"))

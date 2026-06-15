@@ -8,8 +8,14 @@
 - Test na świeżym profilu użytkownika.
 
 ## Przygotowanie
-1. Skopiuj `dist/LumbagoMusicAI-portable.zip` na maszynę testową.
-2. Rozpakuj archiwum do nowego katalogu (np. `C:\LumbagoMusicAI`).
+1. Zbuduj artefakt: `.\scripts\build_portable_windows.ps1`
+2. Skopiuj `dist/LumbagoMusicAI-portable.zip` na maszynę testową.
+3. Rozpakuj archiwum do nowego katalogu (np. `C:\LumbagoMusicAI`).
+
+Automatyczny smoke na maszynie deweloperskiej:
+```powershell
+.\scripts\smoke_portable_windows.ps1
+```
 
 ## Smoke test uruchomienia
 1. Uruchom `LumbagoMusicAI.exe`.
