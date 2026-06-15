@@ -481,7 +481,7 @@ class DuplicatesDialog(QtWidgets.QDialog):
             svc = FuzzyDedupService()
             groups = svc.find_fuzzy_duplicates(self._tracks)
             rows = [
-                (f"Grupa {group_idx}", group.tracks)
+                (f"Grupa {group_idx} (sim {group.similarity:.2f}{', ' + getattr(group, 'match_method', '') if getattr(group, 'match_method', 'exact') != 'exact' else ''})", group.tracks)
                 for group_idx, group in enumerate(groups, 1)
                 if len(group.tracks) > 1
             ]
@@ -509,7 +509,7 @@ class DuplicatesDialog(QtWidgets.QDialog):
             svc = FuzzyDedupService()
             groups = svc.find_staged_duplicates(self._tracks)
             rows = [
-                (f"Grupa {group_idx} (sim {group.similarity:.2f})", group.tracks)
+                (f"Grupa {group_idx} (sim {group.similarity:.2f}{', ' + getattr(group, 'match_method', '') if getattr(group, 'match_method', 'exact') != 'exact' else ''})", group.tracks)
                 for group_idx, group in enumerate(groups, 1)
                 if len(group.tracks) > 1
             ]
