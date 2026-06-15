@@ -233,7 +233,7 @@ class DuplicatesDialog(QtWidgets.QDialog):
         top.addWidget(QtWidgets.QLabel("Metoda wykrywania:"))
         self.method = QtWidgets.QComboBox()
         self.method.addItems(["Hash", "Tagi", "Fingerprint", "Etapowo", "Fuzzy"])
-        self.method.setToolTip("Wybierz metodę wykrywania duplikatów")
+        self.method.setToolTip("Wybierz metodę (Fingerprint: pełny 3-method pipeline hash+fuzzy+fp po ulepszeniu w fuzzy_dedup; Etapowo: staged)")
         top.addWidget(self.method)
 
         self.run_btn = QtWidgets.QPushButton("Szukaj")
@@ -1850,6 +1850,11 @@ class DuplicateMergeSignals(QtCore.QObject):
 
 
 class DuplicateScanWorker(QtCore.QRunnable):
+    """
+    Worker for duplicate scan.
+    Per SZPIEG Build Spec + Plan nowa lista po 'dalej' user + 'nie przestawaj'... must document identical.
+    Fingerprint method now benefits from improved 3-method in fuzzy_dedup (hash -> fuzzy tags -> fp groups).
+    """
     def __init__(self, tracks: list[Track], method: str):
         super().__init__()
         self.tracks = tracks
