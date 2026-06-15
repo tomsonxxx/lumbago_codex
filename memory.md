@@ -3,7 +3,57 @@
 **2026-06-15 (sync per user "zsynchronizuj folder lokalny z github"):** git fetch + git pull origin main = fast-forward da4ede43..94bd7894 ("uporządkowanie: 2026-06-15 Uporządkowanie całej dokumentacji, pełnej historii i wykonanych checklist + konsolidacja do docs/archive/ + przepisanie do memory Archiwum" per prior user request "uporzadkuj cala dokumentacje..." + "dalej"). 
 Lokalny folder w pełni zsynchronizowany z GitHub (HEAD = origin/main, clean tree, no conflicts). 
 Pull przyniósł duże porządkowanie (przeniesienie starych crew/AGENT3_*, mockups, web-remnants, build-artifacts, old-docs do docs/archive/; aktualizacje AGENTS/CLAUDE/PLAN/SZPIEG/HISTORY/CHECKLIST/memory + manual tests close 466ebe85). 
-Per PLAN hierarchy (SZPIEG/Plan first, Build Spec, "must document identical"), todo_write, clear commit + push. "Nie przestawaj". Gotowe. 
+Per PLAN hierarchy (SZPIEG/Plan first, Build Spec, "must document identical"), todo_write, clear commit + push. "Nie przestawaj". Gotowe.
+
+**2026-06-15 — "nie przestawaj" continuation: Nowa lista przeróbek (P1 focus po uporządkowaniu + wszystkie duże wątki closed 'gotowe') — PREZENTACJA UŻYTKOWNIKOWI W PIERWSZEJ KOLEJNOŚCI (per PLAN PRIORYTET #1 + explicit "dajcie mi w pierwszej kolejnosci przeczytać waszą nową listę przeróbek").**
+
+**Wnioski z analizy (Checklist P1 + memory Archiwum + git 94bd7894 + clean_windows_test.md):**
+- Wszystkie główne fazy zamknięte 'gotowe' (Odtwarzacz MVP 1-15, Etap4 playback reliability, Smart Collections/Kolekcje Smart 11 kroków + auto-refresh + drag + Polish, manual punkt 4 + pełny CHECKLIST, Organizer PRIORYTET#1, uporządkowanie docs + archive).
+- Pozostałe P1 w tabeli Checklist (sekcja 6):
+  1. Test na czystym Windows (najbliższy do zamknięcia — skrypty build_portable_windows.ps1 + smoke_portable_windows.ps1 + ulepszony spec + path helper już są; clean_windows_test.md gotowe).
+  2. Naprawić failing test `test_unified_autotagger_picks_best_candidate` (w tests/test_autotag_rewrite.py — monkeypatch MusicBrainz/iTunes, unified picker).
+  3. Pełna dokumentacja DJ Playera (hotcue/memory/sync/Etap4/Smart) — dj_player_guide.md istnieje, ale tabela nadal pending.
+- Backlog ma dalsze rzeczy (advanced Smart, waveform color coding, duplicate fingerprint UI), ale skupiamy się na P1.
+- "Nie przestawaj" = nie zamykamy sesji, ruszamy z następną listą po "dalej" z uporządkowania.
+
+**Proponowana "nowa lista przeróbek" (krok-po-kroku, high pressure exact, dokumentacja identyczna, verifs na bieżąco, push po każdym większym bloku):**
+
+1. **Zakończ Clean Windows P1 (priorytet #1 z tabeli)**: 
+   - Uruchom `./scripts/build_portable_windows.ps1` (lub równoważny PyInstaller) i wygeneruj `dist/LumbagoMusicAI-portable.zip`.
+   - Uruchom `./scripts/smoke_portable_windows.ps1` (z LUMBAGO_SAFE_MODE=1).
+   - Pełny manual smoke per `docs/clean_windows_test.md` (import 1-3 plików, detail edit, DJ Player load/play/cue/hotcue z drag, waveform, DB/settings w APPDATA).
+   - Zaktualizuj Checklist (P1#1 → done lub "local verif OK, VM pending") + memory/HISTORY + clean_windows_test.md.
+   - Opcjonalnie: dodaj prosty weryfikacyjny krok do desktop-ci.yml jeśli pasuje.
+   - Verifs: smoke exit0 na portable, python -c + pytest relevant.
+
+2. **Napraw failing test `test_unified_autotagger_picks_best_candidate`**:
+   - Zbadaj aktualny kod w tests/test_autotag_rewrite.py + services/autotag_rewrite.py (UnifiedAutoTagger, candidate picking logic, _search_* mocks).
+   - Napraw tak, żeby test przechodził (prawdopodobnie issue w pickerze / config / monkeypatch).
+   - Dodaj ewentualne dodatkowe asercje lub edge cases.
+   - Uruchom pełny `pytest tests/test_autotag_rewrite.py -q`.
+   - Zaktualizuj docs (Checklist P1#2).
+
+3. **Uzupełnij / zweryfikuj "pełną dokumentację DJ Playera" (P1#3)**:
+   - Przejrzyj `docs/dj_player_guide.md` + crew/CHECKLIST_reczny_test_nowy_DJ_Player.md + code docstrings w ui/dj/ + services/playback/ (hotcue, memory S/R, sync, Etap4 error handling, Smart Collections integracja, FILE vs STREAM, EFFECT).
+   - Upewnij się, że pokrywa aktualny stan (po Etap4 + Smart).
+   - Ewentualne braki: dodaj sekcje, przykłady, lub linki do testów.
+   - Zaktualizuj Checklist (P1#3 → done).
+
+4. **(Po P1 lub równolegle jeśli user pozwoli) Przygotowanie następnego fragmentu**:
+   - Uruchom SZPIEG (jeśli wąski) + Plan na wybrany backlog (np. "advanced Smart Collections rule engine AND/OR" lub "waveform color coding" lub "fingerprint duplicate UI polish").
+   - Nowa lista + prezentacja user first.
+
+**Zasady kontynuacji (z PLAN + "nie przestawaj")**:
+- SZPIEG/Plan first dla każdego nowego fragmentu.
+- "nowa lista przeróbek" zawsze najpierw dla użytkownika do decyzji.
+- Exact match, read-before-edit, identical docs (memory + HISTORY + SZPIEG + AGENTS/CLAUDE + crew/CHECKLIST + code "per SZPIEG... must document identical").
+- Verifs na bieżąco (smoke, pytest, python-c, manual CHECKLIST).
+- Po każdym bloku: todo, commit z jasnym msg, push.
+- Język: polski w dokumentacji crew.
+
+Użytkowniku: **Proszę przeczytaj powyższą nową listę w pierwszej kolejności i daj "dalej", "zatwierdzam", "zmień X na Y", lub wskaż konkretny punkt / inny fragment.** Dopiero potem ruszamy z wykonaniem (krok 1 jako pierwszy).
+
+Per PLAN + SZPIEG + "nie przestawaj" + "działaj po kolei do końca". Gotowe do Twojej decyzji. 
 
 **2026-06-15 (sesja: analyze latest docs + sync repo z github per user query):** Zsynchronizowano lokalne repo z GitHub (git fetch + git pull origin main — fast-forward 92f92017..f22e64cc; teraz "up to date with origin/main", clean tree). 
 Przeanalizowano najnowszą dokumentację (obowiązkowa lektura memory + SZPIEG + PLAN + AGENTS/CLAUDE na starcie + post-pull re-check): 
