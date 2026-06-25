@@ -259,6 +259,15 @@ class PlaybackEngine:
             "pfl_b": self._pfl_b,
         }
 
+    def get_backend_info(self) -> dict:
+        """Return basic info about which backends are active for each deck."""
+        return {
+            "deck_a": self.deck_a.__class__.__name__,
+            "deck_b": self.deck_b.__class__.__name__,
+            "active_backend_a": self.deck_a.__class__.__name__,
+            "active_backend_b": self.deck_b.__class__.__name__,
+        }
+
     def release_all(self) -> None:
         """Release both decks. Call on application shutdown."""
         try:

@@ -35,29 +35,116 @@ jobs:
           pip install -r requirements.txt
           pip install -e .
 
+      # Cache VLC installation - avoids re-downloading on every run
+      - name: Cache VLC
+        uses: actions/cache@v4
+        with:
+          path: C:\Program Files\VideoLAN\VLC
+          key: vlc-3.0.21-${{ runner.os }}
+          restore-keys: |
+            vlc-3.0.21-${{ runner.os }}
+
       - name: Install VLC runtime (for python-vlc / DJ Player tests)
         shell: powershell
+        continue-on-error: true
         run: |
           $ProgressPreference = 'SilentlyContinue'
           $vlcVersion = "3.0.21"
-          $vlcInstallerUrl = "https://download.videolan.org/vlc/$vlcVersion/win64/vlc-$vlcVersion-win64.exe"
-          $installer = "vlc-installer.exe"
-          Write-Host "Downloading VLC $vlcVersion installer..."
-          Invoke-WebRequest -Uri $vlcInstallerUrl -OutFile $installer -UseBasicParsing
-
-          Write-Host "Installing VLC silently..."
-          Start-Process -FilePath ".\$installer" -ArgumentList "/S" -Wait -NoNewWindow
-
           $vlcPath = "C:\Program Files\VideoLAN\VLC"
-          if (Test-Path $vlcPath) {
-              Write-Host "VLC installed to $vlcPath"
-              # Make libvlc.dll discoverable for python-vlc in subsequent steps
+
+          # Skip if already present (from cache or previous step)
+          if (Test-Path "$vlcPath\vlc.exe") {
+              Write-Host "VLC already present (from cache or previous run)"
+          } else {
+              Write-Host "Installing VLC $vlcVersion via Chocolatey (preferred method)..."
+
+              # Install Chocolatey if not present
+              if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
+                  try {
+                      Set-ExecutionPolicy Bypass -Scope Process -Force
+                      [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
+                      iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+                  } catch {
+                      Write-Warning "Failed to install Chocolatey: $($_.Exception.Message)"
+                  }
+              }
+
+              $installedViaChoco = $false
+              if (Get-Command choco -ErrorAction SilentlyContinue) {
+                  try {
+                      choco install vlc --version="$vlcVersion" -y --force --no-progress --ignore-checksums --params="'/NoDesktopShortcut /NoStartMenu'" | Out-Null
+                      if ((Test-Path "$vlcPath\vlc.exe") -and (Test-Path "$vlcPath\libvlc.dll") -and (Test-Path "$vlcPath\plugins")) {
+                          $installedViaChoco = $true
+                          Write-Host "VLC installed successfully via Chocolatey"
+                      }
+                  } catch {
+                      Write-Warning "Chocolatey install failed: $($_.Exception.Message)"
+                  }
+              }
+
+              # Fallback to direct download + installer if Chocolatey failed or unavailable
+              if (-not $installedViaChoco) {
+                  Write-Host "Falling back to direct download..."
+                  $vlcInstallerUrl = "https://get.videolan.org/vlc/$vlcVersion/win64/vlc-$vlcVersion-win64.exe"
+                  $installer = "vlc-installer.exe"
+
+                  $maxRetries = 5
+                  $retryCount = 0
+                  $success = $false
+
+                  while (-not $success -and $retryCount -lt $maxRetries) {
+                      $retryCount++
+                      try {
+                          if (Test-Path $installer) { Remove-Item $installer -Force -ErrorAction SilentlyContinue }
+                          # Prefer curl.exe
+                          if (Get-Command curl.exe -ErrorAction SilentlyContinue) {
+                              & curl.exe -L -o $installer $vlcInstallerUrl --retry 2 --retry-delay 3 --max-time 180 2>&1 | Out-Null
+                          } else {
+                              Invoke-WebRequest -Uri $vlcInstallerUrl -OutFile $installer -UseBasicParsing -ErrorAction Stop
+                          }
+
+                          if ((Test-Path $installer) -and (Get-Item $installer).Length -gt 30MB) {
+                              $success = $true
+                          } else {
+                              Start-Sleep -Seconds (5 * $retryCount)
+                          }
+                      } catch {
+                          Write-Host "Download attempt $retryCount failed: $($_.Exception.Message)"
+                          Start-Sleep -Seconds (5 * $retryCount)
+                      }
+                  }
+
+                  if ($success) {
+                      Write-Host "Installing VLC silently (fallback)..."
+                      $proc = Start-Process -FilePath ".\$installer" -ArgumentList "/S" -Wait -PassThru -NoNewWindow
+                      if ($proc.ExitCode -ne 0) {
+                          Write-Warning "Silent installer failed with exit code $($proc.ExitCode)"
+                          $success = $false
+                      } else {
+                          Start-Sleep -Seconds 2
+                          if ((Test-Path "$vlcPath\vlc.exe") -and (Test-Path "$vlcPath\libvlc.dll") -and (Test-Path "$vlcPath\plugins")) {
+                              Write-Host "Fallback installer succeeded"
+                          } else {
+                              Write-Warning "Installer finished but required files missing"
+                              $success = $false
+                          }
+                      }
+                      Remove-Item $installer -Force -ErrorAction SilentlyContinue
+                  } else {
+                      Write-Warning "All download attempts failed. VLC will not be available."
+                  }
+              }
+          }
+
+          # Configure environment if VLC is present (strong check)
+          $vlcOk = (Test-Path "$vlcPath\vlc.exe") -and (Test-Path "$vlcPath\libvlc.dll") -and (Test-Path "$vlcPath\plugins")
+          if ($vlcOk) {
+              Write-Host "Configuring VLC for python-vlc..."
               echo $vlcPath | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
               "VLC_PLUGIN_PATH=$vlcPath\plugins" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           } else {
-              Write-Warning "VLC installation path not found!"
+              Write-Warning "VLC not fully available. Some DJ Player / playback tests will use Qt or Noop fallback backends."
           }
-          Remove-Item $installer -Force -ErrorAction SilentlyContinue
 
       - name: Verify VLC for python-vlc
         shell: powershell

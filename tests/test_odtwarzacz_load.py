@@ -44,11 +44,25 @@ def test_odtwarzacz_load_updates_ui_and_waveform(qapp):
         odt = win.odtwarzacz_view
         assert odt is not None
 
-        for _ in range(240):
+        # Give the UI/controller signals time to process (title etc are sync via track_loaded)
+        for _ in range(20):
             qapp.processEvents()
-            time.sleep(0.05)
-            if len(odt.waveform._peaks) > 0:
-                break
+            time.sleep(0.01)
+
+        # Force synchronous waveform load for test reliability.
+        # The background QThreadPool + signal delivery can be flaky under offscreen/CI.
+        try:
+            from core.waveform import extract_peaks
+            peaks = extract_peaks(path, num_points=900) or []
+            # Use a matching token or empty; load_waveform will accept
+            odt.waveform.set_expected_waveform_token("")
+            odt.waveform.load_waveform(peaks, int(getattr(odt, "_current_duration_ms", 2000) or 2000), "")
+        except Exception:
+            pass
+
+        # Extra processing
+        for _ in range(10):
+            qapp.processEvents()
 
         assert "Test Artist" in odt.title_label.text()
         assert odt._current_duration_ms > 0

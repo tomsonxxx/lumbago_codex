@@ -193,7 +193,7 @@ def genre_effective_weight(base_score: float, value: Any) -> float:
     spec = genre_specificity_score(text)
     weight = base_score * (1.0 + (spec / 35.0))
     if is_broad_genre(text):
-        weight *= 0.35
+        weight *= 0.70  # lowered penalty so good portal evidence (theaudiodb etc) for broad genres like "Metal" still passes threshold when no more specific data
     elif spec <= 8:
         weight *= 0.75
     return weight
