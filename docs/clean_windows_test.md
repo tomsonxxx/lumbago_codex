@@ -40,6 +40,8 @@ Automatyczny smoke na maszynie deweloperskiej:
 
 Uwaga: nowa architektura sole (ui/dj/* + dj_player_window.py hardcoded True) — brak starych klas.
 
+**Uwaga audio:** Pełny playback wymaga VLC. Na czystym Windows CI instalacja przez Chocolatey + cache (lub fallback). Gdy VLC niedostępny — Qt lub Noop fallback (testy + smoke przechodzą). Na użytkowniku: zainstaluj VLC dla pełnej jakości DJ.
+
 ## Zakończenie
 1. Sprawdź, czy w `%APPDATA%\LumbagoMusicAI` powstały pliki `lumbago.db` i `settings.json`.
 2. Zapisz wynik testu oraz ewentualne błędy.

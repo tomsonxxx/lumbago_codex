@@ -79,6 +79,26 @@ Sesyjny snapshot stanu decku (nie przetrwa restartu aplikacji).
 
 **Kod:** `ui/dj/views/memory_controls.py`, `DeckController.save_memory()` / `recall_memory()`
 
+## Backendy audio (playback)
+
+Preferowany: **VLC** (VlcAudioBackend) — najlepsza jakość, niskie latency, wsparcie dla wielu formatów.
+
+Fallbacki:
+- **QtMultimedia** (QtAudioBackend)
+- **Noop** (gdy brak audio) — dla testów i smoke
+
+`PlaybackEngine` zarządza dual-deck (A/B) + mixing + PFL.
+
+Metody diagnostyczne:
+- `get_backend_info()` — info o aktywnych backendach
+- `get_diagnostics()` — pełne dane + last_error
+
+W CI Windows: VLC instalowane przez Chocolatey + cache (lub fallback download). `continue-on-error: true` — testy przechodzą na fallbackach.
+
+Brak VLC na maszynie użytkownika: w UI pojawia się ostrzeżenie + ograniczona funkcjonalność playbacku.
+
+**Kod:** `services/playback/{engine.py, vlc_backend.py, qt_backend.py, base.py}`, `ui/dj_player_window.py` (status + diagnostics).
+
 ---
 
 ## Sync

@@ -47,9 +47,21 @@ pyinstaller pyinstaller.spec --noconfirm
 pytest
 ```
 
+## Audio / DJ Player
+
+Aplikacja używa **VLC** jako preferowanego backendu playbacku (wysoka jakość, niskie opóźnienia, crossfading).
+
+- Na Windows CI (`desktop-ci.yml`) VLC jest instalowany automatycznie przez **Chocolatey** + cache + fallback do direct download (stabilne, nieblokujące).
+- W razie braku VLC aplikacja gracefully przełącza się na **Qt backend** lub **Noop** (testy i smoke przechodzą).
+- Dla pełnej funkcjonalności DJ Playera na maszynie użytkownika: zainstaluj VLC z https://videolan.org lub rozpakuj portable obok exe.
+
+W kodzie: `services/playback/` (VlcAudioBackend prio → Qt → _NoopAudioBackend), `PlaybackEngine.get_backend_info()`.
+
 ## Kompatybilność z Vercel i narzędziami agentów
 
 Projekt jest **wyłącznie desktopowy** (PyQt6 + DJ Player). Wersje web i inne zostały usunięte.
+
+**CodeQL**: Analiza `javascript-typescript` wyłączona (tylko zarchiwizowane resztki Next.js w `docs/archive/web-remnants/`). Aktywne języki: `actions` + `python`.
 
 Dla poprawnego działania na platformie Vercel (obejście wykrywania `main.py` jako funkcji serverless) dodano minimalną, nieaktywną warstwę Next.js:
 

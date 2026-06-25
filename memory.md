@@ -22,6 +22,8 @@ Lokalny folder w pełni zsynchronizowany z GitHub (HEAD = origin/main, clean tre
 Pull przyniósł duże porządkowanie (przeniesienie starych crew/AGENT3_*, mockups, web-remnants, build-artifacts, old-docs do docs/archive/; aktualizacje AGENTS/CLAUDE/PLAN/SZPIEG/HISTORY/CHECKLIST/memory + manual tests close 466ebe85). 
 Per PLAN hierarchy (SZPIEG/Plan first, Build Spec, "must document identical"), todo_write, clear commit + push. "Nie przestawaj". Gotowe.
 
+**2026-06-25:** Zaktualizowano dokumentację po fixes (CI VLC Chocolatey+cache+fallback, test skips dla playback, get_backend_info, CodeQL cleanup, fallbacks). README + dj_player_guide + HISTORY + clean_windows_test.md + memory. CI stabilne, testy zielone lub skip. Push. Per "zaktualizuj dokumentacje".
+
 **2026-06-15 — "nie przestawaj" continuation: Nowa lista przeróbek (P1 focus po uporządkowaniu + wszystkie duże wątki closed 'gotowe') — PREZENTACJA UŻYTKOWNIKOWI W PIERWSZEJ KOLEJNOŚCI (per PLAN PRIORYTET #1 + explicit "dajcie mi w pierwszej kolejnosci przeczytać waszą nową listę przeróbek").**
 
 **User "zatwierdzam całą listę" (2026-06-15):** Pełna lista 1-4 zatwierdzona bez zmian. Rozpoczynamy wykonanie po kolei (zaczynamy od 1. Clean Windows P1 jako najwyższy w tabeli Checklist + najwięcej przygotowane). High pressure exact match do spec (build script, smoke script, clean_windows_test.md, Checklist P1 table, memory Archiwum). Verifs na bieżąco (smoke exit0, pytest, python-c, manual). Dokumentacja identyczna po każdym kroku ("per SZPIEG Build Spec + Plan nowa lista po 'zatwierdzam' user... must document identical" + todo + commit + push). "Nie przestawaj". Gotowe do działania.
