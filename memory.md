@@ -1,3 +1,14 @@
+# Memory — Lumbago Music AI (WYŁĄCZNIE Desktop Windows Python)
+
+**GŁÓWNY FOLDER DOMOWY: D:\Claude**
+
+Projekt to **TYLKO I WYŁĄCZNIE** aplikacja desktop PyQt6 na Windows.
+Żadnych wersji web, WinUI ani innych w aktywnym drzewie.
+
+Agenci pracują wyłącznie na plikach desktop (core/, data/, services/, ui/, main.py, docs/ desktop, MEMORY/, crew/).
+
+---
+
 # Memory — Lumbago Music AI (DJ Player Project)
 
 **MEMORY Archive (2026-06-16 full repo consolidation and cleanup per user request + SZPIEG plan):** 

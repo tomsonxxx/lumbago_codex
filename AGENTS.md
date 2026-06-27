@@ -1,3 +1,14 @@
+# AGENTS.md — TYLKO Desktop Windows Python (D:\Claude)
+
+**GŁÓWNY FOLDER DOMOWY: D:\Claude**
+
+Projekt to **TYLKO I WYŁĄCZNIE** aplikacja desktop PyQt6 na Windows.
+Żadnych wersji web.
+
+Agenci pracują wyłącznie na plikach desktop (core/data/services/ui, main.py, desktop docs, MEMORY, crew).
+
+---
+
 # AGENTS.md
 
 **MINIMAL LIVE VERSION (2026-06-16 consolidation).**  

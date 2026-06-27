@@ -1,0 +1,12 @@
+﻿=== D:\Claude NA GOTOWO ===
+Data: 2026-06-27
+
+Struktura: TYLKO desktop Windows Python
+Główny folder: D:\Claude
+Top: core, data, services, ui, main.py, .github (desktop), docs (desktop), MEMORY, crew, assets, scripts, tests
+
+Docs cleaned: only clean_windows_test.md, dj_player_guide.md, HISTORY.md, user_guide.md
+Headers added: README, memory, AGENTS, CLAUDE
+Web remnants: removed
+Agenci: celują w poprawne pliki desktop
+Gotowe do pracy.

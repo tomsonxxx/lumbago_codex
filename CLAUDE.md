@@ -1,3 +1,14 @@
+# CLAUDE.md — TYLKO Desktop Windows Python (D:\Claude)
+
+**GŁÓWNY FOLDER DOMOWY: D:\Claude**
+
+Projekt to **TYLKO I WYŁĄCZNIE** aplikacja desktop PyQt6 na Windows.
+Żadnych wersji web.
+
+Agenci: zawsze zaczynaj od README.md + memory.md + docs/ + crew/ specs.
+
+---
+
 # CLAUDE.md
 
 **MINIMAL LIVE VERSION (2026-06-16 consolidation).**  

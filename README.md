@@ -1,4 +1,20 @@
-# Lumbago Music AI
+# LUMBAGO MUSIC AI — TYLKO WERSJA DESKTOP WINDOWS (Python + PyQt6)
+
+**GŁÓWNY FOLDER DOMOWY PROJEKTU: D:\Claude**
+
+Ten projekt jest **wyłącznie** aplikacją okienkową na Windows w języku Python (PyQt6).
+Nie rozwijamy żadnych wersji web, WinUI, Next.js ani innych.
+
+Agenci (Szpieg, Plan, crew itd.) **muszą** pracować tylko i wyłącznie na plikach desktop:
+- main.py
+- core/, data/, services/, ui/
+- .github/workflows/desktop-ci.yml
+- docs/ (tylko desktop)
+- scripts/ (Windows PowerShell)
+- MEMORY/, crew/
+
+Wszystkie pozostałości web zostały usunięte z głównego drzewa.
+Struktura jest czysta, zgodna z najlepszymi praktykami (beets/Picard style + src-like separation + living docs + agent-friendly).
 
 Per 2026-06-16 full repo consolidation (SZPIEG research lead): ALL prior documentation, old agent outputs, full checklists, unused docs, previous crew reports, history, mockups, build artifacts, web remnants, legacy plans, DESIGN docs, Blueprint extract etc. safely archived in root MEMORY/ directory (substructure: full_agent_instructions/, historical_checklists/, archive/ (from prior 2026-06-15 docs/archive/), old_docs/, previous_runs/ etc.) and summarized/pointered in this memory.md (Archiwum section). Live files (AGENTS/CLAUDE/crew/PLAN/SZPIEG/CHECKLIST + docs/HISTORY/guides + README etc.) minimized for continuity but complete. All information preserved and accessible via MEMORY/INDEX.md + git history. Builds on 2026-06-15 uporządkowanie to docs/archive/. Per SZPIEG research 2026-06-16 consolidation + Plan hierarchy + "uruchamiaj szpiega przed kazdym wiekszym etapem" + "nie przestawaj" + "must document identical".
 
