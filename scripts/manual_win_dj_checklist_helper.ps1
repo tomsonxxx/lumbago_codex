@@ -97,6 +97,28 @@ Write-Host "Booth 1m low-light readability: OK / issues"
 Write-Host "APPDATA + import + detail + drag: OK / issues"
 Write-Host "Backend: $(if (Test-Path $ExePath) { 'check get_backend_info' })"
 Write-Host "Screenshots: [lista]"
+
+# 11 Faza2 Waveform color (discrete tint + overlays)
+Write-Host "[11] Faza2 Waveform discrete per-band tint + energy (per SZPIEG 2026-07-14 plan Faza2)" -ForegroundColor Yellow
+Write-Host "Sprawdź kolory kick (red), hi-hat (yellow), vocal (green), breakdown (blue) + energy overlay."
+Write-Host "Test normal/compact/highDPI. RGB fallback."
+Read-Host "Enter po waveform color Faza2"
+
+# 12 Faza2 Advanced Smart + intel
+Write-Host "[12] Faza2 Advanced Smart (nested AND/OR live) + Playlist intel (Camelot/energy sort)" -ForegroundColor Yellow
+Write-Host "Smart builder: nested rules + live preview + more fields."
+Write-Host "Library smart tree dynamic."
+Write-Host "Order dialog: harmonic + energy sort buttons."
+Read-Host "Enter po Smart + intel Faza2"
+
+# 13 Downloader + AI (Faza4)
+Write-Host "[13] Downloader large PL + AI (per spec 'chce dodać nowe, dosc skomplikowane.txt' + Faza4)" -ForegroundColor Yellow
+Write-Host "Narzędzia > Downloader: duża playlist (est 700+), MAX profile, checkpoint, add-to-lib."
+Write-Host "AI: 'pobierz <url>' prefill + auto."
+Write-Host "Sprawdź yt-dlp/ffmpeg PATH warning jeśli brak."
+Read-Host "Enter po Downloader + AI"
+
+Write-Host "=== KONIEC === Per SZPIEG research 2026-07-14 plan rozbudowy Faza0/Faza1/Faza2/Faza3/Faza4/Faza5 + 'dalej az do ukonczenia wszystkich faz' ... must document identical. 'Gotowe' helper enhanced. Nie przestawaj."
 Write-Host "Uwagi: "
 Write-Host "Per SZPIEG research 2026-07-13 co-dalej manual checklist + clean Win... must document identical"
 Write-Host "Zaktualizuj crew/CHECKLIST [x] + docs po teście."

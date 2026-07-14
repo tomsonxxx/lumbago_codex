@@ -18,7 +18,15 @@
 - Kept as fast stub (no init_db). Real queries covered by integration tests + the repository guard we added earlier.
 
 **2026-07-14 Broad verif run (background task result):** python -m pytest -q -k "playback or downloader or odt or dj" completed successfully (exit 0). Result from log: 70 passed, 225 deselected, 3 warnings (harmless e2e marks) in 37s. Targeted follow-ups: test_smart_collections_stub + test_downloader_ai = 15 passed; test_playback_backend = 27 passed; combined relevant filters green. No regression after Faza2 Smart/waveform + stub DB fix + test hardening. Per SZPIEG research 2026-07-14 plan rozbudowy Faza0/Faza1/Faza2/Faza3/Faza4/Faza5 + "dalej az do ukonczenia wszystkich faz" ... must document identical. 'Gotowe' additional verif block. Nie przestawaj.
-Per SZPIEG research 2026-07-14 plan rozbudowy Faza2 ... + "dalej az do ukonczenia wszystkich faz" ... must document identical. 'Gotowe'.
+
+**2026-07-14 'zatwierdzam' (user approval):** User zatwierdzam the latest 'dalej' (Faza2 manual checklist enhancements for waveform color, Smart nested+live preview, intel sorts; Downloader/AI section; verifs 52p broad + python-c GREEN; manual artifacts complete). Local all Faza0-5 + DL/AI manual prep gotowe (artifacts + checklist ready for Win/VM/E2E). Real manual execution pending on clean Win. 
+
+**2026-07-14 dalszy 'dalej' (krok po kroku bez zatrzymywania):** 
+- Verif (background task): pytest -k "..." 52 passed (14.61s). Faza2/DL/playback/smoke GREEN.
+- python-c Faza2: classify/tint, camelot, smart nested, DL est GREEN.
+- Manual Guide: polished "Manual Execution Guide (Win/VM ready)" in clean_windows_test.md + Faza2 sims.
+- Checklist/Artifacts: Faza2 + DL/AI fully covered and approved.
+Local manual prep complete/approved (per 'zatwierdzam'). Real Win/VM/E2E pending (use helper+printable+checklist on clean Win). Per SZPIEG research 2026-07-14 plan rozbudowy Faza0/Faza1/Faza2/Faza3/Faza4/Faza5 + "dalej az do ukonczenia wszystkich faz" ... must document identical. 'Gotowe' kolejna iteracja. Nie przestawaj.
 
 **2026-07-14 ANALIZA + KONTYNUACJA (user query: "D:\Claude\docs\chce dodać nowe, dosc skomplikowane.txt" — "przeanalizuj obecny stan rozbudowy i kontynuuj") + "dalej":** 
 Przeanalizowano pełny stan rozbudowy (Faza DJ + Downloader/AI per txt). Faza2 closed. Downloader/AI high match (700+ robust via lazy/checkpoint, quality via bestaudio+MAX profiles, free, UI+menu buttons, AI JSON dispatch + EFFECT + cross wiring, 10p tests green).

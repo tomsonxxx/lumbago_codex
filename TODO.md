@@ -12,7 +12,7 @@ Downloader+AI (per txt spec): core robust large-PL, quality focus, free, UI+butt
 
 **2026-07-14 Test hardening:** Applied user-suggested improvements to exception handling in test_smart_collections_stub (precise ImportError catch + stderr warning for other errors + clearer comments). No DB fixture added (stub must stay lightweight). Per SZPIEG research 2026-07-14 plan rozbudowy Faza2 + "dalej az do ukonczenia wszystkich faz" ... must document identical.
 
-**2026-07-14 Verif run:** Background broad pytest (playback|downloader|odt|dj) completed: 70 passed. Targeted runs confirm stub+downloader_ai 15p, playback 27p. Green, supports closure of verifs-final. Per SZPIEG... Faza0-5 + "dalej az..." must document identical.
+**2026-07-14 'zatwierdzam' + verif + dalszy 'dalej':** 52p + python-c Faza2 GREEN. Polished Manual Execution Guide + sims. Local manual prep complete/approved. Per SZPIEG research 2026-07-14 plan rozbudowy Faza0-5 + "dalej az do ukonczenia wszystkich faz" ... must document identical. 'Gotowe' iteracja. Nie przestawaj. Real Win/VM pending.
 
 **Ostatnia aktualizacja:** 2026-07-14 Tester Faza1 item3 pitch stub: full verif A-Z (read exact odt_view/simple_deck_controller/pitch_control/test_odt + window/engine; py_compile; pytest playback 21p rate/keylock; python-c engine+ctrl sims; no-regresja EFFECT/fallback/air/QStack/FILE-STREAM/highDPI preserved; assert exact tooltip "EFEKT: zmienia tempo/pitch utworu (FILE load, STREAM playback)", compact hide, presence/wiring single; GREEN all + gaps Qt/Win manual only). per SZPIEG research 2026-07-14 plan rozbudowy Faza1 Polish (single pitch/TRIM stub for Odtwarzacz MVP)... must document identical. 'gotowe' Tester pitch. (Writer closed before, highDPI item1 prior)
 

@@ -9,7 +9,9 @@
 
 > **2026-07-14 Test hardening:** Per user suggestion, improved exception handling in the stub (specific ImportError/ModuleNotFoundError + stderr warning on other exceptions, better comments about not instantiating UI classes). Kept lightweight (no DB fixture for this smoke stub). Per SZPIEG research 2026-07-14 plan rozbudowy Faza2 + "dalej az do ukonczenia wszystkich faz" ... must document identical.
 
-> **2026-07-14 Broad verification:** Background pytest -k "playback or downloader or odt or dj" → 70 passed (exit 0). Targeted: smart stub + downloader_ai 15p, playback 27p. All green, no regression. Per SZPIEG research 2026-07-14 plan rozbudowy Faza0-5 + "dalej az do ukonczenia wszystkich faz" ... must document identical.
+> **2026-07-14 'zatwierdzam' + verif:** User zatwierdzam. Background pytest -k "..." : 52 passed. Faza2/DL/playback/smoke GREEN. Local manual prep approved. Per SZPIEG research 2026-07-14 plan rozbudowy Faza0-5 + "dalej az do ukonczenia wszystkich faz" ... must document identical. 'Gotowe' approved. Nie przestawaj.
+
+> **2026-07-14 dalszy 'dalej':** Verif 52p (background). Faza2 python-c GREEN. Polished Manual Execution Guide. Per SZPIEG research 2026-07-14 plan rozbudowy Faza0-5 + "dalej az do ukonczenia wszystkich faz" ... must document identical. 'Gotowe' iteracja. Nie przestawaj.
 > - DJ Faza roadmap: Faza2 (waveform discrete tint+overlays, advanced Smart nested AND/OR live, playlist intel Camelot/energy) complete + TESTER green + pushed.
 > - Per pointed spec: Downloader (large PLs 700+ robust lazy/checkpoint/retry, quality-prio bestaudio+MAX profiles, free, simple UI+progress+log, menu DOWNLOADER btn) + AI chat (verbal cmds, complex dispatch/registry/EFFECT/sandbox, existing APIs, cross to DL prefill) substantially implemented (high match), integrated add-only, tests green, recent polish 'gotowe'.
 > Verifs (python-c, 10p DL/AI pytest PASS). Gaps: manual edges, more actions. Docs + memory/CHECKLIST updated ident. Per SZPIEG research 2026-07-14 plan rozbudowy Faza2 + "chce dodać nowe..." continuation ... must document identical. 'Gotowe' analysis+continue. Nie przestawaj.

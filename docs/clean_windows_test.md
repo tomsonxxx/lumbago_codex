@@ -143,7 +143,7 @@ Per SZPIEG research 2026-06-25 + Analyzer + Plan "nowa lista" ... must document 
 6. Resource: rozważ parents[1] lub root detection w get_resource_path dla dev layout (lumbago_codex root).
 7. Smoke: raport diagnostics nawet jeśli via note lub log file.
 
-**Faza3 Packaging/CI + Downloader/AI closure (2026-07-14 "dalej az do ukonczenia wszystkich faz"):** Enhanced explicit coverage per PLAN Faza3 + Faza4 Downloader/AI (from "chce dodać nowe, dosc skomplikowane.txt" + Nowa lista 1-10). clean_windows_test has dedicated Downloader section (yt-dlp pip + ffmpeg PATH required post-unpack; UI warnings on detect fail; est+disk confirm for 700+; MAX profile audible quality; lazy+checkpoint+retry; "Dodaj do biblioteki" scan; AI verbal "pobierz" prefill). smoke/build + pyinstaller.spec have notes tying to this (external tools, no bundle, detection graceful). user_guide.md documents full flow. Verifs (14p test_downloader_ai + playback, python-c large est+registry+real counts+dispatcher+worker) GREEN. Local Faza3 gotowe. Full clean-VM large DL + AI E2E pending. Per SZPIEG research 2026-07-14 plan rozbudowy Faza0/Faza1/Faza2/Faza3/Faza4/Faza5 + "dalej az do ukonczenia wszystkich faz" ... must document identical. 'Gotowe' local. Nie przestawaj.
+**Faza3 Packaging/CI + Downloader/AI closure (2026-07-14 "dalej az do ukonczenia wszystkich faz"):** Enhanced explicit coverage per PLAN Faza3 + Faza4 Downloader/AI (from "chce dodać nowe, dosc skomplikowane.txt" + Nowa lista 1-10). clean_windows_test has dedicated Downloader section (yt-dlp pip + ffmpeg PATH required post-unpack; UI warnings on detect fail; est+disk confirm for 700+; MAX profile audible quality; lazy+checkpoint+retry; "Dodaj do biblioteki" scan; AI verbal "pobierz" prefill). smoke/build + pyinstaller.spec have notes tying to this (external tools, no bundle, detection graceful). user_guide.md documents full flow. Verifs (14p test_downloader_ai + playback, python-c large est+registry+real counts+dispatcher+worker) GREEN. Local Faza3 gotowe. Full clean-VM large DL + AI E2E pending. **User 'zatwierdzam' (2026-07-14):** Approved the Faza2 + DL/AI manual prep (checklist enhancements, artifacts, verifs 52p + python-c GREEN). Local manual readiness gotowe for Faza0-5 + Downloader/AI (use helper + printable + this on clean Win/VM). Real execution + E2E pending. Per SZPIEG research 2026-07-14 plan rozbudowy Faza0/Faza1/Faza2/Faza3/Faza4/Faza5 + "dalej az do ukonczenia wszystkich faz" ... must document identical. 'Gotowe' approved. Nie przestawaj.
 Per "local enhancements first" z Plan + Szpieg.
 
 'Gotowe' local buttoned (verifs green). Real VM/manual required for final closure. Per PLAN + "must document identical".
@@ -180,6 +180,22 @@ Luki z research: full manual sizes/booth/fallback vis pending w clean Win (local
 4. Na końcu: "Uruchom ponownie z VLC / bez VLC".
 5. Wypełnij template z printable.md.
 
-Update identycznie: memory/TODO/HISTORY/PLAN/CHECKLIST + fraza. Verif cat helper + python get_backend_info. 'Gotowe' Faza 1. Per "nie przestawaj". 
+**Dodatkowe kroki Faza2 (waveform color, advanced Smart, playlist intel) + Downloader/AI (per 2026-07-14 continuation):**
+6. Waveform: sprawdź discrete per-band tint (kick red, hi-hat yellow, vocal green, breakdown blue) + energy overlay w normal/compact/highDPI.
+7. Smart: otwórz builder, stwórz nested AND/OR rule z live preview + więcej pól (danceability/energy). Zapisz i sprawdź dynamic tree w bibliotece + drag=FILE.
+8. Intel: w order dialog użyj harmonic (Camelot) + energy sort; sprawdź wyniki.
+9. Downloader: test dużej playlisty (est 700+), MAX profile, checkpoint, "Dodaj do biblioteki". AI: komenda "pobierz" prefill.
+10. Verif helper + printable z nowymi sekcjami Faza2/DL.
 
-Per SZPIEG research 2026-07-13 co-dalej manual... must document identical.
+**Manual Execution Guide (Win/VM ready - per PLAN after local gotowe + 'zatwierdzam' + dalszy 'dalej'):**
+- Uruchom helper na clean Win (fresh profile, portable unpack).
+- Postępuj wg promptów helpera + printable.md (Faza0-5 + Faza2 color/Smart/intel + DL/AI large PL).
+- Sprawdź: sizes (wave ≥220px, cross ≥280px, compact 420x300 + StaysOnTop + rapid + spin), EFFECT tooltips, no-VLC ⚠ visible (even compact/highDPI), booth 1m low-light readability, DL est/MAX/checkpoint/add-to-lib, AI pobierz prefill.
+- Wypełnij raport z printable.md + załącz screenshoty.
+- Uruchom ponownie bez VLC dla fallback testu.
+- Zgłoś wyniki (w tym Faza2 viz i DL large).
+- Local sim: python-c for Faza2 features (waveform classify/tint, smart nested, intel) + DL est as pre-check.
+
+Update identycznie: memory/TODO/HISTORY/PLAN/CHECKLIST + fraza. Verif cat helper + python get_backend_info. 'Gotowe' Faza 1 + Faza2 manual prep. Per "nie przestawaj". 
+
+Per SZPIEG research 2026-07-14 plan rozbudowy Faza0/Faza1/Faza2/Faza3/Faza4/Faza5 + "dalej az do ukonczenia wszystkich faz" ... must document identical.

@@ -78,7 +78,27 @@ $env:LUMBAGO_SAFE_MODE=1; $env:LUMBAGO_SMOKE_SECONDS=3; python main.py
 - [ ] Resize: dynamic wave min/spin s=width//30, no cut, air preserved, multi/highDPI safe
 - [ ] QStack: single default, odt index1 / dual0, no overlap, aggressive hide on switch, re-sync compact
 
-**2026-07-14 TESTER Faza2 + wszystkie fazy local gotowe (po "dalej az ukonczysz wszystkie fazy na gotowo"):** Tester Faza2 'gotowe' (read waveform+widget+async+repo+playlist*+audio_features+tests; py_compile; pytest 21p+53p GREEN; python-c discrete bands/tints + nested smart live + harmonic/energy GREEN; no-regresja EFFECT/FILE-STREAM/air/highDPI/QStack/fallback/prior GREEN; Faza2 asserts GREEN; docs incl this + exact phrase). Faza0-1 closed local prior. Faza3-5: Szpieg+Plan local gotowe. Verifs final GREEN. Per SZPIEG research 2026-07-14 plan rozbudowy Faza0/Faza1/Faza2/Faza3/Faza4/Faza5 ... must document identical. 'Gotowe' wszystkie fazy local (Faza0-5). Manual Win/VM/E2E pending (waveform viz, smart preview, sort, sizes, booth). Push. Czekamy Win raport. Close A-Z. Nie przestawaj.
+### Faza2 additions (waveform color, advanced Smart, playlist intel) — per SZPIEG 2026-07-14 plan Faza2 + "dalej az do ukonczenia wszystkich faz" ... must document identical
+**Waveform color coding (discrete per-band tint + energy overlays):**
+- [ ] Load track with distinct features (kick, hi-hat, vocal).
+- [ ] Check waveform: discrete tints visible (🔴 kick/bass, 🟡 hi-hat, 🟢 vocal, 🔵 breakdown) + energy overlay.
+- [ ] Colors in normal + compact + highDPI; air preserved; RGB fallback if no spectral.
+**Advanced Smart Collections (nested AND/OR + live preview):**
+- [ ] Open playlist/smart builder.
+- [ ] Create nested rule (AND/OR groups, extra fields like danceability/valence/energy).
+- [ ] Live preview list + count updates in real-time (repo query).
+- [ ] Save; check dynamic "Kolekcje Smart" tree in library; auto-refresh on meta change.
+- [ ] Drag from Smart = safe FILE load (no stream pollution).
+**Playlist Intelligence (harmonic/energy sort):**
+- [ ] In playlist order dialog: use auto harmonic (Camelot) + energy sort buttons.
+- [ ] Verify results (low Camelot dist for harmonic, energy flow).
+- [ ] Apply; list order reflects sort.
+- [ ] Drag from Smart/ordered = FILE.
+Per SZPIEG research 2026-07-14 plan rozbudowy Faza2 (waveform color, advanced Smart, playlist intelligence) + "dalej az do ukonczenia wszystkich faz" ... must document identical. 'Gotowe' manual prep. User 'zatwierdzam' approved (verif 52p). Polished Manual Execution Guide + sims. Real Win/VM pending. Nie przestawaj.
+
+**2026-07-14 TESTER Faza2 + wszystkie fazy local gotowe (po "dalej az ukonczysz wszystkie fazy na gotowo"):** Tester Faza2 'gotowe' (read waveform+widget+async+repo+playlist*+audio_features+tests; py_compile; pytest 21p+53p GREEN; python-c discrete bands/tints + nested smart live + harmonic/energy GREEN; no-regresja EFFECT/FILE-STREAM/air/highDPI/QStack/fallback/prior GREEN; Faza2 asserts GREEN; docs incl this + exact phrase). Faza0-1 closed local prior. Faza3-5: Szpieg+Plan local gotowe. Verifs final GREEN. 
+
+**Background verif (post 'zatwierdzam'):** python -m pytest -q -k "waveform or smart or playlist or downloader_ai or playback_backend or test_ui_smoke" : 52 passed, 1 skipped, 242 deselected in 15.32s. All Faza2/DL/playback/smoke GREEN. User 'zatwierdzam' this verif + manual prep. Per SZPIEG research 2026-07-14 plan rozbudowy Faza0/Faza1/Faza2/Faza3/Faza4/Faza5 + "dalej az do ukonczenia wszystkich faz" ... must document identical. 'Gotowe' local manual prep approved. Real Win/VM/E2E pending. Nie przestawaj. Close A-Z.
 - [ ] Cue/play/stop: near0 prefer cue, stop->cue, double wave seek+cue, playback in compact OK
 - [ ] Scalability + compact window min size shrink on toggle (pilot)
 - [ ] Pitch + TRIM / advanced — N/A w MVP single (basic only)
@@ -100,6 +120,15 @@ $env:LUMBAGO_SAFE_MODE=1; $env:LUMBAGO_SMOKE_SECONDS=3; python main.py
 - [ ] Crossfader działa płynnie
 - [ ] Skróty klawiszowe:
   - Spacja = play/pause (global)
+
+### Downloader / AI (Faza4 completion per "chce dodać nowe, dosc skomplikowane.txt" + PLAN) — per SZPIEG 2026-07-14 + "dalej az do ukonczenia wszystkich faz" ... must document identical
+- [ ] Narzędzia > Downloader: paste large YT/SC playlist (700+ items), check est (size/time warning for big), disk confirm.
+- [ ] Choose MAX profile (bestaudio, audible quality priority), start (lazy extract, checkpoint, retry, continue on error).
+- [ ] "Dodaj do biblioteki" checkbox → post-download scan + upsert works.
+- [ ] AI Pomocnik (chat): verbal "pobierz <url> jako mp3" → opens Downloader with prefill + auto-start (safety est).
+- [ ] Portable: external yt-dlp + ffmpeg in PATH (UI shows clear warning if missing; no bundle).
+- [ ] History/resume last, log limit, no crash on cancel/no-net/no-ffmpeg.
+Per SZPIEG research 2026-07-14 plan rozbudowy Faza4 (Downloader+AI as new AI) + "dalej az do ukonczenia wszystkich faz" ... must document identical. 'Gotowe' local. Nie przestawaj.
   - Ctrl+1..8 = hotcue 1-8 (działa w obu trybach)
 - [ ] Drag & drop z głównej biblioteki do decków (A/B, single i console)
 - [ ] Resize okna (szerokie/wąskie/wysokie) – brak ucinania, rozsądne stretch

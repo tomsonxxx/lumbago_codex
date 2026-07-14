@@ -98,6 +98,50 @@ Na starcie helper loguje get_backend_info() + diagnostics (dla python).
 - [ ] Playback ograniczony (FILE load vs STREAM playback ograniczony) — safety + EFFECT tooltips nadal
 - [ ] Po ponownym z VLC: warning znika, pełna jakość
 
+## 6. Faza2: Waveform color (discrete per-band tint + energy overlays) — per SZPIEG 2026-07-14 plan Faza2
+
+- [ ] Załaduj utwór z wyraźnymi cechami (kick, hi-hat, vocal).
+- [ ] Sprawdź waveform: discrete tints (🔴 kick/bass, 🟡 hi-hat, 🟢 wokale, 🔵 breakdown) + energy overlay.
+- [ ] Kolory widoczne w normal + compact + highDPI, air zachowany.
+- [ ] RGB fallback działa gdy brak spectral.
+Per SZPIEG research 2026-07-14 plan rozbudowy Faza2 (waveform color, advanced Smart, playlist intelligence) + "dalej az do ukonczenia wszystkich faz" ... must document identical.
+
+## 7. Faza2: Advanced Smart Collections (nested AND/OR + live preview)
+
+- [ ] Otwórz dialog playlist / smart builder.
+- [ ] Stwórz nested rule (AND/OR groups, więcej pól: danceability/valence/energy).
+- [ ] Live preview list + count działa (real query z repo).
+- [ ] Zapisz, sprawdź w library tree "Kolekcje Smart" — dynamic update po zmianach meta.
+- [ ] Drag z smart = FILE load (safety).
+Per SZPIEG research 2026-07-14 plan rozbudowy Faza2 ... + "dalej az do ukonczenia wszystkich faz" ... must document identical.
+
+## 8. Faza2: Playlist Intelligence (harmonic/energy sort)
+
+- [ ] W playlist order dialog: użyj auto-sort harmonic (Camelot) + energy.
+- [ ] Sprawdź sort results (8A-8B dist low, energy flow).
+- [ ] Zastosuj — kolejność w liście odzwierciedla.
+Per SZPIEG research 2026-07-14 plan rozbudowy Faza2 ... + "dalej az do ukonczenia wszystkich faz" ... must document identical.
+
+## 9. Downloader + AI na czystym Win (Faza4 completion per spec "chce dodać nowe, dosc skomplikowane.txt")
+
+- [ ] Narzędzia > Downloader: wklej dużą playlistę YT/SC (test est 700+ items, warning).
+- [ ] Wybierz MAX (bestaudio, audible quality prio), uruchom (checkpoint, retry, continue).
+- [ ] "Dodaj do biblioteki" — sprawdź scan + upsert.
+- [ ] AI Pomocnik: "pobierz <url> jako mp3" — prefill + auto start.
+- [ ] Sprawdź portable notes (yt-dlp + ffmpeg w PATH wymagane, UI warning jeśli brak).
+Per SZPIEG research 2026-07-14 plan rozbudowy Faza4 (Downloader+AI) + "dalej az do ukonczenia wszystkich faz" ... must document identical.
+
+---
+
+**Raport końcowy (wypełnij po teście):**
+- Data: 
+- Maszyna: 
+- VLC: tak/nie
+- Wynik: wszystkie [ ] OK / uwagi
+- Screenshoty: załącz
+
+Per SZPIEG research 2026-07-14 plan rozbudowy Faza0/Faza1/Faza2/Faza3/Faza4/Faza5 + "dalej az do ukonczenia wszystkich faz" ... must document identical. 'Gotowe' manual prep. Nie przestawaj.
+
 **Expected:** warning widoczny nawet gdy status compact ukryty; exact text + link guidance.
 
 ---
