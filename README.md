@@ -75,17 +75,19 @@ W kodzie: `services/playback/` (VlcAudioBackend prio → Qt → _NoopAudioBacken
 
 ## Downloader / Konwerter + AI Chat Panel
 
-Nowe moduły (2026):
+Nowe moduły (2026, per "dalej do konca" + kontynuacja):
 
-- **Downloader / Konwerter** (`downloader/`): pobieranie z YouTube i SoundCloud (w tym playlist 700+ pozycji) + konwersja do MP3/WAV/M4A z priorytetem maksymalnej jakości dźwięku. Profile MAX/BALANCE/COMPACT, checkpointy, retry, throttling, lazy fetch. Menu: Narzędzia → "Downloader / Konwerter".
+- **Downloader / Konwerter** (`downloader/`): pobieranie z YouTube i SoundCloud (w tym playlist 700+ pozycji — specjalizacja w dużych playlistach) + konwersja do MP3/WAV/M4A z priorytetem maksymalnej słyszalnej jakości (nie tylko bitrate). Profile MAX/BALANCE/COMPACT, estymacja rozmiaru/czasu + ostrzeżenia, checkpointy resume, retry+throttle, lazy fetch, dedup po ID, atomic move. Sugestie A-F: add-to-library post-finish, YT search, named profiles, richer history, AI prefill+auto_start. Menu: Narzędzia → "Downloader / Konwerter".
 
-  Wymagania: `yt-dlp` (pip) + **ffmpeg w PATH** (https://videolan.org lub gyan.dev).
+  Wymagania: `pip install yt-dlp` + **ffmpeg w PATH** (https://www.gyan.dev/ffmpeg/builds/ lub videolan.org).
 
-- **AI Pomocnik** (`ai_panel/`): zwijany panel czatu używający istniejącego Gemini (konfiguracja z Settings). Rozumie komendy ("pobierz...", "duplikaty", "otaguj"). Dispatcher + ograniczony sandbox dla generowanego kodu.
+- **AI Pomocnik** (`ai_panel/`): zwijany panel czatu (toggle). Wspiera WSZYSTKIE providery Cloud AI (gemini/openai/grok/deepseek) identycznie jak Autotagger — Auto lub ręczny wybór. Komendy: "pobierz [url] jako MP3", "duplikaty", "otaguj", "pomoc". JSON + registry + sandbox (prefer dispatch). Pełna integracja E z Downloader (prefill + auto_start z safety). "Myślę..." + streaming chunk support. Dispatcher z EFFECT.
 
-Oba w pełni zintegrowane z głównym oknem (Narzędzia). Wszystkie operacje sieciowe/I-O w wątkach.
+Oba w pełni zintegrowane z głównym oknem (Narzędzia). Wszystkie operacje sieciowe/I-O w QThread (responsywne). Brak konfliktów (add-only).
 
-Szczegóły: lumbago_grok_build_prompt.txt + docs.
+Szczegóły: lumbago_grok_build_prompt.txt + docs/chce dodać nowe... + crew/CHECKLIST_Downloader_AI_Panel.md .
+
+Per SZPIEG research + consolidated raw + detailed prompt 2026-06-27 + CHECKLIST... + "dalej" + "zsynchronizuj z github" + "kontynuuj" ... must document identical.
 
 ## Kompatybilność z Vercel i narzędziami agentów
 

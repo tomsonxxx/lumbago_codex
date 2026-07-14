@@ -9,6 +9,8 @@ Każda komenda ma:
 - EFFECT (co się realnie stanie z plikami / UI / DB)
 
 Dispatcher będzie je wywoływał z walidacją.
+
+Per SZPIEG research + consolidated raw + detailed prompt 2026-06-27 + CHECKLIST_Downloader_AI_Panel.md + "dalej" + "kontynuuj" ... must document identical.
 """
 
 from dataclasses import dataclass
@@ -59,3 +61,8 @@ def cmd_autotag(path: str = "", **kw):
 @register("pomoc", "Lista dostępnych komend", "EFEKT: zwraca listę komend z opisami EFFECT.")
 def cmd_help(**kw):
     return {"action": "help", "commands": [ (c.name, c.description, c.effect) for c in list_commands() ]}
+
+
+@register("status", "Pokaż podstawowy status biblioteki / narzędzi", "EFEKT: zwraca info o dostępnych providerach i modułach (bez zmian w DB).")
+def cmd_status(**kw):
+    return {"action": "status", "info": "Lumbago AI Panel + Downloader gotowe (multi-provider, yt-dlp+ffmpeg wymagane)"}

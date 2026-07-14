@@ -9,6 +9,10 @@ tak jak Autotager — automatyczny wybór lub ręczny.
 - Provider selector (Auto / konkretny)
 - Historia
 - Dispatch do registry + sandbox
+- "Myślę..." + chunk streaming support
+- Ambiguity: system prosi o doprecyzowanie (per prompt)
+
+Per SZPIEG research + ... 2026-06-27 + "kontynuuj" ... must document identical.
 """
 
 from PyQt6 import QtCore, QtWidgets
@@ -126,7 +130,7 @@ class ChatWidget(QtWidgets.QWidget):
             return
         self.input.clear()
         self._append("Ty", txt)
-        self.status.setText("Myślę...")
+        self.status.setText("Myślę...")  # indicator for streaming / long AI response (per E polish + "kontynuuj")
 
         QtCore.QTimer.singleShot(30, lambda: self._process(txt))
 

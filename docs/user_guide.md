@@ -37,25 +37,42 @@ Per 2026-06-16 full repo consolidation (SZPIEG research lead): ALL prior documen
 - Obsługuje Rekordbox i VirtualDJ.
 - Wczytaj XML i zaimportuj metadane do bazy.
 
-## Downloader / Konwerter (sugestie z promptu)
-- Narzędzia > Downloader / Konwerter.
-- Wklej URL (YT/SC, playlisty do 700+).
-- Wybierz folder, format (MP3/WAV/M4A), profil jakości (MAX dla audible quality prio).
-- Estymacja rozmiaru/czasu przed start + warning dla dużych/WAV.
-- Szukaj na YT (ytsearch).
-- Zapisz/wczytaj profile (D).
-- Historia pobrań (F).
-- Checkbox "Dodaj do biblioteki" po zakończeniu (A) - skan/import.
-- AI integracja: komenda "pobierz [url] jako MP3" prefill + auto-start (E, z safety).
-- Wymaga yt-dlp (pip) + ffmpeg w PATH (100% free).
+## Downloader / Konwerter + AI Chat Panel
 
-## AI Chat Panel (Pomocnik)
-- Narzędzia > AI Pomocnik (komendy).
-- Zwijany panel, historia sesji.
-- Wspiera wszystkie providery (jak Autotager: gemini/openai/grok/deepseek) - Auto lub wybór.
-- Komendy: "pobierz ...", "duplikaty", "otaguj", "pomoc".
-- Dispatcher + sandbox (bezpieczne).
-- Integracja z Downloader (prefill + start).
-- System prompt opisuje operacje Lumbago.
+**Wymagania (100% free):**
+- `pip install yt-dlp`
+- ffmpeg w PATH (zalecane: https://www.gyan.dev/ffmpeg/builds/ lub videolan.org dla Windows build). Bez ffmpeg konwersja ograniczona.
 
-Per SZPIEG research + Plan + "dalej do konca" 2026-06-27 ... must document identical.
+**Narzędzia > Downloader / Konwerter**
+- Wklej URL (pojedynczy film lub playlista YT/SC — specjalizacja w dużych playlistach do 700+ pozycji).
+- Wybierz folder docelowy, format wyjściowy (MP3 / WAV / M4A), profil jakości:
+  - MAX: najwyższa audible jakość (V0 MP3 lub 24/48 WAV PCM).
+  - BALANCE: dobry kompromis.
+  - COMPACT: mniejsze pliki.
+- Przed startem: estymacja rozmiaru/czasu na podstawie probe pierwszych wpisów + ostrzeżenie dla >5GB lub dużych WAV.
+- Wyszukiwarka: przycisk "Szukaj na YouTube" (ytsearch: prefix).
+- Profile: Zapisz / Wczytaj / Lista nazwanych profili (D).
+- Historia: pokaż ostatnie checkpointy z liczbą pobranych + sample (F).
+- "Dodaj pobrane do biblioteki" (A): po zakończeniu automatyczny skan + upsert do biblioteki.
+- Progres: dwa bary (playlista + bieżący plik) + log + per-item błędy (kontynuacja).
+- AI integracja (E): komenda "pobierz https://... jako MP3" → prefill + auto_start z safety est.
+- Mechanizmy dla dużych playlist: lazy extract, checkpoint JSON (resume), retry+throttle, dedup po video ID, atomic move.
+
+**Narzędzia > AI Pomocnik (komendy)**
+- Zwijany panel czatu.
+- Wspiera wszystkie providery Cloud AI (gemini / openai / grok / deepseek) — Auto lub ręczny wybór (identycznie jak Autotagger).
+- Przykładowe komendy (wysyłaj po polsku):
+  - "pobierz https://youtube.com/... jako WAV"
+  - "duplikaty"
+  - "otaguj folder C:/muzyka"
+  - "pomoc"
+- Pod maską: system prompt + JSON dispatch do registry → sandbox (prefer registry dispatch, whitelist). Pełna integracja z Downloader (prefill + auto-start).
+- Historia sesji + "Myślę..." indicator.
+- Jeśli niepewny — prosi o doprecyzowanie.
+
+**Uwagi techniczne**
+- Wszystkie długie operacje w QThread (UI responsywne).
+- Brak konfliktów z istniejącym kodem (add-only).
+- Per SZPIEG research + consolidated raw + detailed prompt 2026-06-27 + CHECKLIST_Downloader_AI_Panel.md + PLAN + "dalej" + "zsynchronizuj z github" + "kontynuuj" ... must document identical.
+
+Per SZPIEG research + Plan + "dalej do konca" 2026-06-27 + kontynuacja po sync ... must document identical.

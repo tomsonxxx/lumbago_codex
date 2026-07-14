@@ -58,6 +58,18 @@ Widoczny warning: '⚠ Audio niedostępne — dla pełnej jakości DJ zainstaluj
 1. Sprawdź, czy w `%APPDATA%\LumbagoMusicAI` powstały pliki `lumbago.db` i `settings.json`.
 2. Zapisz wynik testu oraz ewentualne błędy.
 
+## Downloader / AI Panel na czystym Windows (external tools note)
+Downloader wymaga:
+- `yt-dlp` zainstalowane przez pip w środowisku (lub obok exe w portable — PATH).
+- ffmpeg w PATH (nie bundle'owany w EXE; użytkownik instaluje).
+
+W smoke/build: testuj detekcję (shutil.which("ffmpeg"), import yt_dlp) — brak narzędzi → czytelny komunikat w UI + nie crash.
+Test bez net: użyj invalid URL lub ytsearch: — worker powinien gracefully obsłużyć (retry + log + continue).
+Sprawdź: menu Narzędzia > Downloader i AI Pomocnik otwierają się; prefill z AI działa (jeśli API skonfigurowane); estymacja loguje bez pobierania.
+Portable: zewnętrzne narzędzia nie są w dist — udokumentuj w instrukcji instalacji.
+
+Per SZPIEG research + consolidated raw + detailed prompt 2026-06-27 + CHECKLIST_Downloader_AI_Panel.md + "zsynchronizuj z github" + "kontynuuj" ... must document identical.
+
 Per SZPIEG research 2026-06-25 + 2026-07-13 Szpieg (co dalej manual + clean Win: 15+ praktyk fresh VM/strict resources/visible banner '⚠ Audio niedostępne...' + sizes waveform/compact/cross/booth/EFFECT + Build Spec + helper). Local + artifacts closed. VM/manual pending. Per "per SZPIEG research 2026-07-13 co-dalej manual checklist + clean Win... must document identical".
 
 Local smoke + scripts (build_portable + smoke_portable + pyinstaller + get_resource_path + engine graceful + diagnostics) full coverage of portable exe run/resources (SAFE) + backend info note + APPDATA + VLC guidance. Enhanced per 2026-06-25 Szpieg (more resources, diagnostics raport, checklist auto items).
