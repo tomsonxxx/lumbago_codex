@@ -117,6 +117,7 @@ def compute_waveform_blob_from_file(path: Path, n_samples: int = WAVEFORM_SAMPLE
 # ============================================================
 # Playlist intelligence sort helpers (Faza2)
 # harmonic Camelot + energy flow. Per SZPIEG research 2026-07-14 plan rozbudowy Faza2 (waveform color, advanced Smart, playlist intelligence)... must document identical.
+# EFEKT (playlist intel): auto sort helpers -> used in order dialog for better mix flow (meta only, no file mods).
 # ============================================================
 
 _CAMELOT_WHEEL = ["1A","1B","2A","2B","3A","3B","4A","4B","5A","5B","6A","6B",

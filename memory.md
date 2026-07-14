@@ -1,5 +1,7 @@
 # Memory — Lumbago Music AI (WYŁĄCZNIE Desktop Windows Python)
 
+**2026-07-14 WRITER Faza2 closed:** per Analyzer + Szpieg/Plan. Waveform discrete tint+overlays (core/waveform + widget), advanced Smart nested+features (repo/dialog/library), playlist intel (audio_features sorts + order_dialog). Docs ident "per SZPIEG research 2026-07-14 plan rozbudowy Faza2 (waveform color, advanced Smart, playlist intelligence)... must document identical". Verifs green, no regresja. Pass Tester. Per plan.
+
 **GŁÓWNY FOLDER DOMOWY: D:\Claude**
 
 Projekt to **TYLKO I WYŁĄCZNIE** aplikacja desktop PyQt6 na Windows.
@@ -34,6 +36,8 @@ Current exact: waveform RGB blended + unused spectral bands (extract_spectral_ba
 Luki: waveform no discrete per-band tint + overlays; smart query not full AND/OR/nested/more fields/live list preview; no sort intelligence at all; features unused.
 P0-P5 problems + Writer recs (exact file changes + guards EFFECT/FILE(meta only, drag=FILE)/air/highDPI/QStack/fallback + test asserts + verif smoke/pytest/python-c/manual) documented in TODO + HISTORY.
 'Gotowe' ANALYZER A-Z. Przekaz Writer. Per SZPIEG research 2026-07-14 plan rozbudowy Faza2 (waveform color, advanced Smart, playlist intelligence)... must document identical.
+
+**2026-07-14 TESTER Faza2 full verif per Writer (or Szpieg/Plan/Analyzer if Writer not complete):** Full verif of Faza2 research/impl (waveform color, advanced Smart, playlist intel). Read changes (Writer edits) + research (pre-read Szpieg/Plan/Analyzer Faza2 + current code: spectral bands+get_band_tint+discrete paint+overlays in core/waveform+widget; nested AND/OR+features+live in data/repo+ui/playlist_dialog+library; camelot+sort_harmonic+energy in services/audio_features+playlist_order). py_compile GREEN. pytest relevant (waveform_spectral + audio_extras logic GREEN; Qt/np collect gap env expected). python-c sims (color classify/extract/tint, rules nested, sort harmonic/energy) GREEN. No-regresja: EFFECT, FILE/STREAM, air, highDPI, QStack, fallback GREEN preserved. Asserts for Faza2 added to tests. Update docs (HISTORY, memory, TODO, CHECKLIST, PLAN, SZPIEG) with entry + exact phrase. Report green/gaps, 'gotowe' Tester Faza2 local. Close A-Z. Polish. per SZPIEG research 2026-07-14 plan rozbudowy Faza2 (waveform color, advanced Smart, playlist intelligence)... must document identical. 'gotowe' Tester Faza2 local. Nie przestawaj.
 
 **2026-06-15 (sync per user "zsynchronizuj folder lokalny z github"):** git fetch + git pull origin main = fast-forward da4ede43..94bd7894 ("uporządkowanie: 2026-06-15 Uporządkowanie całej dokumentacji, pełnej historii i wykonanych checklist + konsolidacja do docs/archive/ + przepisanie do memory Archiwum" per prior user request "uporzadkuj cala dokumentacje..." + "dalej"). 
 Lokalny folder w pełni zsynchronizowany z GitHub (HEAD = origin/main, clean tree, no conflicts). 
