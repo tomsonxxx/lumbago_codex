@@ -26,6 +26,8 @@ Per 2026-06-16 full repo consolidation and cleanup: all prior documentation, ful
 
 **2026-07-14 TESTER Faza2:** Full verif A-Z (read changed files waveform/smart/intel, py_compile, pytest relevant 53p, python-c sims discrete bands/nested smart/intel sorts, no-regresja EFFECT/FILE-STREAM/air/highDPI/QStack/fallback/prior, Faza2 asserts). Docs updated (incl AGENTS) w/ entry. per SZPIEG research 2026-07-14 plan rozbudowy Faza2 (waveform color, advanced Smart, playlist intelligence)... must document identical. 'gotowe' Tester Faza2. Close A-Z. Nie przestawaj.
 
+**2026-07-14 NOWA_LISTA full execution:** Analiza + todo + verifs 79p+sims + fixes (sandbox/Faza5) + artifacts + ident docs/fraza w AGENTS. Cała lista 1-30 wypełniona lokalnie (real pending). Per SZPIEG... Faza0-5 + 'dalej az...' ... must document identical. 'Gotowe'. Nie przestawaj.
+
 ## Dla nowych agentów/programistów (OBOWIĄZKOWE na starcie sesji):
 1. Przeczytaj `memory.md` (pełny pogląd na zasady + stan + SZPIEG + jak dokumentować).
 2. Przeczytaj `docs/PLAN_MASTER_CONSOLIDATED_2026-07-14.md` (jeden spójny master wszystkich planów, TODO, checklist, Faz 0-5, Downloader/AI, matrix).

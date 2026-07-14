@@ -83,6 +83,7 @@ pytest -k "playback or downloader or odt or dj or waveform or smart or smart_col
 
 | Faza / Obszar              | smoke (SAFE+DIAG) | pytest relevant | python-c sims          | manual CHECKLIST (helper/printable) | Win/VM (real) | Status     |
 |----------------------------|-------------------|-----------------|------------------------|-------------------------------------|---------------|------------|
+| NOWA_LISTA 2026-07-14 exec | GREEN (post)     | 79p GREEN      | GREEN (Faza2/4/5)     | enhanced (Faza2/4/5/E2E notes)     | Pending (~)  | Local closed + prep; real pending |
 | Faza0 (manual + sizes)     | GREEN             | GREEN (relevant) | GREEN (engine/diag)   | GREEN (local)                      | Pending      | Local gotowe |
 | Faza1 (highDPI/pitch)      | GREEN             | 21p+ GREEN     | GREEN (rate/keylock/pitch) | GREEN (sizes, compact)            | Pending      | Local gotowe |
 | Faza2 (waveform color, Smart nested, intel) | GREEN      | 53p+ GREEN     | GREEN (discrete tint, nested AND/OR, camelot/energy) | GREEN (Faza2 additions)     | Pending      | Local gotowe (TESTER closed) |

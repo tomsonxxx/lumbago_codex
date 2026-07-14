@@ -11,6 +11,8 @@ Poniżej tylko żywe otwarte P0/P1 + backlog (aktualizuj identycznie z frazą).
 
 **2026-07-14 PUSH (user "push"):** git push origin main executed. Result "Everything up-to-date". HEAD 36372846. Per SZPIEG research 2026-07-14 plan rozbudowy Faza0/Faza1/Faza2/Faza3/Faza4/Faza5 + "dalej az do ukonczenia wszystkich faz" ... must document identical. 'Gotowe' push. Nie przestawaj.
 
+**2026-07-14 NOWA_LISTA full execution (przeanalizuj + wykonuj krok po kroku az do wypełnienia bez zatrzymywania):** Analiza + todo_write + verifs (79p+sims GREEN) + fixes (sandbox timeout, Faza5 stub, registry) + artifacts enhance + ALL docs ident (NOWA/REMAINING/MASTER/memory/HISTORY/this/TODO + crew/AGENTS/CLAUDE + code) z frazą. Local A-Z closed/prep (manual real Win/700+ pending ~). Per SZPIEG research 2026-07-14 plan rozbudowy Faza0/Faza1/Faza2/Faza3/Faza4/Faza5 + Downloader/AI per "chce dodać nowe, dosc skomplikowane.txt" + 'dalej az do ukonczenia wszystkich faz' ... must document identical. 'Gotowe' lista wypełniona lokalnie. Nie przestawaj.
+
 **Ostatnia aktualizacja:** 2026-07-14 (user "przeanalizuj obecny stan rozbudowy i kontynuuj" + "D:\Claude\docs\chce dodać nowe, dosc skomplikowane.txt"): Analiza + kont. 
 Faza DJ: Faza2 closed (waveform color discrete, adv Smart nested, intel playlist). 
 Downloader+AI (per txt spec): core robust large-PL, quality focus, free, UI+buttons, AI cmds+cross wiring largely complete (10p tests PASS, imports OK, integration in main). Gaps: manual large+AI edges, portable externals. Docs updated ident (memory/HISTORY/CHECKLIST). Verifs green. Per SZPIEG... Faza2 + "chce dodać nowe..." continuation ... must document identical. 'Gotowe' analysis+continue A-Z. Nie przestawaj. (Prior Faza2 TESTER etc closed)

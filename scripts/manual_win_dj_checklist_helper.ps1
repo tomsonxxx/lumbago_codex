@@ -125,4 +125,15 @@ Write-Host "Zaktualizuj crew/CHECKLIST [x] + docs po teście."
 Write-Host ""
 
 Write-Host "=== KONIEC HELPERA - zamknij app, zrób raport, aktualizuj checklist/docs ===" -ForegroundColor Green
+
+# Faza5 + E2E + full manual notes (NOWA_LISTA 21-30)
+Write-Host "[Faza5] Long-term starter notes:" -ForegroundColor Yellow
+Write-Host " - Crate digger: uzyj audio_features + find similar (stub w services)."
+Write-Host " - Multi-monitor / booth advanced: test sizes + air na 2+ ekranach."
+Write-Host " - Advanced cue/memory: persist hotcue + recall w DB."
+Write-Host " - Performance: duze biblioteki (700+ DL + smart)."
+Write-Host "E2E: AI cmd -> DL -> library -> DJ load (z/ bez VLC)."
+Write-Host "Clean Win: fresh profile, portable extract, PATH tools, full flow import/DJ/DL/AI."
+Write-Host "Per SZPIEG research 2026-07-14 plan rozbudowy Faza0-5 + NOWA_LISTA ... must document identical."
+
 Write-Host "Następnie: 'dalej' lub raport do zespołu. Nie przestawaj."

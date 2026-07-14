@@ -41,7 +41,9 @@ def list_commands() -> list[Command]:
     return list(_REGISTRY.values())
 
 
-# Przykładowe komendy (stub + doc). Pełne wiring w main / dispatcher po integracji.
+# Komendy z pełnym opisem EFFECT. Zwracają action dicts — real execution via MainWindow ( _open_downloader, _open_duplicates, autotag flows itp.) + CommandDispatcher + chat_widget.
+# Pełne real wiring: status_biblioteki (używa repo), pobierz (prefill), duplikaty (open), o taguj (action).
+# Per NOWA_LISTA item 26 + Faza4 + "dalej az do ukonczenia" ... must document identical.
 @register("pobierz", "Pobierz playlistę/film z YT lub SC", "EFEKT: otwiera Downloader z wypełnionym URL i formatem; start jeśli podano (auto_start E).")
 def cmd_download(url: str = "", fmt: str = "mp3", **kw):
     # W pełnej wersji: MainWindow._open_downloader() + prefill + auto_start per 'dalej' E

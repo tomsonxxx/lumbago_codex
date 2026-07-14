@@ -201,3 +201,5 @@ Luki z research: full manual sizes/booth/fallback vis pending w clean Win (local
 Update identycznie: memory/TODO/HISTORY/PLAN/CHECKLIST + fraza. Verif cat helper + python get_backend_info. 'Gotowe' Faza 1 + Faza2 manual prep. Per "nie przestawaj". 
 
 Per SZPIEG research 2026-07-14 plan rozbudowy Faza0/Faza1/Faza2/Faza3/Faza4/Faza5 + "dalej az do ukonczenia wszystkich faz" ... must document identical.
+
+**2026-07-14 NOWA_LISTA execution (przeanalizuj + wykonuj bez zatrzymywania):** helper + this + printable + notes expanded dla całej listy (Faza0 manual sizes, Faza2 waveform/Smart/intel, Faza4 DL700+AI verbal E2E, Faza5). Local GREEN. Real Win: uruchom helper. Nie przestawaj.

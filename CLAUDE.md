@@ -26,6 +26,8 @@ Per 2026-06-16 full repo consolidation and cleanup: all prior documentation, ful
 
 **2026-07-14 TESTER Faza2:** Full verif A-Z read files (core/waveform.py etc), py_compile/pytest/python-c sims (discrete/nested/intel) GREEN, no-regresja + asserts GREEN. Docs incl CLAUDE updated + exact entry. per SZPIEG research 2026-07-14 plan rozbudowy Faza2 (waveform color, advanced Smart, playlist intelligence)... must document identical. 'gotowe' Tester Faza2. Close A-Z. Nie przestawaj.
 
+**2026-07-14 NOWA_LISTA full execution:** Analiza + todo + verifs + fixes (sandbox/Faza5) + ident docs/fraza w CLAUDE. Cała lista wypełniona lokalnie. Per SZPIEG... + 'dalej az do ukonczenia' ... must document identical. 'Gotowe'. Nie przestawaj.
+
 ## Dla nowych agentów/programistów (OBOWIĄZKOWE na starcie sesji):
 1. Przeczytaj `memory.md` (pełny pogląd na zasady + stan + SZPIEG + jak dokumentować).
 2. Przeczytaj `docs/PLAN_MASTER_CONSOLIDATED_2026-07-14.md` (jeden spójny master wszystkich planów, TODO, checklist, Faz 0-5, Downloader/AI, matrix).

@@ -65,9 +65,27 @@ def run_in_sandbox(code: str, extra_namespace: dict[str, Any] | None = None, tim
     try:
         # Prosty compile + exec z ograniczeniem
         compiled = compile(code, "<ai-sandbox>", "exec")
-        # TODO: prawdziwy timeout (threading + signal / subprocess) w produkcji
-        exec(compiled, ns)
-        out = ns.get("__result__", "(wykonano bez błędu)")
-        return True, str(out)
+
+        # Timeout implementation (thread + join) — basic but effective for Windows (no signal).
+        # Per item 25 NOWA_LISTA + SZPIEG/Plan Faza4 hardening. Best-effort (thread not forcibly killed).
+        import threading
+        import time as _time
+        result_box = {"ok": False, "out": ""}
+        def _exec_target():
+            try:
+                exec(compiled, ns)
+                result_box["out"] = str(ns.get("__result__", "(wykonano bez błędu)"))
+                result_box["ok"] = True
+            except Exception as ex:
+                result_box["out"] = f"Sandbox exec error: {type(ex).__name__}: {ex}"
+        t = threading.Thread(target=_exec_target, daemon=True)
+        t.start()
+        t.join(timeout=timeout_s)
+        if t.is_alive():
+            return False, f"Sandbox timeout after {timeout_s}s (zalecane: krótsze compute; użyj registry dispatch dla app actions)"
+        if result_box["ok"]:
+            return True, result_box["out"]
+        else:
+            return False, result_box["out"] or "Sandbox error"
     except Exception as e:
         return False, f"Sandbox error (zalecane: użyj registry dispatch): {type(e).__name__}: {e}"

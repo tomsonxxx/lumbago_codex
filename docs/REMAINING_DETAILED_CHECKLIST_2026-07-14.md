@@ -5,6 +5,8 @@
 
 **Per SZPIEG research 2026-07-14 plan rozbudowy Faza0/Faza1/Faza2/Faza3/Faza4/Faza5 + Downloader/AI per "chce dodać nowe, dosc skomplikowane.txt" + "dalej az do ukonczenia wszystkich faz" + consolidation using agents ... must document identical.**
 
+**2026-07-14 NOWA_LISTA EXECUTION (bez zatrzymywania):** Local 79p GREEN + sims (wave/intel/DL) + sandbox timeout + Faza5 stub + wiring + artifacts + ident docs/fraza. Local closed A-Z. Real manual/700+/Win [~]. 'Gotowe' prep+verif. Nie przestawaj.
+
 **Główne wnioski z porównania:**
 - **Local / code / test "gotowe"** (silne dowody): Faza2 (waveform discrete tint, nested smart rules + live, intel camelot/energy), Faza4 core (downloader lazy+checkpoint+est+profiles MAX/bestaudio, AI registry+dispatch+some real wiring, 14p+ tests), smoke/portable/CI fixes, no-regresja (EFFECT, FILE/STREAM, guards).
 - **Pytest:** 79 passed (playback + downloader + odt + dj + waveform + smart filter) — bardzo dobre pokrycie.

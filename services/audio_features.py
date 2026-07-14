@@ -169,3 +169,30 @@ def sort_tracks_by_energy(tracks: list, ascending: bool = False) -> list:
         e = getattr(t, "energy", None)
         return e if e is not None else -1
     return sorted(tracks, key=en, reverse=not ascending)
+
+
+# Faza5 starter (per NOWA_LISTA 2026-07-14 items 21-24 + PLAN_MASTER)
+# Crate digger / find similar using audio features (mfcc, energy, key, brightness...).
+# Real impl: cosine / euclid dist na wektorach + filtr key/energy. Stub teraz.
+def find_similar_crate_digger(
+    seed_track: Any,
+    candidate_tracks: list,
+    top_k: int = 10,
+    prefer_harmonic: bool = True
+) -> list:
+    """Faza5: znajdź podobne utwory do seed (crate digger). Używa energy/key + features z DB.
+    Na razie zwraca puste lub proste sort — pełne w późniejszej fazie.
+    Per SZPIEG research 2026-07-14 plan rozbudowy Faza5 + 'dalej az do ukonczenia' ... must document identical.
+    """
+    # Minimal starter: sort by energy closeness if available (placeholder)
+    if not candidate_tracks:
+        return []
+    try:
+        seed_e = getattr(seed_track, "energy", None) or 0.5
+        def score(t):
+            e = getattr(t, "energy", None) or 0.5
+            return abs(e - seed_e)
+        sorted_c = sorted(candidate_tracks, key=score)
+        return sorted_c[:top_k]
+    except Exception:
+        return candidate_tracks[:top_k]
