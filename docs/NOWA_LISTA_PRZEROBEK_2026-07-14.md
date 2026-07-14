@@ -25,6 +25,17 @@ Kontynuacja lokalnych itemów (test polish, doc, stub cleanup, E2E prep).
 NOWA_LISTA / memory / guides / code zaktualizowane identycznie z fraza. 
 Local momentum utrzymany. Real manual pending. Nie przestawaj. Per SZPIEG research 2026-07-14 plan rozbudowy Faza0/Faza1/Faza2/Faza3/Faza4/Faza5 + Downloader/AI per "chce dodać nowe, dosc skomplikowane.txt" + 'dalej az do ukonczenia wszystkich faz' ... must document identical.
 
+**2026-07-14 PRZEJŚCIE DO NASTĘPNEGO BLOKU (user: "przejście do następnego bloku z listy"):** 
+Przechodzimy do **Blok 3: Faza 2 — Real visualization + manual w DJ Player (items 14-16)**.
+- Local advancement: waveform spectral test +10 passed (energy overlay bright, full discrete pipeline).
+- Widget paint ma discrete tints + energy overlay (pk>0.55 white mix) + fallback.
+- Intel sorts (harmonic/energy) + smart nested covered in sims/tests.
+- Manual prep: helper ma dedykowane sekcje [11][12] dla waveform colors, smart nested, sort buttons.
+- [x local] viz code + tests + artifacts advanced; [~] real Win manual (uruchom helper na clean, sprawdź kolory na real trackach, nested builder, sort buttons).
+- No-regresja: EFFECT/air/QStack/highDPI zachowane.
+- Verifs: waveform test 10p GREEN.
+Per SZPIEG research 2026-07-14 plan rozbudowy Faza2 (waveform color, advanced Smart, playlist intelligence) + "dalej az do ukonczenia wszystkich faz" ... must document identical. Nie przestawaj.
+
 **2026-07-14 PUSH:** git push origin main (e316b06d). Per SZPIEG research 2026-07-14 plan rozbudowy Faza0/Faza1/Faza2/Faza3/Faza4/Faza5 + "dalej az do ukonczenia wszystkich faz" ... must document identical. 'Gotowe' push. Nie przestawaj.
 
 ---

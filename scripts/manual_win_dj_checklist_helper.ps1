@@ -99,16 +99,24 @@ Write-Host "Backend: $(if (Test-Path $ExePath) { 'check get_backend_info' })"
 Write-Host "Screenshots: [lista]"
 
 # 11 Faza2 Waveform color (discrete tint + overlays)
-Write-Host "[11] Faza2 Waveform discrete per-band tint + energy (per SZPIEG 2026-07-14 plan Faza2)" -ForegroundColor Yellow
-Write-Host "Sprawdź kolory kick (red), hi-hat (yellow), vocal (green), breakdown (blue) + energy overlay."
-Write-Host "Test normal/compact/highDPI. RGB fallback."
+Write-Host "[11] Faza2 Waveform discrete per-band tint + energy (per SZPIEG 2026-07-14 plan Faza2 + przejście do bloku 3)" -ForegroundColor Yellow
+Write-Host "Załaduj real utwór. Sprawdź:"
+Write-Host "  - kick/bass: czerwony (red ~#e63939)"
+Write-Host "  - hi-hat/perc: żółty"
+Write-Host "  - vocal/mid: zielony/teal"
+Write-Host "  - breakdown: niebieski"
+Write-Host "  - Energy overlay: jasne białe paski na wysokich peakach (pk>0.55)"
+Write-Host "Test normal/compact/highDPI + resize (air zachowany). RGB fallback gdy brak spectral."
 Read-Host "Enter po waveform color Faza2"
 
 # 12 Faza2 Advanced Smart + intel
 Write-Host "[12] Faza2 Advanced Smart (nested AND/OR live) + Playlist intel (Camelot/energy sort)" -ForegroundColor Yellow
-Write-Host "Smart builder: nested rules + live preview + more fields."
-Write-Host "Library smart tree dynamic."
-Write-Host "Order dialog: harmonic + energy sort buttons."
+Write-Host "Smart builder:"
+Write-Host "  - Dodaj zagnieżdżone reguły (AND/OR)"
+Write-Host "  - Live preview count działa"
+Write-Host "  - Więcej pól (bpm, key, energy, brightness, tags)"
+Write-Host "Library: smart tree dynamic update po edycji metadanych."
+Write-Host "Playlist order dialog: przyciski harmonic (Camelot) + energy sort działają poprawnie na real liście."
 Read-Host "Enter po Smart + intel Faza2"
 
 # 13 Downloader + AI (Faza4)

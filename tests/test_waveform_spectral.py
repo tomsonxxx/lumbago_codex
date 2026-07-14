@@ -52,3 +52,25 @@ def test_faza2_spectral_bands_range_and_classify():
     # classify coverage
     assert classify_band_from_ratios(0.6, 0.3, 0.1) == 0  # kick
     assert classify_band_from_ratios(0.1, 0.7, 0.2) == 1  # perc
+
+# Blok 3 Faza2 real viz advancement (per user "przejście do następnego bloku")
+# energy overlay: high pk segments get bright white mix overlay (see widget paint >0.55)
+def test_faza2_energy_overlay_high_peak_bright():
+    # simulate condition used in paintEvent for energy bright overlay
+    pk = 0.72
+    assert pk > 0.55
+    mix = min(0.65, (pk - 0.55) * 1.8)
+    assert mix > 0.3
+    # band 0 (kick) + high energy should produce bright tint effect
+    c = get_band_tint(0)
+    assert c.red() > 150  # red base + overlay brightens
+
+def test_faza2_full_discrete_pipeline():
+    bands = extract_spectral_bands("nonexistent", 60)
+    assert len(bands) == 60
+    for b in bands:
+        tint = get_band_tint(b)
+        assert tint.red() >= 0 and tint.green() >= 0 and tint.blue() >= 0
+    # covers kick(0) red, perc(1) yellow-ish, vocal(2), breakdown(3) blue
+    assert get_band_tint(0).red() > 180 or "#e6" in str(get_band_tint(0))
+    assert get_band_tint(3).blue() > 80

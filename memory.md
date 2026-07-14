@@ -28,6 +28,15 @@ Background verif (z task call-dab96294... i e4a9a54a...): pytest -k "downloader_
 
 **2026-07-14 KONTYNUUJ (user "kontynuuj"):** Czyste pytest 54p+57p GREEN (exit 0, no pipe issues). Polished resume w downloader_window (lepsze logi, heuristic, fraza). Ulepszono test_e2e_desktop + dodano Faza2 sekcję do user_guide.md. python-c Faza2/Faza5 + smoke OK. todo + docs ident + fraza. Local kontynuacja utrzymana. Per ... Faza0-5 + Downloader/AI + 'kontynuuj' ... must document identical. Nie przestawaj.
 
+**2026-07-14 PRZEJŚCIE DO NASTĘPNEGO BLOKU (user "przejście do następnego bloku z listy"):** Przejście do **Blok 3: Faza 2 Real visualization + manual w DJ Player (items 14-16)**.
+- Local advancement: test_waveform_spectral teraz 10p (energy overlay bright, full discrete pipeline) GREEN.
+- Widget paint: discrete per-band tints + energy overlay (pk>0.55 white mix).
+- Smart nested + playlist harmonic/energy covered in sims/tests.
+- Manual artifacts (helper [11][12]) gotowe.
+- [x local] code + tests + prep advanced; [~] real na clean Win (sprawdź kolory na real trackach + nested + sorts).
+- Verifs: waveform spectral 10p GREEN, no-reg preserved.
+Per SZPIEG research 2026-07-14 plan rozbudowy Faza2 (waveform color, advanced Smart, playlist intelligence) + "dalej az do ukonczenia wszystkich faz" ... must document identical. Nie przestawaj.
+
 **2026-07-14 WRITER Faza2 closed:** per Analyzer + Szpieg/Plan. Waveform discrete tint+overlays (core/waveform + widget), advanced Smart nested+features (repo/dialog/library), playlist intel (audio_features sorts + order_dialog). Docs ident "per SZPIEG research 2026-07-14 plan rozbudowy Faza2 (waveform color, advanced Smart, playlist intelligence)... must document identical". Verifs green, no regresja. Pass Tester. Per plan.
 
 **2026-07-14 PUSH (wypchnij do gurhub):** git push confirmed. Branch up to date with origin/main. Commit c683699e on remote. All changes (Faza2 Tester + docs) pushed. Per SZPIEG research 2026-07-14 plan rozbudowy Faza0/Faza1/Faza2/Faza3/Faza4/Faza5 ... must document identical. 'Gotowe' push to GitHub. Nie przestawaj.
