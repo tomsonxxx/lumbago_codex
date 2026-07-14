@@ -23,7 +23,7 @@ if (Test-Path $ExePath) {
     Write-Host "UWAGA: exe nie znaleziony w $ExePath - użyj python lub podaj ścieżkę"
 }
 Write-Host "Sprawdź output: get_backend_info() → _NoopAudioBackend lub VLC"
-Write-Host "Oczekiwany: prominent banner '⚠ Audio niedostępne — dla pełnej jakości DJ zainstaluj VLC z videolan.org'"
+Write-Host "Oczekiwany: prominent banner '⚠ Audio niedostępne - dla pełnej jakości DJ zainstaluj VLC z videolan.org'"
 Write-Host ""
 
 Read-Host "Naciśnij Enter po sprawdzeniu smoke + backend_info (zrób screenshot)"
