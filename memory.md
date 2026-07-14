@@ -4,6 +4,14 @@
 
 **2026-07-14 PUSH (wypchnij do gurhub):** git push confirmed. Branch up to date with origin/main. Commit c683699e on remote. All changes (Faza2 Tester + docs) pushed. Per SZPIEG research 2026-07-14 plan rozbudowy Faza0/Faza1/Faza2/Faza3/Faza4/Faza5 ... must document identical. 'Gotowe' push to GitHub. Nie przestawaj.
 
+**2026-07-14 UPORZĄDKOWANIE REPO + gałęzie (per "upozadkuj repo i zamknij nie potrzebne galezoe"):** 
+- Gałęzie: wyłącznie `main` (lokalnie i na origin). Brak jakichkolwiek innych gałęzi (lokalnych ani zdalnych) do zamknięcia/deletowania.
+- Artefakty wyczyszczone: git clean -fdX usunęło wszystkie __pycache__/, lumbago_music_ai.egg-info/, .pytest_cache/.
+- Clutter przeniesiony (git mv): GUARDIAN_SAFETY_REVIEW_REQUEST... + STRUCTURE_READY.txt → MEMORY/previous_archive/root_clutter_2026-07/
+- git fetch --prune + gc --aggressive wykonane.
+- ai_panel/ i downloader/ zachowane — są aktywnie importowane w ui/main_window.py (część aplikacji).
+- Repo teraz czyste, tylko aktywny main. Per SZPIEG research 2026-07-14 plan rozbudowy Faza0/Faza1/Faza2/Faza3/Faza4/Faza5 ... must document identical. 'Gotowe' uporządkowanie. Nie przestawaj.
+
 **GŁÓWNY FOLDER DOMOWY: D:\Claude**
 
 Projekt to **TYLKO I WYŁĄCZNIE** aplikacja desktop PyQt6 na Windows.
