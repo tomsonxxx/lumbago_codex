@@ -16,6 +16,8 @@
 
 **2026-07-14 CI + push note (post 'dalej'):** smoke_portable_windows.ps1 (and related) had em-dash parse errors in CI. Fixed (ASCII -, line split) + pushed c9c357f7. Per SZPIEG research 2026-07-14 plan rozbudowy Faza0-5 + Downloader/AI per "chce dodać nowe, dosc skomplikowane.txt" + 'dalej az do ukonczenia wszystkich faz' ... must document identical. 'Gotowe'. Nie przestawaj.
 
+**2026-07-14 PUSH:** User requested "push". git push origin main -> "Everything up-to-date". Latest commit 36372846. Per SZPIEG research 2026-07-14 plan rozbudowy Faza0/Faza1/Faza2/Faza3/Faza4/Faza5 + "dalej az do ukonczenia wszystkich faz" ... must document identical. 'Gotowe'. Nie przestawaj.
+
 **Status:** W toku (2026-06-27 "sprubuj ponownie" + "nie zatrzymuj")
 
 ## 1. Infrastruktura Downloader (Etap 1 prompt)

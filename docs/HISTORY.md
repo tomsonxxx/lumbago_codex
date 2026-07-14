@@ -1,6 +1,8 @@
 # Historia budowania — Lumbago Music AI
 
 
+> **2026-07-14 PUSH:** git push origin main executed on user request. Result: "Everything up-to-date". HEAD at 36372846. Branch up to date with origin/main. No new changes. Per SZPIEG research 2026-07-14 plan rozbudowy Faza0/Faza1/Faza2/Faza3/Faza4/Faza5 + "dalej az do ukonczenia wszystkich faz" ... must document identical. 'Gotowe' push. Nie przestawaj.
+
 > **2026-07-14 CI FIX + PUSH:** PowerShell parser errors in scripts/smoke_portable_windows.ps1 (lines ~52,56 etc with â€”, unexpected tokens 'per'/'or', missing }/)). Fixed by stripping em-dashes (—) → regular - from all long doc comments (the "per SZPIEG... must document identical" ones), and splitting the giant single-line Write-Host "Portable structure note..." (which had complex nested quotes/parentheses). Also cleaned build_*.ps1 and manual helper. All .ps1 now pass [scriptblock]::Create. git push origin main succeeded (c9c357f7). Per SZPIEG research 2026-07-14 plan rozbudowy Faza0/Faza1/Faza2/Faza3/Faza4/Faza5 + Downloader/AI per "chce dodać nowe, dosc skomplikowane.txt" + 'dalej az do ukonczenia wszystkich faz' + CI smoke ... must document identical. 'Gotowe' CI fix + push. Nie przestawaj.
 
 > **2026-07-14 "dalej" (final):** All lista + verifs (14p, real status count from repo) + notes. Complete per spec. Docs ident. Per SZPIEG research 2026-07-14 plan rozbudowy Faza2 + Downloader/AI continuation per "chce dodać nowe, dosc skomplikowane.txt" + 'dalej' ... must document identical. 'Gotowe' block. Nie przestawaj.
