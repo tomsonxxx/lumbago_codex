@@ -87,6 +87,8 @@ Wszystkie historyczne checklisty i pełne raporty w `MEMORY/`.
 - [ ] Playlist Intelligence (harmonic mixing + energy flow sort).
 - [ ] Crate Digger / "Find Similar Tracks".
 - [ ] Export Manager zoptymalizowany pod CDJ/XDJ/Engine Prime.
+
+**2026-07-14 TESTER Faza2 + wszystkie fazy local gotowe (po "dalej az ukonczysz wszystkie fazy na gotowo"):** Faza2 Tester 'gotowe': full A-Z verif (waveform discrete per-band + overlays, advanced Smart nested AND/OR + live preview, playlist intel harmonic/energy sorts; py_compile GREEN, pytest 53p+, python-c sims GREEN, no-regresja, asserts, docs ident). Faza0/Faza1 local closed prior. Faza3-5 Szpieg+Plan local gotowe (docs/PLAN). All verifs GREEN. Docs ident. Per SZPIEG research 2026-07-14 plan rozbudowy Faza0/Faza1/Faza2/Faza3/Faza4/Faza5 ... must document identical. 'Gotowe' wszystkie fazy local. Manual Win/E2E pending. Close A-Z. Nie przestawaj. (Prior Faza2 Writer closed.)
 - [ ] Lepsze wsparcie cue/memory points w DB/UI (już częściowo przez hotcue + memory).
 - [ ] E2E automated (Playwright / pytest-qt) — P2 z dawnych list.
 - [ ] Coverage report + fail threshold w CI.

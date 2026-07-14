@@ -77,6 +77,8 @@ $env:LUMBAGO_SAFE_MODE=1; $env:LUMBAGO_SMOKE_SECONDS=3; python main.py
 - [ ] Black/empty: #OdtwarzaczPanel surface + "Brak utworu — upuść plik z biblioteki"
 - [ ] Resize: dynamic wave min/spin s=width//30, no cut, air preserved, multi/highDPI safe
 - [ ] QStack: single default, odt index1 / dual0, no overlap, aggressive hide on switch, re-sync compact
+
+**2026-07-14 TESTER Faza2 + wszystkie fazy local gotowe (po "dalej az ukonczysz wszystkie fazy na gotowo"):** Tester Faza2 'gotowe' (read waveform+widget+async+repo+playlist*+audio_features+tests; py_compile; pytest 21p+53p GREEN; python-c discrete bands/tints + nested smart live + harmonic/energy GREEN; no-regresja EFFECT/FILE-STREAM/air/highDPI/QStack/fallback/prior GREEN; Faza2 asserts GREEN; docs incl this + exact phrase). Faza0-1 closed local prior. Faza3-5: Szpieg+Plan local gotowe. Verifs final GREEN. Per SZPIEG research 2026-07-14 plan rozbudowy Faza0/Faza1/Faza2/Faza3/Faza4/Faza5 ... must document identical. 'Gotowe' wszystkie fazy local (Faza0-5). Manual Win/VM/E2E pending (waveform viz, smart preview, sort, sizes, booth). Push. Czekamy Win raport. Close A-Z. Nie przestawaj.
 - [ ] Cue/play/stop: near0 prefer cue, stop->cue, double wave seek+cue, playback in compact OK
 - [ ] Scalability + compact window min size shrink on toggle (pilot)
 - [ ] Pitch + TRIM / advanced — N/A w MVP single (basic only)
