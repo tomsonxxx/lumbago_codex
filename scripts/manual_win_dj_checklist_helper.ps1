@@ -144,4 +144,12 @@ Write-Host "E2E: AI cmd -> DL -> library -> DJ load (z/ bez VLC)."
 Write-Host "Clean Win: fresh profile, portable extract, PATH tools, full flow import/DJ/DL/AI."
 Write-Host "Per SZPIEG research 2026-07-14 plan rozbudowy Faza0-5 + NOWA_LISTA ... must document identical."
 
+# Blok 4: Faza 1 + Faza 0 polish na real (highDPI, pitch, diagnostics, exact sizes)
+Write-Host "[Blok4] Faza0/1 polish: highDPI/extreme + pitch/TRIM + sizes + diag" -ForegroundColor Yellow
+Write-Host "Test highDPI (skala >1.04/1.55 jeśli możliwe lub sym): compact + diag visibility."
+Write-Host "Single pitch: rate/pitch/keylock działa, tooltip 'EFEKT: zmienia tempo/pitch utworu (FILE load, STREAM playback)', compact hide."
+Write-Host "Exact sizes: waveform single >=220px, compact >=80px, booth >=260px, crossfader >=280px, pilot ~420x300 + StaysOnTop."
+Write-Host "Diagnostics: get_backend_info + get_diagnostics widoczne, '⚠ Audio niedostępne' prominent."
+Read-Host "Enter po highDPI/pitch/sizes/diag checks"
+
 Write-Host "Następnie: 'dalej' lub raport do zespołu. Nie przestawaj."

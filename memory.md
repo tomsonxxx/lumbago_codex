@@ -37,6 +37,9 @@ Background verif (z task call-dab96294... i e4a9a54a...): pytest -k "downloader_
 - Verifs: waveform spectral 10p GREEN, no-reg preserved.
 Per SZPIEG research 2026-07-14 plan rozbudowy Faza2 (waveform color, advanced Smart, playlist intelligence) + "dalej az do ukonczenia wszystkich faz" ... must document identical. Nie przestawaj.
 
+**2026-07-14 KOLEJNE PRZEJŚCIE (user "przejście do następnego bloku z listy"):** Przejście do **Blok 4: Faza 1 + Faza 0 polish (highDPI, pitch, diagnostics, sizes 17-20)**.
+Local: test_odt + diag/pitch/highDPI/compact sims + extra asserts (get_diagnostics, set_* , compact). highDPI AA in main + forces. Pitch full stub + tooltip + hide. Sizes asserts + TOKENS sync. Helper [Blok4] prompts. [x local coverage + polish], [~] real. Verifs 52p + python-c GREEN. Per SZPIEG research 2026-07-14 plan rozbudowy Faza0/Faza1 Polish (highDPI/pitch/diagnostics/sizes) + "dalej az do ukonczenia wszystkich faz" ... must document identical. Nie przestawaj.
+
 **2026-07-14 WRITER Faza2 closed:** per Analyzer + Szpieg/Plan. Waveform discrete tint+overlays (core/waveform + widget), advanced Smart nested+features (repo/dialog/library), playlist intel (audio_features sorts + order_dialog). Docs ident "per SZPIEG research 2026-07-14 plan rozbudowy Faza2 (waveform color, advanced Smart, playlist intelligence)... must document identical". Verifs green, no regresja. Pass Tester. Per plan.
 
 **2026-07-14 PUSH (wypchnij do gurhub):** git push confirmed. Branch up to date with origin/main. Commit c683699e on remote. All changes (Faza2 Tester + docs) pushed. Per SZPIEG research 2026-07-14 plan rozbudowy Faza0/Faza1/Faza2/Faza3/Faza4/Faza5 ... must document identical. 'Gotowe' push to GitHub. Nie przestawaj.

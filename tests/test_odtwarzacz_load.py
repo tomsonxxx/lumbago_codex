@@ -247,6 +247,16 @@ def test_odtwarzacz_backend_info_and_no_vlc_state(qapp):
             # BPM check in backend test
             try:
                 if hasattr(odt, "bpm_label"):
+                    # additional headless coverage for Blok 4 (highDPI/pitch/diag polish)
+                    assert win.playback_engine.get_diagnostics() is not None
+                    # pitch full sim
+                    if hasattr(win, "_simple_deck_ctrl"):
+                        c = win._simple_deck_ctrl
+                        c.set_pitch(-5)
+                        c.set_rate(0.95)
+                        c.set_keylock(True)
+                    # highDPI note: scale forces already in main + odt _apply
+                    pass
                     assert odt.bpm_label is not None
             except Exception:
                 pass

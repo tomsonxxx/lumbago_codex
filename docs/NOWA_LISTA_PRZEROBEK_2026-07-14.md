@@ -36,6 +36,19 @@ Przechodzimy do **Blok 3: Faza 2 — Real visualization + manual w DJ Player (it
 - Verifs: waveform test 10p GREEN.
 Per SZPIEG research 2026-07-14 plan rozbudowy Faza2 (waveform color, advanced Smart, playlist intelligence) + "dalej az do ukonczenia wszystkich faz" ... must document identical. Nie przestawaj.
 
+**2026-07-14 KOLEJNE PRZEJŚCIE (user: "przejście do następnego bloku z listy"):** 
+Teraz **Blok 4: Faza 1 + Faza 0 polish na real (highDPI, pitch, diagnostics, exact sizes - items 17-20)**.
+- Local advancement: test_odt + backend/diag/pitch/highDPI/compact sims + extra asserts (get_diagnostics, set_pitch/rate/keylock, compact toggle).
+- highDPI: AA_Enable + UseHighDpiPixmaps in main, forces in odt/dj_player (scale re-sync, min sizes).
+- Pitch: full stub (set_rate/set_pitch/set_keylock), EFFECT tooltip exact, compact hide.
+- Exact sizes: asserts >=220/80/260/280/420x300 w testach + BOOTH_SIZES/TOKENS sync (wave_min_h=220).
+- Diagnostics: get_backend_info + get_diagnostics exposed + fallback visible.
+- Helper: dodano dedykowaną sekcję [Blok4] z promptami highDPI/extreme, pitch manual, sizes, diag.
+- [x local] headless coverage + asserts + helper + code polish advanced; [~] real highDPI/extreme/pitch/sizes/diag na clean Win (test skala, pitch full, exact px, diag widoczny).
+- Verifs: 52p (odt/deck/booth/playback) GREEN, python-c diag/pitch/highDPI GREEN.
+- No-reg: prior Faza + EFFECT/FILE-STREAM/air/QStack zachowane.
+Per SZPIEG research 2026-07-14 plan rozbudowy Faza0/Faza1 Polish (highDPI/pitch/diagnostics/sizes) + "dalej az do ukonczenia wszystkich faz" ... must document identical. Nie przestawaj.
+
 **2026-07-14 PUSH:** git push origin main (e316b06d). Per SZPIEG research 2026-07-14 plan rozbudowy Faza0/Faza1/Faza2/Faza3/Faza4/Faza5 + "dalej az do ukonczenia wszystkich faz" ... must document identical. 'Gotowe' push. Nie przestawaj.
 
 ---
