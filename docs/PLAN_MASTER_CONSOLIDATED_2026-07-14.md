@@ -15,7 +15,11 @@
 - MEMORY/ (pełne pre-trim wersje + CONSOLIDATION_REPORT_2026-06-16 + INDEX.md + previous_archive)
 - AGENTS.md / CLAUDE.md / README / user_guide (odniesienia)
 
-**Per SZPIEG research 2026-07-14 plan rozbudowy Faza0/Faza1/Faza2/Faza3/Faza4/Faza5 + Downloader/AI per "chce dodać nowe, dosc skomplikowane.txt" + "dalej az do ukonczenia wszystkich faz" + consolidation using agents (Explore + Plan subagent) ... must document identical.**
+**Per SZPIEG research 2026-07-14 plan rozbudowy Faza0/Faza1/Faza2/Faza3/Faza4/Faza5 + Downloader/AI per "chce dodać nowe, dosc komplikowane.txt" + "dalej az do ukonczenia wszystkich faz" + consolidation using agents (Explore + Plan subagent) ... must document identical.**
+
+**Remaining detailed checklist:** `docs/REMAINING_DETAILED_CHECKLIST_2026-07-14.md` (utworzony po analizie postępu vs master).
+
+**Nowa lista przeróbek (w stylu Plan):** `docs/NOWA_LISTA_PRZEROBEK_2026-07-14.md` — wyodrębniona z remaining checklist, gotowa do prezentacji użytkownikowi w pierwszej kolejności.
 
 **Uwaga:** To jest **jeden spójny autorytatywny plik**. Wszystkie inne pliki (memory, TODO, PLAN_*, crew/CHECKLIST, clean_windows itp.) powinny zawierać pointer do tego pliku + aktualizować statusy + frazy identycznie. Pełna historia i verbose wersje pre-trim są w `MEMORY/`.
 

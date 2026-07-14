@@ -1,6 +1,8 @@
 # TODO — Lumbago Music AI (zbiorcza lista)
 
 **WAŻNE (konsolidacja 2026-07-14):** Pełny master planów + Faz + checklist + matrix → **`docs/PLAN_MASTER_CONSOLIDATED_2026-07-14.md`**. 
+**Szczegółowa remaining checklist** → `docs/REMAINING_DETAILED_CHECKLIST_2026-07-14.md`.
+**Nowa lista przeróbek (w stylu Plan)** → `docs/NOWA_LISTA_PRZEROBEK_2026-07-14.md` (wyodrębniona, gotowa do decyzji użytkownika w pierwszej kolejności).
 Poniżej tylko żywe otwarte P0/P1 + backlog (aktualizuj identycznie z frazą).
 
 **2026-07-14 CI FIX + PUSH:** .\scripts\smoke_portable_windows.ps1 (and build/manual) had parser errors in CI (Unexpected token 'per', missing }, quote issues on emdash mangled to â€”). Fixed: all — replaced by - ; long Write-Host split. Parse validated. git push origin main (c9c357f7). Smoke script unblocked for future runs. Per SZPIEG research 2026-07-14 plan rozbudowy Faza0/Faza1/Faza2/Faza3/Faza4/Faza5 + Downloader/AI per "chce dodać nowe, dosc skomplikowane.txt" + 'dalej az do ukonczenia wszystkich faz' + CI ... must document identical. 'Gotowe' fix + push. Nie przestawaj.
