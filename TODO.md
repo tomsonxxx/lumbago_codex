@@ -1,5 +1,7 @@
 # TODO — Lumbago Music AI (zbiorcza lista)
 
+**Ostatnia aktualizacja:** 2026-07-14 TESTER Faza2: Full verif A-Z (pre-read, read all listed changed files core/waveform + widget/async + repo + playlist* + library + audio_features + tests). py_compile GREEN. pytest relevant 53p+ GREEN. python-c: discrete bands/tints + nested smart+live + harmonic/energy sorts GREEN. No-regresja EFFECT/FILE/STREAM/air/highDPI/QStack/fallback/prior GREEN. Faza2 asserts GREEN. Docs (all incl this) + exact phrase updated. green/gaps: env Qt/manual Win; 'gotowe' Tester Faza2 local. Close A-Z. per SZPIEG research 2026-07-14 plan rozbudowy Faza2 (waveform color, advanced Smart, playlist intelligence)... must document identical. (Prior Faza1 closed)
+
 **Ostatnia aktualizacja:** 2026-07-14 Tester Faza1 item3 pitch stub: full verif A-Z (read exact odt_view/simple_deck_controller/pitch_control/test_odt + window/engine; py_compile; pytest playback 21p rate/keylock; python-c engine+ctrl sims; no-regresja EFFECT/fallback/air/QStack/FILE-STREAM/highDPI preserved; assert exact tooltip "EFEKT: zmienia tempo/pitch utworu (FILE load, STREAM playback)", compact hide, presence/wiring single; GREEN all + gaps Qt/Win manual only). per SZPIEG research 2026-07-14 plan rozbudowy Faza1 Polish (single pitch/TRIM stub for Odtwarzacz MVP)... must document identical. 'gotowe' Tester pitch. (Writer closed before, highDPI item1 prior)
 
 **Analyzer 2026-07-13 (zintegrowane):** ~60-70% auto-covered (engine/diag/backend_info, compact StaysOnTop/pilot, metrics dynamic, fallback label, smoke DIAG, QStack). Gaps: exact sizes (wave 220/80 vs tokens 184/68, cross 280 vs ~240), EFFECT full asserts, booth 1m visual, real compact/highDPI warning visibility, full clean VM flow (import+DJ+APPDATA). Rekomendacje: wzmocnij test_odtwarzacz_load + deck_layout + booth_metrics + smoke (exact minHeight, text "⚠ Audio niedostępne...", margins 420x300, cross, BPM). Sync BOOTH_SIZES. Side Szpieg. Po: docs identical. Per SZPIEG research 2026-07-13 + Analyzer + Plan... must document identical.
@@ -117,6 +119,14 @@ Wszystkie historyczne checklisty i pełne raporty w `MEMORY/`.
 - Docs (dj_player_guide, clean_windows_test, TODO) identycznie.
 - Verifs core: python-c, compile OK.
 - Local closed. Real Win test pending (compact, highDPI, visible banner).
+
+**2026-07-14 WRITER Faza2 (per Analyzer luki recs + Szpieg/Plan "nowa lista" + "dalej"):** 
+Exact impl (read-before-edit,  no-regresja guards EFFECT/FILE-STREAM/air/highDPI/QStack/fallback):
+1. Waveform: discrete per-band tint (get_band_tint + classify in core/waveform.py) + overlays (energy) in ui/dj/views/waveform_widget.py + async; preserve RGB fallback, EFFECT tooltip, highDPI.
+2. Advanced Smart: repo get_tracks_for_smart_rules (nested AND/OR via _build, join AudioFeaturesOrm, more fields dance/valence..); playlist_dialog (nested groups builder, live preview list/table, more fields, EFFECT); library wiring.
+3. Playlist intel: sort helpers (harmonic Camelot, energy) in services/audio_features.py ; playlist_order_dialog (auto-sort btns + apply, EFFECT); integrate.
+Minimal tests + docs updated with exact "per SZPIEG research 2026-07-14 plan rozbudowy Faza2 (waveform color, advanced Smart, playlist intelligence)... must document identical".
+Verifs: py_compile, pytest, python-c sims. Pass to Tester. Polish. Close A-Z. Per SZPIEG research 2026-07-14 plan rozbudowy Faza2 (waveform color, advanced Smart, playlist intelligence)... must document identical. 'gotowe' Writer.
 
 **Pełny zintegrowany plan** w docs/PLAN_DZIALANIA_2026-06-25.md + tej liście. Zespół uruchomiony (Szpieg, Plan, Analyzer, Writer x2, Tester). Research Szpieg precede. Local closures dla smoke (P1.1), UI warning (P1.3). Manual na Windows pending per plan A-Z.
 

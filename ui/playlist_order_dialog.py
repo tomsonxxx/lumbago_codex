@@ -97,6 +97,35 @@ class PlaylistOrderDialog(QtWidgets.QDialog):
         self.list_widget.insertItem(row + 1, item)
         self.list_widget.setCurrentRow(row + 1)
 
+    def _sort_harmonic(self):
+        # rebuild from current list order (in case manual tweaks)
+        current = []
+        for i in range(self.list_widget.count()):
+            item = self.list_widget.item(i)
+            path = item.data(QtCore.Qt.ItemDataRole.UserRole)
+            # find orig track
+            t = next((tr for tr in self._tracks if getattr(tr, 'path', None) == path), None)
+            if t: current.append(t)
+        sorted_t = sort_tracks_for_harmonic_mixing(current)
+        self._rebuild_list(sorted_t)
+
+    def _sort_energy(self):
+        current = []
+        for i in range(self.list_widget.count()):
+            item = self.list_widget.item(i)
+            path = item.data(QtCore.Qt.ItemDataRole.UserRole)
+            t = next((tr for tr in self._tracks if getattr(tr, 'path', None) == path), None)
+            if t: current.append(t)
+        sorted_t = sort_tracks_by_energy(current, ascending=False)
+        self._rebuild_list(sorted_t)
+
+    def _rebuild_list(self, tracks: list[Track]):
+        self.list_widget.clear()
+        for track in tracks:
+            item = QtWidgets.QListWidgetItem(f"{track.artist or ''} - {track.title or ''}")
+            item.setData(QtCore.Qt.ItemDataRole.UserRole, track.path)
+            self.list_widget.addItem(item)
+
     def ordered_paths(self) -> list[str]:
         paths: list[str] = []
         for idx in range(self.list_widget.count()):

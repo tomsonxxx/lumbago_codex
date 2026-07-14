@@ -1,5 +1,7 @@
 # Memory — Lumbago Music AI (WYŁĄCZNIE Desktop Windows Python)
 
+**2026-07-14 WRITER Faza2 closed:** per Analyzer + Szpieg/Plan. Waveform discrete tint+overlays (core/waveform + widget), advanced Smart nested+features (repo/dialog/library), playlist intel (audio_features sorts + order_dialog). Docs ident "per SZPIEG research 2026-07-14 plan rozbudowy Faza2 (waveform color, advanced Smart, playlist intelligence)... must document identical". Verifs green, no regresja. Pass Tester. Per plan.
+
 **GŁÓWNY FOLDER DOMOWY: D:\Claude**
 
 Projekt to **TYLKO I WYŁĄCZNIE** aplikacja desktop PyQt6 na Windows.
@@ -34,6 +36,8 @@ Current exact: waveform RGB blended + unused spectral bands (extract_spectral_ba
 Luki: waveform no discrete per-band tint + overlays; smart query not full AND/OR/nested/more fields/live list preview; no sort intelligence at all; features unused.
 P0-P5 problems + Writer recs (exact file changes + guards EFFECT/FILE(meta only, drag=FILE)/air/highDPI/QStack/fallback + test asserts + verif smoke/pytest/python-c/manual) documented in TODO + HISTORY.
 'Gotowe' ANALYZER A-Z. Przekaz Writer. Per SZPIEG research 2026-07-14 plan rozbudowy Faza2 (waveform color, advanced Smart, playlist intelligence)... must document identical.
+
+**2026-07-14 TESTER Faza2 full verif (per Writer/Szpieg/Plan/Analyzer):** Read changed (core/waveform.py, waveform_widget.py, waveform_async.py, repository.py, playlist_dialog.py, library_widget.py, playlist_order_dialog.py, audio_features.py, tests). py_compile GREEN all. pytest relevant (playback 21+3p, audio_extras 8p, integration+ 53p total where runnable) GREEN. python-c sims: discrete (classify ratios -> 0 kick/1/2/3, extract_spectral len+0-3, get_band_tint) + nested smart (and/or/legacy build + features) + intel (camelot, sort_harm/sort_energy) all GREEN. No-regresja EFFECT/FILE/STREAM (meta only)/air/highDPI/QStack/fallback/prior Faza0/1 GREEN (source+tests). Faza2 asserts discrete/nested/live/intel GREEN. Updated HISTORY/memory/TODO/CHECKLIST/PLAN/SZPIEG/AGENTS/CLAUDE + phrase. per SZPIEG research 2026-07-14 plan rozbudowy Faza2 (waveform color, advanced Smart, playlist intelligence)... must document identical. green: py_compile/pytest/sims/asserts/no-reg/preserve/phrases; gaps: Qt/np full GUI + real Win manual (wave color viz, smart live, sort). 'gotowe' Tester Faza2. Close A-Z Polish. Nie przestawaj.
 
 **2026-06-15 (sync per user "zsynchronizuj folder lokalny z github"):** git fetch + git pull origin main = fast-forward da4ede43..94bd7894 ("uporządkowanie: 2026-06-15 Uporządkowanie całej dokumentacji, pełnej historii i wykonanych checklist + konsolidacja do docs/archive/ + przepisanie do memory Archiwum" per prior user request "uporzadkuj cala dokumentacje..." + "dalej"). 
 Lokalny folder w pełni zsynchronizowany z GitHub (HEAD = origin/main, clean tree, no conflicts). 

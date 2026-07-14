@@ -24,6 +24,8 @@ Per 2026-06-16 full repo consolidation and cleanup: all prior documentation, ful
 
 **2026-06-16 note (post-consolidation):** Full verbose 2026-06-15 updates, old crew outputs, research, plans, and history now in MEMORY/full_agent_instructions/ (dated pre-trim copies) + MEMORY/previous_archive/ + other subs. See index in memory.md top "MEMORY Archive" section. Live docs point here for full. Per PLAN/SZPIEG hierarchy + identical docs rule honored.
 
+**2026-07-14 TESTER Faza2:** Full verif A-Z (read changed files waveform/smart/intel, py_compile, pytest relevant 53p, python-c sims discrete bands/nested smart/intel sorts, no-regresja EFFECT/FILE-STREAM/air/highDPI/QStack/fallback/prior, Faza2 asserts). Docs updated (incl AGENTS) w/ entry. per SZPIEG research 2026-07-14 plan rozbudowy Faza2 (waveform color, advanced Smart, playlist intelligence)... must document identical. 'gotowe' Tester Faza2. Close A-Z. Nie przestawaj.
+
 ## Dla nowych agentów/programistów (OBOWIĄZKOWE na starcie sesji):
 1. Przeczytaj `memory.md` (pełny pogląd na zasady + stan + SZPIEG + jak dokumentować).
 2. Przeczytaj `MEMORY/full_agent_instructions/crew/SZPIEG_agent_spec_and_archive.md` (research + binding spec + encyklopedia) — full pre-trim archived copy.

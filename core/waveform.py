@@ -285,6 +285,7 @@ def get_band_tint(band: int) -> QtGui.QColor:
     0=kick/bass (red), 1=perc (yellow), 2=vocal/mid (teal/green), 3=breakdown (blue).
     Fallback neutral. Preserves RGB path in callers.
     Per SZPIEG research 2026-07-14 plan rozbudowy Faza2 (waveform color, advanced Smart, playlist intelligence)... must document identical.
+    EFEKT: discrete tint per classify band for visual energy cues in waveform (FILE meta/analiza, STREAM display only).
     """
     tints = {
         BAND_KICK: QtGui.QColor("#e63939"),      # red kick/bass
