@@ -56,6 +56,12 @@ Hotcue to zapisana pozycja w utworze (ms). Służy do skoku (jump) lub ustawieni
 | Shift + klik na waveform | Ustaw hotcue (dual) |
 | Double-click waveform | Ustaw **main CUE** + seek (single) |
 
+**Faza2 additions (2026-07-14 kontynuacja):**
+- Waveform: discrete per-band tints (kick red / yellow / green / blue) + energy overlay.
+- Smart: nested rules + live preview w builder.
+- Playlist order: harmonic Camelot + energy sorts.
+Per SZPIEG research 2026-07-14 plan rozbudowy Faza2 ... must document identical. (local closed, manual Win pending)
+
 ### Limity
 
 - Dual deck: do **8** hotcue (indeksy 0–7)

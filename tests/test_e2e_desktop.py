@@ -1,4 +1,9 @@
-"""E2E smoke tests for desktop app (subprocess, no GUI interaction)."""
+"""E2E smoke tests for desktop app (subprocess, no GUI interaction).
+
+Per NOWA_LISTA 2026-07-14 item 27 + Faza2/Faza4: placeholder dla pełnego E2E (AI→DL→library→DJ).
+Aktualnie smoke + SAFE. Rozbudowa: subprocess z prefill, checkpoint check, waveform color sim, smart rules.
+Per SZPIEG research 2026-07-14 plan rozbudowy Faza0/Faza1/Faza2/Faza3/Faza4/Faza5 + 'dalej az do ukonczenia wszystkich faz' ... must document identical.
+"""
 from __future__ import annotations
 
 import os

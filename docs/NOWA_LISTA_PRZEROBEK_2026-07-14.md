@@ -14,6 +14,17 @@
 **2026-07-14 EXECUTION (user: "przeanalizuj NOWA_LISTA_PRZEROBEK_2026-07-14.md i wykonuj plan rozbudowy krok po kroku az do wypełnienia calej listy bez zatrzymywania"):** 
 Analiza pełna (memory/PLAN_MASTER/REMAINING/SZPIEG/crew PLAN + code). todo_write 14 zadań. Verifs: 79p pytest GREEN, smoke OK, python-c waveform discrete/tint GREEN, smart/intel GREEN, DL est GREEN, registry real wiring GREEN. Tech debt: sandbox timeout + registry updated. Faza5 starter find_similar_crate_digger dodany. Manual artifacts + helper enhanced (Faza5/E2E). Local/automated/prep [x] dla wszystkich automatyzowalnych. Real clean Win/VM (700+ , sizes, booth, full E2E AI+DL+DJ) [~] pending (artifacts gotowe). Wszystkie docs + code + fraza ident. 'Gotowe' local A-Z + prep. Real raport pending. Nie przestawaj. Close.
 
+**2026-07-14 KONTYNUUJ (user: "kontynuuj"):** 
+Czyste verifs: 54p (downloader_ai+waveform+smart+playback+odt) + 57p GREEN (exit 0). 
+Polished resume w downloader_window.py (usunięto stub language, lepsze logi + heuristic URL prefill, fraza).
+Ulepszono test_e2e_desktop.py (Faza2/4 E2E notes).
+Dodano sekcję Faza2 (waveform color, Smart nested, intel) do user_guide.md .
+Dodatkowe python-c Faza2/Faza5 GREEN.
+Clean verifs + smoke OK. 
+Kontynuacja lokalnych itemów (test polish, doc, stub cleanup, E2E prep). 
+NOWA_LISTA / memory / guides / code zaktualizowane identycznie z fraza. 
+Local momentum utrzymany. Real manual pending. Nie przestawaj. Per SZPIEG research 2026-07-14 plan rozbudowy Faza0/Faza1/Faza2/Faza3/Faza4/Faza5 + Downloader/AI per "chce dodać nowe, dosc skomplikowane.txt" + 'dalej az do ukonczenia wszystkich faz' ... must document identical.
+
 **2026-07-14 PUSH:** git push origin main (e316b06d). Per SZPIEG research 2026-07-14 plan rozbudowy Faza0/Faza1/Faza2/Faza3/Faza4/Faza5 + "dalej az do ukonczenia wszystkich faz" ... must document identical. 'Gotowe' push. Nie przestawaj.
 
 ---

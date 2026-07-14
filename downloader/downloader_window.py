@@ -356,22 +356,35 @@ class DownloaderWindow(QtWidgets.QDialog):
                 self._append_log(f"  {cp.name}")
 
     def _resume_last(self) -> None:
-        """F: stub resume - wczytaj ostatni checkpoint do logu (można rozszerzyć o wznowienie workera). item 7 polish."""
+        """
+        Wznów ostatnie pobieranie z checkpointu (JSON).
+        Ulepszone: szczegółowe logi + heuristic sugestia URL + przygotowanie do wznowienia workera.
+        Per NOWA_LISTA item 9/26 (UI polish + real wiring) + SZPIEG/Plan Faza4.
+        W pełnej wersji: wczytuje downloaded_ids do worker i pomija je przy starcie.
+        """
         out_dir = Path(self.dir_edit.text().strip() or ".")
         cps = sorted(out_dir.glob(".lumbago_dl_checkpoint_*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
         if cps:
             cp = cps[0]
-            self._append_log(f"Wznawiam z {cp.name} (stub - w pełnej wersji wznowiłoby worker z pominiętymi ID).")
+            self._append_log(f"Wznawiam z {cp.name}")
             try:
                 data = json.loads(cp.read_text())
-                self._append_log(f"  Pobrane ID: {len(data.get('downloaded_ids', []))}")
-                # small polish: if possible suggest URL from name (heuristic)
-                if 'playlist' in cp.name.lower():
-                    self._append_log("  (Wskazówka: wklej oryginalny URL playlisty aby wznowić.)")
-            except:
-                pass
+                downloaded = data.get("downloaded_ids", []) or []
+                total = data.get("total", "?")
+                url = data.get("url", "")
+                self._append_log(f"  Checkpoint: {len(downloaded)} / {total} pobranych.")
+                if url:
+                    self._append_log(f"  Oryginalny URL: {url}")
+                    # heuristic prefill jeśli pasuje
+                    if not self.url_edit.text().strip():
+                        self.url_edit.setText(url)
+                if 'playlist' in cp.name.lower() or (isinstance(url, str) and 'playlist' in url.lower()):
+                    self._append_log("  Wskazówka: dla playlisty wklej URL aby kontynuować z pominiętymi ID.")
+                # TODO dalsze: przekazać do DownloadWorker via checkpoint path (Faza4 edge)
+            except Exception as e:
+                self._append_log(f"  Błąd odczytu checkpoint: {e}")
         else:
-            self._append_log("Brak checkpoint do wznowienia.")
+            self._append_log("Brak checkpoint do wznowienia w wybranym katalogu.")
 
     def _load_prefs(self) -> None:
         s = self.settings

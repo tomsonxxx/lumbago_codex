@@ -87,3 +87,24 @@ Per SZPIEG research 2026-07-14 plan rozbudowy Faza0/Faza1/Faza2/Faza3/Faza4/Faza
 - Per SZPIEG research + consolidated raw + detailed prompt 2026-06-27 + CHECKLIST_Downloader_AI_Panel.md + PLAN + "dalej" + "zsynchronizuj z github" + "kontynuuj" ... must document identical.
 
 Per SZPIEG research + Plan + "dalej do konca" 2026-06-27 + kontynuacja po sync ... must document identical.
+
+## Faza2 features (waveform color, advanced Smart, playlist intelligence) — per NOWA_LISTA 2026-07-14
+
+**Waveform discrete per-band tint + energy overlays**
+- Kolory: kick (red), hi-hat/perc (yellow), vocal/mid (green/teal), breakdown (blue).
+- Używa extract_spectral_bands + classify_band_from_ratios + get_band_tint (core/waveform).
+- Widoczne w normal/compact/highDPI. RGB fallback.
+- Per SZPIEG research 2026-07-14 plan rozbudowy Faza2 (waveform color...) ... must document identical.
+
+**Advanced Smart Collections (nested AND/OR + live)**
+- Budowniczy: dowolne/wszystkie, zagnieżdżone reguły, więcej pól (bpm, key, energy, tags, brightness...).
+- Live preview counts z repo.
+- Dynamiczne drzewo w bibliotece + auto-refresh po zmianach metadanych.
+- Per fraza + Faza2.
+
+**Playlist intelligence**
+- Sort harmonic (Camelot wheel) + energy (z audio_features).
+- Używane w order dialog + sugestie.
+- Per SZPIEG + Plan Faza2.
+
+Faza2 local closed (testy 50+ p, python-c sims GREEN). Real manual Win pending. Per 'kontynuuj' + pełna lista.
