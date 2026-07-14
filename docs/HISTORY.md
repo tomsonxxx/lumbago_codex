@@ -9,6 +9,8 @@
 
 > **2026-07-14 Test hardening:** Per user suggestion, improved exception handling in the stub (specific ImportError/ModuleNotFoundError + stderr warning on other exceptions, better comments about not instantiating UI classes). Kept lightweight (no DB fixture for this smoke stub). Per SZPIEG research 2026-07-14 plan rozbudowy Faza2 + "dalej az do ukonczenia wszystkich faz" ... must document identical.
 
+> **2026-07-14 PUSH:** git push origin main (69f5241d). Per SZPIEG research 2026-07-14 plan rozbudowy Faza0-5 + "dalej az do ukonczenia wszystkich faz" ... must document identical. 'Gotowe' push. Nie przestawaj.
+
 > **2026-07-14 'zatwierdzam' + verif:** User zatwierdzam. Background pytest -k "..." : 52 passed. Faza2/DL/playback/smoke GREEN. Local manual prep approved. Per SZPIEG research 2026-07-14 plan rozbudowy Faza0-5 + "dalej az do ukonczenia wszystkich faz" ... must document identical. 'Gotowe' approved. Nie przestawaj.
 
 > **2026-07-14 dalszy 'dalej':** Verif 52p (background). Faza2 python-c GREEN. Polished Manual Execution Guide. Per SZPIEG research 2026-07-14 plan rozbudowy Faza0-5 + "dalej az do ukonczenia wszystkich faz" ... must document identical. 'Gotowe' iteracja. Nie przestawaj.

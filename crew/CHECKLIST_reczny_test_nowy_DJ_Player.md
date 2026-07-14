@@ -94,7 +94,7 @@ $env:LUMBAGO_SAFE_MODE=1; $env:LUMBAGO_SMOKE_SECONDS=3; python main.py
 - [ ] Verify results (low Camelot dist for harmonic, energy flow).
 - [ ] Apply; list order reflects sort.
 - [ ] Drag from Smart/ordered = FILE.
-Per SZPIEG research 2026-07-14 plan rozbudowy Faza2 (waveform color, advanced Smart, playlist intelligence) + "dalej az do ukonczenia wszystkich faz" ... must document identical. 'Gotowe' manual prep. User 'zatwierdzam' approved (verif 52p). Polished Manual Execution Guide + sims. Real Win/VM pending. Nie przestawaj.
+Per SZPIEG research 2026-07-14 plan rozbudowy Faza2 (waveform color, advanced Smart, playlist intelligence) + "dalej az do ukonczenia wszystkich faz" ... must document identical. 'Gotowe' manual prep. User 'zatwierdzam' approved (verif 52p). Polished Manual Execution Guide + sims. git push (69f5241d). Real Win/VM pending. Nie przestawaj.
 
 **2026-07-14 TESTER Faza2 + wszystkie fazy local gotowe (po "dalej az ukonczysz wszystkie fazy na gotowo"):** Tester Faza2 'gotowe' (read waveform+widget+async+repo+playlist*+audio_features+tests; py_compile; pytest 21p+53p GREEN; python-c discrete bands/tints + nested smart live + harmonic/energy GREEN; no-regresja EFFECT/FILE-STREAM/air/highDPI/QStack/fallback/prior GREEN; Faza2 asserts GREEN; docs incl this + exact phrase). Faza0-1 closed local prior. Faza3-5: Szpieg+Plan local gotowe. Verifs final GREEN. 
 
