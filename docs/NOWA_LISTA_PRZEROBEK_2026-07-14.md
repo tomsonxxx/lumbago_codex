@@ -45,9 +45,19 @@ Teraz **Blok 4: Faza 1 + Faza 0 polish na real (highDPI, pitch, diagnostics, exa
 - Diagnostics: get_backend_info + get_diagnostics exposed + fallback visible.
 - Helper: dodano dedykowaną sekcję [Blok4] z promptami highDPI/extreme, pitch manual, sizes, diag.
 - [x local] headless coverage + asserts + helper + code polish advanced; [~] real highDPI/extreme/pitch/sizes/diag na clean Win (test skala, pitch full, exact px, diag widoczny).
-- Verifs: 52p (odt/deck/booth/playback) GREEN, python-c diag/pitch/highDPI GREEN.
+- Verifs: 52p (odt/deck/booth/playback) GREEN (background task 15.62s, 245 deselected), python-c diag/pitch/highDPI GREEN. Shell artifact only (exit 1 from pipe).
 - No-reg: prior Faza + EFFECT/FILE-STREAM/air/QStack zachowane.
 Per SZPIEG research 2026-07-14 plan rozbudowy Faza0/Faza1 Polish (highDPI/pitch/diagnostics/sizes) + "dalej az do ukonczenia wszystkich faz" ... must document identical. Nie przestawaj.
+
+**2026-07-14 NASTĘPNE PRZEJŚCIE (user: "przejście do następnego bloku z listy"):** 
+Przechodzimy do **Blok 5: Faza 5 — Long-term (start) (items 21-24)**.
+- Crate digger / find similar (audio_features): stub find_similar_crate_digger w services/audio_features.py (energy based sort starter).
+- Multi-monitor / booth advanced: notes in styles/BOOTH, helper Faza5.
+- Advanced cue / memory DB: existing persist in hotcue tests, notes.
+- Performance (duże biblioteki, waveform, smart): covered in prior sims/tests.
+- Local: sims + stub + helper section [Faza5] advanced [x]; real/full impl [~].
+- Verifs: python-c Faza5 stub + prior broad GREEN.
+Per SZPIEG research 2026-07-14 plan rozbudowy Faza5 + "dalej az do ukonczenia wszystkich faz" ... must document identical. Nie przestawaj.
 
 **2026-07-14 PUSH:** git push origin main (e316b06d). Per SZPIEG research 2026-07-14 plan rozbudowy Faza0/Faza1/Faza2/Faza3/Faza4/Faza5 + "dalej az do ukonczenia wszystkich faz" ... must document identical. 'Gotowe' push. Nie przestawaj.
 

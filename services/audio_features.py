@@ -196,3 +196,5 @@ def find_similar_crate_digger(
         return sorted_c[:top_k]
     except Exception:
         return candidate_tracks[:top_k]
+
+# Blok 5 additional note (transition): multi-monitor/booth advanced support notes in styles/BOOTH + helper. Advanced cue/memory in hotcue tests. Performance via prior large lib sims. Per fraza for Faza5.
