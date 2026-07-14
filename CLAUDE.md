@@ -28,6 +28,7 @@ Per 2026-06-16 full repo consolidation and cleanup: all prior documentation, ful
 
 ## Dla nowych agentów/programistów (OBOWIĄZKOWE na starcie sesji):
 1. Przeczytaj `memory.md` (pełny pogląd na zasady + stan + SZPIEG + jak dokumentować).
+2. Przeczytaj `docs/PLAN_MASTER_CONSOLIDATED_2026-07-14.md` (jeden spójny master wszystkich planów, TODO, checklist, Faz 0-5, Downloader/AI, matrix).
 2. Przeczytaj `MEMORY/full_agent_instructions/crew/SZPIEG_agent_spec_and_archive.md` (research + binding spec + encyklopedia) — full pre-trim archived copy.
 3. Przeczytaj `MEMORY/full_agent_instructions/crew/PLAN_Uruchomienie_Python_Code_Review_Crew.md` (jak uruchamiać crew z SZPIEG/Plan first + 6-agent pipeline + God Object acceptance).
 4. Potem AGENTS.md/CLAUDE.md (this trimmed) + aktualny kod + git status.

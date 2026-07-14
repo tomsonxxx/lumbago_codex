@@ -1,4 +1,6 @@
 # CHECKLIST: Downloader-Konwerter + AI Chat Panel
+
+**Pełny skonsolidowany plan + Faza4 + spec z "chce dodać nowe..." → `docs/PLAN_MASTER_CONSOLIDATED_2026-07-14.md`. Ten plik to actionable checklist (aktualizuj identycznie z frazą).**
 **Projekt:** Lumbago Music AI (Desktop PyQt6 Windows only)
 **Źródło:** lumbago_grok_build_prompt.txt + docs/chce dodać nowe, dosc skomplikowane.txt (skonsolidowane)
 **Data:** 2026-06-27 (try again / kontynuacja)

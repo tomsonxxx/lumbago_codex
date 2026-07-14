@@ -1,5 +1,12 @@
 # Memory — Lumbago Music AI (WYŁĄCZNIE Desktop Windows Python)
 
+**WAŻNE (konsolidacja 2026-07-14):** Pełny spójny master wszystkich planów, TODO, checklist, Faz 0-5, Downloader/AI, hierarchii i verif matrix znajduje się w:
+**`docs/PLAN_MASTER_CONSOLIDATED_2026-07-14.md`**
+
+Ten plik (memory.md) pozostaje centralną encyklopedią + Archiwum + bieżącymi statusami. Zawsze aktualizuj identycznie + fraza.
+
+**2026-07-14 KONSOLIDACJA (użytkownik "przeanalizuj i skonsoliduj wszystkie pliki... w jeden spójny szczegółowy plik wykorzystując agentów"):** Użyto Explore + Plan subagentów. Pełny katalog duplikatów (memory/TODO/PLAN_ROZBUDOWA/crew PLAN+CHECKLISTs/clean_windows/HISTORY/AGENTS + archived MEMORY). Stworzono docs/PLAN_MASTER_CONSOLIDATED_2026-07-14.md (hierarchia + Faza0-5 + Downloader/AI + matrix + checklisty + fraza). Pointery + ident docs w kluczowych plikach. Per SZPIEG research 2026-07-14 plan rozbudowy Faza0/Faza1/Faza2/Faza3/Faza4/Faza5 + "dalej az do ukonczenia wszystkich faz" + consolidation using agents ... must document identical. 'Gotowe' konsolidacja. Nie przestawaj.
+
 **2026-07-14 PUSH (zsynchronizuj z github):** git push origin main succeeded. Output: "Everything up-to-date". Current HEAD: 36372846 "docs: add CI fix + PUSH entry for smoke_portable parse resolution (per 'dalej')". Branch is up to date with 'origin/main'. Working tree clean. Per SZPIEG research 2026-07-14 plan rozbudowy Faza0/Faza1/Faza2/Faza3/Faza4/Faza5 + "dalej az do ukonczenia wszystkich faz" ... must document identical. 'Gotowe' push + sync. Nie przestawaj.
 
 **2026-07-14 CI FIX + PUSH:** Fixed PowerShell parse errors blocking .\scripts\smoke_portable_windows.ps1 (and siblings) on GitHub Actions / clean Win CI. Root: em-dashes (— → â€”) from long "per SZPIEG..." doc comments (added during Faza/Downloader polish) + one ultra-long Write-Host broke tokenization in foreach + strings. Changes: replace all — with ASCII hyphen -, split the "Portable structure note" Write-Host into short lines. All three .ps1 now parse cleanly (scriptblock::Create OK). Then: git push origin main (61eb1eab..c9c357f7). Working tree clean. Per SZPIEG research 2026-07-14 plan rozbudowy Faza0/Faza1/Faza2/Faza3/Faza4/Faza5 + Downloader/AI continuation per "chce dodać nowe, dosc skomplikowane.txt" + 'dalej az do ukonczenia wszystkich faz' + CI smoke hardening ... must document identical. 'Gotowe' CI parse fix + push. Nie przestawaj.

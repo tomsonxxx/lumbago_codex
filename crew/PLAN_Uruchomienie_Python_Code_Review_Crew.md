@@ -1,5 +1,7 @@
 # Plan: Uruchomienie Python Code Review Crew (6-agentów) na projekcie Lumbago Music AI
 
+**WAŻNE (konsolidacja):** Pełny master wszystkich planów, Faz, checklist i procedur → `docs/PLAN_MASTER_CONSOLIDATED_2026-07-14.md`. Ten plik pozostaje binding dla crew launch + hierarchii.
+
 **Data utworzenia / aktualizacji:** 2026-06 (po feedbacku użytkownika na proposed plan) + 2026-06-15 Etap 4 playback reliability + 2026-06-15 Smart Collections SZPIEG (per "dalej, po kolei, od A do Z" + SZPIEG first)
 
 **Status:** Obowiązujący. SZPIEG + zmiany w pracy zespołu — **PRIORYTET #1 (w pierwszej kolejności)**. Ten dokument jest "planem uruchomienia" crew i musi być czytany przez wszystkich agentów/subagentów przed startem pracy crew.

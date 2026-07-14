@@ -1,5 +1,10 @@
 # PLAN ROZBUDOWY — Lumbago Music AI (cały gotowy plan na 2026-07-14)
 
+**UWAGA (konsolidacja 2026-07-14):** Ten plik był głównym źródłem Faza0-5. **Pełny skonsolidowany master** (wszystkie plany + TODO + checklisty + Downloader/AI + matrix) znajduje się tutaj:
+**`docs/PLAN_MASTER_CONSOLIDATED_2026-07-14.md`**
+
+Po konsolidacji ten plik służy jako historyczne źródło + pointer. Aktualizuj statusy identycznie z frazą.
+
 **Data:** 2026-07-14 (pełny plan rozbudowy na bazie Szpieg research 2026-07-14 + Plan agent + aktualny stan: Faza1 artifacts gotowe, local P1 closed, otwarte manual Win + testy, backlog).
 
 **2026-07-14 update (post-push):** CI smoke parse fix applied + pushed (em-dashes in long doc comments + long Write-Host in smoke_portable_windows.ps1 etc). All .ps1 parse clean, push c9c357f7. Docs + phrase updated. Per ... must document identical. 'Gotowe'.

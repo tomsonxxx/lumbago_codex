@@ -1,5 +1,7 @@
 # CHECKLIST – Ręczny test nowego DJ Playera (po redesignie AGENT 3)
 
+**Pełny master + manual checklist summary + Faza0-2:** `docs/PLAN_MASTER_CONSOLIDATED_2026-07-14.md`. Ten plik to wykonywalna lista (używaj z helper/printable).
+
 **MINIMAL LIVE VERSION (2026-06-16 consolidation).** Full historical versions of this checklist and prior manual test reports safely archived in `MEMORY/historical_checklists/CHECKLIST_reczny_test_nowy_DJ_Player_full.md` and consolidated in memory.md + MEMORY/.
 
 Per 2026-06-16 full repo consolidation and cleanup: all prior documentation, full agent instructions, checklists, history, and context memories safely archived in root MEMORY/ directory and consolidated/summarized in this memory.md. Live files trimmed to essential minimum for ongoing work but complete for continuity. All information from the project up to this point is preserved and accessible in MEMORY/.
