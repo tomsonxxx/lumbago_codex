@@ -1,5 +1,7 @@
 # TODO — Lumbago Music AI (zbiorcza lista)
 
+**2026-07-14 CI FIX + PUSH:** .\scripts\smoke_portable_windows.ps1 (and build/manual) had parser errors in CI (Unexpected token 'per', missing }, quote issues on emdash mangled to â€”). Fixed: all — replaced by - ; long Write-Host split. Parse validated. git push origin main (c9c357f7). Smoke script unblocked for future runs. Per SZPIEG research 2026-07-14 plan rozbudowy Faza0/Faza1/Faza2/Faza3/Faza4/Faza5 + Downloader/AI per "chce dodać nowe, dosc skomplikowane.txt" + 'dalej az do ukonczenia wszystkich faz' + CI ... must document identical. 'Gotowe' fix + push. Nie przestawaj.
+
 **Ostatnia aktualizacja:** 2026-07-14 (user "przeanalizuj obecny stan rozbudowy i kontynuuj" + "D:\Claude\docs\chce dodać nowe, dosc skomplikowane.txt"): Analiza + kont. 
 Faza DJ: Faza2 closed (waveform color discrete, adv Smart nested, intel playlist). 
 Downloader+AI (per txt spec): core robust large-PL, quality focus, free, UI+buttons, AI cmds+cross wiring largely complete (10p tests PASS, imports OK, integration in main). Gaps: manual large+AI edges, portable externals. Docs updated ident (memory/HISTORY/CHECKLIST). Verifs green. Per SZPIEG... Faza2 + "chce dodać nowe..." continuation ... must document identical. 'Gotowe' analysis+continue A-Z. Nie przestawaj. (Prior Faza2 TESTER etc closed)

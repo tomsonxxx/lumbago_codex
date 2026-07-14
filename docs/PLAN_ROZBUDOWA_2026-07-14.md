@@ -2,6 +2,8 @@
 
 **Data:** 2026-07-14 (pełny plan rozbudowy na bazie Szpieg research 2026-07-14 + Plan agent + aktualny stan: Faza1 artifacts gotowe, local P1 closed, otwarte manual Win + testy, backlog).
 
+**2026-07-14 update (post-push):** CI smoke parse fix applied + pushed (em-dashes in long doc comments + long Write-Host in smoke_portable_windows.ps1 etc). All .ps1 parse clean, push c9c357f7. Docs + phrase updated. Per ... must document identical. 'Gotowe'.
+
 **Bazuje na:** Szpieg research (15+ praktyk z Rekordbox/Serato/Mixxx/Traktor/Engine/foobar + community, Build Spec, punktowanie, fazy), Plan "nowa lista przeróbek", TODO.md, crew/CHECKLIST_reczny_test_nowy_DJ_Player.md, memory.md, docs/PLAN_DZIALANIA_2026-06-25.md, crew/PLAN_Uruchomienie..., crew/SZPIEG..., artifacts (helper, printable), prior closures.
 
 **Hierarchia (OBOWIĄZKOWA):**

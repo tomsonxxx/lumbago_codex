@@ -14,6 +14,8 @@
 - [ ] Uruchom SZPIEG research (via spawn_subagent) przed większymi zmianami
 - [ ] Plan agent produkuje nową listę przeróbek → użytkownik czyta w pierwszej kolejności
 
+**2026-07-14 CI + push note (post 'dalej'):** smoke_portable_windows.ps1 (and related) had em-dash parse errors in CI. Fixed (ASCII -, line split) + pushed c9c357f7. Per SZPIEG research 2026-07-14 plan rozbudowy Faza0-5 + Downloader/AI per "chce dodać nowe, dosc skomplikowane.txt" + 'dalej az do ukonczenia wszystkich faz' ... must document identical. 'Gotowe'. Nie przestawaj.
+
 **Status:** W toku (2026-06-27 "sprubuj ponownie" + "nie zatrzymuj")
 
 ## 1. Infrastruktura Downloader (Etap 1 prompt)
