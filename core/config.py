@@ -93,6 +93,18 @@ class Settings:
     background_autotag_enabled: bool = True
     background_autotag_delay_seconds: int = 0   # 0 = nie uruchamiaj automatycznie po czasie
 
+    # Downloader / Konwerter (per lumbago_grok_build_prompt.txt + full guidelines)
+    downloader_default_format: str = "mp3"
+    downloader_default_quality: str = "BALANCE"  # MAX / BALANCE / COMPACT
+    downloader_throttle_seconds: float = 1.5
+    downloader_max_fragments: int = 4
+    downloader_output_dir: str | None = None
+    # For D: named/last profiles
+    downloader_last_format: str | None = None
+    downloader_last_quality: str | None = None
+    downloader_last_throttle: float | None = None
+    downloader_last_fragments: int | None = None
+
 
 def default_musicbrainz_user_agent() -> str:
     return (
@@ -335,6 +347,20 @@ def load_settings() -> Settings:
                 default=0,
             ),
         ),
+        # Downloader settings (per lumbago_grok_build_prompt.txt full spec + guidelines)
+        downloader_default_format=_first_value(payload.get("DOWNLOADER_DEFAULT_FORMAT"), "mp3"),
+        downloader_default_quality=_first_value(payload.get("DOWNLOADER_DEFAULT_QUALITY"), "BALANCE"),
+        downloader_throttle_seconds=_to_float(
+            _first_value(payload.get("DOWNLOADER_THROTTLE_SECONDS"), "1.5"), 1.5
+        ),
+        downloader_max_fragments=max(
+            1, min(16, _to_int(_first_value(payload.get("DOWNLOADER_MAX_FRAGMENTS"), "4"), 4))
+        ),
+        downloader_output_dir=_first_value(payload.get("DOWNLOADER_OUTPUT_DIR")),
+        downloader_last_format=_first_value(payload.get("DOWNLOADER_LAST_FORMAT")),
+        downloader_last_quality=_first_value(payload.get("DOWNLOADER_LAST_QUALITY")),
+        downloader_last_throttle=_to_float(payload.get("DOWNLOADER_LAST_THROTTLE"), None),
+        downloader_last_fragments=_to_int(payload.get("DOWNLOADER_LAST_FRAGMENTS"), None),
     )
 
 
@@ -362,6 +388,15 @@ def _to_int(value: str | None, default: int = 0) -> int:
         return default
     try:
         return int(value)
+    except ValueError:
+        return default
+
+
+def _to_float(value: str | None, default: float = 0.0) -> float:
+    if value is None:
+        return default
+    try:
+        return float(value)
     except ValueError:
         return default
 

@@ -17,6 +17,8 @@ Use with scripts/make_portable.ps1 or CI to create -portable.zip for clean test 
 
 Frozen path resolution is now handled via core.config.get_resource_path (step 2 fix).
 Per 'nie przestawaj'.
+
+Note portable/downloader (FIXER post-dalej): yt-dlp (pip) + ffmpeg (external binary in PATH) NIE są bundlowane (detection via shutil.which + PATH). Na clean Windows: user musi zainstalować ffmpeg (winget/choco) + pip install yt-dlp osobno nawet po unpack portable. Downloader nie crashuje bez nich (warnings + guard). Per docs/clean_windows_test.md + SZPIEG.
 """
 
 block_cipher = None

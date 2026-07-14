@@ -76,6 +76,8 @@ from ui.widgets import AnimatedButton
 from ui.xml_converter_dialog import XmlConverterDialog
 from ui.xml_import_dialog import XmlImportDialog
 from ui.dj_player_window import DJPlayerWindow
+from downloader.downloader_window import DownloaderWindow
+from ai_panel.chat_widget import ChatWidget
 # Etap4 playback reliability note (per SZPIEG research 2026-06-15 + finalny efekt... must document identical):
 # Audio backend status / errors wired inside DJPlayerWindow (backend_info_label + _update using engine.get_backend_info + DeckState.error_code).
 # Main window can surface high-level via health or on open; see player for '⚠ Audio niedostępne' + guidance. FILE vs STREAM preserved in loads.
@@ -1843,8 +1845,10 @@ class MainWindow(QtWidgets.QMainWindow):
         animation.setEndValue(1.0)
         animation.start(QtCore.QAbstractAnimation.DeletionPolicy.DeleteWhenStopped)
 
-    def _open_import_wizard(self):
-        folder = QtWidgets.QFileDialog.getExistingDirectory(self, "Wybierz folder z muzyka")
+    def _open_import_wizard(self, folder: str | None = None):
+        """Otwiera wizard importu. Wspiera preselected folder (dla pełnego wiring A: add po download bez dodatkowego dialogu)."""
+        if not folder:
+            folder = QtWidgets.QFileDialog.getExistingDirectory(self, "Wybierz folder z muzyka")
         if not folder:
             return
         folder_path = Path(folder)
@@ -2172,7 +2176,36 @@ class MainWindow(QtWidgets.QMainWindow):
         if dialog.exec():
             self._load_tracks()
             # Integrate: offer File Manager / organize after rename changes
-            self._offer_organize_after_change("Zmiana nazw zakończona.")
+
+    def _open_downloader(self, url: str = None, fmt: str = None, quality: str = None, auto_start: bool = False):
+        """Otwiera moduł Downloader/Konwerter (YouTube + SoundCloud, duże playlisty, max jakość).
+        Wspiera prefill z AI + auto_start for full E (per Plan + 'dalej' enhancements to E auto_start in prefill + trigger).
+        Per SZPIEG research + consolidated raw + detailed prompt 2026-06-27 + CHECKLIST_Downloader_AI_Panel.md + PLAN + 'dalej' (E auto_start) ... must document identical.
+        """
+        dlg = DownloaderWindow(self)
+        if url:
+            dlg.set_prefill(url, fmt, quality, auto_start)
+        dlg.exec()  # modal jest OK dla tego narzędzia; można zmienić na show() jeśli potrzeba non-modal
+
+    def _scan_folder_for_library(self, folder: str):
+        """Dla A: 'Dodaj do biblioteki' po download (per Plan lista + sugestia A + wiring). Pełne wiring: bezpośrednio skan+upsert (bez extra dialogu)."""
+        self.status.showMessage(f"Skan po pobraniu: {folder}")
+        if folder:
+            # Full A wiring (FIXER): trigger actual scan+add via existing ScanWorker/upsert (no extra QFileDialog).
+            self._open_import_wizard(folder)
+        else:
+            QtWidgets.QMessageBox.information(self, "Po pobraniu", f"Folder {folder} gotowy. Użyj 'Narzędzia > Importuj / Skanuj' aby dodać do biblioteki i otagować.")
+        # Per SZPIEG research + ... "dalej" (search B, est dialog+disk, wiring, A info) ... must document identical.
+
+    def _open_ai_panel(self):
+        """Otwiera AI Chat Panel (zwijany pomocnik komendami, reuse Gemini)."""
+        # Prosta wersja: pokaż jako osobne okno (w pełnej integracji — dock lub floating toggle)
+        w = ChatWidget(self)
+        w.setWindowTitle("Lumbago AI Pomocnik")
+        w.resize(420, 380)
+        w.show()
+        # Zachowaj referencję aby nie garbage-collect
+        self._ai_panel_ref = w
 
     def _open_organizer(self, tracks: list[Track] | None = None):
         """Open the new File Manager dialog for organizing audio files into structured folders based on tags.
@@ -3442,6 +3475,10 @@ class MainWindow(QtWidgets.QMainWindow):
         tools.addAction("Log procesów", self._open_process_log)
         tools.addSeparator()
         tools.addAction("Sprawdź klucze API", self._open_api_key_check)
+        # DOWNLOADER — dodany na końcu menu Narzędzia (add-only, zero zmian istniejących pozycji)
+        # per lumbago_grok_build_prompt.txt + guidelines
+        tools.addAction("Downloader / Konwerter", self._open_downloader)
+        tools.addAction("AI Pomocnik (komendy)", self._open_ai_panel)
 
         selection_menu = menu.addMenu("Zaznaczenie")
         selection_menu.addAction("Zaznacz wszystko", self._select_all)

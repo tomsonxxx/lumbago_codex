@@ -42,6 +42,8 @@ Uwaga: nowa architektura sole (ui/dj/* + dj_player_window.py hardcoded True) —
 
 **Uwaga audio:** Pełny playback wymaga VLC. Na czystym Windows CI instalacja przez Chocolatey + cache (lub fallback). Gdy VLC niedostępny — Qt lub Noop fallback (testy + smoke przechodzą). Na użytkowniku: zainstaluj VLC dla pełnej jakości DJ.
 
+**Uwaga Downloader (FIXER, post "dalej"):** Moduł Downloader/Konwerter wymaga zewnętrznych: yt-dlp (pip install) + ffmpeg (w PATH, winget/choco/videolan). Nie bundled w portable (PATH detect + guard). Na clean Windows: zainstaluj osobno przed testem downloadera (ytsearch/B, est, A wiring). Bez nich — warning w UI + graceful (nie crash). Patrz pyinstaller.spec + downloader code.
+
 ## Zakończenie
 1. Sprawdź, czy w `%APPDATA%\LumbagoMusicAI` powstały pliki `lumbago.db` i `settings.json`.
 2. Zapisz wynik testu oraz ewentualne błędy.

@@ -73,6 +73,20 @@ Aplikacja używa **VLC** jako preferowanego backendu playbacku (wysoka jakość,
 
 W kodzie: `services/playback/` (VlcAudioBackend prio → Qt → _NoopAudioBackend), `PlaybackEngine.get_backend_info()`.
 
+## Downloader / Konwerter + AI Chat Panel
+
+Nowe moduły (2026):
+
+- **Downloader / Konwerter** (`downloader/`): pobieranie z YouTube i SoundCloud (w tym playlist 700+ pozycji) + konwersja do MP3/WAV/M4A z priorytetem maksymalnej jakości dźwięku. Profile MAX/BALANCE/COMPACT, checkpointy, retry, throttling, lazy fetch. Menu: Narzędzia → "Downloader / Konwerter".
+
+  Wymagania: `yt-dlp` (pip) + **ffmpeg w PATH** (https://videolan.org lub gyan.dev).
+
+- **AI Pomocnik** (`ai_panel/`): zwijany panel czatu używający istniejącego Gemini (konfiguracja z Settings). Rozumie komendy ("pobierz...", "duplikaty", "otaguj"). Dispatcher + ograniczony sandbox dla generowanego kodu.
+
+Oba w pełni zintegrowane z głównym oknem (Narzędzia). Wszystkie operacje sieciowe/I-O w wątkach.
+
+Szczegóły: lumbago_grok_build_prompt.txt + docs.
+
 ## Kompatybilność z Vercel i narzędziami agentów
 
 Projekt jest **wyłącznie desktopowy** (PyQt6 + DJ Player). Wersje web i inne zostały usunięte.

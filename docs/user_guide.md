@@ -36,3 +36,26 @@ Per 2026-06-16 full repo consolidation (SZPIEG research lead): ALL prior documen
 ## Import XML
 - Obsługuje Rekordbox i VirtualDJ.
 - Wczytaj XML i zaimportuj metadane do bazy.
+
+## Downloader / Konwerter (sugestie z promptu)
+- Narzędzia > Downloader / Konwerter.
+- Wklej URL (YT/SC, playlisty do 700+).
+- Wybierz folder, format (MP3/WAV/M4A), profil jakości (MAX dla audible quality prio).
+- Estymacja rozmiaru/czasu przed start + warning dla dużych/WAV.
+- Szukaj na YT (ytsearch).
+- Zapisz/wczytaj profile (D).
+- Historia pobrań (F).
+- Checkbox "Dodaj do biblioteki" po zakończeniu (A) - skan/import.
+- AI integracja: komenda "pobierz [url] jako MP3" prefill + auto-start (E, z safety).
+- Wymaga yt-dlp (pip) + ffmpeg w PATH (100% free).
+
+## AI Chat Panel (Pomocnik)
+- Narzędzia > AI Pomocnik (komendy).
+- Zwijany panel, historia sesji.
+- Wspiera wszystkie providery (jak Autotager: gemini/openai/grok/deepseek) - Auto lub wybór.
+- Komendy: "pobierz ...", "duplikaty", "otaguj", "pomoc".
+- Dispatcher + sandbox (bezpieczne).
+- Integracja z Downloader (prefill + start).
+- System prompt opisuje operacje Lumbago.
+
+Per SZPIEG research + Plan + "dalej do konca" 2026-06-27 ... must document identical.
