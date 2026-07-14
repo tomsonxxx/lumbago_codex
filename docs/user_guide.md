@@ -37,17 +37,28 @@ Per 2026-06-16 full repo consolidation (SZPIEG research lead): ALL prior documen
 - Obsługuje Rekordbox i VirtualDJ.
 - Wczytaj XML i zaimportuj metadane do bazy.
 
-## Downloader / Konwerter + AI Chat Panel
+## Downloader / Konwerter + AI Chat Panel (per "chce dodać nowe, dosc skomplikowane.txt")
 
-**Wymagania (100% free):**
+**Wymagania (100% free, external — nie w portable):**
 - `pip install yt-dlp`
-- ffmpeg w PATH (zalecane: https://www.gyan.dev/ffmpeg/builds/ lub videolan.org dla Windows build). Bez ffmpeg konwersja ograniczona.
+- ffmpeg w PATH (https://www.gyan.dev/ffmpeg/builds/ lub `winget install ffmpeg`). Na czystym Windows po portable: zainstaluj te narzędzia przed użyciem Downloadera.
+  UI pokazuje czytelne ostrzeżenia jeśli brak.
 
 **Narzędzia > Downloader / Konwerter**
-- Wklej URL (pojedynczy film lub playlista YT/SC — specjalizacja w dużych playlistach do 700+ pozycji).
-- Wybierz folder docelowy, format wyjściowy (MP3 / WAV / M4A), profil jakości:
-  - MAX: najwyższa audible jakość (V0 MP3 lub 24/48 WAV PCM).
-  - BALANCE: dobry kompromis.
+- Wklej URL (pojedynczy lub playlista YT/SC — specjalizacja w dużych playlistach do 700+ pozycji z lazy + checkpoint + retry).
+- Wybierz folder, format (MP3/WAV/M4A), profil jakości:
+  - MAX: najwyższa słyszalna jakość (bestaudio + wysoka rozdzielczość).
+  - Priorytet: słyszalna jakość > rozmiar/czas.
+- Estymacja rozmiaru/czasu + check dysku przed start dla dużych playlist.
+- Po pobraniu: opcja "Dodaj do biblioteki" (automatyczny skan + upsert).
+
+**AI Pomocnik (komendy słowne)**
+- "pobierz <url> jako mp3" — otwiera Downloader z prefill + auto-start (z safety est).
+- Inne: duplikaty, otaguj, status, pomoc.
+- Złożony mechanizm pod maską (registry + dispatch + real actions w MainWindow).
+
+Per SZPIEG research 2026-07-14 plan rozbudowy Faza2 + Downloader/AI continuation per "chce dodać nowe, dosc skomplikowane.txt" + 'dalej' ... must document identical.
+Per SZPIEG research 2026-07-14 plan rozbudowy Faza0/Faza1/Faza2/Faza3/Faza4/Faza5 + "dalej az do ukonczenia wszystkich faz" ... must document identical. Faza3 packaging + Faza4 Downloader/AI local gotowe.
   - COMPACT: mniejsze pliki.
 - Przed startem: estymacja rozmiaru/czasu na podstawie probe pierwszych wpisów + ostrzeżenie dla >5GB lub dużych WAV.
 - Wyszukiwarka: przycisk "Szukaj na YouTube" (ytsearch: prefix).

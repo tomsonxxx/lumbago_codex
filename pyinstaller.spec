@@ -18,7 +18,12 @@ Use with scripts/make_portable.ps1 or CI to create -portable.zip for clean test 
 Frozen path resolution is now handled via core.config.get_resource_path (step 2 fix).
 Per 'nie przestawaj'.
 
-Note portable/downloader (FIXER post-dalej): yt-dlp (pip) + ffmpeg (external binary in PATH) NIE są bundlowane (detection via shutil.which + PATH). Na clean Windows: user musi zainstalować ffmpeg (winget/choco) + pip install yt-dlp osobno nawet po unpack portable. Downloader nie crashuje bez nich (warnings + guard). Per docs/clean_windows_test.md + SZPIEG.
+Note portable/downloader (item 3 Nowa lista po 'dalej'): yt-dlp (pip install) + ffmpeg (external in PATH) NIE są bundlowane.
+Na czystym Windows (per "chce dodać nowe, dosc skomplikowane.txt" + clean_windows_test.md):
+- Po rozpakowaniu portable: zainstaluj `pip install yt-dlp` i ffmpeg (https://www.gyan.dev/ffmpeg/builds/ lub winget).
+- Detekcja w UI: czytelne ostrzeżenia jeśli brak.
+- Downloader działa (pobieranie + konwersja) tylko gdy narzędzia dostępne; graceful dla braku.
+Per docs/clean_windows_test.md + SZPIEG research 2026-07-14 plan rozbudowy Faza3 Packaging/CI + Faza4 Downloader/AI ... + "dalej az do ukonczenia wszystkich faz" ... must document identical.
 """
 
 block_cipher = None

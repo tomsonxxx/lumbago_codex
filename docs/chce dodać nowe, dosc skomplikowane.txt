@@ -1,0 +1,48 @@
+chce dodać nowe, dosc skomplikowane funkcjonalnosci do projektu lumbago.
+1. Kompletny, w pełni funkcjonalny "Downloader - Konverter audio".
+Funkcja ta Ma pobierać odpowiednie, podane w linkach, pliki audio\video i BARDZO WAŻNE!! CAŁE, NAWET BARDZO DURZE PLAYLISTY!! z najpopularniejszych portali internetowych.
+Na początek skupimy się tylko na witrynach YouTube i SoundCloud.
+
+2.(POTRZEBUJĘ TUTAJ PODPOWIEDZI BO NIE JESTEM PEWIEN CZY DOBRZE MYŚLĘ):
+ Dróga funkcja to będzie dodanie w menu niewielkiego okienka do czatu z AI, które będzie obslugiwalo "słowne" komendy. podstawowe ale i niestandardowe, (ale mieszczące się w możliwościach aplikacji) zadania od użytkownika, przejmuje i wykonuje (w miare moz;iwości), lub tworzy skrypt. Wykożystamy istniejące już połączenia API
+mogą 
+
+
+potrzeba będzie zaprojektować bardzo skomplikowany mechanizm który będzie pracował "pod maską", a od urzytkownika nie wymagał więcej jak kilku kliknięć.
+
+Moja wizja:
+nowty Przycisk w menu głównym "DOWNLOADER", który uruchamia proste okienko w którym bedzie miejsce:
+-- na wklejenie linku który chcemy pobrac,
+-- opcje wpisania lub wybrania lokalizacji zapisu gotowych plików audio,
+-- listę dostępnych formatów i jakości "finalnego pliku" do wyboru (na początek mp3 , wav , m4a). Teraz bardzo ważna rzecz. wiem że takie "ripowane" pliki są zazwyczaj mizernej jakości dźwięku.
+
+Wymogi::
+-------------
+1. 
+Program MUSI BYĆ W STANUIE PRACOWAĆ, POBIERAĆ I OPEROWAĆ NA  POTĘZNYCH PLAYLISTY Z YOUTUBE (wstępnie do 700 pozycji na playliscie). TO JEST NAJWAZNIEJSZA ZASADA TEJ FUNKCJI.
+TO JEST PROBLEM DLA KTÓREGO BUDUJEMY TĄ MODYFIKACJE!!
+Są dziesiątki gównianych programików czy portali do pobierania, ale wiekszosc wysiada przy trochę większej liczbie obiektów. MÓJ program ma się SPECJALIZOWAĆ w pracy z dużą ilością danych.
+
+!!!
+Konsultując wszystkich potrzebnych do tego Agentów tworzysz szczegółowy, obiektywny, fachowy ze strony inżynieryjnej jak i merytorycznej do9okument:
+
+Potrzeba będzie niesamowicie szczegółowego planu budowy, Architektury i szczegółową listę wszystkich działań krok po krpku dla całego procesu od otworzenia okienka "do wklejenia linku",  aż do zapisu finalnego pliku\folderu. 
+Dokumentacja ma zawierać dodatkowo szczegółową listę wszelkich "rzeczy które mogą sprawiać problemy". Cała ta dokumentacja posłuży do stworzenia harmonogramu pracy dla agenta SZPIEGA. Pozostali agenci muszą stworzyć optymalną kolejność zadań dla szpiega, Aby jego działania bezpośrednio postępowały z kolejnością ETAPÓW PRAC nad budową. Same zadania i uprawnienia Szpiega pozostają bez Zmian. Szpieg ma nadrzędną pozycje ze względu na reseerch który wykonał. Oczywiście finalna wersja planu, działania, powstaje po konsultacji Szpiega z resztą zespołu
+Agenci mogą zgłaszać szpiegowi wyjątkowo, dodatkowe pracy dla Agenta "SZPIEGOWANIA", Problemem może być jednorazowa ilość danych, ograniczenia sprzętowe, licencyjne, problemy z polączeniem sieci, formaty konwersji plików, serwery, limity i inne tego typu.
+SZPIEG, w związku z każdym jednym zadaniem\elementem, W PIERWSZEJ KOLEJNOSCI stara się znaleźć możliwe rozwuązania danego problemu A potem punktując, zwraca uwagę na jak najlepszą optymalizację zużycia zasobów i czasu, w razie potrzeby robi dalsze badania nad mozliwośdiami optymalizacji\rozkladania na częsci\skracania\rozdrabniania zasoborzernych procesów.  Staramy się aby uzyskać w 100% płynny, zoptymalizowany pod kątem: !!czasu pracy, !!jakości, !!wydajności działania i obciązenia sprzętu PC.  
+Oczywiści praca "w tle" w miare możliwości.
+
+
+2.
+!!!BARDZO WAŻNA DLA MNIE JEST JAKOŚĆ AUDIO. nawet jeśli będzie to kosztem rozmiaru plików, lub czasu pobierania\konwersji!!!! I NIE MÓWIMY TU O CZYSTYCH CYFRACH TAKICH JAK BITRATE!!! PODSTAWOWĄ I ZASADNICZĄ ZASADĄ JEST STWORZENIE NARZĘDZIA KTÓRE BEDZIE SPRAWNIE POBIERAĆ I KONWERTOWAĆ LINKI "AUDIO\WIDEO" na pliki audio, ALE Z NACISKIEM NA SŁYSZALNĄ JAKOŚĆ DŹWIĘKU!!!
+Jeżeli film lub inny strumień źródłowy jest w wysokiej jakości to ocvzekuję możliwie makjwyższej jakości gotowego pliku wyjściowego. Wszellkie najprostsze sposoby kompresji stratnych audio zostają używane w ostateczności (np. jeżeli źródło jest oryginalnie słabehj jakości), oczywiście w ramach rozsądku (chodziu i to czy "lepsze" próby konwersji, będą odbijały się drastycznie na CZASIE OPERACJI NA PLIKU, ROZMIARZE PLIKU, OBCIĄŻENIA KOMPUTERA.
+ 
+3.
+NIE MUSZĘ CHYBA DODAWAĆ ŻE WSZYSTKO MA BYĆ W PEŁNI, CAŁKOWICIE DARMOWE?? (BEZ WZGŁĘDU NA PRZESZKODY I SPOSOBY ICH ROZWIĄZANIA)
+
+4. 
+Zaprojektujcie z pomocą SZPIEGOWANIA kompletne w pełni funkcjonalne UI 
+
+5. Zintegruj z instniejącą aplikacją Lumbago, zwracasjąc uwagę aby nie dopuszczać do jakichkolwiek konfliktów w projekcie!!
+
+Dodaj przyciski

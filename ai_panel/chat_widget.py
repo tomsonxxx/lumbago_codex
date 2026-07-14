@@ -139,9 +139,9 @@ class ChatWidget(QtWidgets.QWidget):
             "Jesteś pomocnikiem Lumbago Music AI (desktop). "
             "Użytkownik wydaje komendy po polsku. Odpowiadaj TYLKO poprawnym JSON: "
             "{\"command\": \"nazwa\", \"params\": {...}}. "
-            "Dostępne komendy: pobierz, duplikaty, otaguj, pomoc. "
+            "Dostępne komendy: pobierz, duplikaty, otaguj, status_biblioteki, pomoc. "
             "Dla 'pobierz' podaj url i fmt (mp3/wav/m4a). "
-            "Jeśli niepewny — poproś o doprecyzowanie w zwykłym tekście."
+            "Jeśli niepewny — poproś o doprecyzowanie w zwykłym tekście (ambiguity handling item 5)."
         )
 
         reply = self._client.chat(system, user_msg)
@@ -165,13 +165,31 @@ class ChatWidget(QtWidgets.QWidget):
             if res.get("command") == "pomoc":
                 for name, desc, eff in res.get("result", {}).get("commands", []):
                     self._append("Komenda", f"{name}: {desc} | {eff}")
-            # AI → Downloader full E wiring (per Plan + "dalej" enhancements): prefill + auto_start=True for "pobierz"
+            # AI → real actions wiring (dalej continuation, item 1 "złożony mechanizm"): dispatch beyond pobierz using parent methods (safe hasattr guards).
+            # Per SZPIEG research (safe dispatch) + "dalej" + exact list. read-before.
             result = res.get("result", {})
-            if isinstance(result, dict) and result.get("action") == "open_downloader":
-                url = result.get("url", "")
-                fmt = result.get("fmt", "")
-                if hasattr(self.parent(), "_open_downloader"):
-                    self.parent()._open_downloader(url, fmt, auto_start=True)
-                    self._append("System", "Otwarto i uruchomiono Downloader z AI (auto-start z safety).")
+            if isinstance(result, dict):
+                action = result.get("action")
+                if action == "open_downloader":
+                    url = result.get("url", "")
+                    fmt = result.get("fmt", "")
+                    if hasattr(self.parent(), "_open_downloader"):
+                        self.parent()._open_downloader(url, fmt, auto_start=True)
+                        self._append("System", "Otwarto i uruchomiono Downloader z AI (auto-start z safety).")
+                elif action == "open_duplicates":
+                    if hasattr(self.parent(), "_open_duplicates"):
+                        self.parent()._open_duplicates()
+                        self._append("System", "Otwarto Duplicates (AI komenda).")
+                elif action == "autotag":
+                    path = result.get("path", "")
+                    if hasattr(self.parent(), "_open_import_wizard"):
+                        self.parent()._open_import_wizard(path or None)
+                        self._append("System", "Uruchomiono import/skan dla autotag (AI).")
+                elif action == "status_biblioteki":
+                    if "tracks" in result:
+                        self._append("System", f"Status biblioteki (AI): {result.get('tracks')} tracks, {result.get('playlists')} playlists.")
+                    else:
+                        self._append("System", f"Status biblioteki (AI): {result}")
         else:
-            self._append("System", f"Błąd: {res.get('error')}")
+            err = res.get('error', '')
+            self._append("System", f"Błąd: {err}. Podaj więcej szczegółów (np. dokładny URL lub 'pomoc').")  # ambiguity improvement item 5

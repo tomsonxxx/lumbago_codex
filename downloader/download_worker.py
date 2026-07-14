@@ -172,7 +172,17 @@ class DownloadWorker(QtCore.QThread):
             ydl_opts["paths"] = {"home": str(self.output_dir), "tmp": str(tmpdir)}
 
             self._log(f"Start pobierania: {self.url}")
-            self._log(f"Format: {self.out_format} | Profil: {self.quality_profile} | Throttle: {self.throttle_seconds}s")
+            self._log(f"Format: {self.out_format} | Profil: {self.quality_profile} | Throttle: {self.throttle_seconds}s (audible quality prio: bestaudio first, minimal reencode)")
+
+            # Audible quality focus (dalej item 6): log source quality info when available (from yt-dlp) to help user verify.
+            try:
+                if info:
+                    src_fmt = info.get("format") or info.get("format_note") or info.get("ext")
+                    abr = info.get("abr") or info.get("tbr")
+                    if src_fmt or abr:
+                        self._log(f"Źródło: {src_fmt} abr~{abr} (prefer no-reencode gdy pasuje)")
+            except Exception:
+                pass
 
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 # Najpierw wyciągnij info (playlist lub single) — lazy wewnątrz

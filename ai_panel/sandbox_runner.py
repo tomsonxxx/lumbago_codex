@@ -46,14 +46,21 @@ def run_in_sandbox(code: str, extra_namespace: dict[str, Any] | None = None, tim
     Wykonuje kod w bardzo ograniczonym środowisku.
     Zwraca (success, output_or_error).
 
-    **Zalecenie SZPIEG/Plan:** Dla komend app używaj command_registry (EFFECT + dispatch).
-    Sandbox tylko jako fallback dla czystych obliczeń.
-    Per SZPIEG + Plan P0#1 + FINAL TESTER/REVIEWER "dalej do konca" (P0 done) ... must document identical.
+    **Zalecenie SZPIEG/Plan (dalej continuation item 2):** 
+    - **Zawsze preferuj command_registry dispatch** dla akcji aplikacji (open DL, duplicates, scan itp.). Patrz EFFECT w registry.
+    - Sandbox **tylko** dla czystych obliczeń (math, string ops). Nie fs, net, repo, UI.
+    - Dla AI komend z efektem ubocznym: registry + opcjonalny confirm w UI (EFFECT preview).
+    - In-proc exec jest ryzykowny — używaj tylko gdy absolutnie konieczne + whitelist.
+    Per SZPIEG research 2026-07-14 + "dalej" + "chce dodać nowe..." ... must document identical.
     """
     ns: dict[str, Any] = {"__builtins__": SAFE_BUILTINS}
     ns.update(SAFE_API_SURFACE)
     if extra_namespace:
         ns.update(extra_namespace)
+
+    # Hardening: blokuj niebezpieczne próby (nawet jeśli w whitelist nie ma)
+    if any(danger in (code or "").lower() for danger in ("import os", "import sys", "open(", "__import__", "subprocess", "eval(", "exec(")):
+        return False, "Sandbox blocked: use registry dispatch for app actions (EFEKT: safe structured commands only)."
 
     try:
         # Prosty compile + exec z ograniczeniem

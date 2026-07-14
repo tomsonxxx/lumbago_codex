@@ -40,13 +40,18 @@ def get_tracks_for_smart_rules(rules: dict | None) -> list[Track]:
     """
     if not rules:
         return []
+    # Build first (supports legacy + nested); empty effective rules -> [] with NO DB hit.
+    # This keeps test_smart_collections_stub (and smoke/CI) stable without requiring init_db().
+    # CI failure fixed: "no such table: tracks" on empty conditions case after Faza2 join added.
+    # Per Faza2: empty conditions list means no match for the smart collection (not "return all").
+    # Per SZPIEG research 2026-07-14 plan rozbudowy Faza2 (advanced Smart...) + "dalej az do ukonczenia wszystkich faz" ... must document identical.
+    where_expr = _build_smart_where_expr(rules)
+    if where_expr is None:
+        return []
     session = get_session_factory()()
     try:
         query = select(TrackOrm).outerjoin(TrackOrm.audio_features)
-        # Build where expr recursively (supports nested and/or + legacy)
-        where_expr = _build_smart_where_expr(rules)
-        if where_expr is not None:
-            query = query.where(where_expr)
+        query = query.where(where_expr)
         # distinct to handle tag joins safely
         query = query.distinct()
         rows = session.execute(query).scalars().all()

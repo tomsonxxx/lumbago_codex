@@ -58,17 +58,25 @@ Widoczny warning: '⚠ Audio niedostępne — dla pełnej jakości DJ zainstaluj
 1. Sprawdź, czy w `%APPDATA%\LumbagoMusicAI` powstały pliki `lumbago.db` i `settings.json`.
 2. Zapisz wynik testu oraz ewentualne błędy.
 
-## Downloader / AI Panel na czystym Windows (external tools note)
-Downloader wymaga:
-- `yt-dlp` zainstalowane przez pip w środowisku (lub obok exe w portable — PATH).
-- ffmpeg w PATH (nie bundle'owany w EXE; użytkownik instaluje).
+## Downloader / AI Panel na czystym Windows (external tools note) — per "chce dodać nowe, dosc skomplikowane.txt" + Nowa lista item 3
+Downloader wymaga (100% free, nie bundle'owane):
+- `pip install yt-dlp` (nawet po rozpakowaniu portable — dodaj do PATH lub uruchom z venv).
+- ffmpeg w PATH (pobierz z https://www.gyan.dev/ffmpeg/builds/ lub `winget install ffmpeg` / choco). Bez ffmpeg konwersja ograniczona (tylko download audio jeśli źródło pasuje).
 
-W smoke/build: testuj detekcję (shutil.which("ffmpeg"), import yt_dlp) — brak narzędzi → czytelny komunikat w UI + nie crash.
-Test bez net: użyj invalid URL lub ytsearch: — worker powinien gracefully obsłużyć (retry + log + continue).
-Sprawdź: menu Narzędzia > Downloader i AI Pomocnik otwierają się; prefill z AI działa (jeśli API skonfigurowane); estymacja loguje bez pobierania.
-Portable: zewnętrzne narzędzia nie są w dist — udokumentuj w instrukcji instalacji.
+Na czystym Windows (fresh profile, bez Pythona):
+1. Rozpakuj LumbagoMusicAI-portable.zip.
+2. Uruchom LumbagoMusicAI.exe (powinien wystartować z get_resource_path).
+3. Narzędzia > Downloader / Konwerter — sprawdź czytelne ostrzeżenia o brakującym ffmpeg/yt-dlp w status_line (żółty).
+4. Zainstaluj wymagane: pip install yt-dlp ; ffmpeg w PATH.
+5. Wklej link (nawet duża playlista), wybierz profil MAX dla najwyższej słyszalnej jakości.
+6. Test bez net: ytsearch: lub invalid URL — worker musi retry + continue + log (graceful).
+7. Sprawdź estymację przed start (rozmiar/czas + disk check + confirm dla >5GB).
+8. Po pobraniu: checkbox "Dodaj do biblioteki" → trigger skan + upsert.
 
-Per SZPIEG research + consolidated raw + detailed prompt 2026-06-27 + CHECKLIST_Downloader_AI_Panel.md + "zsynchronizuj z github" + "kontynuuj" ... must document identical.
+W smoke/build: detekcja (shutil.which + import) → UI komunikat, nie crash.
+Portable: zewnętrzne narzędzia NIE w dist — zawsze dokumentuj instrukcję instalacji + test detekcji.
+
+Per SZPIEG research 2026-07-14 plan rozbudowy Faza2 + Downloader/AI continuation per "chce dodać nowe, dosc skomplikowane.txt" + 'dalej' ... must document identical.
 
 Per SZPIEG research 2026-06-25 + 2026-07-13 Szpieg (co dalej manual + clean Win: 15+ praktyk fresh VM/strict resources/visible banner '⚠ Audio niedostępne...' + sizes waveform/compact/cross/booth/EFFECT + Build Spec + helper). Local + artifacts closed. VM/manual pending. Per "per SZPIEG research 2026-07-13 co-dalej manual checklist + clean Win... must document identical".
 
@@ -134,6 +142,8 @@ Per SZPIEG research 2026-06-25 + 2026-07-13 Szpieg (co dalej manual + clean Win:
 Per SZPIEG research 2026-06-25 + Analyzer + Plan "nowa lista" ... must document identical.
 6. Resource: rozważ parents[1] lub root detection w get_resource_path dla dev layout (lumbago_codex root).
 7. Smoke: raport diagnostics nawet jeśli via note lub log file.
+
+**Faza3 Packaging/CI + Downloader/AI closure (2026-07-14 "dalej az do ukonczenia wszystkich faz"):** Enhanced explicit coverage per PLAN Faza3 + Faza4 Downloader/AI (from "chce dodać nowe, dosc skomplikowane.txt" + Nowa lista 1-10). clean_windows_test has dedicated Downloader section (yt-dlp pip + ffmpeg PATH required post-unpack; UI warnings on detect fail; est+disk confirm for 700+; MAX profile audible quality; lazy+checkpoint+retry; "Dodaj do biblioteki" scan; AI verbal "pobierz" prefill). smoke/build + pyinstaller.spec have notes tying to this (external tools, no bundle, detection graceful). user_guide.md documents full flow. Verifs (14p test_downloader_ai + playback, python-c large est+registry+real counts+dispatcher+worker) GREEN. Local Faza3 gotowe. Full clean-VM large DL + AI E2E pending. Per SZPIEG research 2026-07-14 plan rozbudowy Faza0/Faza1/Faza2/Faza3/Faza4/Faza5 + "dalej az do ukonczenia wszystkich faz" ... must document identical. 'Gotowe' local. Nie przestawaj.
 Per "local enhancements first" z Plan + Szpieg.
 
 'Gotowe' local buttoned (verifs green). Real VM/manual required for final closure. Per PLAN + "must document identical".

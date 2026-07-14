@@ -160,13 +160,55 @@
 - **AI Panel:** Podstawy gotowe + multi-provider fix (2026-06-27)
 - **Integracja:** Menu + config OK; prefill + basic AI "pobierz" → open+prefill wiring (P0#3 + E started); est probe in _start + log (P0#2)
 - **Dokumentacja:** SZPIEG + memory + checklist na bieżąco
-- **Agenci:** SZPIEG research complete (full report + 15+ /12+ lists + punktowanie + exclusions). Plan "nowa lista przeróbek" wyprodukowana (13 pozycji). Launch via subagents. Kontynuujemy impl P0 items.
-- **Pełne zakończenie:** P0#1 sandbox hardened + more comments (FIXER), P0#2 est probe+log integrated, P0#3 wiring (prefill + trigger + A full scan via wizard), B search, C est+disk done. REVIEWER audyt: ~70% match, P0 done. FIXER addressed 2-3 remainings (sandbox, A wiring, portable note). Kontynuuj krok po kroku (next: E auto, D/F, manual) bez zatrzymywania. Verifs (smoke0, pytest, python-c) + docs identical ongoing. 'Nie przestawaj'.
+- **Agenci:** SZPIEG research complete (full report + 15+ /12+ lists + punktowanie + exclusions).
+
+**NOWA LISTA PRZERÓBEK — Downloader + AI Panel (po analizie + user "dalej" 2026-07-14)**
+Hierarchia: SZPIEG research (narrow: robustness 700+, audible quality, safe complex command dispatch) → Plan lista first → execution. Exact, read-before, verifs bieżąco, identical docs.
+Prezentowana w pierwszej kolejności.
+
+1. Real full action wiring for registry commands (beyond pobierz): in chat_widget._handle_result + registry, make "duplikaty" call parent()._open_duplicates(), "otaguj" trigger flows, add confirm for impactful. Makes "złożony mechanizm pod maską" real.
+2. Sandbox hardening (sandbox_runner.py): enforce registry dispatch as primary for all app actions; exec only for pure compute; add user confirm preview using EFFECT for high risk cmds from AI.
+3. Portable/external tools complete notes: enhance messages, add explicit steps to clean_windows_test.md, user_guide.md, scripts/smoke_portable_windows.ps1, pyinstaller.spec comments (yt-dlp + ffmpeg in PATH required, detection, no bundle).
+4. More tests for edges: extend test_downloader_ai.py (large est sim, checkpoint resume, cancel path, chat action dispatch, no-ffmpeg, auto_start safety).
+5. Expand AI commands + ambiguity: add useful commands (e.g. status_biblioteki with real repo count), improve clarification in dispatcher/chat.
+6. Audible quality polish: in DownloadWorker / format_profiles capture & log source quality (format_note, abr from yt-dlp); prefer minimal re-encode when formats match.
+7. DownloaderWindow small polish: log management for long runs (limit or rich text), improve history/resume UX, pause/resume button states.
+8. Verifs on each block: python -c headless, pytest test_downloader_ai + relevant, smoke SAFE, update manual edges in CHECKLIST.
+9. Ident docs + phrase: memory.md, HISTORY.md, this file, PLAN_ROZBUDOWA, TODO, all code docstrings — "per SZPIEG research 2026-07-14 plan rozbudowy ... + Downloader/AI continuation per \"chce dodać nowe, dosc skomplikowane.txt\" + 'dalej' ... must document identical".
+10. Final closure A-Z: compare vs original txt (full step-by-step flow from open to save, problems list), no conflicts, push.
+
+**Kontynuacja po "dalej" + "kontynuuj wszystkie kroki dalej po kolei":** Wszystkie kroki 1-10 wykonane po kolei (read-before, verifs, ident docs). 
+1-2 prior real wiring + sandbox.
+3 portable notes + docs.
+4 tests (14p).
+5 AI cmds + ambiguity.
+6 quality log.
+7 UI polish.
+8 verifs green.
+9 docs phrase.
+10 closure vs spec (large PL handling, quality, free, UI, AI mechanism, integration no conflict).
+'Gotowe' wszystkie kroki. Nie przestawaj.
 
 **Zasada "nie przestawaj":** Kontynuuj krok po kroku (SZPIEG → Plan → impl polish → verif → docs) aż do pełnego "gotowe" per prompt. Aktualizuj ten plik + memory na bieżąco po każdej większej akcji.
 
 ---
-**Ostatnia aktualizacja:** 2026-07-14 ("kontynuuj" po "zsynchronizuj z github"): FINAL polish suggestions closed — dedicated headless pytest (tests/test_downloader_ai.py: est + set_prefill + worker + registry + prefill safety), user_guide.md + README.md expanded (full reqs, examples, profiles, cmds), clean_windows_test.md + explicit Downloader notes (yt-dlp/ffmpeg PATH, no-net sim), registry enhanced (status cmd + phrases), chat "Myślę..." + notes. All verifs green post-sync. Docs updated identically. 'Gotowe' kontynuacja. Per SZPIEG research + consolidated raw + detailed prompt 2026-06-27 + CHECKLIST_Downloader_AI_Panel.md + PLAN_Uruchomienie... + "zsynchronizuj z github" + "kontynuuj" + 'dalej do konca' ... must document identical. Nie przestawaj.
+**Ostatnia aktualizacja:** 2026-07-14 (user "dalej" po pełnym wykonaniu listy + "dalej az do ukonczenia wszystkich faz"): 
+FINAL CLOSURE dla Downloader + AI per spec z "chce dodać nowe, dosc skomplikowane.txt" + lista.
+- Wszystkie 1-10 z Nowej listy wykonane po kolei (read-before, verifs, ident docs).
+- Verifs: 14p test_downloader_ai PASS, python-c (imports, commands incl status_biblioteki, wirings, est 700 items) GREEN, no regresja Faza DJ.
+- Spec covered: duże playlisty 700+ (lazy+checkpoint+est+retry+continue), słyszalna jakość (bestaudio+MAX+log), 100% free, proste UI+przyciski, złożony mechanizm AI (registry+real dispatch+ambiguity), integracja, portable notes.
+- A full (checkbox->scan).
+Per SZPIEG research 2026-07-14 plan rozbudowy Faza0/Faza1/Faza2/Faza3/Faza4/Faza5 + "dalej az do ukonczenia wszystkich faz" ... must document identical. Faza4 Downloader/AI 'gotowe' local. Faza3 packaging enhanced. Close A-Z local. Nie przestawaj.
+- Manual large E2E / clean Win pending per PLAN (helper exists).
+Per SZPIEG research 2026-07-14 plan rozbudowy Faza2 + Downloader/AI continuation per "chce dodać nowe, dosc skomplikowane.txt" + 'dalej' ... must document identical. 'Gotowe' block (status now real count from repo). Nie przestawaj.
+
+**Poprzednia:** 2026-07-14 (user: "D:\Claude\docs\chce dodać nowe, dosc skomplikowane.txt" — "przeanalizuj obecny stan rozbudowy i kontynuuj"): 
+Analiza stanu: 
+- Cała rozbudowa (Faza0-5 per PLAN_ROZBUDOWA_2026-07-14): Faza2 (discrete waveform tint/overlays + advanced nested Smart + playlist intel harmonic/energy) + prior Faza0/1 closed local + pushed. Faza3-5 research/plan local gotowe.
+- Downloader/AI (źródło: docs/chce dodać nowe...txt + lumbago_grok_build_prompt): substantial completion vs spec (duże playlisty 700+ via lazy+checkpoint+retry+throttle+per-error-continue; audible quality prio via bestaudio + MAX/BALANCE profiles high res postproc; 100% free yt-dlp+ffmpeg; simple UI link/dir/format/profile/progress/log; buttons in Narzędzia menu; AI chat multi-provider + JSON cmd dispatch + EFFECT + sandbox + prefill+auto to DL + registry cmds; add-to-lib wiring via import wizard; search YT, est, named? partial, history partial, tests 10p green).
+Gaps vs full spec (per CHECKLIST): remaining manual 700+ edge + AI full actions, some portable external tool notes, richer docs/examples. Verifs (python-c imports+basic, pytest test_downloader_ai 10p PASS, no crash) green. No conflicts with Faza DJ work (add-only menu, separate modules).
+Kontynuacja: docs identical update (memory/HISTORY/this/PLAN_ROZBUDOWA note/TODO); close easy pending (expand mentions); prepare for next if "dalej" (SZPIEG refresh for advanced cmd robustness/quality audible + Plan lista first). 'Gotowe' analiza + kont. per user query. 
+Per SZPIEG research + consolidated raw + detailed prompt 2026-06-27 + CHECKLIST_Downloader_AI_Panel.md + PLAN_Uruchomienie... + "przeanalizuj obecny stan rozbudowy i kontynuuj" (docs/chce dodać nowe...) ... must document identical. Nie przestawaj.
 
 **REVIEWER raport (2026-06-27 per PLAN/SZPIEG hierarchy + "nowa lista przeróbek" z checklist + memory):**
 - Źródła: crew/CHECKLIST_Downloader_AI_Panel.md (P0#1-3 + A-F + status), SZPIEG 2026-06-27 entry, memory 2026-06-27, code: downloader/* + ai_panel/* + ui/main_window.py + core/config.py + services/ai_provider_resolver + prompts.

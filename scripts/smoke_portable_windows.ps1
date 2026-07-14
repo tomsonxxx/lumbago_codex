@@ -86,7 +86,8 @@ if ($diagLog -notmatch "(?i)(Noop|backend|BACKEND_INFO|DIAGNOSTICS|SMOKE_DJ_SIM|
     Write-Host "Diagnostics assert PASSED: found backend/Noop info + DJ sim in redirected smoke output."
 }
 
-Write-Host "Smoke OK (exe run + resources(strict) + diag + basic DJ sim per clean_windows_test.md + SZPIEG research 2026-07-13 + Analyzer 2026-07-13 + 'nie przestawaj')."
+Write-Host "Smoke OK (exe run + resources(strict) + diag + basic DJ sim per clean_windows_test.md + SZPIEG research 2026-07-14 plan rozbudowy Faza2 + Downloader/AI continuation per \"chce dodać nowe, dosc skomplikowane.txt\" + 'dalej' ... must document identical).
+Dodatkowo dla Downloader (item 3): sprawdź w UI (po real run) komunikaty o yt-dlp/ffmpeg jeśli nie w PATH na clean maszynie."
 Write-Host "Checklist auto items covered by smoke: resources bundled, exe starts (SAFE), structure OK, backend_info+diagnostics+no-VLC + odt sim (via DIAG + SMOKE_DJ_SIM assert '⚠'/Noop)."
 Write-Host "Full manual on clean-VM required for: import+detail+DJ full flow (load/drag/play/cue/hotcue/crossfader/waveform), APPDATA db+settings, VLC guidance (⚠ + 'Pobierz VLC'), backend_info/diagnostics visible if no-VLC, fallback behavior. Pending per PLAN + 'od A do Z'."
 # Note: diagnostics via engine.get_backend_info() + get_diagnostics() + basic DJ sim (PlaybackEngine + odt view + _maybe_apply label) — should be exercised in real DJ Player smoke on target machine. Per SZPIEG research 2026-07-13 + Analyzer 2026-07-13 ... must document identical.

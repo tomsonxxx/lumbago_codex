@@ -239,14 +239,14 @@ class DownloaderWindow(QtWidgets.QDialog):
     def _check_tools(self) -> None:
         msgs = []
         if not _has_ffmpeg():
-            msgs.append("⚠ ffmpeg nie znaleziony w PATH — instalacja: https://www.gyan.dev/ffmpeg/builds/ lub winget/choco")
+            msgs.append("⚠ ffmpeg nie w PATH — na czystym Windows: winget install ffmpeg lub https://www.gyan.dev/ffmpeg/builds/ (dodaj do PATH). Wymagane dla konwersji WAV/MP3 wysokiej jakości.")
         if not _has_ytdlp():
-            msgs.append("⚠ yt-dlp nie zaimportowany (pip install yt-dlp)")
+            msgs.append("⚠ yt-dlp nie zaimportowany — pip install yt-dlp (lub w venv portable). Wymagane dla pobierania z YT/SC.")
         if msgs:
             self.status_line.setText("  |  ".join(msgs))
             self.status_line.setStyleSheet("color: #ffcc66;")
         else:
-            self.status_line.setText("Narzędzia gotowe. Najwyższa jakość audio będzie priorytetem.")
+            self.status_line.setText("Narzędzia gotowe (yt-dlp + ffmpeg). Priorytet: najwyższa słyszalna jakość (bestaudio + profile MAX).")
             self.status_line.setStyleSheet("color: #88ffaa;")
 
     def _choose_dir(self) -> None:
@@ -356,7 +356,7 @@ class DownloaderWindow(QtWidgets.QDialog):
                 self._append_log(f"  {cp.name}")
 
     def _resume_last(self) -> None:
-        """F: stub resume - wczytaj ostatni checkpoint do logu (można rozszerzyć o wznowienie workera)."""
+        """F: stub resume - wczytaj ostatni checkpoint do logu (można rozszerzyć o wznowienie workera). item 7 polish."""
         out_dir = Path(self.dir_edit.text().strip() or ".")
         cps = sorted(out_dir.glob(".lumbago_dl_checkpoint_*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
         if cps:
@@ -365,6 +365,9 @@ class DownloaderWindow(QtWidgets.QDialog):
             try:
                 data = json.loads(cp.read_text())
                 self._append_log(f"  Pobrane ID: {len(data.get('downloaded_ids', []))}")
+                # small polish: if possible suggest URL from name (heuristic)
+                if 'playlist' in cp.name.lower():
+                    self._append_log("  (Wskazówka: wklej oryginalny URL playlisty aby wznowić.)")
             except:
                 pass
         else:
@@ -424,6 +427,13 @@ class DownloaderWindow(QtWidgets.QDialog):
 
     def _append_log(self, text: str) -> None:
         self.log_edit.appendPlainText(text)
+        # item 7 polish: limit log lines for very long runs (large playlists)
+        doc = self.log_edit.document()
+        if doc.blockCount() > 200:
+            cursor = self.log_edit.textCursor()
+            cursor.movePosition(cursor.Start)
+            cursor.movePosition(cursor.Down, cursor.KeepAnchor, 50)
+            cursor.removeSelectedText()
         self.log_edit.verticalScrollBar().setValue(self.log_edit.verticalScrollBar().maximum())
 
     def _update_overall(self, cur: int, tot: int, title: str) -> None:

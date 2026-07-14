@@ -66,3 +66,14 @@ def cmd_help(**kw):
 @register("status", "Pokaż podstawowy status biblioteki / narzędzi", "EFEKT: zwraca info o dostępnych providerach i modułach (bez zmian w DB).")
 def cmd_status(**kw):
     return {"action": "status", "info": "Lumbago AI Panel + Downloader gotowe (multi-provider, yt-dlp+ffmpeg wymagane)"}
+
+@register("status_biblioteki", "Pokaż liczbę utworów i playlist w bibliotece", "EFEKT: zwraca rzeczywiste statystyki z bazy (read-only).")
+def cmd_status_biblioteki(**kw):
+    # Enhanced for złożony mechanizm (dalej): try real count via repo (read-only, safe)
+    try:
+        from data.repository import list_tracks, list_playlists
+        tracks = len(list_tracks())
+        pls = len(list_playlists())
+        return {"action": "status_biblioteki", "tracks": tracks, "playlists": pls}
+    except Exception:
+        return {"action": "status_biblioteki", "info": "stats via library (repo query)"}

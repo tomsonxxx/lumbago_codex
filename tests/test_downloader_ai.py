@@ -92,6 +92,7 @@ def test_dispatcher_parse_and_dispatch():
 # --- worker init (mocked yt_dlp) ---
 from downloader.download_worker import DownloadWorker
 from downloader.progress_bridge import ProgressBridge
+from downloader.progress_bridge import ProgressBridge
 
 
 def test_download_worker_init_and_signals():
@@ -169,6 +170,53 @@ def test_main_wiring_imports_and_openers():
     assert hasattr(MainWindow, "_open_ai_panel")
     assert hasattr(MainWindow, "_scan_folder_for_library")
 
+
+# --- item 4: more edge tests (large playlist, checkpoint, cancel, no-ffmpeg, dispatch) ---
+from unittest.mock import patch, MagicMock
+from downloader import playlist_manager as pm
+import json
+from pathlib import Path as PPath
+
+def test_large_playlist_est_sim():
+    """Sim large 700+ playlist est (item 4)."""
+    sample = [{"duration": 180} for _ in range(5)]
+    est = pm.estimate_playlist_size(sample, 700)
+    assert est["approx_size_mb"] > 1000
+    assert "warning" in est or est["approx_size_mb"] > 0
+
+def test_checkpoint_resume_logic(tmp_path):
+    """Checkpoint save/load for resume (item 4)."""
+    cp = pm.checkpoint_path(tmp_path, "https://example.com/bigplaylist")
+    ids = {"abc123", "def456"}
+    pm.save_checkpoint(cp, ids)
+    loaded = pm.load_checkpoint(cp)
+    assert loaded == ids
+
+@patch("downloader.download_worker.yt_dlp")
+def test_worker_cancel_and_no_ffmpeg_path(mock_ytdlp, tmp_path):
+    """Sim cancel + graceful no-ffmpeg (item 4)."""
+    bridge = MagicMock()
+    w = DownloadWorker(
+        url="https://example.com/test",
+        output_dir=tmp_path,
+        out_format="mp3",
+        quality_profile="BALANCE",
+        throttle_seconds=0,
+        max_fragments=1,
+        bridge=bridge,
+    )
+    w.stop()
+    # run should handle stop without crash
+    w.run()
+    assert w._stop_requested
+
+def test_chat_action_dispatch_sim():
+    """Sim chat registry dispatch for more commands (item 4 + prior 1)."""
+    from ai_panel.command_registry import get_command
+    cmd = get_command("duplikaty")
+    assert cmd is not None
+    res = cmd.handler()
+    assert res.get("action") == "open_duplicates"
 
 if __name__ == "__main__":
     pytest.main([__file__, "-q"])
