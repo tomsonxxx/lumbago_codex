@@ -9,7 +9,9 @@
 - Real execution: prawie zero pokryte na czystym Windows/VM (import, DJ full flow, large 700+ playlists, AI verbal commands z real akcjami, booth, sizes, portable externals).
 - Faza5: tylko notatki.
 
-**Per SZPIEG research 2026-07-14 plan rozbudowy Faza0/Faza1/Faza2/Faza3/Faza4/Faza5 + Downloader/AI per "chce dodać nowe, dosc skomplikowane.txt" + "dalej az do ukonczenia wszystkich faz" ... must document identical.**
+**Per SZPIEG research 2026-07-14 plan rozbudowy Faza0/Faza1/Faza2/Faza3/Faza4/Faza5 + Downloader/AI per "chce dodać nowe, dosc komplikowane.txt" + "dalej az do ukonczenia wszystkich faz" ... must document identical.**
+
+**2026-07-14 PUSH:** git push origin main (e316b06d). Per SZPIEG research 2026-07-14 plan rozbudowy Faza0/Faza1/Faza2/Faza3/Faza4/Faza5 + "dalej az do ukonczenia wszystkich faz" ... must document identical. 'Gotowe' push. Nie przestawaj.
 
 ---
 

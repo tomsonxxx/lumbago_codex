@@ -21,6 +21,8 @@
 
 **Nowa lista przeróbek (w stylu Plan):** `docs/NOWA_LISTA_PRZEROBEK_2026-07-14.md` — wyodrębniona z remaining checklist, gotowa do prezentacji użytkownikowi w pierwszej kolejności.
 
+**2026-07-14 PUSH:** git push origin main (e316b06d). Per SZPIEG research 2026-07-14 plan rozbudowy Faza0/Faza1/Faza2/Faza3/Faza4/Faza5 + "dalej az do ukonczenia wszystkich faz" ... must document identical. 'Gotowe' push. Nie przestawaj.
+
 **Uwaga:** To jest **jeden spójny autorytatywny plik**. Wszystkie inne pliki (memory, TODO, PLAN_*, crew/CHECKLIST, clean_windows itp.) powinny zawierać pointer do tego pliku + aktualizować statusy + frazy identycznie. Pełna historia i verbose wersje pre-trim są w `MEMORY/`.
 
 ---

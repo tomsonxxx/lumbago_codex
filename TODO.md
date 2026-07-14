@@ -5,6 +5,8 @@
 **Nowa lista przeróbek (w stylu Plan)** → `docs/NOWA_LISTA_PRZEROBEK_2026-07-14.md` (wyodrębniona, gotowa do decyzji użytkownika w pierwszej kolejności).
 Poniżej tylko żywe otwarte P0/P1 + backlog (aktualizuj identycznie z frazą).
 
+**2026-07-14 PUSH:** git push origin main (e316b06d). Nowa lista + checklist wypchnięte + dokumentacja ident. Per SZPIEG research 2026-07-14 plan rozbudowy Faza0/Faza1/Faza2/Faza3/Faza4/Faza5 + "dalej az do ukonczenia wszystkich faz" ... must document identical. 'Gotowe'. Nie przestawaj.
+
 **2026-07-14 CI FIX + PUSH:** .\scripts\smoke_portable_windows.ps1 (and build/manual) had parser errors in CI (Unexpected token 'per', missing }, quote issues on emdash mangled to â€”). Fixed: all — replaced by - ; long Write-Host split. Parse validated. git push origin main (c9c357f7). Smoke script unblocked for future runs. Per SZPIEG research 2026-07-14 plan rozbudowy Faza0/Faza1/Faza2/Faza3/Faza4/Faza5 + Downloader/AI per "chce dodać nowe, dosc skomplikowane.txt" + 'dalej az do ukonczenia wszystkich faz' + CI ... must document identical. 'Gotowe' fix + push. Nie przestawaj.
 
 **2026-07-14 PUSH (user "push"):** git push origin main executed. Result "Everything up-to-date". HEAD 36372846. Per SZPIEG research 2026-07-14 plan rozbudowy Faza0/Faza1/Faza2/Faza3/Faza4/Faza5 + "dalej az do ukonczenia wszystkich faz" ... must document identical. 'Gotowe' push. Nie przestawaj.
