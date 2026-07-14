@@ -1,6 +1,9 @@
 # DJ Player — przewodnik (hotcue, memory, sync)
 
 Per 2026-06-16 full repo consolidation (SZPIEG research lead): ALL prior documentation, old agent outputs, full checklists, unused docs, previous crew reports, history, mockups, build artifacts, web remnants, legacy plans, DESIGN docs, Blueprint extract etc. safely archived in root MEMORY/ directory (substructure: full_agent_instructions/, historical_checklists/, archive/ (from prior 2026-06-15 docs/archive/), old_docs/, previous_runs/ etc.) and summarized/pointered in this memory.md (Archiwum section). Live files (AGENTS/CLAUDE/crew/PLAN/SZPIEG/CHECKLIST + docs/HISTORY/guides + README etc.) minimized for continuity but complete. All information preserved and accessible via MEMORY/INDEX.md + git history. Builds on 2026-06-15 uporządkowanie to docs/archive/. Per SZPIEG research 2026-06-16 consolidation + Plan hierarchy + "uruchamiaj szpiega przed kazdym wiekszym etapem" + "nie przestawaj" + "must document identical".
+Polish visibility no-VLC (prominent banner exact text + get_backend_info), compact tight + highDPI, diagnostics UI, tests extended per SZPIEG research 2026-06-25 DJ checklist + Plan... must document identical.
+
+**2026-06-25 TESTER weryfikacja (Zadanie per PLAN/SZPIEG, exact, 'nie przestawaj'):** Zweryfikowano dodane no-VLC warning z exact '⚠ Audio niedostępne — dla pełnej jakości DJ zainstaluj VLC z videolan.org' + get_backend_info/get_diagnostics link w dj_player_window.py i odtwarzacz_view.py. python -c verifs OK. Prominent, zachowuje EFFECT/file-stream/QStack/compact. Docs updated identycznie. Closed P1.3 local. 'gotowe' local. Per must document identical.
 
 > Dokumentacja wersji desktopowej PyQt6. Ostatnia aktualizacja: 2026-06-14.
 
@@ -15,6 +18,13 @@ Per 2026-06-16 full repo consolidation (SZPIEG research lead): ALL prior documen
 ```powershell
 $env:LUMBAGO_SAFE_MODE=1; $env:LUMBAGO_SMOKE_SECONDS=3; python main.py
 ```
+
+Smoke z diagnostics (per Analyzer + SZPIEG P1.1 + Plan): 
+```powershell
+$env:LUMBAGO_SMOKE_DIAG=1; python main.py
+# lub .\scripts\smoke_portable_windows.ps1 (używa DIAG + redirect + assert "Noop|backend", strict resources, AUTO-COVERS report)
+```
+Per SZPIEG research 2026-06-25 + Analyzer + Plan "nowa lista" (wzmocnienie smoke dla backend_info, diagnostics, no-VLC states nawet w SAFE stub) — must document identical.
 
 ---
 
@@ -96,6 +106,8 @@ Metody diagnostyczne:
 W CI Windows: VLC instalowane przez Chocolatey + cache (lub fallback download). `continue-on-error: true` — testy przechodzą na fallbackach.
 
 Brak VLC na maszynie użytkownika: w UI pojawia się ostrzeżenie + ograniczona funkcjonalność playbacku.
+Dokładnie: w dj_player_window (banner) i OdtwarzaczView (status_label + tooltip) — '⚠ Audio niedostępne — dla pełnej jakości DJ zainstaluj VLC z videolan.org' + link do diagnostics (get_backend_info działa z fallback Noop/Qt).
+Per Szpieg/Plan + must document identical.
 
 **Kod:** `services/playback/{engine.py, vlc_backend.py, qt_backend.py, base.py}`, `ui/dj_player_window.py` (status + diagnostics).
 

@@ -397,9 +397,18 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
 
             tools.addStretch(1)
 
-            self.backend_info_label = QtWidgets.QLabel("")
-            self.backend_info_label.setStyleSheet(f"color: {COLORS.get('text_muted', '#6b7688')}; font-size: 8px;")
-            tools.addWidget(self.backend_info_label)
+            # Ulepszone UI diagnostyki: prosty button/label pokazujący backend_info (get_backend_info).
+            # Kliknięcie pokazuje pełne info z PlaybackEngine (VLC / Qt / Noop + fallback state).
+            # Per SZPIEG research 2026-06-25 DJ checklist + Plan + clean Windows: widoczne w tools bar, zawsze dostępne.
+            # W compact pilot fallback widoczny w widoku odt (dedicated banner).
+            self.backend_info_btn = QtWidgets.QPushButton("Backend: ?")
+            self.backend_info_btn.setFixedHeight(18)
+            self.backend_info_btn.setStyleSheet(f"font-size: 8px; padding: 0 4px; color: {COLORS.get('text_muted', '#6b7688')};")
+            self.backend_info_btn.setToolTip("Pokaż info backendu audio (get_backend_info). EFEKT: diagnostyka fallback no-VLC / VLC prio. FILE load OK, STREAM zależny od backendu.")
+            self.backend_info_btn.clicked.connect(self._show_backend_diagnostics)
+            tools.addWidget(self.backend_info_btn)
+            # compat alias for old label update calls
+            self.backend_info_label = self.backend_info_btn
 
             tools_w = QtWidgets.QWidget()
             tools_w.setLayout(tools)
@@ -751,6 +760,13 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
                                 self._compact_pilot.closed_by_user.connect(self._on_compact_pilot_closed)
                             self._compact_pilot.show_pilot()
                             self.compact_btn.setText("☑ Compact")
+                            # Faza1 highDPI/extreme force re-sync on pilot (per SZPIEG research 2026-07-14 plan rozbudowy Faza1 Polish + Analyzer). Must document identical.
+                            try:
+                                if hasattr(self, "odtwarzacz_view") and self.odtwarzacz_view:
+                                    self.odtwarzacz_view.updateGeometry()
+                                    self.odtwarzacz_view.update()
+                            except Exception:
+                                pass
                             # legacy single guard harden (lista 7): ensure hidden even in re-sync
                             if hasattr(self, "single_container") and self.single_container:
                                 try:
@@ -1374,16 +1390,46 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
             logger.warning(f"Global sync failed: {e}")
 
     def _update_backend_info_label(self):
+        """Update backend label/button (uses get_backend_info for verif + diagnostics fallback detect).
+        If Noop/Qt — visible warning style. Per SZPIEG research 2026-06-25 DJ checklist + Plan + clean Windows Szpieg ... must document identical.
+        """
         if not hasattr(self, "backend_info_label") or not self.playback_engine:
             return
         try:
+            # verif: get_backend_info działa z fallback (noop/qt) + fallback to diag
+            info = self.playback_engine.get_backend_info()
             d = self.playback_engine.get_diagnostics()
             a = d.get("deck_a", {})
             b = d.get("deck_b", {})
-            txt = f"{a.get('backend','?')} / {b.get('backend','?')}"
+            ba = info.get("active_backend_a") or a.get("backend", "?")
+            bb = info.get("active_backend_b") or b.get("backend", "?")
+            txt = f"Backend: {ba} / {bb}"
             self.backend_info_label.setText(txt)
+            # visible warning style for fallback (Noop or Qt)
+            is_fallback = any(x in (ba or "").lower() + (bb or "").lower() for x in ("noop", "qt"))
+            muted = COLORS.get("text_muted", "#6b7688")
+            warn_col = COLORS.get("warning", "#eab308")
+            self.backend_info_label.setStyleSheet(
+                f"color: {warn_col if is_fallback else muted}; font-size: 8px; font-weight: {'700' if is_fallback else '400'};"
+            )
+            # Faza1: ensure visible in compact/highDPI (per SZPIEG research 2026-07-14 plan rozbudowy Faza1 Polish item2 diag). Must document identical.
         except Exception:
             pass
+
+    def _show_backend_diagnostics(self):
+        """Prosty button handler: pokazuje dialog z pełnym get_backend_info + diagnostics.
+        Dla UI diagnostyki no-VLC/fallback. Per SZPIEG research 2026-06-25... must document identical.
+        """
+        if not self.playback_engine:
+            QtWidgets.QMessageBox.information(self, "Backend", "Brak PlaybackEngine.")
+            return
+        try:
+            info = self.playback_engine.get_backend_info()
+            diag = self.playback_engine.get_diagnostics()
+            txt = f"get_backend_info: {info}\n\nget_diagnostics (skrót): { {k: (str(v)[:80] if not isinstance(v, dict) else 'dict') for k,v in diag.items()} }"
+            QtWidgets.QMessageBox.information(self, "Diagnostyka Audio Backend", txt)
+        except Exception as e:
+            QtWidgets.QMessageBox.warning(self, "Diagnostyka", f"Błąd: {e}")
 
     def _dismiss_fallback_banner(self, banner):
         """Session-persistent dismiss for the fallback warning."""
@@ -1407,19 +1453,29 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
             self._load_dropped_track(deck, path)
 
     def _maybe_show_fallback_banner(self, main_layout: QtWidgets.QVBoxLayout):
-        """Prominent warning when the professional DJ Player is running on degraded QtMultimedia fallback."""
+        """
+        Prominent warning when backend is Noop or Qt (fallback, no full DJ audio).
+        Shows exact: '⚠ Audio niedostępne — dla pełnej jakości DJ zainstaluj VLC z videolan.org' + link do diagnostics.
+        Triggers for 'noop' or 'qtmultimedia' via diagnostics (get_backend_info verified to work with fallback).
+        Per Szpieg/Plan + must document identical. EFFECT: visible early (before play), non-blocking, dismissable; guides user to videolan.org for pro features (EQ/keylock etc).
+        Exact match Polish text. Non-radical reuse of banner.
+        """
         if getattr(self, "_fallback_dismissed_this_session", False):
             return
         if not self.playback_engine:
             return
         try:
+            # verif get_backend_info + diagnostics for Noop/Qt (per task + SZPIEG)
+            info = self.playback_engine.get_backend_info()
             d = self.playback_engine.get_diagnostics()
-            using_qt = False
+            using_fallback = False
             for key in ("deck_a", "deck_b"):
-                if d.get(key, {}).get("backend") == "qtmultimedia":
-                    using_qt = True
+                bname = d.get(key, {}).get("backend", "")
+                clsname = info.get("deck_" + key[-1], "") if key.endswith("a") else info.get("deck_" + key[-1], "")
+                if bname in ("noop", "qtmultimedia") or "Noop" in clsname or "Qt" in clsname:
+                    using_fallback = True
                     break
-            if not using_qt:
+            if not using_fallback:
                 return
 
             banner = QtWidgets.QFrame()
@@ -1441,8 +1497,9 @@ class DJPlayerWindow(QtWidgets.QMainWindow):
             bl.setContentsMargins(6, 2, 6, 2)
             bl.setSpacing(6)
 
+            # EXACT text per task + diagnostics link/guidance
             lbl = QtWidgets.QLabel(
-                "⚠ FALLBACK MODE: QtMultimedia (no real EQ, keylock, or low-jitter loops). Install VLC from videolan.org/vlc for full professional DJ features."
+                "⚠ Audio niedostępne — dla pełnej jakości DJ zainstaluj VLC z videolan.org (diagnostics: get_backend_info/get_diagnostics w PlaybackEngine)"
             )
             lbl.setWordWrap(False)
             bl.addWidget(lbl, 1)

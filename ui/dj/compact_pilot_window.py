@@ -59,6 +59,11 @@ class CompactPilotWindow(QtWidgets.QMainWindow):
         try:
             self._view.set_compact_mode(True)
             self._view._update_compact_play_state(getattr(self._view, "_is_playing", False))
+            # Faza1 highDPI force refresh (per SZPIEG research 2026-07-14 plan rozbudowy Faza1 Polish + Analyzer: pilot extreme + rapid toggle). Must document identical.
+            self._view.updateGeometry()
+            self._view.update()
+            if hasattr(self._view, "waveform"):
+                self._view.waveform.update()
         except Exception as exc:
             logger.debug("compact pilot resync: %s", exc)
 

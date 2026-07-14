@@ -260,7 +260,11 @@ class PlaybackEngine:
         }
 
     def get_backend_info(self) -> dict:
-        """Return basic info about which backends are active for each deck."""
+        """
+        Return basic info about which backends are active for each deck.
+        Used by UI for visible '⚠ Audio niedostępne' status/warning on Noop/Qt fallback.
+        Per Szpieg/Plan + must document identical.
+        """
         return {
             "deck_a": self.deck_a.__class__.__name__,
             "deck_b": self.deck_b.__class__.__name__,
