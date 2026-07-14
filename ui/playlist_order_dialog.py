@@ -4,6 +4,8 @@ from PyQt6 import QtCore, QtWidgets
 from ui.widgets import apply_dialog_fade, dialog_icon_pixmap
 
 from core.models import Track
+# Playlist intel Faza2: sort helpers from audio_features (harmonic Camelot, energy)
+from services.audio_features import sort_tracks_for_harmonic_mixing, sort_tracks_by_energy
 
 
 class PlaylistOrderDialog(QtWidgets.QDialog):
@@ -49,11 +51,23 @@ class PlaylistOrderDialog(QtWidgets.QDialog):
 
         controls = QtWidgets.QHBoxLayout()
         up_btn = QtWidgets.QPushButton("Góra")
+        up_btn.setToolTip("EFEKT: ręczne przesunięcie zaznaczonego w górę listy (kolejność playlisty).")
         up_btn.clicked.connect(self._move_up)
         down_btn = QtWidgets.QPushButton("Dół")
+        down_btn.setToolTip("EFEKT: ręczne przesunięcie zaznaczonego w dół listy (kolejność playlisty).")
         down_btn.clicked.connect(self._move_down)
         controls.addWidget(up_btn)
         controls.addWidget(down_btn)
+
+        # Faza2 auto sort intel buttons + EFFECT
+        sort_harm = QtWidgets.QPushButton("Sortuj harmonicznie (Camelot)")
+        sort_harm.setToolTip("EFEKT: auto-sort wg zgodności harmoniczej Camelot (z helpers audio_features). Płynne przejścia miksów. Zastosuj + Zapisz.")
+        sort_harm.clicked.connect(self._sort_harmonic)
+        sort_en = QtWidgets.QPushButton("Sortuj po energii (desc)")
+        sort_en.setToolTip("EFEKT: auto-sort wg energii (malejąco) dla budowania flow setu. Używa sort_tracks_by_energy.")
+        sort_en.clicked.connect(self._sort_energy)
+        controls.addWidget(sort_harm)
+        controls.addWidget(sort_en)
         controls.addStretch(1)
         layout.addLayout(controls)
 

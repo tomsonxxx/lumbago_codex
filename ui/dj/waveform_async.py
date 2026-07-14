@@ -7,6 +7,7 @@ from PyQt6 import QtCore
 
 from core.waveform import extract_peaks as _core_extract_peaks
 from core.waveform import extract_rgb_peaks as _core_extract_rgb_peaks
+from core.waveform import extract_spectral_bands as _core_extract_spectral_bands
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +30,30 @@ def _safe_extract_rgb(audio_path: str, num_points: int = 900) -> dict[str, list[
             base = 0.3 + 0.5 * abs(math.sin(t * 1.7)) + 0.2 * abs(math.sin(t * 0.35))
             peaks.append(max(0.08, min(0.97, base)))
         return {"low": peaks, "mid": peaks, "high": peaks, "peak": peaks}
+
+
+def _safe_extract_spectral(audio_path: str, num_points: int = 600) -> list[int]:
+    """Safe wrapper for discrete bands using classify under the hood."""
+    try:
+        return _core_extract_spectral_bands(audio_path, num_points=num_points)
+    except Exception as exc:
+        logger.warning(f"extract_spectral_bands nieudane dla {audio_path}: {exc}")
+    # Fallback: derive from peaks heuristically (use existing fallback logic style)
+    try:
+        peaks = _core_extract_peaks(audio_path, num_points=num_points)
+        bands = []
+        for amp in peaks:
+            if amp < 0.18:
+                bands.append(3)  # BREAKDOWN
+            elif amp < 0.42:
+                bands.append(2)
+            elif amp < 0.72:
+                bands.append(1)
+            else:
+                bands.append(0)
+        return bands
+    except Exception:
+        return [3] * num_points
 
 
 class _WaveformDelivery(QtCore.QObject):
@@ -55,7 +80,8 @@ class _WaveformDelivery(QtCore.QObject):
         try:
             if isinstance(payload, dict):
                 peaks = payload.get("peak") or payload.get("mid") or []
-                waveform_widget.load_waveform(peaks, duration_ms, token, rgb_bands=payload)
+                spectral = payload.get("spectral_bands")
+                waveform_widget.load_waveform(peaks, duration_ms, token, rgb_bands=payload, spectral_bands=spectral)
             else:
                 waveform_widget.load_waveform(payload, duration_ms, token)
         except RuntimeError:
@@ -75,8 +101,13 @@ class WaveformExtractRunnable(QtCore.QRunnable):
 
     def run(self) -> None:
         try:
-            bands = _safe_extract_rgb(self._path, 900)
-            _WaveformDelivery.instance().deliver.emit(self._wave, bands, self._duration, self._token or "")
+            rgb = _safe_extract_rgb(self._path, 900)
+            spectral = _safe_extract_spectral(self._path, 600)
+            # attach for discrete per-band + energy overlay in widget (preserve rgb)
+            if isinstance(rgb, dict):
+                rgb = dict(rgb)  # copy
+                rgb["spectral_bands"] = spectral
+            _WaveformDelivery.instance().deliver.emit(self._wave, rgb, self._duration, self._token or "")
         except Exception as exc:
             logger.warning(f"WaveformExtractRunnable błąd dla {self._path}: {exc}")
 

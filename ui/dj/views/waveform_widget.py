@@ -5,6 +5,7 @@ from typing import Optional
 import logging
 
 from ui.dj.styles import BOOTH_COLORS
+from core.waveform import get_band_tint, extract_spectral_bands  # for discrete per-band tint + classify support
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +29,9 @@ class WaveformWidget(QtWidgets.QWidget):
         self.setMouseTracking(True)
         self.setCursor(QtGui.QCursor(QtCore.Qt.CursorShape.PointingHandCursor))
         self.setToolTip(
-            "Waveform RGB (Rekordbox 7): czerwień=bas, zieleń=środek, błękit=góra. "
+            "Waveform (discrete per-band tint + energy overlay; fallback RGB). "
+            "EFEKT: kolor wg pasma spektralnego (używa classify/get_band_tint z core) + overlay energii; "
+            "klik=seek (STREAM), double= CUE (dla FILE-loaded track). Per SZPIEG research 2026-07-14 plan rozbudowy Faza2 (waveform color...)... must document identical. "
             "Klik=seek • Double-klik=ustaw CUE • Pomarańczowa linia=punkt CUE"
         )
 
@@ -36,6 +39,7 @@ class WaveformWidget(QtWidgets.QWidget):
         self._bands_low: list[float] = []
         self._bands_mid: list[float] = []
         self._bands_high: list[float] = []
+        self._spectral_bands: list[int] = []  # discrete band codes 0-3 from classify/extract_spectral_bands
         self._duration_ms: int = 0
         self._playhead_ms: int = 0
         self._cue_ms: int = 0
@@ -67,6 +71,7 @@ class WaveformWidget(QtWidgets.QWidget):
         duration_ms: int,
         token: str = "",
         rgb_bands: dict[str, list[float]] | None = None,
+        spectral_bands: list[int] | None = None,
     ):
         if token and self._current_token is not None and token != self._current_token:
             return
@@ -81,6 +86,7 @@ class WaveformWidget(QtWidgets.QWidget):
             self._bands_low = list(self._peaks)
             self._bands_mid = list(self._peaks)
             self._bands_high = list(self._peaks)
+        self._spectral_bands = list(spectral_bands) if spectral_bands else []
         self._duration_ms = max(0, duration_ms)
         self._playhead_ms = 0
         self._loading = False
@@ -122,6 +128,7 @@ class WaveformWidget(QtWidgets.QWidget):
         self._bands_low = []
         self._bands_mid = []
         self._bands_high = []
+        self._spectral_bands = []
         self._duration_ms = 0
         self._playhead_ms = 0
         self._cue_ms = 0
@@ -149,6 +156,17 @@ class WaveformWidget(QtWidgets.QWidget):
         if idx >= n:
             idx = n - 1
         return max(0.0, min(1.0, data[idx]))
+
+    def _band_at(self, bands: list[int], px: int, width: int) -> int:
+        """Sample discrete spectral band code at pixel (for per-band tint)."""
+        if not bands:
+            return 3  # fallback breakdown
+        n = len(bands)
+        idx = int(px / max(1, width) * n)
+        if idx >= n:
+            idx = n - 1
+        b = bands[idx]
+        return int(b) if 0 <= b <= 3 else 3
 
     def _rgb_for_sample(self, lo: float, mid: float, hi: float, peak: float) -> QtGui.QColor:
         """Mieszanka addytywna RB7: każde pasmo wnosi swój kolor, szczyty → biel."""
@@ -187,15 +205,35 @@ class WaveformWidget(QtWidgets.QWidget):
             bar_w = 2 if w > 520 else 1
             step = bar_w
 
+            use_discrete = bool(self._spectral_bands)
             for px in range(0, w, step):
-                lo = self._sample_at(self._bands_low, px, w)
-                md = self._sample_at(self._bands_mid, px, w)
-                hi = self._sample_at(self._bands_high, px, w)
                 pk = self._sample_at(self._peaks, px, w)
                 bar_h = max(1, int(pk * max_h))
-                color = self._rgb_for_sample(lo, md, hi, pk)
-                painter.fillRect(px, mid_y - bar_h, bar_w, bar_h, color)
-                painter.fillRect(px, mid_y + 1, bar_w, bar_h, color)
+                if use_discrete and self._spectral_bands:
+                    band = self._band_at(self._spectral_bands, px, w)
+                    color = get_band_tint(band)
+                    # energy overlay tint (brighter for high pk segments)
+                    if pk > 0.55:
+                        mix = min(0.65, (pk - 0.55) * 1.8)
+                        wcol = QtGui.QColor(255, 255, 255, int(180 * mix))
+                        # use base color but we'll overlay
+                        painter.fillRect(px, mid_y - bar_h, bar_w, bar_h, color)
+                        painter.fillRect(px, mid_y + 1, bar_w, bar_h, color)
+                        # energy bright overlay strip at peak of bar
+                        over_h = max(1, int(bar_h * 0.35))
+                        painter.fillRect(px, mid_y - bar_h, bar_w, over_h, wcol)
+                        painter.fillRect(px, mid_y + bar_h - over_h + 1, bar_w, over_h, wcol)
+                    else:
+                        painter.fillRect(px, mid_y - bar_h, bar_w, bar_h, color)
+                        painter.fillRect(px, mid_y + 1, bar_w, bar_h, color)
+                else:
+                    # RGB fallback preserved exactly
+                    lo = self._sample_at(self._bands_low, px, w)
+                    md = self._sample_at(self._bands_mid, px, w)
+                    hi = self._sample_at(self._bands_high, px, w)
+                    color = self._rgb_for_sample(lo, md, hi, pk)
+                    painter.fillRect(px, mid_y - bar_h, bar_w, bar_h, color)
+                    painter.fillRect(px, mid_y + 1, bar_w, bar_h, color)
 
             # Cienka linia środka (szczelina RB między połówkami)
             painter.setPen(QtGui.QPen(self._col_center, 1))

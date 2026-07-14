@@ -383,8 +383,8 @@ class LibraryWidget(QtWidgets.QWidget):
         tracks = self.selected_tracks()
         if tracks: self.track_activated.emit(tracks[0])
 
-    # Smart Collections krok 3 (per SZPIEG research 2026-06-15 Smart Collections + finalny efekt końcowy... must document identical)
-    # Dynamiczne wczytywanie przez repo, kontekst do edycji/odświeżenia/konwersji, bezpieczne przeciągnięcie (istniejący mime), EFEKT, powietrze, celowane.
+    # Smart Collections Faza2 (per SZPIEG research 2026-07-14 plan rozbudowy Faza2 (waveform color, advanced Smart, playlist intelligence)... must document identical)
+    # Dynamiczne wczytywanie (teraz nested AND/OR + features join w repo), kontekst..., bezpieczne przeciągnięcie, EFEKT, air, celowane.
     def _on_smart_item(self, item, col):
         data = item.data(0, QtCore.Qt.ItemDataRole.UserRole) or {}
         rules = data.get("rules") or (data.get("playlist").rules if data.get("playlist") else None)

@@ -29,9 +29,11 @@ WAVE_HEIGHT_RATIO: dict[str, float] = {
 }
 
 # Szacowany overhead (header + time + transport + status) w px @ scale 1.0
+# per SZPIEG research 2026-06-25 DJ checklist + Plan + Mixxx/Winamp tight compact: obniżony overhead compact
+# dla reduce empty bottom + więcej wave space w highDPI/extreme pilot (tight layouts nie marnują miejsca).
 WAVE_OVERHEAD_BASE: dict[str, int] = {
     "normal": 130,
-    "compact": 90,
+    "compact": 78,
     "deck_focused": 280,
     "deck_console": 220,
 }

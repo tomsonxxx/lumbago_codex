@@ -4,7 +4,7 @@ from typing import Iterable
 from datetime import datetime, timedelta, timezone
 import json
 
-from sqlalchemy import delete, select, update, text, func
+from sqlalchemy import delete, select, update, text, func, and_, or_
 from sqlalchemy.orm import selectinload
 
 from core.models import AnalysisJob, AudioFeatures, CuePoint, Playlist, Tag, Track
@@ -28,69 +28,127 @@ from data.schema import (
 from services.metadata_consensus import MetadataConsensusReport
 
 # Etap Smart Collections (per SZPIEG research 2026-06-15 Smart Collections + finalny efekt końcowy... must document identical)
-# Step 1 core: dynamic smart rules query (JSON rules -> SQL on meta/DB fields: bpm/key/tag/energy/play_count/date/analysis).
-# File vs metadata: rules operate ONLY on DB meta (tags, analysis results, play history fields) — NEVER raw file content.
-# Portable: rules JSON stored in PlaylistOrm.rules. Guards + cache for perf. Targeted for 10k+.
+# Faza2 upgrade: nested AND/OR (recursive), join features (AudioFeaturesOrm), more fields (danceability,valence,tempo,brightness,...).
+# File vs metadata: rules operate ONLY on DB meta (tags + features + track) — NEVER raw file. Drag = FILE load isolation.
+# Per SZPIEG research 2026-07-14 plan rozbudowy Faza2 (waveform color, advanced Smart, playlist intelligence)... must document identical.
 def get_tracks_for_smart_rules(rules: dict | None) -> list[Track]:
     """
-    Return tracks matching smart collection rules (or all if None/static).
-    Rules example: {"any": false, "conditions": [{"field": "bpm", "op": "range", "min": 128, "max": 132}, {"field": "tag", "op": "contains", "value": "peak"}, {"field": "energy", "op": ">", "value": 6.5}] }
+    Return tracks matching smart collection rules (nested AND/OR supported).
+    Supports legacy flat {"any": bool, "conditions": [...] } and nested e.g. {"and": [cond, {"or": [c1,c2]}]}.
+    Joins AudioFeatures for advanced fields. More fields: bpm/key/energy + danceability/valence/tempo/brightness/roughness/mood/genre/tag/analysis.
     Per SZPIEG: auto dynamic on meta change; preview isolation via load=FILE to odt; drag safety; EFFECT in UI.
     """
-    if not rules or not rules.get("conditions"):
-        # static or no rules: return empty or caller handles all
+    if not rules:
         return []
     session = get_session_factory()()
     try:
-        query = select(TrackOrm)
-        conditions = rules.get("conditions", [])
-        any_match = rules.get("any", False)
-        sql_clauses = []
-        params = {}
-        for i, cond in enumerate(conditions):
-            field = cond.get("field")
-            op = cond.get("op", "=")
-            val = cond.get("value")
-            minv = cond.get("min")
-            maxv = cond.get("max")
-            clause = None
-            pkey = f"p{i}"
-            if field == "bpm" and minv is not None and maxv is not None:
-                clause = f"tracks.bpm BETWEEN :min{i} AND :max{i}"
-                params[f"min{i}"] = minv
-                params[f"max{i}"] = maxv
-            elif field == "bpm":
-                clause = f"tracks.bpm {op} :{pkey}"
-                params[pkey] = val
-            elif field in ("key", "camelot"):
-                # simple exact or compat stub (full Camelot later)
-                clause = f"tracks.key {op} :{pkey}"
-                params[pkey] = val
-            elif field == "tag":
-                # join tags
-                query = query.join(TrackOrm.tags)
-                clause = f"tags.name {op} :{pkey}"
-                params[pkey] = val
-            elif field in ("energy", "rating", "play_count"):
-                col = {"energy": "energy", "rating": "rating", "play_count": "play_count"}[field]
-                clause = f"tracks.{col} {op} :{pkey}"
-                params[pkey] = val
-            elif field in ("date_added", "last_played"):
-                # date logic stub
-                clause = f"tracks.date_added {op} :{pkey}"
-                params[pkey] = val
-            elif field == "analysis":
-                clause = "tracks.fingerprint IS NOT NULL" if val else "tracks.fingerprint IS NULL"
-            if clause:
-                sql_clauses.append(clause)
-        if sql_clauses:
-            where = " OR ".join(sql_clauses) if any_match else " AND ".join(sql_clauses)
-            query = query.where(text(where))
-            query = query.params(**params)
+        query = select(TrackOrm).outerjoin(TrackOrm.audio_features)
+        # Build where expr recursively (supports nested and/or + legacy)
+        where_expr = _build_smart_where_expr(rules)
+        if where_expr is not None:
+            query = query.where(where_expr)
+        # distinct to handle tag joins safely
+        query = query.distinct()
         rows = session.execute(query).scalars().all()
         return [_orm_to_track(r) for r in rows]
     finally:
         session.close()
+
+
+def _build_smart_where_expr(rules: dict) -> any:
+    """Recursive builder for nested smart rules to sqlalchemy and_/or_ expr. Supports legacy flat."""
+    if not isinstance(rules, dict):
+        return None
+    # Legacy flat support (no regresja)
+    if "conditions" in rules:
+        conds = rules.get("conditions", [])
+        any_match = bool(rules.get("any", False))
+        exprs = [_cond_to_expr(c) for c in conds if _cond_to_expr(c) is not None]
+        if not exprs:
+            return None
+        return or_(*exprs) if any_match else and_(*exprs)
+    # Nested forms
+    if "and" in rules:
+        exprs = [_build_smart_where_expr(r) if isinstance(r, dict) else _cond_to_expr(r) for r in rules.get("and", [])]
+        exprs = [e for e in exprs if e is not None]
+        return and_(*exprs) if exprs else None
+    if "or" in rules:
+        exprs = [_build_smart_where_expr(r) if isinstance(r, dict) else _cond_to_expr(r) for r in rules.get("or", [])]
+        exprs = [e for e in exprs if e is not None]
+        return or_(*exprs) if exprs else None
+    # single cond dict
+    e = _cond_to_expr(rules)
+    return e
+
+
+# supported feature cols (from AudioFeaturesOrm + track)
+_FEATURE_FIELDS = {
+    "danceability": "audio_features.danceability",
+    "valence": "audio_features.valence",
+    "tempo": "audio_features.tempo",
+    "brightness": "audio_features.brightness",
+    "roughness": "audio_features.roughness",
+    "spectral_centroid": "audio_features.spectral_centroid",
+}
+
+def _cond_to_expr(cond: dict):
+    """Convert single cond dict to SQLA expr (or text for complex). Handles tag/features."""
+    if not isinstance(cond, dict):
+        return None
+    field = str(cond.get("field", "")).lower().strip()
+    op = cond.get("op", "=")
+    val = cond.get("value")
+    minv = cond.get("min")
+    maxv = cond.get("max")
+    if not field:
+        return None
+
+    # Tag handling (join safe via exists-ish or direct; use text for contains to support)
+    if field == "tag":
+        v = val
+        if op in ("=", "zawiera", "contains"):
+            # simple like for contains
+            return text("EXISTS (SELECT 1 FROM tags WHERE tags.track_id=tracks.id AND tags.tag LIKE :tagv)").bindparams(tagv=f"%{v}%")
+        elif op in ("!=", "nie zawiera"):
+            return text("NOT EXISTS (SELECT 1 FROM tags WHERE tags.track_id=tracks.id AND tags.tag LIKE :tagv)").bindparams(tagv=f"%{v}%")
+        return None
+
+    # Track direct fields
+    if field == "bpm":
+        if minv is not None and maxv is not None:
+            return text("tracks.bpm BETWEEN :minv AND :maxv").bindparams(minv=minv, maxv=maxv)
+        op_map = {">": ">", "<": "<", "=": "=", ">=": ">=", "<=": "<="}
+        sop = op_map.get(op, "=")
+        return text(f"tracks.bpm {sop} :val").bindparams(val=val)
+    if field in ("key", "camelot", "tonacja"):
+        sop = "=" if op in ("=", "zawiera") else op
+        return text(f"tracks.key {sop} :val").bindparams(val=val)
+    if field in ("energy", "rating", "play_count"):
+        col = field if field != "play_count" else "play_count"
+        if minv is not None and maxv is not None:
+            return text(f"tracks.{col} BETWEEN :minv AND :maxv").bindparams(minv=minv, maxv=maxv)
+        sop = {"=": "=", ">": ">", "<": "<", ">=": ">=", "<=": "<="}.get(op, "=")
+        return text(f"tracks.{col} {sop} :val").bindparams(val=val)
+    if field in ("mood", "genre"):
+        sop = "LIKE" if op in ("zawiera", "contains", "=") else "="
+        vpat = f"%{val}%" if sop == "LIKE" else val
+        return text(f"tracks.{field} {sop} :val").bindparams(val=vpat)
+    if field in ("date_added", "last_played"):
+        # stub
+        return text(f"tracks.date_added IS NOT NULL") if val else None
+    if field == "analysis":
+        return text("tracks.fingerprint IS NOT NULL") if bool(val) else text("tracks.fingerprint IS NULL")
+
+    # Audio features join fields
+    if field in _FEATURE_FIELDS:
+        col = _FEATURE_FIELDS[field]
+        if minv is not None and maxv is not None:
+            return text(f"{col} BETWEEN :minv AND :maxv").bindparams(minv=minv, maxv=maxv)
+        sop = {"=": "=", ">": ">", "<": "<", ">=": ">=", "<=": "<="}.get(op, "=")
+        return text(f"{col} {sop} :val").bindparams(val=val)
+
+    # fallback
+    return None
 
 def _orm_to_track(orm: TrackOrm) -> Track:
     # Smart Collections (per SZPIEG research 2026-06-15 Smart Collections + finalny efekt końcowy... must document identical)

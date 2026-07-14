@@ -358,7 +358,8 @@ BOOTH_TOKENS: dict[str, dict[str, int | float | tuple[int, int]]] = {
         "transport_play": (88, 50),
         "transport_cue": (72, 46),
         "transport_stop": (64, 46),
-        "wave_min_h": 184,
+        # per SZPIEG research 2026-07-14 plan rozbudowy Faza1 Polish (compact highDPI/extreme) + Analyzer + Plan "nowa lista" + CHECKLIST (waveform ≥220px single): synced to BOOTH_SIZES/expected mins; dynamic px() + from_environment clamp nadal nadrabia dla highDPI/4k. Must document identical.
+        "wave_min_h": 220,
         "wave_stretch": 7,
         "spin_size": 20,
         "bpm_min_w": 92,
@@ -432,9 +433,13 @@ BOOTH_TOKENS: dict[str, dict[str, int | float | tuple[int, int]]] = {
     },
     "compact": {
         "ref_width": 400,
-        "margin_h": 8,
-        "margin_v": 6,
-        "spacing": 6,
+        # per SZPIEG research 2026-06-25 DJ checklist + Plan + clean Windows Szpieg + Mixxx/Winamp tight:
+        # reduce empty bottom, tight margins/spacing/spin for extreme compact + highDPI pilot (Winamp-mini feel, booth multi-mon).
+        # minimal air zachowany ale pack bottom ~2px effective; spin mniejszy dla skalowalności.
+        # per SZPIEG research 2026-07-14 plan rozbudowy Faza1 Polish (highDPI/extreme + verifs) + Analyzer refined: wave_min_h synced to >=80 + BOOTH_SIZES compact_waveform_min_height; px() + clamp ensure no cut in 280x200 extreme. Must document identical.
+        "margin_h": 6,
+        "margin_v": 4,
+        "spacing": 4,
         "title_font": 11,
         "bpm_font": 13,
         "time_font": 10,
@@ -443,11 +448,12 @@ BOOTH_TOKENS: dict[str, dict[str, int | float | tuple[int, int]]] = {
         "transport_play": (48, 32),
         "transport_cue": (40, 30),
         "transport_stop": (34, 30),
-        "wave_min_h": 68,
+        # per SZPIEG research 2026-07-14 plan rozbudowy Faza1 Polish (compact highDPI/extreme + verifs) + Analyzer refined lista: wave_min_h synced to 80 to match CHECKLIST/BOOTH_SIZES compact_waveform_min_height >=80; px() + from_environment clamp + highDPI scale ensure dominant wave no-cut in extreme 280x200 + multi-monitor. Must document identical.
+        "wave_min_h": 80,
         "wave_stretch": 7,
-        "spin_size": 16,
+        "spin_size": 14,
         "bpm_min_w": 60,
-        "transport_gap": 8,
+        "transport_gap": 6,
     },
 }
 
@@ -616,7 +622,9 @@ class BoothMetrics:
     def layout_margins(self) -> tuple[int, int, int, int]:
         h = self.px(int(self._tokens["margin_h"]))  # type: ignore[arg-type]
         v = self.px(int(self._tokens["margin_v"]))  # type: ignore[arg-type]
-        bottom = max(2, v // 3) if self.compact else v
+        # per SZPIEG research 2026-06-25 DJ checklist + Plan + Mixxx/Winamp tight: reduce empty bottom further
+        # for extreme compact/highDPI (pilot tight pack, avoid push empty space in Winamp-like floating).
+        bottom = max(1, v // 2) if self.compact else v   # was max(2, v//3)
         return h, v, h, bottom
 
     def layout_spacing(self) -> int:

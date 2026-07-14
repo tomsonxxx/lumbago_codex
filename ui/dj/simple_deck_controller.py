@@ -37,7 +37,7 @@ class SimpleDeckController(QtCore.QObject):
     - Emituje TYLKO podstawowe sygnały: track_loaded, track_unloaded, playhead_changed,
       bpm_changed, play_state_changed, status_changed
     - request_waveform_load dla widoku (używa prostego runnable opartego na core.waveform)
-    - ZERO: HotcueManager, memory, loops, sync, quantize, pitch, trim, eq
+    - Minimal pitch/TRIM/rate stub Faza1 (set_rate/set_pitch/set_keylock) — ZERO advanced: no HotcueManager, memory, loops, sync, quantize, eq (per Faza1 item3 single only)
 
     Używa wyłącznie istniejącego PlaybackEngine
     (load_deck/play_deck/.../get_deck_state).
@@ -345,6 +345,47 @@ class SimpleDeckController(QtCore.QObject):
             self.playback_engine.set_master_volume(1.0)
         except Exception as e:
             logger.warning(f"SimpleDeck {self.deck_id} set_volume: {e}")
+
+    # ------------------------------------------------------------------
+    # Minimal pitch/TRIM/rate stub for single Odtwarzacz (MVP Faza1 item3)
+    # Wire to engine (set_deck_rate / set_deck_keylock) — already supported in base+qt+vlc+noop.
+    # Pitch % maps to rate (1.0 + p/100); typical DJ +/- 8-50% range clamped.
+    # Compact/highDPI aware (no UI here), air preserved (logic only).
+    # FILE load unaffected; rate is runtime STREAM param (playback).
+    # Reuse path: odt_view wires PitchControl (or stub slider) -> here -> engine.
+    # per SZPIEG research 2026-07-14 plan rozbudowy Faza1 Polish (single pitch/TRIM stub + odt_view wiring + simple_controller + compact aware)... must document identical.
+    # No full dual support. Minimal stub only.
+    # ------------------------------------------------------------------
+    def set_rate(self, rate: float) -> None:
+        """Ustaw rate playback (1.0 normal). Minimal dla pitch stub.
+        Deleguje do engine.set_deck_rate (VLC/Qt/Noop wspierają).
+        EFEKT: zmienia tempo/pitch utworu w streamie (FILE load niezmieniony).
+        """
+        if not self.playback_engine:
+            return
+        try:
+            r = max(0.5, min(2.0, float(rate)))
+            self.playback_engine.set_deck_rate(self.deck_id, r)
+            # status minimal (view może nadpisać)
+            self.status_changed.emit(f"◊ Rate {r:.2f}x")
+        except Exception as e:
+            logger.warning(f"SimpleDeck {self.deck_id} set_rate: {e}")
+
+    def set_pitch(self, percent: float) -> None:
+        """Pitch percent (-50..50) -> rate. Convenience for pitch slider reuse.
+        E.g. +6 -> rate=1.06 . Per pitch_control menus too.
+        """
+        rate = 1.0 + (float(percent) / 100.0)
+        self.set_rate(rate)
+
+    def set_keylock(self, enabled: bool) -> None:
+        """Minimal keylock (tempo bez zmiany pitch gdy wsparte). Stub for pitch ctrl."""
+        if self.playback_engine:
+            try:
+                self.playback_engine.set_deck_keylock(self.deck_id, bool(enabled))
+            except Exception:
+                pass
+        self.status_changed.emit("KEY ON" if enabled else "KEY OFF")
 
     def set_cue_at_ms(self, time_ms: int) -> None:
         """Ustaw CUE na konkretnym czasie (np. double-klik waveform)."""

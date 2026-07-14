@@ -112,3 +112,59 @@ def compute_waveform_blob_from_file(path: Path, n_samples: int = WAVEFORM_SAMPLE
     except Exception as exc:
         logger.warning("Waveform file error %s: %s", path, exc)
         return b""
+
+
+# ============================================================
+# Playlist intelligence sort helpers (Faza2)
+# harmonic Camelot + energy flow. Per SZPIEG research 2026-07-14 plan rozbudowy Faza2 (waveform color, advanced Smart, playlist intelligence)... must document identical.
+# ============================================================
+
+_CAMELOT_WHEEL = ["1A","1B","2A","2B","3A","3B","4A","4B","5A","5B","6A","6B",
+                  "7A","7B","8A","8B","9A","9B","10A","10B","11A","11B","12A","12B"]
+
+def camelot_distance(k1: str | None, k2: str | None) -> int:
+    """Harmonic distance on Camelot wheel. 0 = identical key, lower = more compatible for mixing."""
+    if not k1 or not k2:
+        return 99
+    a = k1.strip().upper()
+    b = k2.strip().upper()
+    if a == b:
+        return 0
+    if a not in _CAMELOT_WHEEL or b not in _CAMELOT_WHEEL:
+        return 12
+    ia = _CAMELOT_WHEEL.index(a)
+    ib = _CAMELOT_WHEEL.index(b)
+    # wheel distance + letter compat
+    d = min(abs(ia - ib), 24 - abs(ia - ib)) // 2
+    # prefer same letter or +1/-1
+    la, lb = a[-1], b[-1]
+    if la == lb:
+        return d
+    if (la == "A" and lb == "B") or (la == "B" and lb == "A"):
+        return max(1, d)
+    return d + 1
+
+def sort_tracks_for_harmonic_mixing(tracks: list, start_key: str | None = None) -> list:
+    """Sort tracks for smooth harmonic progression (Camelot wheel order). Uses track.key . Fallback stable."""
+    if not tracks:
+        return tracks
+    key_get = lambda t: getattr(t, "key", None) or getattr(t, "camelot", None)
+    if start_key is None:
+        start_key = key_get(tracks[0])
+    remaining = list(tracks)
+    ordered = []
+    curr = start_key
+    while remaining:
+        # pick closest to curr
+        best = min(remaining, key=lambda t: camelot_distance(curr, key_get(t)))
+        ordered.append(best)
+        remaining.remove(best)
+        curr = key_get(best) or curr
+    return ordered
+
+def sort_tracks_by_energy(tracks: list, ascending: bool = False) -> list:
+    """Sort by energy (high to low by default for energy build-up sets)."""
+    def en(t):
+        e = getattr(t, "energy", None)
+        return e if e is not None else -1
+    return sorted(tracks, key=en, reverse=not ascending)

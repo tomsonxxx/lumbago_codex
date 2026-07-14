@@ -19,6 +19,7 @@ from ui.dj.deck_layout import (
 from ui.dj.deck_view_helpers import metrics_for_odt, refresh_waveform_on_resize
 from ui.dj.simple_deck_controller import SimpleDeckController
 from ui.dj.views.player_controls_bar import PlayerControlsBar
+from ui.dj.views.pitch_control import PitchControl
 from ui.dj.views.waveform_widget import WaveformWidget
 from ui.dj.styles import (
     BOOTH_COLORS,
@@ -144,12 +145,14 @@ TESTER 2026-06-14 final (po "dalej"+lista 1-15): smoke0/pytest44p/python-c (comp
     - ui/dj/styles (BOOTH_COLORS, BOOTH_SIZES, get_*_stylesheet, get_transport_button_stylesheet)
     - WaveformWidget (nowy extracted)
     - Transport styles (ale własne 3 przyciski dla prostoty MVP + explicit play/pause)
-    - ZERO: hotcues, pitch, trim, eq, mem, advanced row, loops, sync
+    - Minimal single pitch stub (reused PitchControl after controls; compact hides; wired to controller.set_rate/set_pitch; EFFECT tooltip)
+    - ZERO advanced: no hotcues, trim full, eq, mem, advanced row, loops, sync (Faza1 single MVP only)
 
     Drag&drop: pełny repo lookup (get_track_by_path).
     Connects: waveform seek + buttons to controller; subs signals for UI updates.
 
     Nie miesza z FocusedDeckView (pozostaje dla dual console).
+    Per Szpieg/Plan + must document identical (audio fallback warning via status + get_backend_info added).
     """
     def __init__(self, controller: SimpleDeckController,
                  parent: QtWidgets.QWidget | None = None) -> None:
@@ -239,6 +242,29 @@ TESTER 2026-06-14 final (po "dalej"+lista 1-15): smoke0/pytest44p/python-c (comp
         self.player_controls.volume_changed.connect(self._on_volume_changed)
         layout.addWidget(self.player_controls, 0)
 
+        # === MINIMAL PITCH STUB (reuse PitchControl, after controls, for single Odtwarzacz MVP Faza1 item3) ===
+        # Compact hides (in _apply_compact_ui setVisible(False) to preserve air/no-break in pilot ~420x300 + highDPI).
+        # Wire signals to controller (which now has set_rate/set_pitch/set_keylock minimal).
+        # Slider range -50..50 from pitch_control; value shown.
+        # KEY stub for keylock.
+        # EFFECT tooltip exact: "EFEKT: zmienia tempo/pitch utworu (FILE load, STREAM playback)".
+        # No full dual (single only), QStack/fallback/highDPI/compact forces preserved (no layout break).
+        # per SZPIEG research 2026-07-14 plan rozbudowy Faza1 Polish (single pitch/TRIM stub + odt_view wiring + simple_controller, stub minimal slider KEYLOCK, compact aware)... must document identical.
+        self.pitch_control = PitchControl()
+        self.pitch_control.pitch_changed.connect(self._on_pitch_changed)
+        self.pitch_control.keylock_toggled.connect(self._on_keylock_toggled)
+        # Apply tooltip per spec (on whole control + slider for visibility)
+        pitch_tooltip = "EFEKT: zmienia tempo/pitch utworu (FILE load, STREAM playback)"
+        self.pitch_control.setToolTip(pitch_tooltip)
+        if hasattr(self.pitch_control, "slider"):
+            self.pitch_control.slider.setToolTip(pitch_tooltip)
+        if hasattr(self.pitch_control, "keylock_btn"):
+            self.pitch_control.keylock_btn.setToolTip(
+                "KEYLOCK: utrzymuje pitch przy zmianie tempa (gdy backend wspiera, np. VLC scaletempo). "
+                + pitch_tooltip
+            )
+        layout.addWidget(self.pitch_control, 0)
+
         self.cue_btn = QtWidgets.QPushButton()
         self.play_btn = QtWidgets.QPushButton()
         self.stop_btn = QtWidgets.QPushButton()
@@ -283,6 +309,24 @@ TESTER 2026-06-14 final (po "dalej"+lista 1-15): smoke0/pytest44p/python-c (comp
         self.status_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
         self.status_label.setToolTip("Status decku (load/play/cue/set). EFEKT: informacyjny; nie wykonuje akcji. File ops w load, stream ops w transport.")
         layout.addWidget(self.status_label, 0)
+
+        # === PROMINENT FALLBACK BANNER (no-VLC / Audio niedostępne) ===
+        # Dedykowany label/banner dla visibility w compact (gdzie status_label.setVisible(False)) + highDPI.
+        # Używa get_backend_info() + exact text z research. Zawsze widoczny gdy fallback (nawet w tight pilot).
+        # Per SZPIEG research 2026-06-25 DJ checklist + Plan + clean Windows Szpieg: prominent, nie chowany w compact, pack tight.
+        # EFFECT: wysoki kontrast warning, nie zajmuje dużo miejsca w compact (mały font), guide do videolan.org.
+        # Must document identical.
+        self._audio_fallback_label = QtWidgets.QLabel("")
+        self._audio_fallback_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        self._audio_fallback_label.setWordWrap(True)
+        self._audio_fallback_label.setVisible(False)
+        layout.addWidget(self._audio_fallback_label, 0)
+
+        # Prosty, widoczny status/warning w OdtwarzaczView gdy backend Noop lub Qt.
+        # Używa get_backend_info (verif działa z fallback) + exact Polish text + link do diagnostics.
+        # EFFECT: wysoki kontrast, nie psuje istniejącego status/transport/wave; widoczny od razu.
+        # Wzmocnione: dedicated banner dla compact/highDPI visibility (status schowany w compact).
+        self._maybe_apply_audio_fallback_warning()
 
         self._flex_spacer = QtWidgets.QWidget()
         self._flex_spacer.setSizePolicy(
@@ -371,15 +415,23 @@ TESTER 2026-06-14 final (po "dalej"+lista 1-15): smoke0/pytest44p/python-c (comp
             )
 
         self.status_label.setText("— Gotowy (tryb Odtwarzacz MVP)")
+        if hasattr(self, "_audio_fallback_label"):
+            self._audio_fallback_label.setVisible(False)  # reset on unload; re-apply warning if needed elsewhere
         if hasattr(self, "_spin_indicator"):
             self._spin_indicator.stop()
+        # re-apply to ensure fallback banner state correct (get_backend_info)
+        try:
+            self._maybe_apply_audio_fallback_warning()
+        except Exception:
+            pass
 
     def _refresh_metrics(self, force_apply: bool = False) -> None:
         new_m = metrics_for_odt(self, compact=self._compact)
         old_scale = self._last_metrics_scale
         self._metrics = new_m
         self._last_metrics_scale = new_m.scale_factor
-        if (force_apply or abs(new_m.scale_factor - old_scale) > 0.04) and hasattr(self, "play_btn"):
+        # Faza1: force more aggressively on highDPI (scale delta or >1.05) per SZPIEG research 2026-07-14 plan rozbudowy Faza1 Polish (compact highDPI/extreme) + Analyzer. Must document identical.
+        if (force_apply or abs(new_m.scale_factor - old_scale) > 0.04 or new_m.scale_factor > 1.05) and hasattr(self, "play_btn"):
             self._apply_compact_ui()
 
     def resizeEvent(self, event):
@@ -397,6 +449,17 @@ TESTER 2026-06-14 final (po "dalej"+lista 1-15): smoke0/pytest44p/python-c (comp
             refresh_waveform_on_resize(
                 self, self.waveform, self._metrics, compact=self._compact
             )
+        # Faza1 highDPI/extreme force refresh (per SZPIEG research 2026-07-14 plan rozbudowy Faza1 Polish + Analyzer refined: ensure update + geometry after scale >1.04 or extreme narrow to prevent cut/empty in 280x200 + DPI 144+). Must document identical.
+        try:
+            if getattr(self, "_metrics", None) and self._metrics.scale_factor > 1.04 or self._compact:
+                self.update()
+                self.updateGeometry()
+                if hasattr(self, "waveform"):
+                    self.waveform.update()
+            if hasattr(self, "_audio_fallback_label") and self._audio_fallback_label.isVisible():
+                self._audio_fallback_label.update()
+        except Exception:
+            pass
         # Ensure spin size scales a bit in compact
         if self._compact and hasattr(self, "_spin_indicator"):
             try:
@@ -454,6 +517,58 @@ TESTER 2026-06-14 final (po "dalej"+lista 1-15): smoke0/pytest44p/python-c (comp
     def _on_status_changed(self, text: str) -> None:
         self.status_label.setText(text)
 
+    def _maybe_apply_audio_fallback_warning(self) -> None:
+        """
+        Dodaje prominent banner/status z exact '⚠ Audio niedostępne — dla pełnej jakości DJ zainstaluj VLC z videolan.org'
+        + użycie get_backend_info(). Wzmocnione dla visibility w compact (status schowany) + highDPI.
+        Dedykowany self._audio_fallback_label widoczny zawsze gdy fallback.
+        Per SZPIEG research 2026-06-25 DJ checklist + Plan + clean Windows Szpieg ... must document identical.
+        Używa get_backend_info (verif: działa z fallback). Non-radical: dodatkowy mały label + update status.
+        """
+        try:
+            eng = getattr(self.controller, "playback_engine", None)
+            if not eng:
+                return
+            # verif get_backend_info działa z fallback (noop/qt) — prefer nad diag
+            info = eng.get_backend_info()
+            ba = str(info.get("deck_a", "") or info.get("active_backend_a", ""))
+            is_fallback = ("Noop" in ba) or ("Qt" in ba) or ("noop" in ba.lower()) or ("qt" in ba.lower())
+            if not is_fallback:
+                if hasattr(self, "_audio_fallback_label"):
+                    self._audio_fallback_label.setVisible(False)
+                return
+            exact = "⚠ Audio niedostępne — dla pełnej jakości DJ zainstaluj VLC z videolan.org"
+            diag_link = " (diagnostics: engine.get_backend_info() / get_diagnostics())"
+            # prefix do status (widoczny w non-compact) — zachowaj oryginalny po |
+            curr = self.status_label.text() or "— Gotowy (tryb Odtwarzacz MVP)"
+            if exact not in curr:
+                self.status_label.setText(f"{exact}{diag_link} | {curr}")
+            # WIDOCZNY DEDYKOWANY BANNER nawet w compact/highDPI (status_label hidden w compact)
+            if hasattr(self, "_audio_fallback_label"):
+                self._audio_fallback_label.setText(f"{exact}{diag_link}")
+                self._audio_fallback_label.setVisible(True)
+            # widoczny EFFECT style (żółty warning z palety) — bezpiecznie, bez psucia metryk
+            try:
+                from ui.dj.styles import BOOTH_COLORS
+                wcol = BOOTH_COLORS.get("warning", "#eab308")
+                base_ss = self._metrics.status_stylesheet() or ""
+                self.status_label.setStyleSheet(f"color: {wcol}; font-weight: 600; {base_ss}")
+                if hasattr(self, "_audio_fallback_label"):
+                    self._audio_fallback_label.setStyleSheet(f"color: {wcol}; font-weight: 700; font-size: 10px; background: #2a2318; border: 1px solid #854d0e; padding: 2px;")
+            except Exception:
+                pass
+            self.status_label.setToolTip(
+                f"{exact}{diag_link}. EFEKT: fallback (brak EQ/keylock/low-jitter); FILE load działa, STREAM ograniczony. "
+                "Zainstaluj VLC z videolan.org dla pełnej jakości DJ. Per Szpieg/Plan."
+            )
+            if hasattr(self, "_audio_fallback_label"):
+                self._audio_fallback_label.setToolTip(
+                    f"{exact}{diag_link}. EFEKT: fallback (brak EQ/keylock/low-jitter); FILE load działa, STREAM ograniczony. "
+                    "Zainstaluj VLC z videolan.org dla pełnej jakości DJ (per research Mixxx/Winamp/VLC prio). Per SZPIEG research 2026-06-25."
+                )
+        except Exception:
+            pass  # non fatal, nie psuj UI
+
     # ------------------------------------------------------------------
     # Transport MVP (explicit play vs pause, nie toggle w kontrolerze)
     # ------------------------------------------------------------------
@@ -497,6 +612,39 @@ TESTER 2026-06-14 final (po "dalej"+lista 1-15): smoke0/pytest44p/python-c (comp
         """WMP-style volume — deck gain 0–100%."""
         if hasattr(self.controller, "set_volume"):
             self.controller.set_volume(percent)
+
+    # ------------------------------------------------------------------
+    # Pitch stub handlers (Faza1 single MVP) — wired from reused PitchControl
+    # per SZPIEG research 2026-07-14 plan rozbudowy Faza1 Polish (single pitch/TRIM stub... must document identical)
+    # Minimal: delegate to controller (now supports set_pitch/set_rate/set_keylock for single).
+    # No impact on FILE ops, STREAM only (rate).
+    # ------------------------------------------------------------------
+    def _on_pitch_changed(self, percent: int) -> None:
+        """Handle pitch slider change. Maps to controller.set_pitch or set_rate."""
+        try:
+            if hasattr(self.controller, "set_pitch"):
+                self.controller.set_pitch(float(percent))
+            elif hasattr(self.controller, "set_rate"):
+                # fallback for minimal controller
+                rate = 1.0 + (float(percent) / 100.0)
+                self.controller.set_rate(rate)
+            else:
+                # direct engine wire minimal (should not reach)
+                if hasattr(self.controller, "playback_engine"):
+                    r = 1.0 + (float(percent) / 100.0)
+                    self.controller.playback_engine.set_deck_rate(
+                        getattr(self.controller, "deck_id", "A"), r
+                    )
+        except Exception as exc:
+            logger.debug(f"Odt pitch change error (stub ok): {exc}")
+
+    def _on_keylock_toggled(self, enabled: bool) -> None:
+        """Handle KEYLOCK toggle stub."""
+        try:
+            if hasattr(self.controller, "set_keylock"):
+                self.controller.set_keylock(enabled)
+        except Exception as exc:
+            logger.debug(f"Odt keylock error (stub ok): {exc}")
 
     # ------------------------------------------------------------------
     # Drag & drop z pełnym repo lookup (identycznie jak w main window / _load_dropped_track)
@@ -661,9 +809,38 @@ TESTER 2026-06-14 final (po "dalej"+lista 1-15): smoke0/pytest44p/python-c (comp
                 self.status_label.setStyleSheet(m.status_stylesheet())
                 self.status_label.setVisible(not compact)
 
+            # Wzmocnienie visibility fallback banner w compact + highDPI:
+            # dedicated _audio_fallback_label ZAWSZE widoczny gdy fallback (nawet gdy status schowany w tight pilot).
+            # Mały font + pack dla reduce empty. Per SZPIEG research 2026-06-25 DJ checklist + Plan + Mixxx/Winamp tight.
+            if hasattr(self, "_audio_fallback_label"):
+                if self._audio_fallback_label.text():
+                    self._audio_fallback_label.setVisible(True)
+                    try:
+                        # compact: mniejszy font dla tight highDPI pilot (bez marnowania bottom space)
+                        fs = 8 if compact else 10
+                        base = self._audio_fallback_label.styleSheet() or ""
+                        self._audio_fallback_label.setStyleSheet(f"{base}; font-size: {fs}px;")
+                    except Exception:
+                        pass
+                else:
+                    self._audio_fallback_label.setVisible(False)
+
             if hasattr(self, "player_controls"):
                 self.player_controls.apply_metrics(m)
                 self._sync_transport_layout(compact)
+
+            # Pitch stub: hide in compact (per task: compact hides if needed to keep air, no break highDPI/pilot ~420x300 + StaysOnTop).
+            # In normal: visible after controls; highDPI forces (resize/updateGeometry) already cover via existing Faza1 logic.
+            # Fallback/QStack/air preserved.
+            if hasattr(self, "pitch_control"):
+                self.pitch_control.setVisible(not compact)
+                if not compact:
+                    # optional metrics sync (non breaking; pitch_control uses its internal)
+                    try:
+                        if hasattr(self.pitch_control, "apply_metrics"):
+                            self.pitch_control.apply_metrics(self._metrics)
+                    except Exception:
+                        pass
 
             if hasattr(self, "_flex_spacer"):
                 self._flex_spacer.setVisible(not compact)
@@ -683,6 +860,18 @@ TESTER 2026-06-14 final (po "dalej"+lista 1-15): smoke0/pytest44p/python-c (comp
             if hasattr(self, "_spin_indicator"):
                 self._spin_indicator.setFixedSize(m.spin_size(), m.spin_size())
                 self._spin_indicator.setVisible(compact)
+
+            # Faza1 highDPI/extreme force layout + repaint (Analyzer luki: extreme 280x200 + DPI not propagating to wave/fallback). per SZPIEG research 2026-07-14 plan rozbudowy Faza1 Polish... must document identical.
+            try:
+                self.updateGeometry()
+                self.update()
+                if hasattr(self, "waveform"):
+                    self.waveform.update()
+                if hasattr(self, "_audio_fallback_label") and self._audio_fallback_label.text():
+                    self._audio_fallback_label.setVisible(True)
+                    self._audio_fallback_label.update()
+            except Exception:
+                pass
                 if compact:
                     # Upewnij spin visible w compact (test isVisible po set, po show stack current odt).
                     # Per SZPIEG/REVIEWER/Plan findings: Qt timing/polish w headless/shown + stack switch może opóźnić.

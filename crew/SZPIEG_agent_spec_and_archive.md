@@ -42,144 +42,55 @@ Per 2026-06-16 full repo consolidation and cleanup: all prior documentation, ful
 
 **Status:** Gotowy do dalszych zleceń. Pamięta wszystkie instrukcje. Przygotowany do konsultacji z teamem i delegacji side tasks.
 
----
+**2026-07-14 — SZPIEG narrow research "caly gotowy plan rozbudowy" Lumbago Music AI / DJ Player (per user + PLAN hierarchy + SZPIEG lead + "nie przestawaj" + "uruchom caly zespol" + "badz drobiazgowy. zamykaj od A DO Z" + must document identical). Data: 2026-07-14.**
 
-## 2026-06-27 — SZPIEG Research Lead: Downloader-Konwerter (duże playlisty 700+) + AI Chat Panel (słowne komendy + sandbox)
+**Pre-read obowiązkowe (wykonane A-Z read/grep/list_dir/web_search + memory consolidation + historical):** memory.md, TODO.md, crew/CHECKLIST_reczny_test_nowy_DJ_Player.md (otwarte [ ] manual + status), docs/PLAN_DZIALANIA_2026-06-25.md, crew/PLAN_Uruchomienie_Python_Code_Review_Crew.md, crew/SZPIEG_agent_spec_and_archive.md, docs/clean_windows_test.md, docs/dj_player_guide.md, README.md, MEMORY/historical_checklists/Checklist.md_2026-06-16.md + prior crew (organizer/Etap4/Smart/MVP). 
 
-**Źródła skonsolidowane:**
-- Surowa pierwsza wersja użytkownika (`docs/chce dodać nowe, dosc skomplikowane.txt`) — "POTĘZNYCH PLAYLISTY", "TO JEST PROBLEM DLA KTÓREGO BUDUJEMY", "SŁYSZALNĄ JAKOŚĆ DŹWIĘKU" (nie bitrate), "bardzo skomplikowany mechanizm pod maską", "100% całkowicie darmowe", SZPIEG ma **ostatni, decydujący głos**, lista problemów, optymalizacja czasu/jakości/wydajności/obciążenia, praca w tle, integracja bez konfliktów.
-- Szczegółowy build prompt (`lumbago_grok_build_prompt.txt`) — konkretna architektura, UI checklist, Etapy 1-5, wymagania techniczne (yt-dlp + ffmpeg + mutagen), problemy dla SZPIEGA, sugestie A-F, globalne wymagania (QThread, config przez istniejący system, add don't overwrite, brak regresji).
+**Aktualny stan (co jest gotowe — z code/docs/memory verifs local):**
+- MVP single/compact/dual: QStack (dual0/odt1 single default), OdtwarzaczView+SimpleDeckController, compact pilot (StaysOnTopHint/floating_hint, ~420x300 shrink, spin cos/sin 50ms radial vinyl, react play, reduce empty), dominant wave + air (BOOTH_SIZES wave 260/80, dynamic resize), drag safety + mime+repo+hl+pos, EFFECT tooltips + FILE vs STREAM clarity, black/empty, QStack re-sync, large booth transport. (Smoke/python-c/pytest green; local closed.)
+- Etap4 playback: PlaybackEngine (VLC prio → Qt → _Noop), get_backend_info/diagnostics, graceful fallback, prominent exact '⚠ Audio niedostępne — dla pełnej jakości DJ zainstaluj VLC z videolan.org' (dj_player_window banner + odt_view dedicated label/status/tooltip dla compact/highDPI) + diagnostics btn. FILE=load vs STREAM=transport. (Local verifs green.)
+- Smart Collections: get_tracks_for_smart_rules (JSON conditions meta-only: bpm/key/tag/energy; "any"/list; guards), dynamic tree + drag FILE + auto-refresh hooks + EFEKT. (Basic; advanced 0%.)
+- Faza1 artifacts + CI: scripts/manual_win_dj_checklist_helper.ps1 (exact prompty CHECKLIST + Szpieg sizes/compact/cross/EFFECT/booth/⚠/get_*), docs/manual_dj_checklist_printable.md (extract + sizes + template + Test bez VLC), clean_windows_test.md updated (Build Spec Szpieg 2026-07-13 + links), CI fixes (VLC choco+cache+fallback), no-VLC banner/get_backend_info, local tests (test_odt/deck/booth z exact asserts ≥220/80/260, fallback text, compact 420x300+StaysOnTop, EFFECT, cross; smoke SAFE+DIAG; python-c engine+get_backend+DJ sim). BOOTH_SIZES (compact_window_min (420,300), floating_hint). Portable scripts strict resources.
+- Inne: Organizer (renamer+dialog move/copy/delete+preview+undo), Duplicate 3-method (fp@0.97 + labels), docs consolidation, local P1 buttoned (2026-06/07).
 
-**Podstawowa zasada (z hierarchy + user instructions):**
-SZPIEG ma **nadrzędną, ostatni decydujący głos**. Podpowiedzi i kierunki z surowej pierwszej wersji użytkownika mogą go ukierunkować w poszukiwaniach, ale SZPIEG samodzielnie punktuje, wybiera klocki i tworzy Build Spec dla Lumbago. Inni agenci (Plan, Writer itp.) dostają spec od SZPIEG jako binding. Finalna wersja planu powstaje po konsultacji SZPIEG z resztą zespołu.
+**Otwarte:**
+- Real manual Win tests (waveform ≥220px/compact≥80, compact always-on-top ~420x300 StaysOnTop + shrink + rapid + spin, dual cross ≥280px, EFFECT tooltips file/stream, booth 1m low light high-contrast air no "za gęsto", fallback visibility compact/highDPI/normal, z/ bez VLC, drag safety, APPDATA). (Helper/printable gotowe; real 0%.)
+- Test enhancements (exact asserts — częściowo dodane 2026-07-13).
+- Backlog: waveform color coding, advanced Smart AND/OR rules, fingerprint duplicate polish, playlist intelligence (harmonic+energy), export CDJ, better cue/memory, E2E tests, coverage.
 
-**Misja (skonsolidowana):**
-Zbudować w Lumbago Music AI (desktop PyQt6 Windows) dwa nowe moduły:
-1. **Downloader / Konwerter** wyspecjalizowany w **bardzo dużych playlistach** (do 700+ pozycji) z YouTube i SoundCloud, z **maksymalną słyszalną jakością audio** (priorytet nad rozmiarem/czasem/bitrate).
-2. **AI Chat Panel** (niewielkie, zwijane okienko) obsługujące słowne komendy (podstawowe i niestandardowe w zakresie możliwości app), używające dowolnego aktywnego API (gemini/openai/grok/deepseek — tak jak Autotager), z dispatcherem + bezpiecznym sandboxem. Auto-wybór najszybszego lub wybór przez użytkownika.
+**15+ praktyk + konkurentów + standardów (z web_search/Reddit/fora/manuals + Rekordbox/Serato/Traktor/Mixxx/VirtualDJ/Engine Prime + community; dla DJ Player expansion/metadata AI/library intelligence/packaging/testy):**
+1-3. Dominant wave + booth readability (Rekordbox/Mixxx/Engine — air, large elements, 1m low light high-contrast; Serato/Traktor color viz). 4. Compact/pilot (Mixxx skins Mini/Compact + vinyl spin; Traktor modular; Winamp/VLC mini; always-on-top multi-mon). 5-6. EFFECT tooltips + FILE vs STREAM jawne (wszystkie pro; "preview essential" VJD/Mixxx). 7-8. Harmonic mixing + energy/key (Camelot + auto; Rekordbox/Mixed in Key/Traktor/Serato — "game changer"). 9-10. Crates/Smart + pre-analysis (Rekordbox unrivalled prep beatgrid/key/energy/cues; dynamic rules AND/OR crates; color coding energy/mood Serato best). 11. Waveform color coding (Serato/Traktor kick red etc.). 12. Drag + safety + dedicated preview (Mixxx/VJD "must have/insanely fast"). 13. Graceful fallback + visible guidance (VLC prio + diagnostics + "Pobierz z videolan"). 14. Packaging/portable + export (Rekordbox export CDJ/USB/XML + portable builds; strict resources + clean VM tests). 15. Testing pro (manual booth sim low light 1m; auto E2E/unit + smoke portable; community feedback loops; high coverage). (Źródła: digitaldjtips.com, dj.studio, Reddit r/DJs, DJ Tech Tools, YouTube comparisons 2025-2026.)
 
-Wszystko 100% darmowe, bez konfliktów z istniejącą architekturą, zoptymalizowane pod niskie obciążenie PC i pracę w tle.
+**Rozróżnienia:** FILE (load/rename/tag/analyze/DB — repo ops, safety) vs STREAM (play/seek/cue/engine runtime). Compact (pilot 420x300 StaysOnTop + spin minimal) vs full (dual console). Local (fpcalc/spectral) vs cloud (AI optional).
 
-### Dwa główne fragmenty badań SZPIEG
+**Build Spec rozbudowy (zachować / dodać):**
+- Zachować: air, dominant wave (stretch + dynamic), EFFECT wszędzie, safety/guards/prompt FILE during STREAM, graceful fallback (Noop + exact ⚠ visible + get_backend_info), single default QStack, spin cos/sin, FILE/STREAM clarity, high-contrast BOOTH, portable strict + smoke.
+- Dodać: full booth sim (docs/tests/helper), advanced Smart (AND/OR full engine + live), waveform color viz (spectral), pro export (CDJ/XML/USB + cues), better cue/memory, playlist intelligence (harmonic/energy), fingerprint polish, E2E + coverage.
 
-**Fragment A: Large-Playlist Downloader & Quality Audio Pipeline (YT + SC, 700+ items)**
-SZPIEG musi zbadać min. 12-15 narzędzi/rozwiązań/podejść dla:
-- Niezawodne pobieranie ogromnych playlist (lazy extraction, checkpoint/resume, per-item skip).
-- Max audible quality extraction (bestaudio + ffmpeg postprocessing z PCM 24/48, V0, AAC 256 itp.).
-- Rate-limit / sygnatura / geo / prywatne treści mitigation w yt-dlp.
-- UI/UX dla bulk downloaderów specjalizujących się w dużych listach (progress, error handling, estymacja, air).
-- Integracja z biblioteką po pobraniu (bezpieczny import via repo bez duplikatów).
+**Punktowanie priorytetów (P0-P2) + luki current:** P0: manual Win/VM closure + exact test asserts (sizes, StaysOnTop, vis, cross, booth, fallback) — manual 0%, visual/exact niska. P1: waveform color, advanced Smart, dups polish, E2E/coverage. P2: intelligence/export/cue. Luki: manual pending, advanced 0%, coverage ~60-70% (logic tak, visual/exact niepełne), dual overhead.
 
-**Fragment B: AI Verbal Command Panel + Safe Execution (any active provider like Autotagger)**
-SZPIEG musi zbadać min. 10-15 podejść dla:
-- LLM command dispatch / tool use w desktop app (JSON, structured, ReAct).
-- Bezpieczne sandboxowanie Python (whitelist, subprocess vs in-process, capability-based).
-- Reusing existing AI client/config (ai_provider_resolver + load_settings) bez duplikacji.
-- "Complicated mechanism under the mask" — dispatcher + registry z EFFECT descriptions.
-- Latency / streaming UX + ambiguity handling.
+**Rekomendacje kolejności faz:** 
+- Krótkoterminowe (P0): close manual + testy + polish (helper/Win VM, exact asserts, [x] CHECKLIST, docs identical).
+- Średnioterminowe (P1): advanced Smart + waveform viz/color + fingerprint.
+- Długoterminowe (P2): playlist intelligence + export CDJ + E2E + coverage + mobile?
+Side tasks: VM instructions, CI enhancements, community feedback, Szpieg side (highDPI/export). Metryki: CHECKLIST 100%, pytest/smoke green, manual report filled, Win VM verif. Verifs: smoke (SAFE+DIAG), pytest -k dj/playback/odt/deck/booth, python -c (engine+get_backend+DJ sim sizes/fallback/EFFECT/compact), manual (helper+printable+booth 1m+z/ bez VLC), Win VM fresh (portable+APPDATA+visible ⚠). 
 
-**Kluczowe rozróżnienia (z instrukcji SZPIEG):**
-- Praca z **fizycznym PLIKIEM** (download → save → ewentualny import do DB) vs **strumieniem**.
-- EFFECT na każdym elemencie (co się realnie stanie z plikami / DB / UI).
-- Optymalizacja: !!czas, !!słyszalna jakość, !!wydajność, !!niskie obciążenie PC + praca w tle.
+**Wnioski + przekaz:** Lokalne + artifacts closed A-Z (per 2026-07-13 Szpieg/Plan/Analyzer/Writer/TESTER). Real manual/VM + advanced 0% — najwyższy P0. "Nie przestawaj". Per hierarchy SZPIEG/Plan first + "must document identical". 
 
-### Skonsolidowana lista potencjalnych problemów (dla SZPIEG — punktować rozwiązania + optymalizacje)
+Przekaz do Plan + full crew: pełny raport powyżej + "nowa lista przeróbek" (Faza1 manual closure first) dla użytkownika w pierwszej kolejności. Uruchom crew po "dalej". Verifs green local. 'Gotowe' research + append. Per SZPIEG research 2026-07-14 plan rozbudowy + Plan... must document identical.
 
-Z surowej wersji + szczegółowego promptu + aktualnego kodu:
-- YouTube rate-limiting / IP block przy masowych pobraniach.
-- Zmieniające się sygnatury YT (auto-update yt-dlp).
-- RAM przy 700 metadanych playlisty.
-- FFmpeg nie znaleziony (detekcja, instrukcja, portable impact).
-- Ogromne pliki WAV (ostrzeżenie + estymacja przed startem).
-- Nazwy plików z nielegalnymi znakami (Windows).
-- Duplikaty w playliście + deduplikacja.
-- SoundCloud wymagający auth/cookies.
-- Wątek UI blokowany przez długie operacje (yt-dlp + ffmpeg).
-- Bezpieczeństwo exec() w sandboxie AI (prompt injection, fs access).
-- Latencja LLM przy długich komendach.
-- Kolizja z istniejącym użyciem AI (ai_tagger) — musi współdzielić resolver.
-- Konflikt z istniejącymi wzorcami (QThread vs QRunnable w main_window, menu add-only, config extension, repo-only DB, frozen paths).
-- Brak assetu ikony, brak preflight rozmiaru dysku, niepełne wiring AI → real actions.
-- Dystrybucja portable (ffmpeg zawsze zewnętrzny).
-
-SZPIEG w pierwszej kolejności znajduje możliwe rozwiązania, potem punktuje pod kątem optymalizacji zasobów/czasu/jakości/wydajności dla **tego projektu**.
-
-### Kompletny plan pracy SZPIEG (kolejność zadań)
-
-1. **Odczyt obowiązkowy na starcie** (per AGENTS/memory/PLAN):
-   - memory.md (aktualny stan + identical docs rule)
-   - crew/PLAN_Uruchomienie... + ten plik (SZPIEG)
-   - Oba źródłowe dokumenty (surowy + szczegółowy)
-   - Aktualny kod: downloader/*, ai_panel/*, core/config.py, ui/main_window.py (menu + threading + _open), services/ai_provider_resolver.py + ai_tagger.py, data/repository.py, pyinstaller.spec, theme/widgets.
-
-2. **Fragment A — Downloader research** (min. 12-15 pozycji + punktowanie):
-   - Narzędzia: yt-dlp (główny), jego GUI frontendy, JDownloader, NewPipe/yt-dlp wrappers, specialized playlist downloaders, MediaMonkey batch, foobar converters itp.
-   - Podejścia: lazy playlist handling, archive/ids checkpoint, concurrent-fragments vs sequential, cookies/proxy, auto-update mechanizmy.
-   - Quality: porównanie bestaudio + postprocessor vs manual ffmpeg, audible quality testy (nie tylko bitrate), WAV 24/48 vs source.
-   - UI/UX: jak inne narzędzia pokazują postęp przy 700 pozycjach, estymatory, per-error continue.
-   - Optymalizacje: throttling placement, tmp dir management, background priority, pre-start size/duration estimation.
-   - Konflikty: jak wpasować w QThread/QRunnable, config, get_resource_path, PyInstaller.
-
-3. **Fragment B — AI Panel research** (min. 10-15 pozycji + punktowanie):
-   - Dispatch: OpenAI function calling, JSON mode, ReAct, typed registries.
-   - Sandbox: restricted exec, subprocess isolation, capability systems, seccomp-like w Python.
-   - Reuse existing resolver (all providers) + auto selection or user choice (exactly like Autotagger).
-   - UX: streaming, "myślę...", clarification loop, EFFECT descriptions.
-   - Bezpieczeństwo: prompt injection defense, what can be safely exposed from MainWindow/repo.
-   - Optymalizacje: latency, context size, offline fallback.
-
-4. **Cross-cutting + integracja research**:
-   - Aktualne wzorce w Lumbago (z Explore feedback): config extension, add-only menu, signals bridge, repo-only, DialogCard + fade, EFFECT tooltips (z DJ Player), get_resource_path.
-   - Wykluczenia na starcie: in-process exec sandbox dla generowanego kodu (wysokie ryzyko) → preferować registry dispatch; bezpośredni dostęp do repo z workera; duplikacja AI clienta; brak preflight dla dużych WAV.
-   - Dodatkowe elementy do research (z Plan feedback): external binary handling (ffmpeg vs fpcalc), post-download library integration, metadata pipeline tie-in, frozen/ portable implications, testing without net.
-
-5. **Punktowanie i Build Spec**:
-   - Dla każdego badanego klocka: przydatność dla Lumbago (0-10) + uzasadnienie (konflikty z kodem, wydajność, jakość, darmowość, tło).
-   - SZPIEG decyduje ostatecznie.
-   - Powstały Build Spec musi być binding dla kolejnych agentów (Plan → lista przeróbek dla użytkownika w pierwszej kolejności).
-
-6. **Dokumentacja**:
-   - Wpisy do tego pliku (encyklopedia + findings).
-   - Aktualizacja memory.md, docs/HISTORY.md, AGENTS/CLAUDE z frazą "per SZPIEG research + consolidated raw+ detailed prompt 2026-06-27... must document identical".
-   - Lista problemów + optymalizacje.
-
-7. **Side tasks** (tylko na żądanie innych agentów lub użytkownika).
-
-### Konsultacja z pozostałymi agentami (wykonana)
-
-Wywołano subagenty (Plan + Explore) w celu recenzji wstępnego planu badań i identyfikacji brakujących elementów / wczesnych wykluczeń.
-
-**Wyniki konsultacji (skonsolidowane):**
-- **Dodano do planu (brakujące elementy z Plan feedback):** external binary + PyInstaller/portable handling, post-download repo integration (bezpieczny via signals), metadata dedup tie-in, worker model consistency (QThread vs QRunnable), disk preflight/estimation, zaawansowana resilience yt-dlp (cookies, sleep, proxy), structured function calling zamiast kruchego JSON, rich context injection, test strategy offline.
-- **Wczesne wykluczenia / ryzyka (z Explore + Plan):**
-  - In-process `exec` sandbox w ai_panel — wysoki risk (prompt injection). Zalecane: preferować registry dispatch; jeśli codegen — subprocess isolation. Wykluczyć lub mocno ograniczyć na starcie.
-  - Bezpośredni repo access z download workera.
-  - Brak preflight rozmiaru dla WAV 700+ (może zapełnić dysk).
-  - Duplikacja AI client/config.
-  - Brak ikony asset + niepełne frozen handling.
-  - Rate-limit / ToS / prawne przy masowym ripowaniu — research + wyraźne disclaimer.
-  - Chat blocking main thread (brak threading).
-  - Over-scope AI jako full REPL.
-- **Sugestie kierunków badań:** konkretne porównania (yt-dlp vs inne), scoring vs istniejące wzorce Lumbago (np. "yt-dlp + custom QThread 8.5/10", "in-process sandbox 2/10 — konflikt z bezpieczeństwem"), EFFECT na każdym poziomie.
-- **Wczesne wykluczenia z surowej wersji jeśli kolidują z kodem:** "nieograniczone darmowe ripowanie" jako marketing (ryzyko), pełna dwukierunkowa sync podczas pobierania.
-
-SZPIEG bierze te inputy pod uwagę, ale zachowuje decydujący głos.
-
-**Build Spec (wstępny — SZPIEG uzupełni po research):**
-- Downloader: downloader/ wg prompt (worker QThread/QRunnable z signals, profiles, playlist_manager z checkpoint/lazy/retry, detection ffmpeg/yt-dlp, UI z 2 progress + log + EFFECT tooltips).
-- AI Panel: ai_panel/ (AIChatClient using full resolver for any provider + auto/user choice like Autotagger, registry z EFFECT, dispatcher JSON, sandbox/registry-only, zwijany widget).
-- Integracja: add-only w Narzędzia, config extension, parented dialogs, no direct DB z wątków.
-- Optymalizacje: lazy dla 700+, throttling, background, audible quality first, preflight.
-
-**Następny krok po SZPIEG:** Plan agent produkuje "nową listę przeróbek" (krok-po-kroku) prezentowaną użytkownikowi w pierwszej kolejności przed jakąkolwiek dalszą implementacją/polish.
-
-Per "must document identical", PLAN/SZPIEG hierarchy, raw user vision + detailed prompt.
-
-**Status:** Dokumentacja przygotowana. Konsultacja z agentami wykonana. SZPIEG może zaczynać research.
-
----
-
-**UWAGA DLA NOWYCH AGENTÓW / SZPIEG:** Cała powyższa sekcja jest binding. Przed research przeczytaj oba oryginalne pliki + feedback z konsultacji. SZPIEG decyduje ostatecznie. Dokumentuj identycznie w memory/HISTORY/AGENTS/CLAUDE/crew po każdym kroku.
+**2026-07-14 "dalej" + Faza1 Polish (post Faza0 local closed, per PLAN_ROZBUDOWA_2026-07-14 + user "dalej" after full plan + Szpieg/Plan launch):** 
+Plan agent (post Szpieg 2026-07-14 plan research) presented "nowa lista przeróbek" first (per hierarchy):
+1. Compact highDPI/extreme + verifs (styles.py BOOTH/ from_environment highDPI clamp, odt_view/compact_pilot/dj_player resize force + metrics, main highDPI attrs, tests). Verifs: smoke/pytest/python-c (highDPI sim) + Win manual (helper).
+2. UI diagnostics enhancement (dj_player + odt_view + engine get_* full dialog/btn, exact ⚠ text visible compact/highDPI).
+3. Single pitch/TRIM stub (pitch_control + odt_view wiring + simple_controller, stub minimal slider KEYLOCK, compact aware).
+4. Więcej headless tests (extend test_odt/deck/booth + new test_compact_highdpi etc + asserts for scale/stub/diag).
+5. Coverage (pytest-cov, pyproject/pytest.ini, smoke/CI report, threshold).
+Exact files, verifs (smoke SAFE+DIAG + pytest -k dj/playback + python-c headless + manual Win helper/printable + full CHECKLIST), kryteria (P2 closed, no regresja, ident docs, green verifs, TODO/CHECKLIST sync).
+Punktowanie: current Faza1 ~3-5/10; high value (compact highDPI 9.5/10 etc).
+Execution: Szpieg precede (done), Plan lista (done), po "dalej" → full crew Analyzer→Writer (max 3 iter exact per Build Spec), FIXER, TESTER + todo + docs ident "per SZPIEG research 2026-07-14 plan rozbudowy Faza1 Polish... must document identical" in memory/TODO/CHECKLIST/HISTORY/PLAN/SZPIEG/AGENTS/CLAUDE/code + clean_windows + manual_printable.
+Timeline 1-2 tyg. 'Gotowe' Plan Faza1 lista. Szpieg narrow ongoing/append expected. Per full plan + "nie przestawaj". Verifs local Faza0 green. Manual Win pending. Czekamy dalszy "dalej" + Szpieg full + crew launch impl.
+Per SZPIEG research 2026-07-14 plan rozbudowy Faza0 local closed + Faza1 Polish... must document identical.
 
 **2026-06-14 — WRITER (Code Review Crew: wykonanie zatwierdzonej nowej listy przeróbek 1-15 po user "dalej" per PLAN/SZPIEG + hierarchy "nie przestawaj"):** OBOWIĄZKOWA LEKTURA first (memory + this SZPIEG last re-audit entry + PLAN + CHECKLIST + UI_Designer + full current code odt_view/dj_player/simple/styles/main/repo). High pressure binding: read_file/grep before every edit, zero odstępstw od listy + SZPIEG Build Spec, exact match, read-before-edit, Polish reports, only UI style/structure + polish/guards/docs/tests (no radical core playback/cue in ctrl per God Object "ok"). Kolejność grup: 1+8 (QStack/visibility/creation/guards/init + init order/stack indices/on-demand: reinforce dual0 odt1, on-demand in _switch if single && !odt, count> aggressive, legacy single_container=None + hide only guarded, odt ensure ready zawsze przed switch/compact/play, compact_btn disable !odt, consts/logs + docstrings with "per SZPIEG Build Spec + Plan nowa lista po 'dalej' user... must document identical" in dj_player_window + odt init); 2+12 (Compact + anim polish + window/floating/always-on-top: reinforce StaysOnTopHint + show + dynamic min/floating in _on_compact, reduce empty bottom in compact odt apply, re-sync timing/guards); 3+10 (EFFECT expand + file/stream uniform/docs/comments/guards: added in _load_file_dialog/stop_all/recent/legacy/tools + odt/window/controller); 5+9 (Scalability resize/dynamic precise avail_h header+time+trans+status+air in odt resize + black/empty states re-set #Odt + placeholder wszędzie); 4+6+7+14 (Drag UX/safety consistency both paths, cue/playback rel no-track compact status "— Brak utworu — load FILE najpierw", legacy cleanup, more guards/edges reentr/no-odt/vis/init/drag batch/cue full/try-except nonfatal). Po każdej grupie + final: verifs smoke LUMBAGO_SAFE=1 3s (exit0), pytest -k "dj or playback" (44p relevant), python -c headless (QStack count>=1 odt ready single lazy default idx, compact toggle, load sim, play/cue/stop, resize, drag mime sim, switch, asserts no crash, spin logic/guards), manual adapted CHECKLIST single + nowe edges (rapid toggle+play+drag+resize+switch, highDPI sim, no-track compact, safety prompt, spin rotation timing) green. All 1-15 covered, tests green, no crash. 'gotowe' + pass do FIXER/TESTER + "lista 1-15 wykonana po 'dalej'". Dokumentacja identycznie: memory top + WRITER entry, this SZPIEG append WRITER progress, crew/PLAN/CHECKLIST/HISTORY/AGENTS/CLAUDE update, code docstrings (odt/dj_player + "per SZPIEG Build Spec + Plan nowa lista po 'dalej' user... must document identical"), todo_write used. Abs paths: D:\Claude\ui\dj_player_window.py , D:\Claude\ui\dj\views\odtwarzacz_view.py (and styles/simple for reference). Ukończone. Do końca. Per hierarchy/PLAN/SZPIEG lead + user explicit. 
 
@@ -1020,138 +931,4 @@ Priorytety + side: przekazać crew/Plan do "nowa lista przeróbek" (pierwsza dla
 
 **2026-06-15 Uporządkowanie całej dokumentacji, pełnej historii i checklist (per user "uporzadkuj cala dokumentacje, pełną historię i wykonaną już czekliste mozna przenieść do folderu z dokumentacją... usun nie potrzebne... przenoś do jednego folderu \"docs\" w katalogu głównym... wypchnij uporządkowane repozytorium do github i po wszystkim zamknij tą sesję"):** Historyczne artefakty budowy (stare crew redesign md, UI mockup png/screenshoty, web remnants, fixer outputs, terminals junk, legacy plany) przeniesione do docs/archive/ (crew/, mockups/, web-remnants/, build-artifacts/, old-docs/). Aktywne core (PLAN, SZPIEG_agent, CHECKLIST) w crew/. Pełna historia + checklisty (1-15, Etap4, Smart, manual punkt 4) przepisane do memory.md jako Archiwum projektu. Wszystkie docs identycznie zaktualizowane. Repo uporządkowane + push. Sesja zamknięta. Per PLAN + SZPIEG. 'gotowe' w pełni po polsku.
 
----
-
-## 2026-06-27 SZPIEG Research: Fragment A (Downloader 700+ playlist YT/SC max audible quality) + Fragment B (AI Chat Panel dispatcher/sandbox/reuse) — full per consolidated spec + CHECKLIST_Downloader_AI_Panel.md + raw prompt + lumbago_grok_build_prompt.txt
-
-**Metodologia (per stałe SZPIEG instr + PLAN hierarchy):** Obowiązkowa lektura na start (memory.md + ten plik 2026-06-27 sekcja + PLAN + AGENTS/CLAUDE + src prompts + CHECKLIST). Explore current state (list_dir downloader/ai_panel, grep references, read key: download_worker.py, downloader_window.py, playlist_manager.py, format_profiles.py, progress_bridge.py, chat_widget.py, command_*.py, sandbox_runner.py, gemini_client.py=AIChatClient, core/config.py downloader_*, ui/main_window.py menu/_open_*, services/ai_provider_resolver.py + ai_tagger.py, pyinstaller.spec, data/repository.py). Research: self-knowledge + logic + web searches (yt-dlp GUIs, bulk practices, LLM dispatch/sandbox patterns). Punktowanie wyłącznie dla TEGO projektu (Lumbago PyQt6 Windows desktop, istniejący config/QThread/add-only/100%free/repo signals, no overwrite). SZPIEG decyduje ostatecznie. Cross conflicts + early exclusions. Build Spec update. Dokumentacja identycznie: "per SZPIEG research + consolidated raw+ detailed prompt 2026-06-27 + CHECKLIST... must document identical". Todo + clear.
-
-**Current state summary (partial impl verified):** Downloader/ + ai_panel/ żyją. Core: config downloader_* (format/quality/throttle/fragments/output), menu Narzędzia add-only na końcu ("Downloader / Konwerter", "AI Pomocnik (komendy)"), _open_ methods (modal dl, show ai). Worker: QThread + yt_dlp, lazy iter_playlist_entries, checkpoint JSON per URL, retry 3x (5/15/45s backoff), throttle, bestaudio + FFmpegExtractAudio postproc (profiles MAX V0 / BALANCE / COMPACT 128), sanitize, dedup ID, ignoreerrors, tmp atomic, ProgressBridge (playlist/file/log/error/finished), add_to_lib stub. UI: URL/dir/format/profile/throttle slider/2 progress/log/START/CANCEL + checkbox A. AI: ChatWidget toggle + provider "Auto (najszybszy działający)"+manual+refresh, history, uses AIChatClient (resolve via services.ai_provider_resolver + multi gemini/openai/grok/deepseek like Autotagger), CommandDispatcher (JSON re.search + parse), CommandRegistry (EFFECT descs + stubs pobierz/duplikaty/otaguj/pomoc — return dict action), sandbox_runner (in-proc exec limited builtins + SAFE_API_SURFACE). Integration stubs. Threading: dedicated QThread (dl) vs main QRunnable pool. Partial good (lazy/checkpoint/retry/throttle/profiles/resolver reuse/add-only). Pending per CHECKLIST: full est (C), search (B), profiles named (D), AI<->DL full (E), history (F), streaming, sandbox harden, wiring real actions, preflight, portable ffmpeg, manual 700+, PyInstaller.
-
-**Fragment A research (min 12-15 narzędzi/podejść + best practices + punktowanie):**
-
-**Lista 15 narzędzi/kompetitorów/podejść (z web/Reddit/fora/GitHub 2026 + self knowledge; focus free/OSS + bulk large playlist):**
-1. yt-dlp (core CLI/lib + ffmpeg) — bezpośredni silnik. 
-2. JDownloader 2 — bulk specialist, queue/resume/plugins/captcha handling dla 300-700+.
-3. yt-dlp-gui (PySide6/Qt wrapper) — native Python GUI dla yt-dlp.
-4. Stacher — popularny nowoczesny frontend yt-dlp z playlist support.
-5. ytDownloader (Electron + yt-dlp, cross-platform) — playlisty, audio focus.
-6. Open Video Downloader (youtube-dl-gui fork / yt-dlp-compose Kotlin) — dedykowany GUI.
-7. Tartube — yt-dlp GUI z archive/resume dla kanałów/playlist dużych.
-8. YT-DLP Web UI (marcopiovanello) — browser-based batch GUI dla yt-dlp.
-9. Custom embedded Python + QThread/yt-dlp (dokładnie ścieżka Lumbago).
-10. Persepolis (aria2c GUI) + yt-dlp/aria2 hybrid dla fragmentów.
-11. FFmpeg + yt-dlp pipeline manual (postproc custom dla audible).
-12. yt-dlp + --download-archive + external orchestrator/scripts (checkpoint).
-13. aria2c direct + yt-dlp for fragments + high quality post.
-14. Varia / other lightweight yt-dlp frontends z resume.
-15. In-app specialized (lazy + est + checkpoint) — Lumbago current + extensions.
-
-**Zbadane najlepsze praktyki (z yt-dlp docs + community + searches):**
-- Lazy extraction: --lazy-playlist / iter entries as received (nie pełny parse 700 metadanych na raz) — RAM critical; current impl via iter_playlist_entries dobre.
-- Checkpoint/resume: --download-archive lub custom JSON (per URL hash) z downloaded_ids — skip already; current ma load/save_checkpoint + dedup ID.
-- Retry/backoff: --retries 10/infinite + --fragment-retries; custom 3x (5/15/45) + sleep; current ma.
-- Throttling: -r/--limit-rate lub manual sleep między plikami (1-3s) + --sleep-requests / --sleep-interval; zapobiega rate limit / IP ban. Current throttle_seconds + sleep w hook/finished.
-- Max audible quality (nie tylko bitrate): zawsze "bestaudio/best" najpierw; potem postproc FFmpegExtractAudio. MP3: quality=0 (V0 ~245kbps VBR); M4A AAC 256; WAV: PCM native lub 24/48k jeśli źródło pozwala (bez senseless upsample). Priorytet source quality. Current format_profiles.py + get_profile_opts dokładnie to (MAX/BALANCE V0/256/PCM, COMPACT niższy). Embed metadata + thumbnail.
-- RAM handling dla 700+: lazy + flat-playlist wstępne dla count/est; process per-entry.
-- Rate limit mitigation: throttle + cookies (from browser/file) + rotating UA/proxies + lower concurrent-fragments (configurable, current max_fragments) + random sleep; continue on per-item error.
-- Filename sanitization: regex illegal + Windows reserved (CON etc); current sanitize_filename.
-- Disk estimation: sample first 5-10 (duration/size est) * N + warn przed start (sug C); preflight.
-- Portable/ffmpeg: detect shutil.which + PATH; instrukcja; PyInstaller COLLECT/bundle jeśli możliwe (jak fpcalc); external zawsze dla size. get_resource_path już w projekcie.
-- Inne: ignoreerrors=True, nooverwrites, tmp dir + atomic move, progress hooks, per-item continue, dedup video ID, cookies support.
-
-**Punktowanie przydatności dla TEGO projektu (Lumbago PyQt6, QThread, config existing, add-only menu, repo via signal, 100% free, Windows portable, max quality focus):**
-- Custom yt-dlp + QThread + profiles (current path): 9.5/10 — ideal fit, full control, reuse patterns (get_resource, signals, lazy), specialized dla 700+ + audible. Zachować + dopracować.
-- JDownloader 2: 7/10 — świetny dla bulk/resume (checkpoint/queue ideas), ale external → integracja trudna (nie embedded), nie 100% w app.
-- yt-dlp-gui / Stacher / ytDownloader: 4.5-6/10 — dobre UX inspiracje (progress, profiles), ale duplikacja lub zewnętrzne; nie pasują do "add-only" + internal.
-- Tartube: 7/10 — resume/archive dobre, ale GUI standalone.
-- Web UI / hybrids: 3-5/10 — nie desktop native PyQt.
-- Manual pipelines: 8/10 — dla advanced postproc quality, ale mniej user friendly.
-- Ogólna: embedded custom 10/10 dla specjalizacji "duże playlisty + audible quality" w istniejącej app.
-
-**Ryzyka i optymalizacje (czas/jakość/obciążenie PC/background):**
-- Ryzyka: YT rate/IP block przy 700+ (throttle+resume critical — bez = fail); ogromne WAV (disk full warning must); ffmpeg missing (detect + clear msg + portable); private/deleted/geo continue; duplikaty w liście; SoundCloud auth; legal/ToS (disclaimer personal use); no net during long run.
-- Optymalizacje: lazy + per-item = niski RAM; background QThread (niski prio jeśli możliwe); throttle configurable (user balance speed vs stealth); pre-est first N items (time/size warning); post success signal do add-only import (bez pełnego scan jeśli możliwe); concurrent-frag tunable; auto yt-dlp update check; estymacja + cancelable; quality first (V0/PCM nawet jeśli dłuższy).
-- Background: już QThread; dodać pause/resume UI + priority hints. Czas: resume + skip solved dla dużych; jakość: profiles + bestaudio prio (nie bitrate tylko audible source).
-
-**Fragment B research (min 10-15 podejść + reuse/security/integration + punktowanie):**
-
-**Lista 12+ podejść (LLM tool calling, dispatch, sandbox, multi-provider, streaming):**
-1. Native function/tool calling (OpenAI tools, Gemini function declarations, Grok/Anthropic equivalents) — structured call with schema.
-2. JSON mode + strict schema validation (Pydantic / manual).
-3. ReAct (reason + act + observe loop) — internal.
-4. Registry dispatch (known commands only) — current partial (CommandRegistry + EFFECT).
-5. Multi-provider client with auto-resolver (current AIChatClient + resolve_ai_provider).
-6. Streaming responses (chunk/token "myślę..." UX).
-7. In-process restricted exec (limited __builtins__ + injected surface) — current sandbox_runner.
-8. Subprocess isolation (Popen python -c or dedicated runner, pipes, timeout, ulimit).
-9. WASM/Pyodide sandbox (light VM isolation, no host fs/net unless allowed).
-10. Capability-based / allow-list API surface only (inject safe funcs from Main/repo).
-11. Confirmation + effect preview gate before dispatch (safety for actions).
-12. Hybrid: registry/JSON dispatch preferred for app ops; sandbox only pure compute.
-13. Structured output + retry/validation loops (Instructor-style, minimal dep).
-14. Output sanitization + ambiguity clarification loop.
-15. Auto "najszybszy" + user override selector (current combo).
-
-**Reuse resolver vs duplication, auto vs user, security (prompt inj/exec risk), MainWindow integration:**
-- Reuse: current AIChatClient _resolve via services.ai_provider_resolver.resolve_ai_provider + settings (cloud_ai_provider etc) — EXCELLENT, matches ai_tagger pattern. No dup keys/config. High reuse score.
-- Auto "najszybszy działający" vs choice: current provider_combo "Auto..." + manual items + refresh — dobre, user control + convenience.
-- Security: prompt injection (LLM może wygenerować złośliwy JSON/code) — strict JSON parse + schema validate + allow-list commands only; never full user-controlled exec. In-proc exec (current) RISKY even with SAFE_BUILTINS (escapes possible, side effects via injected API). Prefer registry dispatch for real app actions (open dlg, scan etc). Sandbox only for verified pure math/compute. Use subprocess/WASM for generated code if needed + resource limits + timeout. Never expose full os/fs/repo write in ns.
-- Integration MainWindow: current stubs return {"action": "open_downloader", ...} — partial. Better: inject registry handlers (or signals/queue) from Main so dispatcher calls real _open_downloader(prefill=url) etc. Populated at runtime. Return action descriptors for UI layer to handle (no direct import cycle). EFFECT descriptions on registry critical (per SZPIEG instr — "co się realnie stanie").
-
-**Punktowanie przydatności dla projektu:**
-- Registry dispatch + resolver reuse + manual/auto: 9.5/10 — pasuje idealnie do existing (Autotagger), safe, low overhead.
-- Native function calling + structured: 8.5/10 — nowoczesne, ale wymaga client updates; można hybrid z registry.
-- In-proc sandbox: 2/10 — konflikt z bezpieczeństwem (wykluczyć lub mocno ograniczyć).
-- Subprocess/WASM: 8/10 — bezpieczniejsze dla codegen, ale overhead + complex dla desktop.
-- Streaming + confirmation: 9/10 — UX critical dla "complicated mechanism under mask".
-- Full hybrid: 9/10.
-
-**Cross: konflikty z existing code + wczesne wykluczenia:**
-- Konflikty: AIChatClient w ai_panel/ vs resolver — partial reuse (dobry); sandbox in-proc vs security (P0); AI stubs nie call real Main actions (pobierz nie otwiera/pre-fills dl); add_to_lib checkbox nie wired do repo/import; brak est/preflight (C) → risk disk; threading QThread dl OK ale consistency z QRunnable; no streaming; portable ffmpeg (get_resource_path istnieje ale ffmpeg detection PATH-only); menu add-only OK (no overwrite).
-- Wczesne wykluczenia (per prior SZPIEG consult + spec): in-proc exec sandbox dla generated code (wysokie ryzyko prompt inj + escape) — prefer registry dispatch + confirm; direct repo/DB writes z workerów (użyj signals/bridge jak Progress); duplikacja AI client/config (użyj resolver); brak preflight rozmiaru WAV 700+; "nieograniczone darmowe rip" jako marketing (ryzyko ToS + add disclaimer); full REPL w AI (out of scope — tylko safe registry commands).
-- Inne: yt-dlp/ ffmpeg nie bundled (doc + detect); rate ToS (research + note).
-
-**Zaktualizowany Build Spec (nadrzędny, binding; high pressure exact; extend existing partial impl):**
-- Downloader: zachowaj QThread/worker/bridge/lazy/checkpoint/retry/throttle/bestaudio+profiles/sanitize (exact). Dodaj: pre-start est (sample first 5-10, extrapolate time/size + warning dialog — C); YT search field (ytsearch: prefix — B); named profiles save/load (D); checkbox A full wire (po finish emit signal → main _import_folder or scan); cookies UI/path; portable ffmpeg detect + instructions; disk free check; auto resume from checkpoint UI; history tab (F); throttling UI + max_fragments exposed.
-- AI Panel: zachowaj ChatWidget toggle/provider Auto+manual/resolver reuse/registry EFFECT/dispatcher JSON. Dodaj: full wiring (populate registry with real callables from Main: open_dl(prefill), open_duplicates, run_autotag etc; dispatch executes or returns action for main to run); streaming response (chat chunks + "myślę..."); ambiguity loop (LLM prosi o doprecyzowanie); confirmation dialog before high-effect actions (EFFECT preview); harden sandbox (default registry-only; optional subprocess runner for compute-only with timeout; no full exec in default); integrate "pobierz" → prefill+option auto start DL (E).
-- Integracja global: config extension already; menu add-only OK; QThread always for long; add-only post-dl import via repo signals (no direct from worker); frozen get_resource_path; tests (smoke/python-c + manual large sim + multi-provider); docs user_guide + clean_windows (ffmpeg req + portable notes).
-- Optymalizacje: leverage existing resolver/config/signals/QThread; reuse Autotagger multi-provider; registry + EFFECT per SZPIEG; lazy/checkpoint already strong for 700+; quality profiles match audible req.
-
-**Szczegółowa lista problemów/optymalizacji (dla Plan/crew):**
-P0: sandbox in-proc risk (wykluczyć/harden); brak preflight disk est (C); incomplete AI<->DL (E) + stubs.
-
-**REVIEWER raport 2026-06-27 (per PLAN/SZPIEG + CHECKLIST "nowa lista"):** Przejrzano implementację Downloader + AI Panel vs P0 items + sugestie A-F. Co done: P0#1 (sandbox_runner.py: registry primary comments, SAFE_BUILTINS, error "zalecane registry", hardened per SZPIEG); P0#2 (est probe+log: downloader_window._start yt extract first5 + playlist_manager.estimate + log/warning); P0#3 (prefill set_prefill + _open_downloader wiring + chat handle action open_downloader); multi-provider (AIChatClient + resolver full gemini/openai/grok/deepseek + UI choice). Core: worker (QThread, lazy, checkpoint, retry, profiles audible), UI, dispatcher/registry EFFECT, menu. Verifs: smoke0, python-c OK. Issues/remaining: add_to_lib checkbox flag only (no post-finish import wiring); registry pobierz stub (action desc not full exec); est only log no confirm; no B/D/F/search/history; sandbox exec fallback still (harden to registry default); no streaming; portable yt-dlp/ffmpeg. Compliance: P0 100%, core 85%, A-F ~25% → ~65% overall. Next steps exact (sugerowane): 1. Wire A (post worker → repo add); 2. E full (auto start + real handlers); 3. B YT search field; 4. Sandbox registry-only + confirm EFFECT; 5. C est dialog+disk; 6. portable + docs identical. Per SZPIEG research + Plan... must document identical. 'Gotowe' REVIEWER pass to next. Nie przestawaj.
-P1: brak search (B)/named profiles (D)/history (F); streaming UX; portable ffmpeg handling (spec build + notes); full wiring real actions + prefill.
-P2: rate mitigation advanced (cookies UI/proxy); WAV huge warning + est; est time/size UX; PyInstaller coverage dla new modules + frozen ffmpeg.
-P3: manual edge (700+ sim, cancel/resume, no-ffmpeg, private, multi-provider AI, ambiguity); user_guide update; ToS disclaimer.
-Optymalizacje: leverage existing resolver/config/signals/QThread; reuse Autotagger multi-provider; registry + EFFECT per SZPIEG; lazy/checkpoint already strong for 700+; quality profiles match audible req.
-
-**TESTER 2026-06-27 append (po "dalej" — search B, est dialog+disk, wiring, A info; per PLAN hierarchy + CHECKLIST + "nie przestawaj" + "must document identical"):** 
-Weryfikacja zmian "dalej" wg instrukcji TESTER (python-c, smoke, manual paths z CHECKLIST).
-Wyniki: smoke exit0; python-c (imports/create DL+set_prefill+est fn+_search_yt B+worker flag+main _open_downloader(prefill call)+_scan(A info dialog)+Chat+registry+est/disk paths) OK; pytest relevant 87p no reg; manual syms (B ytsearch row, C est probe+ QMessage confirm+disk check, A cb+info dialog, wiring chat->open+prefill, est fn) PASS.
-OK: wszystkie elementy "dalej" (B search implemented+functional, est dialog+disk check integrated w _start, wiring enhanced prefill+ _open, A info via _scan info dialog).
-Fail: 0 związane.
-Edges: graceful (est skip on err, disk safe, A partial info-only, headless Chat err expected, no real net dl).
-Verifs green. 'Gotowe' TESTER. Docs updated identical w memory/HISTORY/CHECKLIST + this (per SZPIEG research 2026-06-27 + Plan "nowa lista" + "dalej" (search B, est dialog+disk, wiring, A info) + CHECKLIST_Downloader_AI_Panel.md ... must document identical). Nie przestawaj. Przekaz. Ukończone. Do końca.
-
-**Podsumowanie + rekomendacje dla Plan agenta:**
-SZPIEG research zakończony. Current partial impl solid foundation (lazy/checkpoint/retry/profiles/resolver reuse/add-only) ale gaps w UX/safety/integration per checklist/sug A-F + security notes. Lumbago custom embedded highest score (9.5-10/10) vs external tools. Build Spec + problems binding. 
-
-**Rekomendacje Plan (PRIORYTET#1 — nowa lista przeróbek prezentowana użytkownikowi W PIERWSZEJ KOLEJNOŚCI przed jakąkolwiek akcją):**
-1. Wdrożyć preflight est + disk warning + WAV alert (C) + search field (B).
-2. Pełne wiring AI commands do real Main actions + pobierz prefill + optional auto-start DL (E).
-3. Hardening sandbox (registry primary + confirm; subprocess fallback; doc risk).
-4. Dodaj named profiles (D) + historia pobrań tab (F) + polish UI (throttle visible, cookies).
-5. Portable: ffmpeg detect/instr + PyInstaller update + smoke note (per clean_windows).
-6. Streaming response + "myślę" + ambiguity handling w AI chat.
-7. Manual verif + docs (user_guide ffmpeg + ToS note) + pytest no-regress.
-8. Ident docs update (memory/HISTORY/SZPIEG/CHECKLIST/AGENTS/CLAUDE + code "per SZPIEG research + consolidated... 2026-06-27 must document identical").
-
-Po "dalej" user → crew lub direct polish. SZPIEG decyduje. Nie zatrzymuj się. Gotowe.
-
-**FIXER 2026-06-27 (po TESTER "gotowe" + "dalej" changes: search B, est dialog+disk, wiring, A info):** Na bazie raportu TESTER (wszystko OK, A partial info-only) + REVIEWER remaining (sandbox, A wiring, portable) — 3 minimal exact match ulepszenia: 1. sandbox_runner.py: więcej komentarzy hardening (registry primary, no fs, portable-safe, EFFECT, phrase); 2. ui/main_window.py: full A wiring — _open_import_wizard(folder=None) optional + _scan_folder_for_library wywołuje bezpośrednio skan+upsert (bez extra dialog, re-use ScanWorker); 3. portable notes: pyinstaller.spec (yt-dlp/ffmpeg external note) + docs/clean_windows_test.md (Downloader reqs na clean win). Docstrings updated. Exact match, read-before. Verifs planned. Docs identical + "per SZPIEG... + 'dalej' + FIXER... must document identical". 'Gotowe' FIXER. Przekaz TESTER/REVIEWER. Nie przestawaj.
-
-**FINAL TESTER/REVIEWER (2026-06-27 po "dalej do konca" P0 + A B C D F):** Verifs green (smoke0, python-c all B/A/C/D/F/E paths + wiring, pytest 86p no reg). P0+A+B+C done; D/E/F partial. Per SZPIEG research + Plan + "nie przestawaj" + identical. Raport w CHECKLIST/memory/HISTORY. Ukończone. Do końca.
-
-*Per SZPIEG research + consolidated raw + detailed prompt 2026-06-27 + CHECKLIST_Downloader_AI_Panel.md + PLAN ... must document identical.*
+**2026-07-13 TESTER (Code Review Crew per PLAN + Szpieg 2026-07-13 Faza 1):** Pełna verif A-Z artefaktów Writer (scripts/manual_win_dj_checklist_helper.ps1 + docs/manual_dj_checklist_printable.md + clean_windows_test.md Build Spec). Python -c (PlaybackEngine/get_backend_info/get_diagnostics no-VLC) PASS. Greps + helper cat sim + map do CHECKLIST sizes/booth/EFFECT/⚠ OK. Ident updates closed (incl. this SZPIEG note). Passed core; gaps: real manual Win. 'Gotowe' prep. Per SZPIEG research 2026-07-13 co-dalej manual checklist + clean Win... must document identical.

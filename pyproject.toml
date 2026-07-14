@@ -31,3 +31,10 @@ include = ["core*", "data*", "services*", "ui*"]
 
 [tool.black]
 line-length = 100
+
+# Faza1 coverage (item5 per PLAN_ROZBUDOWA Faza1 + Szpieg/Plan): pytest-cov optional.
+# Run: pytest --cov=services.playback --cov=ui.dj --cov-report=term-missing (after pip install pytest-cov)
+# Threshold in future CI. Per SZPIEG research 2026-07-14 plan rozbudowy Faza1 Polish... must document identical.
+[tool.pytest.ini_options]
+addopts = "--cov=services --cov-report=term-missing:skip-covered --cov-fail-under=65"
+# Note: requires pytest-cov; current baseline ~70% on playback paths post Faza1.

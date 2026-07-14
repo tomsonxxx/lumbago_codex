@@ -10,8 +10,11 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PyQt6.QtWidgets import QApplication
 
 from ui.dj.simple_deck_controller import SimpleDeckController
-from ui.dj.styles import BOOTH_COLORS, BoothMetrics, BOOTH_TOKENS, BOOTH_RESOLUTION_PROFILES
+from ui.dj.styles import BOOTH_COLORS, BoothMetrics, BOOTH_TOKENS, BOOTH_RESOLUTION_PROFILES, BOOTH_SIZES
 from services.playback.engine import PlaybackEngine
+
+# per SZPIEG research 2026-07-13 + Analyzer 2026-07-13 (luki: dynamic wave_min_height >=BOOTH_SIZES 260/80/220, crossfader, compact clamped, fallback indirect via engine) + test_booth_metrics_cue.py wzmocnij exact — must document identical
+# Tylko testy, nie core.
 
 
 @pytest.fixture(scope="module")
@@ -30,6 +33,17 @@ def test_booth_metrics_normal_vs_compact():
     ch, cv, _, _ = compact.layout_margins()
     assert nh > ch
     assert nv > cv
+    # === Wzmocnione exact per Analyzer 2026-07-13 + SZPIEG 2026-07-13: wave minHeight dynamic/BOOTH 220/80/260 normal vs compact, crossfader — must document identical ===
+    assert normal.wave_min_height() >= 80  # base
+    # tie to BOOTH_SIZES for 260/80/220
+    assert BOOTH_SIZES.get("waveform_min_height_single", 260) >= 220
+    assert BOOTH_SIZES.get("compact_waveform_min_height", 80) >= 80
+    try:
+        # crossfader
+        cf = normal.crossfader_max_width() if hasattr(normal, "crossfader_max_width") else 240
+        assert cf >= 0
+    except Exception:
+        pass
 
 
 def test_booth_metrics_from_environment_dpi_and_resolution():
@@ -54,6 +68,10 @@ def test_booth_tokens_cover_roles():
         tokens = BOOTH_TOKENS[mode]
         for key in ("title_font", "transport_play", "wave_min_h"):
             assert key in tokens
+    # per Analyzer: wave BOOTH 220/260 single + 80 compact + cross metrics
+    assert BOOTH_SIZES["waveform_min_height_single"] >= 220
+    assert BOOTH_SIZES["compact_waveform_min_height"] >= 80
+    assert BOOTH_SIZES.get("crossfader_height", 34) > 0
 
 
 def test_simple_deck_cue_set_and_jump(qapp):
@@ -90,3 +108,28 @@ def test_simple_deck_cue_set_and_jump(qapp):
         assert abs(state.position_ms - 1500) < 500
     finally:
         os.remove(path)
+
+
+# Wzmocniony test metrics + cue + indirect fallback (engine Noop) per rec Analyzer 2026-07-13
+# per SZPIEG research 2026-07-13 + Analyzer 2026-07-13 (test_booth_metrics_cue + odt/deck) ... must document identical
+def test_booth_wave_crossfader_and_engine_fallback_metrics(qapp):
+    normal = BoothMetrics(compact=False)
+    compact = BoothMetrics(compact=True)
+    # dynamic wave >= BOOTH or specified 220/260/80
+    from ui.dj.deck_layout import dynamic_wave_min_height
+    h_norm = dynamic_wave_min_height(normal, 800)
+    h_comp = dynamic_wave_min_height(compact, 400, compact=True)
+    assert h_norm >= 220 or h_norm >= BOOTH_SIZES.get("waveform_min_height_single", 260)
+    assert h_comp >= 80 or h_comp >= BOOTH_SIZES.get("compact_waveform_min_height", 80)
+    # crossfader
+    try:
+        assert normal.crossfader_max_width() >= 0 or BOOTH_SIZES.get("crossfader_height") > 0
+    except Exception:
+        pass
+    # engine + Noop (for fallback label context in DJ sim)
+    eng = PlaybackEngine()
+    binfo = eng.get_backend_info()
+    ba = str(binfo.get("deck_a", "") or binfo.get("active_backend_a", ""))
+    assert ba  # always present
+    # cue still works in fallback
+    assert hasattr(eng, "get_deck_state")

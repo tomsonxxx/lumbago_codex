@@ -2,6 +2,13 @@
 ui/dj/views/pitch_control.py
 
 PitchControl – suwak pitch + wartość procentowa + KEYLOCK (BoothMetrics).
+
+Reused for minimal single Odtwarzacz pitch stub (Faza1 item3) in odtwarzacz_view.py:
+- signals connected directly (no full DeckController bind needed for MVP single)
+- compact hide handled in caller
+- EFFECT tooltip set by odt: "EFEKT: zmienia tempo/pitch utworu (FILE load, STREAM playback)"
+per SZPIEG research 2026-07-14 plan rozbudowy Faza1 Polish (single pitch/TRIM stub, pitch_control + odt_view wiring + simple_controller, stub minimal slider KEYLOCK, compact aware)... must document identical.
+No changes to dual/full paths. Minimal for single.
 """
 
 from __future__ import annotations

@@ -279,6 +279,22 @@ BAND_VOCAL = 2
 BAND_BREAKDOWN = 3
 
 
+def get_band_tint(band: int) -> QtGui.QColor:
+    """Return discrete per-band tint QColor for waveform painting.
+    Use together with classify_band_from_ratios() and extract_spectral_bands().
+    0=kick/bass (red), 1=perc (yellow), 2=vocal/mid (teal/green), 3=breakdown (blue).
+    Fallback neutral. Preserves RGB path in callers.
+    Per SZPIEG research 2026-07-14 plan rozbudowy Faza2 (waveform color, advanced Smart, playlist intelligence)... must document identical.
+    """
+    tints = {
+        BAND_KICK: QtGui.QColor("#e63939"),      # red kick/bass
+        BAND_PERC: QtGui.QColor("#e9c46a"),      # yellow/orange perc
+        BAND_VOCAL: QtGui.QColor("#2a9d8f"),     # teal/green vocal/mid
+        BAND_BREAKDOWN: QtGui.QColor("#457b9d"), # blue breakdown/quiet
+    }
+    return tints.get(int(band) if band is not None else 3, QtGui.QColor("#888888"))
+
+
 def classify_band_from_ratios(low: float, mid: float, high: float) -> int:
     """Classify spectral energy into one of four DJ waveform bands."""
     total = low + mid + high
