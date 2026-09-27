@@ -35,6 +35,39 @@ jobs:
           pip install -r requirements.txt
           pip install -e .
 
+      # Download fpcalc for audio fingerprinting
+      - name: Download fpcalc
+        shell: powershell
+        run: |
+          $chromaprintVersion = "1.6.1"
+          $url = "https://github.com/acoustid/chromaprint/releases/download/v$chromaprintVersion/chromaprint-fpcalc-$chromaprintVersion-windows-x86_64.zip"
+          $zipFile = "chromaprint.zip"
+          $toolsDir = "tools"
+          
+          if (-not (Test-Path $toolsDir)) {
+              New-Item -ItemType Directory -Path $toolsDir | Out-Null
+          }
+          
+          Write-Host "Downloading fpcalc from $url"
+          Invoke-WebRequest -Uri $url -OutFile $zipFile -ErrorAction Stop
+          
+          Write-Host "Extracting fpcalc..."
+          Expand-Archive -Path $zipFile -DestinationPath . -Force
+          
+          Write-Host "Moving fpcalc.exe to tools/"
+          Get-ChildItem -Recurse -Name "fpcalc.exe" | ForEach-Object {
+              Copy-Item $_ "$toolsDir\fpcalc.exe" -Force
+              Write-Host "Copied: $_"
+          }
+          
+          Remove-Item $zipFile -Force
+          
+          if (Test-Path "$toolsDir\fpcalc.exe") {
+              Write-Host "fpcalc.exe ready at: $toolsDir\fpcalc.exe"
+          } else {
+              throw "Failed to extract fpcalc.exe"
+          }
+
       # Cache VLC installation - avoids re-downloading on every run
       - name: Cache VLC
         uses: actions/cache@v4
@@ -192,6 +225,40 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+
+      # Download fpcalc for build
+      - name: Download fpcalc for build
+        shell: powershell
+        run: |
+          $chromaprintVersion = "1.6.1"
+          $url = "https://github.com/acoustid/chromaprint/releases/download/v$chromaprintVersion/chromaprint-fpcalc-$chromaprintVersion-windows-x86_64.zip"
+          $zipFile = "chromaprint.zip"
+          $toolsDir = "tools"
+          
+          if (-not (Test-Path $toolsDir)) {
+              New-Item -ItemType Directory -Path $toolsDir | Out-Null
+          }
+          
+          Write-Host "Downloading fpcalc from $url"
+          Invoke-WebRequest -Uri $url -OutFile $zipFile -ErrorAction Stop
+          
+          Write-Host "Extracting fpcalc..."
+          Expand-Archive -Path $zipFile -DestinationPath . -Force
+          
+          Write-Host "Moving fpcalc.exe to tools/"
+          Get-ChildItem -Recurse -Name "fpcalc.exe" | ForEach-Object {
+              Copy-Item $_ "$toolsDir\fpcalc.exe" -Force
+              Write-Host "Copied: $_"
+          }
+          
+          Remove-Item $zipFile -Force
+          
+          if (Test-Path "$toolsDir\fpcalc.exe") {
+              Write-Host "fpcalc.exe ready at: $toolsDir\fpcalc.exe"
+          } else {
+              throw "Failed to extract fpcalc.exe"
+          }
+
       - name: Build
         shell: powershell
         run: .\scripts\build_portable_windows.ps1
